@@ -10,6 +10,9 @@ import {
   parseProfileForm,
   persistProfileFromForm,
   classifyRunMode,
+  currentModelProviderName,
+  isOllamaLiveOptedIn,
+  describeModelSelection,
 } from "@/lib/sources/policy";
 import { DEFAULT_PROFILE, loadProfileFromPath } from "@/lib/profile";
 
@@ -110,5 +113,24 @@ describe("sources & profile policy", () => {
     expect(classifyRunMode("rss-fixture")).toBe("fixture");
     expect(classifyRunMode("arxiv")).toBe("live");
     expect(classifyRunMode("openalex")).toBe("live");
+  });
+
+  it("currentModelProviderName defaults to 'fake' on undefined / empty", () => {
+    expect(currentModelProviderName(undefined)).toBe("fake");
+    expect(currentModelProviderName("")).toBe("fake");
+    expect(currentModelProviderName("ollama")).toBe("ollama");
+  });
+
+  it("isOllamaLiveOptedIn only accepts 'true'", () => {
+    expect(isOllamaLiveOptedIn("true")).toBe(true);
+    expect(isOllamaLiveOptedIn("1")).toBe(false);
+    expect(isOllamaLiveOptedIn(undefined)).toBe(false);
+  });
+
+  it("describeModelSelection gives a clear label for each state", () => {
+    expect(describeModelSelection("fake", false)).toMatch(/deterministic default/);
+    expect(describeModelSelection("ollama", true)).toMatch(/live local model/);
+    expect(describeModelSelection("ollama", false)).toMatch(/refusing to start/);
+    expect(describeModelSelection("openai", false)).toMatch(/unsupported/);
   });
 });

@@ -15,6 +15,24 @@ export function isLiveIntakeOptedIn(envValue: string | undefined): boolean {
   return envValue === "true";
 }
 
+export function currentModelProviderName(envValue: string | undefined): string {
+  return envValue && envValue.trim() !== "" ? envValue : "fake";
+}
+
+export function isOllamaLiveOptedIn(envValue: string | undefined): boolean {
+  return envValue === "true";
+}
+
+export function describeModelSelection(provider: string, optIn: boolean): string {
+  if (provider === "fake") return "fake (deterministic default)";
+  if (provider === "ollama") {
+    return optIn
+      ? "ollama (live local model)"
+      : "ollama configured, but PAPER_LAB_LIVE_MODEL_OPT_IN is not 'true' — refusing to start";
+  }
+  return `${provider} (unsupported — V1 only knows fake / ollama)`;
+}
+
 export interface ProfileFormInput {
   keywords: string;
   arxivQuery: string;

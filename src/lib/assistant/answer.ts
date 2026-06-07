@@ -1,10 +1,22 @@
 // RAG retrieval + answer. The fake model is deterministic and refuses
 // to invent content: with no retrieved segments it always answers
 // "insufficient evidence" and cites nothing.
+//
+// Phase 4 wraps the adapter output in `enforceCitationPolicy` so the
+// citation requirements are honored regardless of the active model
+// provider. The fake adapter already produces well-cited answers, so
+// the policy is a no-op in that case; for future real-model adapters
+// the policy is the safety net.
+//
+// `askQuestion` is the sync path used by the existing UI and the
+// Phase 1 RAG golden tests. It assumes the active adapter is sync
+// (the fake adapter is). For the Ollama adapter — whose methods
+// return Promises — callers should use `askQuestionAsync` instead.
 
 import { getAllSegments } from "../library/segments";
 import { getTitleByPaperId } from "../library/papers";
 import { getModelAdapter } from "../models";
+import { enforceCitationPolicy } from "./citation-policy";
 import type { AssistantAnswer, PaperSegment } from "@/types/domain";
 
 // A small English stop-word set. The V1 harness is English + a few
@@ -84,5 +96,32 @@ export function askQuestion(question: string, topK: number = 3): AssistantAnswer
   const segments = getAllSegments();
   const retrieved = retrieveSegments(question, segments, topK);
   const titles = getTitleByPaperId();
-  return getModelAdapter().generateAnswer(question, retrieved, titles);
+  const raw = getModelAdapter().generateAnswer(question, retrieved, titles);
+  if (raw instanceof Promise) {
+    throw new Error(
+      "askQuestion is sync-only. The active adapter returns a Promise; " +
+        "use askQuestionAsync instead. This typically happens when the " +
+        "Ollama adapter is selected at runtime.",
+    );
+  }
+  return enforceCitationPolicy({
+    answer: raw,
+    retrievedSegments: retrieved,
+    paperTitleByPaperId: titles,
+  });
+}
+
+export async function askQuestionAsync(
+  question: string,
+  topK: number = 3,
+): Promise<AssistantAnswer> {
+  const segments = getAllSegments();
+  const retrieved = retrieveSegments(question, segments, topK);
+  const titles = getTitleByPaperId();
+  const raw = await getModelAdapter().generateAnswer(question, retrieved, titles);
+  return enforceCitationPolicy({
+    answer: raw,
+    retrievedSegments: retrieved,
+    paperTitleByPaperId: titles,
+  });
 }

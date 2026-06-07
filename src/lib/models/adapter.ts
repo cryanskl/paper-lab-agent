@@ -1,5 +1,8 @@
 // Narrow interface every model adapter must implement.
-// V1 only ships the fake adapter; Ollama / other local runtimes come later.
+// The fake adapter ships today; Ollama / other local runtimes are
+// added in Phase 4. All methods may return either a sync value or
+// a Promise so adapters that need a network round-trip (Ollama)
+// can be expressed without breaking the existing sync fake adapter.
 
 import type {
   PaperSegment,
@@ -9,21 +12,23 @@ import type {
   RelevanceResult,
 } from "@/types/domain";
 
+export type MaybePromise<T> = T | Promise<T>;
+
 export interface ModelAdapter {
   readonly name: string;
 
-  scoreRelevance(input: RelevanceInput): RelevanceResult;
+  scoreRelevance(input: RelevanceInput): MaybePromise<RelevanceResult>;
 
-  translate(english: string): string;
+  translate(english: string): MaybePromise<string>;
 
   generateAnswer(
     question: string,
     retrievedSegments: PaperSegment[],
     paperTitleByPaperId: Record<string, string>,
-  ): AssistantAnswer;
+  ): MaybePromise<AssistantAnswer>;
 
   generateSimulationSpec(
     methodText: string,
     sourcePaperId: string | null,
-  ): SimulationSpec;
+  ): MaybePromise<SimulationSpec>;
 }

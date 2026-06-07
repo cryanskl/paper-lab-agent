@@ -25,6 +25,7 @@ import {
   summarizeDownloadResult,
   isLiveDownloadOptedIn,
 } from "@/lib/download/run-download";
+import { checkProviderHealth } from "@/lib/models/health";
 
 function envOptedIn(): boolean {
   return isLiveIntakeOptedIn(process.env.PAPER_LAB_LIVE_INTAKE_OPT_IN);
@@ -128,4 +129,29 @@ export async function runDownloadAllAction(): Promise<void> {
   revalidatePath("/sources");
   revalidatePath("/library");
   redirect("/sources?download=done");
+}
+
+export async function runModelHealthAction(): Promise<void> {
+  // The button only renders for the ollama provider; the fake
+  // provider is reported via the static "model selection" line on
+  // the page. We double-check here so a direct POST cannot bypass
+  // the gate.
+  const cfg = loadConfig();
+  if (cfg.modelProvider !== "ollama") {
+    revalidatePath("/sources");
+    redirect("/sources?model=ok");
+    return;
+  }
+  try {
+    const endpoint = process.env.PAPER_LAB_OLLAMA_URL || "http://localhost:11434";
+    const r = await checkProviderHealth({
+      provider: "ollama",
+      endpoint,
+    });
+    console.info("runModelHealthAction:", r);
+  } catch (err) {
+    console.error("runModelHealthAction failed:", err);
+  }
+  revalidatePath("/sources");
+  redirect("/sources?model=done");
 }
