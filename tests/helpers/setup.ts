@@ -21,6 +21,7 @@ export function setupTempDataDir(envOverrides: Record<string, string> = {}): str
     PAPER_LAB_TRANSLATION_DIR: path.join(tempRoot, "translations"),
     PAPER_LAB_SIMULATION_DIR: path.join(tempRoot, "simulations"),
     PAPER_LAB_MODEL_PROVIDER: "fake",
+    PAPER_LAB_PROFILE_PATH: path.join(tempRoot, "profile.json"),
     PAPER_LAB_FIXTURE_INTAKE: "fixtures/intake/arxiv-sample.json",
     PAPER_LAB_FIXTURE_SEGMENTS: "fixtures/papers/sample-paper-segments.json",
     PAPER_LAB_FIXTURE_GOLDEN_QA: "fixtures/rag/golden-questions.json",

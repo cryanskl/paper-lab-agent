@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>arXiv Query: search_query=cat:cs.AI</title>
+  <id>http://arxiv.org/api/query</id>
+  <updated>2026-06-07T00:00:00Z</updated>
+  <totalResults>2</totalResults>
+  <startIndex>0</startIndex>
+  <itemsPerPage>2</itemsPerPage>
+  <entry>
+    <id>http://arxiv.org/abs/2606.00001v1</id>
+    <updated>2026-06-01T12:00:00Z</updated>
+    <published>2026-06-01T00:00:00Z</published>
+    <title>Physics-Informed Surrogate Models for Engineering Simulation</title>
+    <summary>We propose a physics-informed neural surrogate constrained by conservation laws and boundary conditions, targeting real-time engineering simulation. Experiments on 2D flow demonstrate the surrogate matches the high-fidelity solver within 3% relative error.</summary>
+    <author>
+      <name>A. Researcher</name>
+    </author>
+    <author>
+      <name>B. Coauthor</name>
+    </author>
+    <link href="http://arxiv.org/abs/2606.00001v1" rel="alternate" type="text/html"/>
+    <link title="pdf" href="http://arxiv.org/pdf/2606.00001v1" rel="related" type="application/pdf"/>
+    <category term="cs.AI"/>
+    <category term="physics.comp-ph"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2606.00002v1</id>
+    <updated>2026-06-02T09:00:00Z</updated>
+    <published>2026-06-02T00:00:00Z</published>
+    <title>On the Limits of Social Media Recommendation Algorithms</title>
+    <summary>This paper studies the social and political effects of feed-ranking systems. We discuss engagement metrics, A/B test methodology, and policy implications.</summary>
+    <author>
+      <name>C. Sociologist</name>
+    </author>
+    <link href="http://arxiv.org/abs/2606.00002v1" rel="alternate" type="text/html"/>
+    <link title="pdf" href="http://arxiv.org/pdf/2606.00002v1" rel="related" type="application/pdf"/>
+    <category term="cs.SI"/>
+  </entry>
+</feed>

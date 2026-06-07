@@ -10,8 +10,10 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
-    // Default tests must be deterministic and no-network.
-    // Integration tests (not present in V1) would be a separate suite.
+    // Default `pnpm test` must be deterministic and no-network.
+    // Live-source tests live under tests/integration/ and are run by an
+    // explicit opt-in script (e.g. pnpm test:integration:arxiv).
+    exclude: ["tests/integration/**", "node_modules/**", ".next/**"],
     pool: "forks",
     testTimeout: 10000,
   },
