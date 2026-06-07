@@ -25,6 +25,7 @@ export default function RootLayout({
             <Link href="/library">Library</Link>
             <Link href="/ask">Ask Papers</Link>
             <Link href="/simulation">Simulation</Link>
+            <Link href="/sources">Sources</Link>
           </nav>
         </header>
         <main className="site-main">{children}</main>
