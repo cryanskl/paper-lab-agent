@@ -1,9 +1,10 @@
 // Sources & Profile page.
 //
-// Three sections:
+// Four sections:
 //   1) Local research profile — view + edit, persisted to data/profile.json.
 //   2) Manual intake run control — fixture import and (opt-in) live arXiv.
-//   3) Recent intake run history with source / query / counts.
+//   3) Open-PDF download control — opt-in bulk download for accepted papers.
+//   4) Recent intake run history with source / query / counts.
 
 import { loadProfileFromPath, resolveProfilePath } from "@/lib/profile";
 import { listIntakeRuns } from "@/lib/intake/import-fixture";
@@ -12,23 +13,29 @@ import {
   saveProfileAction,
   runFixtureIntakeAction,
   runLiveArxivIntakeAction,
+  runDownloadAllAction,
 } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 interface SourcesPageProps {
-  searchParams: Promise<{ live?: string }>;
+  searchParams: Promise<{ live?: string; download?: string }>;
 }
 
 function liveOptedIn(): boolean {
   return process.env.PAPER_LAB_LIVE_INTAKE_OPT_IN === "true";
 }
 
+function downloadLiveOptedIn(): boolean {
+  return process.env.PAPER_LAB_DOWNLOAD_LIVE_OPT_IN === "true";
+}
+
 export default async function SourcesPage({ searchParams }: SourcesPageProps) {
-  const { live } = await searchParams;
+  const { live, download } = await searchParams;
   const profile = loadProfileFromPath(resolveProfilePath(process.env.PAPER_LAB_PROFILE_PATH));
   const runs = listIntakeRuns().slice(0, 10);
   const liveEnabled = liveOptedIn();
+  const downloadLiveEnabled = downloadLiveOptedIn();
 
   return (
     <div>
@@ -50,6 +57,12 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
         <div className="card" style={{ borderColor: "#3a7" }}>
           Live arXiv intake finished. The newest <span className="code">arxiv</span> run is
           listed below.
+        </div>
+      ) : null}
+      {download === "done" ? (
+        <div className="card" style={{ borderColor: "#3a7" }}>
+          Download pass finished. The most recent rows above now reflect
+          the new <span className="code">downloadStatus</span>.
         </div>
       ) : null}
 
@@ -138,6 +151,31 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
             </button>
           </form>
         </div>
+      </section>
+
+      <section className="card">
+        <h2>Download open PDFs</h2>
+        <p className="muted">
+          Iterates over all <span className="code">accepted</span> papers with a
+          known <span className="code">pdfUrl</span> and downloads them into{" "}
+          <span className="code">data/pdfs/</span>. Live network is opt-in
+          via <span className="code">PAPER_LAB_DOWNLOAD_LIVE_OPT_IN</span>.
+        </p>
+        <form action={runDownloadAllAction}>
+          <button
+            type="submit"
+            disabled={!downloadLiveEnabled}
+            title={
+              downloadLiveEnabled
+                ? "Attempt to download open PDFs for all accepted papers"
+                : "Set PAPER_LAB_DOWNLOAD_LIVE_OPT_IN=true in .env to enable"
+            }
+          >
+            {downloadLiveEnabled
+              ? "Download PDFs for accepted papers"
+              : "Download disabled (opt-in)"}
+          </button>
+        </form>
       </section>
 
       <section className="card">

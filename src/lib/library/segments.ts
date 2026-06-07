@@ -84,6 +84,82 @@ export function importSegmentsFixture(fixturePath: string): {
   return { paperIds: fixture.papers.map((p) => p.paperId), segmentCounts };
 }
 
+export interface UpsertParsedSegmentsResult {
+  insertedCount: number;
+  replacedCount: number;
+  missingPaperIds: string[];
+}
+
+export function upsertParsedSegments(
+  paperId: string,
+  segments: PaperSegment[],
+): UpsertParsedSegmentsResult {
+  // Real (parsed-from-PDF) segments share the (paperId, segmentId) PK
+  // with the fixture segments. We do not overwrite a row whose
+  // chinese field is non-empty (those are the fixture's ground
+  // truth) so the bilingual reader keeps the fixture translation
+  // where it exists.
+  const db = getDb();
+  const findPaper = db.prepare(`SELECT paperId FROM papers WHERE paperId = ?`);
+  const findExisting = db.prepare(
+    `SELECT chinese FROM paper_segments WHERE paperId = ? AND segmentId = ?`,
+  );
+  const insertSegment = db.prepare(`
+    INSERT OR REPLACE INTO paper_segments
+      (paperId, segmentId, ord, page, english, chinese)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  const missing: string[] = [];
+  let inserted = 0;
+  let replaced = 0;
+
+  const tx = db.transaction(() => {
+    if (!findPaper.get(paperId)) {
+      missing.push(paperId);
+      return;
+    }
+    for (const seg of segments) {
+      if (seg.paperId !== paperId) {
+        // Defensive: refuse cross-paper writes.
+        continue;
+      }
+      const existing = findExisting.get(paperId, seg.segmentId) as
+        | { chinese: string }
+        | undefined;
+      if (existing && existing.chinese.trim() !== "") {
+        // Fixture translation is the source of truth; keep it.
+        insertSegment.run(
+          seg.paperId,
+          seg.segmentId,
+          seg.order,
+          seg.page ?? null,
+          seg.english,
+          existing.chinese,
+        );
+        replaced += 1;
+        continue;
+      }
+      insertSegment.run(
+        seg.paperId,
+        seg.segmentId,
+        seg.order,
+        seg.page ?? null,
+        seg.english,
+        seg.chinese,
+      );
+      inserted += 1;
+    }
+  });
+  tx();
+
+  return {
+    insertedCount: inserted,
+    replacedCount: replaced,
+    missingPaperIds: missing,
+  };
+}
+
 export function listPaperSegments(paperId: string): PaperSegment[] {
   const db = getDb();
   const rows = db

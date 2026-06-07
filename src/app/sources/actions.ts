@@ -20,6 +20,11 @@ import { fetchArxivCandidates } from "@/lib/intake/arxiv-client";
 import { runIntake, type NormalizedCandidate } from "@/lib/intake/run-intake";
 import { loadConfig } from "@/lib/config";
 import { isLiveIntakeOptedIn, persistProfileFromForm } from "@/lib/sources/policy";
+import {
+  runDownloadForAcceptedPapers,
+  summarizeDownloadResult,
+  isLiveDownloadOptedIn,
+} from "@/lib/download/run-download";
 
 function envOptedIn(): boolean {
   return isLiveIntakeOptedIn(process.env.PAPER_LAB_LIVE_INTAKE_OPT_IN);
@@ -105,4 +110,22 @@ export async function runLiveArxivIntakeAction(): Promise<void> {
 
 export async function listIntakeRunsForUi(): Promise<ReturnType<typeof listIntakeRuns>> {
   return listIntakeRuns();
+}
+
+export async function runDownloadAllAction(): Promise<void> {
+  try {
+    const cfg = loadConfig();
+    const result = await runDownloadForAcceptedPapers({
+      pdfDir: cfg.pdfDir,
+      allowList: cfg.downloadAllowlist,
+      disableAuthenticated: cfg.disableAuthenticatedDownloads,
+      liveNetwork: isLiveDownloadOptedIn(process.env.PAPER_LAB_DOWNLOAD_LIVE_OPT_IN),
+    });
+    console.info("runDownloadAllAction:", summarizeDownloadResult(result));
+  } catch (err) {
+    console.error("runDownloadAllAction failed:", err);
+  }
+  revalidatePath("/sources");
+  revalidatePath("/library");
+  redirect("/sources?download=done");
 }
