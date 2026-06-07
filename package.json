@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:integration:arxiv": "vitest run tests/integration/arxiv.test.ts",
+    "intake:live": "node --env-file=.env --import tsx scripts/run-intake.ts",
     "seed": "node --env-file=.env --import tsx scripts/import-fixtures.ts"
   },
   "dependencies": {
