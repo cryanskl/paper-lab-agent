@@ -117,12 +117,19 @@ export function runIntake(options: RunIntakeOptions): RunIntakeResult {
   const tx = db.transaction(() => {
     for (const candidate of candidates) {
       try {
-        const relevance = adapter.scoreRelevance({
+        const relevanceRaw = adapter.scoreRelevance({
           title: candidate.title,
           abstract: candidate.abstract,
           keywords: candidate.keywords ?? [],
           profileKeywords,
         });
+        if (relevanceRaw instanceof Promise) {
+          throw new Error(
+            "runIntake is sync-only. The active adapter returns a Promise; " +
+              "use runIntakeAsync instead.",
+          );
+        }
+        const relevance = relevanceRaw;
         const paperId = derivePaperId(candidate.externalId);
         insertPaper.run(
           paperId,
