@@ -1,10 +1,11 @@
 // Sources & Profile page.
 //
-// Four sections:
+// Five sections:
 //   1) Local research profile — view + edit, persisted to data/profile.json.
 //   2) Manual intake run control — fixture import and (opt-in) live arXiv.
 //   3) Open-PDF download control — opt-in bulk download for accepted papers.
-//   4) Recent intake run history with source / query / counts.
+//   4) Local model selection — view provider and (opt-in) health probe.
+//   5) Recent intake run history with source / query / counts.
 
 import { loadProfileFromPath, resolveProfilePath } from "@/lib/profile";
 import { listIntakeRuns } from "@/lib/intake/import-fixture";
@@ -14,12 +15,18 @@ import {
   runFixtureIntakeAction,
   runLiveArxivIntakeAction,
   runDownloadAllAction,
+  runModelHealthAction,
 } from "./actions";
+import {
+  currentModelProviderName,
+  isOllamaLiveOptedIn,
+  describeModelSelection,
+} from "@/lib/sources/policy";
 
 export const dynamic = "force-dynamic";
 
 interface SourcesPageProps {
-  searchParams: Promise<{ live?: string; download?: string }>;
+  searchParams: Promise<{ live?: string; download?: string; model?: string }>;
 }
 
 function liveOptedIn(): boolean {
@@ -31,11 +38,15 @@ function downloadLiveOptedIn(): boolean {
 }
 
 export default async function SourcesPage({ searchParams }: SourcesPageProps) {
-  const { live, download } = await searchParams;
+  const { live, download, model } = await searchParams;
   const profile = loadProfileFromPath(resolveProfilePath(process.env.PAPER_LAB_PROFILE_PATH));
   const runs = listIntakeRuns().slice(0, 10);
   const liveEnabled = liveOptedIn();
   const downloadLiveEnabled = downloadLiveOptedIn();
+  const modelProvider = currentModelProviderName(process.env.PAPER_LAB_MODEL_PROVIDER);
+  const ollamaLiveEnabled = isOllamaLiveOptedIn(process.env.PAPER_LAB_LIVE_MODEL_OPT_IN);
+  const modelSummary = describeModelSelection(modelProvider, ollamaLiveEnabled);
+  const showModelHealthButton = modelProvider === "ollama" && ollamaLiveEnabled;
 
   return (
     <div>
@@ -63,6 +74,21 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
         <div className="card" style={{ borderColor: "#3a7" }}>
           Download pass finished. The most recent rows above now reflect
           the new <span className="code">downloadStatus</span>.
+        </div>
+      ) : null}
+      {model === "done" ? (
+        <div className="card" style={{ borderColor: "#3a7" }}>
+          Local model health probe finished. Check the server logs for
+          the result.
+        </div>
+      ) : null}
+      {model === "ok" ? (
+        <div className="card">
+          The active provider is <span className="code">{modelProvider}</span> —
+          no network probe is needed. Configure{" "}
+          <span className="code">PAPER_LAB_MODEL_PROVIDER=ollama</span> and{" "}
+          <span className="code">PAPER_LAB_LIVE_MODEL_OPT_IN=true</span> to probe
+          a local Ollama instance.
         </div>
       ) : null}
 
@@ -176,6 +202,24 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
               : "Download disabled (opt-in)"}
           </button>
         </form>
+      </section>
+
+      <section className="card">
+        <h2>Local model</h2>
+        <p className="muted">
+          Active provider: <span className="code">{modelProvider}</span> — {modelSummary}.
+        </p>
+        {showModelHealthButton ? (
+          <form action={runModelHealthAction}>
+            <button type="submit" className="primary">Check local model health</button>
+          </form>
+        ) : (
+          <p className="muted">
+            The health probe is only available when the provider is{" "}
+            <span className="code">ollama</span> AND{" "}
+            <span className="code">PAPER_LAB_LIVE_MODEL_OPT_IN=true</span> is set.
+          </p>
+        )}
       </section>
 
       <section className="card">
