@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import { getDb } from "../db";
 import { getModelAdapter } from "../models";
+import { loadProfileFromPath, resolveProfilePath } from "../profile";
 import type { IntakeRun, Paper } from "@/types/domain";
 
 interface IntakeFixtureCandidate {
@@ -25,15 +26,6 @@ interface IntakeFixture {
   query: string;
   candidates: IntakeFixtureCandidate[];
 }
-
-const PROFILE_KEYWORDS = [
-  "physics-informed",
-  "surrogate model",
-  "engineering simulation",
-  "neural surrogate",
-  "boundary condition",
-  "conservation law",
-];
 
 function rowToPaper(row: Record<string, unknown>): Paper {
   return {
@@ -70,6 +62,11 @@ export function importIntakeFixture(fixturePath: string): ImportFixtureResult {
   const fixture = loadIntakeFixture(fixturePath);
   const adapter = getModelAdapter();
   const db = getDb();
+  // Profile keywords drive the fake adapter's relevance score. Phase 2
+  // reads them from the same profile that live intake uses so fixture
+  // and live runs stay consistent.
+  const profilePath = resolveProfilePath(process.env.PAPER_LAB_PROFILE_PATH);
+  const profileKeywords = loadProfileFromPath(profilePath).keywords;
 
   const startedAt = new Date().toISOString();
   let accepted = 0;
@@ -99,7 +96,7 @@ export function importIntakeFixture(fixturePath: string): ImportFixtureResult {
           title: candidate.title,
           abstract: candidate.abstract,
           keywords: candidate.keywords ?? [],
-          profileKeywords: PROFILE_KEYWORDS,
+          profileKeywords,
         });
         if (relevance.decision === "accepted") accepted += 1;
         else rejected += 1;

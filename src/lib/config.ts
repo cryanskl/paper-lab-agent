@@ -34,6 +34,7 @@ export interface AppConfig {
   maxCandidatesPerRun: number;
   downloadAllowlist: string[];
   disableAuthenticatedDownloads: boolean;
+  profilePath: string;
   fixtures: {
     intake: string;
     segments: string;
@@ -70,6 +71,9 @@ export function loadConfig(): AppConfig {
     disableAuthenticatedDownloads: envBool(
       "PAPER_LAB_DISABLE_AUTHENTICATED_DOWNLOADS",
       true,
+    ),
+    profilePath: resolveRelativeToProject(
+      envString("PAPER_LAB_PROFILE_PATH", "data/profile.json"),
     ),
     fixtures: {
       intake: resolveRelativeToProject(
