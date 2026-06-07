@@ -1,0 +1,40 @@
+.DS_Store
+
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Local runtime data
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+!.env.example
+
+# Logs and caches
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.turbo/
+.cache/
+coverage/
+test-results/
+playwright-report/
+
+# Python simulation outputs and caches
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
