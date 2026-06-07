@@ -1,0 +1,38 @@
+{
+  "name": "paper-lab-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first research assistant for paper discovery, bilingual reading, RAG Q&A, and simulation-oriented experiment support.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "seed": "node --env-file=.env --import tsx scripts/import-fixtures.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "11.5.0",
+    "next": "15.0.3",
+    "react": "19.0.0-rc-66855b96-20241106",
+    "react-dom": "19.0.0-rc-66855b96-20241106"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.12",
+    "@types/node": "22.9.0",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "typescript": "5.6.3",
+    "tsx": "4.19.2",
+    "vitest": "2.1.5"
+  },
+  "packageManager": "pnpm@10.30.2",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild",
+      "sharp"
+    ]
+  }
+}

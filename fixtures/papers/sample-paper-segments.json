@@ -1,25 +1,25 @@
 {
   "papers": [
     {
-      "paperId": "paper-surrogate-sim-001",
+      "paperId": "paper-2606-00001",
       "title": "Physics-Informed Surrogate Models for Engineering Simulation",
       "segments": [
         {
-          "segmentId": "paper-surrogate-sim-001:s001",
+          "segmentId": "paper-2606-00001:s001",
           "order": 1,
           "page": 1,
           "english": "The method approximates a high-fidelity engineering simulator with a neural surrogate constrained by conservation laws.",
           "chinese": "该方法使用受守恒定律约束的神经代理模型来近似高保真工程仿真器。"
         },
         {
-          "segmentId": "paper-surrogate-sim-001:s002",
+          "segmentId": "paper-2606-00001:s002",
           "order": 2,
           "page": 2,
           "english": "Boundary conditions are imposed at the inlet and outlet, and the loss includes residual terms for the governing equations.",
           "chinese": "边界条件施加在入口和出口，损失函数包含控制方程的残差项。"
         },
         {
-          "segmentId": "paper-surrogate-sim-001:s003",
+          "segmentId": "paper-2606-00001:s003",
           "order": 3,
           "page": 3,
           "english": "The toy experiment evaluates prediction error over a two-dimensional flow field under different parameter settings.",
