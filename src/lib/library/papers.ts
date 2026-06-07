@@ -60,3 +60,15 @@ export function getTitleByPaperId(): Record<string, string> {
   for (const r of rows) out[r.paperId] = r.title;
   return out;
 }
+
+export function getDownloadedPdfPath(paperId: string): string | null {
+  const db = getDb();
+  const row = db
+    .prepare(`SELECT pdfPath, downloadStatus FROM papers WHERE paperId = ?`)
+    .get(paperId) as
+    | { pdfPath: string | null; downloadStatus: Paper["downloadStatus"] }
+    | undefined;
+  if (!row) return null;
+  if (row.downloadStatus !== "succeeded") return null;
+  return row.pdfPath ?? null;
+}
