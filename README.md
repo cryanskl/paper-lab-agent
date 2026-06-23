@@ -18,6 +18,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```bash
 curl http://127.0.0.1:8000/health
 curl http://127.0.0.1:8000/api/v1/health
+curl 'http://127.0.0.1:8000/api/v1/journals?active=true'
 ```
 
 ## Streamlit
@@ -26,3 +27,16 @@ curl http://127.0.0.1:8000/api/v1/health
 streamlit run streamlit_app.py
 ```
 
+默认前端连接 `http://127.0.0.1:8000/api/v1`。如需修改：
+
+```bash
+API_BASE_URL=http://127.0.0.1:8000/api/v1 streamlit run streamlit_app.py
+```
+
+## Verification
+
+```bash
+pytest
+```
+
+默认测试使用临时 SQLite 数据库和本地 fixture，不依赖外部网络、GROBID 或真实模型。

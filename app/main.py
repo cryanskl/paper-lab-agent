@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.config import get_settings
@@ -6,14 +8,16 @@ from app.errors import install_error_handlers
 from app.routers import categories, crawl, documents, journals, papers, rag, reactions
 
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()
+    yield
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title="paper-lab-agent", version="0.1.0")
+    app = FastAPI(title="paper-lab-agent", version="0.1.0", lifespan=lifespan)
     install_error_handlers(app)
-
-    @app.on_event("startup")
-    def startup() -> None:
-        init_db()
 
     @app.get("/health")
     def health() -> dict:
