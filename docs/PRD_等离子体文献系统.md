@@ -211,3 +211,131 @@ V1 必须保持 local-first：默认在本地部署、本地数据库、本地�
 7. `GET /papers` 可按关键词、期刊、日期和 OA-only 检索。
 8. Streamlit 前端可展示检索结果并跳转 OA 链接。
 
+## 6. 功能需求 · 阶段 2 导入 / 解析 / 翻译
+
+阶段 2 对应开发路线中的 F7-F9 与 T2.1-T2.5。该阶段的目标是把用户合法获取的 PDF 变成本地可理解资产：可去重、可关联论文元数据、可解析章节、可生成公式不乱的中英对照翻译。
+
+### 6.1 PDF 导入
+
+| 编号 | 需求 | 优先级 | 数据/API 对齐 | 验收标准 |
+| --- | --- | --- | --- | --- |
+| P2-D1 | 支持上传 PDF，multipart 字段为 `file`，可选 `paper_id` | P1 | `POST /documents`；`documents` | 上传后写入 documents |
+| P2-D2 | 使用 `file_hash` 去重；重复上传返回已有资源，不重复存储 | P1 | `documents.file_hash UNIQUE` | 相同 PDF 上传两次只保留一条记录 |
+| P2-D3 | 支持导入未入索引的 PDF，`paper_id` 可为空 | P1 | `documents.paper_id` 可空 | 无 paper_id 不阻塞上传 |
+| P2-D4 | 保存原始文件名、文件路径、页数和创建时间 | P1 | `documents.original_name/file_path/num_pages` | 详情接口可查询这些字段 |
+| P2-D5 | 文档列表和详情显示解析状态 | P1 | `GET /documents`、`GET /documents/{id}` | 用户能看到 uploaded/parsing/parsed/failed |
+
+### 6.2 GROBID 解析
+
+| 编号 | 需求 | 优先级 | 数据/API 对齐 | 验收标准 |
+| --- | --- | --- | --- | --- |
+| P2-G1 | 系统能连接本地 GROBID 服务并做健康检查 | P1 | settings / GROBID client | 本地 POST PDF 可拿到 TEI |
+| P2-G2 | 用户触发解析后，文档状态从 uploaded 进入 parsing，完成后为 parsed，失败为 failed | P1 | `POST /documents/{id}/parse`；`documents.parse_status` | 状态流转可查 |
+| P2-G3 | 解析出的章节写入 `sections`，包含 parent_id、seq、title、content、section_type | P1 | `sections` | 章节结构可按 document_id 查询 |
+| P2-G4 | TEI/XML 原文落盘并记录 `tei_path` | P1 | `documents.tei_path` | 失败重处理时可复用 TEI |
+| P2-G5 | 扫描件、复杂排版或 GROBID 失败时记录失败原因，不伪造结构化章节 | P1 | parse error / status | 失败状态明确，用户可人工处理 |
+
+### 6.3 中英对照翻译
+
+| 编号 | 需求 | 优先级 | 数据/API 对齐 | 验收标准 |
+| --- | --- | --- | --- | --- |
+| P2-T1 | 支持对已解析文档触发翻译，body 至少包含 `target_lang` | P1 | `POST /documents/{id}/translate`；`translations` | 返回 pending 状态并创建翻译记录 |
+| P2-T2 | 翻译前对行内公式 `$...$`、行间公式和公式占位做掩码保护 | P1 | translation service | 含公式段落译后公式原样保留 |
+| P2-T3 | 跳过或特殊处理表格、参考文献等不适合直接机器翻译的区域 | P1 | `sections.section_type` | 表格/参考文献不被错误改写 |
+| P2-T4 | 翻译完成后产出双语对照文件路径 | P1 | `translations.output_path` | 用户可打开或下载双语文件 |
+| P2-T5 | 翻译失败时状态为 failed，并保留错误原因 | P1 | `translations.status` | 前端不显示为完成 |
+
+### 6.4 阶段 2 前端与验收
+
+| 编号 | 需求 | 优先级 | 验收标准 |
+| --- | --- | --- | --- |
+| P2-U1 | 前端支持上传 PDF，并展示去重结果 | P1 | 重复文件返回已有记录提示 |
+| P2-U2 | 前端支持查看解析章节树或章节列表 | P1 | parsed 后能看到章节 title/content 片段 |
+| P2-U3 | 前端支持查看中英对照翻译状态与产物 | P1 | done 后能访问双语输出 |
+
+阶段 2 里程碑验收：准备一篇合法本地 PDF，上传后写入 `documents`，触发 GROBID 解析后写入 `sections`，触发翻译后生成公式不乱的双语对照结果。
+
+## 7. 功能需求 · 阶段 3 分类与 RAG
+
+阶段 3 对应 F6、F10 与 T3.1-T3.4。该阶段将文献理解结果转化为可问答的本地知识库，并补齐主题分类筛选。
+
+### 7.1 LLM 分类与人工覆盖
+
+| 编号 | 需求 | 优先级 | 数据/API 对齐 | 验收标准 |
+| --- | --- | --- | --- | --- |
+| P3-C1 | 支持对单篇论文触发 LLM 分类 | P1 | `POST /papers/{id}/classify`；`paper_categories` | classify 后写入分类记录 |
+| P3-C2 | 分类输出必须落在 `categories` taxonomy 内，不得生成未登记分类作为默认结果 | P1 | `categories.slug` | 不存在的 slug 不入库 |
+| P3-C3 | 记录分类置信度和来源方法 `auto/manual` | P1 | `paper_categories.confidence/method` | 可区分模型分类与人工覆盖 |
+| P3-C4 | 支持人工覆盖分类，人工覆盖优先用于检索展示 | P1 | `PUT /papers/{id}/categories` | 覆盖后 method=manual |
+
+### 7.2 分块与向量索引
+
+| 编号 | 需求 | 优先级 | 数据/API 对齐 | 验收标准 |
+| --- | --- | --- | --- | --- |
+| P3-I1 | 分块以 `sections` 章节边界为基础，不按固定字数硬切全文 | P1 | `sections`、`chunks` | chunk 保留 section_id |
+| P3-I2 | `chunks` 记录 document_id、section_id、seq、text、token_count、vector_id、embedded | P1 | `chunks` | index 后 chunks 有数据 |
+| P3-I3 | 向量存储使用 Chroma 或 FAISS，SQLite 仅保存文本和向量映射 | P1 | external vector store + `chunks.vector_id` | 可根据 vector_id 回查 chunk |
+| P3-I4 | 索引操作异步执行，完成后 `embedded=1` | P1 | `POST /documents/{id}/index` | index 后可用于 RAG |
+
+### 7.3 RAG 问答
+
+| 编号 | 需求 | 优先级 | 数据/API 对齐 | 验收标准 |
+| --- | --- | --- | --- | --- |
+| P3-R1 | 支持按 document_ids 和 top_k 提问 | P1 | `POST /rag/query` | 指定文档范围内检索 |
+| P3-R2 | 回答必须返回 `answer` 和 `sources` | P1 | RAG response | sources 不为空时可定位原文 |
+| P3-R3 | source 至少包含 document_id、section_title、chunk_id、score | P1 | `chunks`、`sections` | 用户可核对引用来源 |
+| P3-R4 | 若检索证据不足，回答必须说明证据不足，不得猜测 | P1 | RAG answering rule | fixture 测试覆盖证据不足场景 |
+| P3-R5 | 测试中使用 fake model adapter，不让测试依赖未声明模型行为 | P1 | harness rule | 默认测试确定性、无网络 |
+
+### 7.4 阶段 3 前端与验收
+
+| 编号 | 需求 | 优先级 | 验收标准 |
+| --- | --- | --- | --- |
+| P3-U1 | 检索结果支持按分类筛选 | P1 | 人工或自动分类后能筛选 |
+| P3-U2 | 文档详情页或问答页提供提问框 | P1 | 输入问题后返回答案 |
+| P3-U3 | 回答区域展示引用来源，而不是只展示自然语言答案 | P1 | 用户能跳回章节或 chunk |
+
+阶段 3 里程碑验收：对一篇已解析文档建立 chunks 和向量索引，发起 RAG 查询，返回答案与可核对的 section/chunk 引用；证据不足时明确说明不足。
+
+## 8. 功能需求 · 阶段 4 化学库抽取
+
+阶段 4 对应 F11-F12 与 T4.1-T4.4，是系统面向仿真工程师的核心交付阶段。该阶段的输出不是“模型答案”，而是可复核、可导出的反应集资产。
+
+### 8.1 结构化抽取
+
+| 编号 | 需求 | 优先级 | 数据/API 对齐 | 验收标准 |
+| --- | --- | --- | --- | --- |
+| P4-E1 | 支持从文档表格、附录或章节中触发化学库抽取 | P2 | `POST /documents/{id}/extract-chemistry` | 触发后创建 reaction_set |
+| P4-E2 | 反应集记录 document_id、name、gas_mixture、lxcat_db、source_note、status | P2 | `reaction_sets` | reaction_set 初始 status=pending |
+| P4-E3 | 单条反应记录 reaction、reaction_type、reactants、products、rate_type、rate_value、threshold_ev、reference、confidence | P2 | `reactions` | reactions 关联 reaction_set |
+| P4-E4 | 抽取结果必须保留原文出处，不进行无依据单位换算 | P2 | `source_note/reference/rate_value` | 用户能回到原文核对 |
+| P4-E5 | 抽取失败或证据不足时不生成看似完整的反应集 | P2 | job status/error | 失败原因明确 |
+
+### 8.2 LXCat 对接
+
+| 编号 | 需求 | 优先级 | 数据/API 对齐 | 验收标准 |
+| --- | --- | --- | --- | --- |
+| P4-L1 | 支持识别论文中引用的 LXCat 数据库名称 | P2 | `reaction_sets.lxcat_db` | 可填充 Phelps/Biagi/IST-Lisbon 等名称 |
+| P4-L2 | 对可定位截面库的反应补充 `cross_section_url` | P2 | `reactions.cross_section_url` | 反应详情可跳转截面来源 |
+| P4-L3 | 无法确认 LXCat 来源时保持空值或 unknown，不编造链接 | P2 | `cross_section_url` 可空 | 不确定来源不会被伪造 |
+
+### 8.3 人工复核闸门
+
+| 编号 | 需求 | 优先级 | 数据/API 对齐 | 验收标准 |
+| --- | --- | --- | --- | --- |
+| P4-V1 | 支持工程师逐条复核反应，并可修正 rate_value、verified_by 等字段 | P2 | `PUT /reactions/{id}/verify` | 单条反应 verified 可更新 |
+| P4-V2 | 反应集内所有 reactions 的 `verified=1` 前，导出接口必须返回 409 | P2 | `POST /reaction-sets/{id}/export` | 未全复核时不可导出 |
+| P4-V3 | 全部复核通过后，reaction_set 可标记 verified，记录 verified_by 和 verified_at | P2 | `reaction_sets.status/verified_by/verified_at` | 反应集状态可追溯 |
+| P4-V4 | 导出格式至少支持结构化 JSON；LXCat/BOLSIG+ 文本作为优先格式之一 | P2 | export service | 全复核后可下载导出产物 |
+
+### 8.4 阶段 4 前端与验收
+
+| 编号 | 需求 | 优先级 | 验收标准 |
+| --- | --- | --- | --- |
+| P4-U1 | 前端展示文档下的 reaction_sets 列表 | P2 | 用户能进入反应集详情 |
+| P4-U2 | 反应集详情展示所有 reactions、置信度、出处和复核状态 | P2 | 工程师可逐条核对 |
+| P4-U3 | 支持逐条修正和复核 | P2 | 修改后状态持久化 |
+| P4-U4 | 导出按钮受复核闸门控制 | P2 | 未全复核不可导出，全复核后可导出 |
+
+阶段 4 里程碑验收：准备一篇含明确反应表的合法 PDF，抽取得到 pending 反应集和未复核 reactions；未全部复核时导出返回 409；全部复核后可导出 JSON 或 LXCat/BOLSIG+ 兼容文本。
+
