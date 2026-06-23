@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from app.config import get_settings
 from app.db import init_db
 from app.errors import install_error_handlers
-from app.routers import categories, crawl, journals, papers
+from app.routers import categories, crawl, documents, journals, papers, rag, reactions
 
 
 def create_app() -> FastAPI:
@@ -27,6 +27,9 @@ def create_app() -> FastAPI:
     app.include_router(categories.router, prefix=settings.api_prefix)
     app.include_router(crawl.router, prefix=settings.api_prefix)
     app.include_router(papers.router, prefix=settings.api_prefix)
+    app.include_router(documents.router, prefix=settings.api_prefix)
+    app.include_router(rag.router, prefix=settings.api_prefix)
+    app.include_router(reactions.router, prefix=settings.api_prefix)
 
     return app
 
