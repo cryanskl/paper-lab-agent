@@ -26,6 +26,8 @@ def test_health_seed_and_search(tmp_path):
     assert client.get("/health").json()["status"] == "ok"
     assert client.get("/api/v1/journals?active=true").json()["total"] == 6
     assert len(client.get("/api/v1/categories").json()["items"]) == 7
+    system = client.get("/api/v1/system/status").json()
+    assert system["counts"]["journals"] == 6
 
     from app.db import get_conn
 
@@ -65,6 +67,51 @@ def test_health_seed_and_search(tmp_path):
         json={"category_ids": [2, 6], "method": "manual"},
     ).json()
     assert set(overridden["categories"]) == {"chemistry", "methods"}
+
+
+def test_fixture_loader_supports_walking_skeleton(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.fixture_loader import load_fixture_papers
+
+    result = load_fixture_papers()
+    assert result["inserted"] == 2
+    papers = client.get("/api/v1/papers?q=plasma").json()
+    assert papers["total"] >= 2
+    oa_only = client.get("/api/v1/papers?q=plasma&oa_only=true").json()
+    assert oa_only["total"] == 1
+    repeat = load_fixture_papers()
+    assert repeat["updated"] == 2
+
+
+def test_fixture_import_script_runs_from_repo_root(tmp_path):
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env["DATABASE_PATH"] = str(tmp_path / "script.db")
+    env["PAPER_LAB_DATA_DIR"] = str(tmp_path)
+    result = subprocess.run(
+        [sys.executable, "scripts/import_fixtures.py"],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    assert "inserted" in result.stdout
+
+
+def test_scheduler_creates_jobs_without_running_network(tmp_path):
+    make_client(tmp_path)
+
+    from app.scheduler import create_scheduler, trigger_scheduled_crawl
+
+    scheduler = create_scheduler()
+    job_ids = sorted(job.id for job in scheduler.get_jobs())
+    assert job_ids == ["crawl-daily", "crawl-monthly", "crawl-weekly"]
+    jobs = trigger_scheduled_crawl("weekly")
+    assert len(jobs) == 6
 
 
 def test_document_rag_chemistry_export_gate(tmp_path):
@@ -110,4 +157,3 @@ def test_document_rag_chemistry_export_gate(tmp_path):
     assert verified["status"] == "verified"
     exported = client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=json").json()
     assert Path(exported["output_path"]).exists()
-

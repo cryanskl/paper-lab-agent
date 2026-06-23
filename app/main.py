@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from app.config import get_settings
 from app.db import init_db
 from app.errors import install_error_handlers
-from app.routers import categories, crawl, documents, journals, papers, rag, reactions
+from app.routers import categories, crawl, documents, journals, papers, rag, reactions, system
 
 
 @asynccontextmanager
@@ -34,6 +34,7 @@ def create_app() -> FastAPI:
     app.include_router(documents.router, prefix=settings.api_prefix)
     app.include_router(rag.router, prefix=settings.api_prefix)
     app.include_router(reactions.router, prefix=settings.api_prefix)
+    app.include_router(system.router, prefix=settings.api_prefix)
 
     return app
 

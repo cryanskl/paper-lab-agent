@@ -39,7 +39,16 @@ except Exception as exc:
 
 search_tab, documents_tab, rag_tab, chemistry_tab = st.tabs(["检索", "文档", "问答", "化学库"])
 
+with st.sidebar:
+    st.subheader("系统")
+    status = api_get("/system/status")
+    st.metric("期刊", status["counts"]["journals"])
+    st.metric("论文", status["counts"]["papers"])
+    st.metric("文档", status["counts"]["documents"])
+    st.caption(f"DB: {status['database_path']}")
+
 with search_tab:
+    st.caption("可先运行 `python scripts/import_fixtures.py` 导入离线样例。")
     journals = api_get("/journals", active=True, page_size=100)["items"]
     categories = api_get("/categories")["items"]
     col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
@@ -72,6 +81,23 @@ with search_tab:
                 links.append(f"[Landing]({paper['landing_url']})")
             if links:
                 st.markdown(" · ".join(links))
+
+    st.divider()
+    st.subheader("抓取任务")
+    crawl_col1, crawl_col2, crawl_col3 = st.columns([1, 1, 1])
+    crawl_journal_id = crawl_col1.number_input("journal_id", min_value=0, value=0)
+    date_from = crawl_col2.text_input("date_from", value="")
+    date_to = crawl_col3.text_input("date_to", value="")
+    if st.button("创建抓取任务"):
+        body = {"period": "manual"}
+        if crawl_journal_id:
+            body["journal_ids"] = [int(crawl_journal_id)]
+        if date_from:
+            body["date_from"] = date_from
+        if date_to:
+            body["date_to"] = date_to
+        st.json(api_post("/crawl/run", json=body)[1])
+    st.dataframe(api_get("/crawl/jobs", page_size=10)["items"], use_container_width=True)
 
 with documents_tab:
     uploaded = st.file_uploader("PDF", type=["pdf", "txt"])
@@ -119,4 +145,3 @@ with chemistry_tab:
                 rate_value = st.text_input("rate_value", value=reaction.get("rate_value") or "", key=f"rate-{reaction['id']}")
                 if st.button("复核通过", key=f"verify-{reaction['id']}"):
                     st.json(api_put(f"/reactions/{reaction['id']}/verify", json={"verified": True, "rate_value": rate_value, "verified_by": "streamlit"}))
-

@@ -21,6 +21,13 @@ curl http://127.0.0.1:8000/api/v1/health
 curl 'http://127.0.0.1:8000/api/v1/journals?active=true'
 ```
 
+导入离线样例论文：
+
+```bash
+python scripts/import_fixtures.py
+curl 'http://127.0.0.1:8000/api/v1/papers?q=plasma'
+```
+
 ## Streamlit
 
 ```bash
@@ -40,3 +47,7 @@ pytest
 ```
 
 默认测试使用临时 SQLite 数据库和本地 fixture，不依赖外部网络、GROBID 或真实模型。
+
+## Productization Roadmap
+
+成品化阶段见 [docs/productization-roadmap.md](docs/productization-roadmap.md)。
