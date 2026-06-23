@@ -97,3 +97,117 @@ V1 必须保持 local-first：默认在本地部署、本地数据库、本地�
 
 建议技术栈与接口文档保持一致：FastAPI、SQLite、APScheduler、GROBID、Chroma 或 FAISS，前端起步使用 Streamlit。所有默认测试必须可离线、确定性运行；真实网络和真实模型检查必须作为单独集成测试。
 
+## 5. 功能需求 · 阶段 1 确定性检索层
+
+阶段 1 对应开发路线中的 F1-F5 与 T1.1-T1.8。该阶段完成后，系统应能从空库初始化开始，维护期刊白名单，抓取白名单期刊元数据，补全合法 OA 链接，并通过最小前端检索文献。阶段 1 是 V1 的第一个可独立演示版本。
+
+### 5.1 期刊白名单管理
+
+**目标**：维护确定性检索层的范围边界。只有白名单中的 active 期刊参与自动抓取。
+
+| 编号 | 需求 | 优先级 | 数据/API 对齐 | 验收标准 |
+| --- | --- | --- | --- | --- |
+| P1-J1 | 系统内置 6 本低温等离子体相关种子期刊 | P0 | `journals`；`GET /journals` | 初始化数据库后能列出 6 本期刊 |
+| P1-J2 | 支持新增期刊，字段包括名称、出版社、平台、URL、print/electronic ISSN、关键词、起始年份 | P0 | `POST /journals` | 新增后可在列表与详情中查询 |
+| P1-J3 | 支持更新关键词、年份范围和启停状态 | P0 | `PUT /journals/{id}` | 更新后后续抓取使用新配置 |
+| P1-J4 | 删除采用软删，置 `active=0`，不物理删除历史数据 | P0 | `DELETE /journals/{id}` | 软删后默认抓取不再包含该期刊 |
+| P1-J5 | 支持按 `active=1` 过滤列表 | P0 | `GET /journals?active=1` | 只返回启用期刊 |
+
+**约束**：
+
+- ISSN 是抓取范围控制的核心字段，抓取客户端必须优先使用 ISSN 精确定位期刊。
+- `keywords` 以 JSON 数组存储，关键词逻辑用于入库前过滤，不用于动态生成未授权站点抓取。
+- `year_from` 默认 1990，`year_to=NULL` 表示持续至今。
+
+### 5.2 学术元数据抓取
+
+**目标**：按期刊 ISSN、日期窗口和关键词从学术元数据 API 拉取文献，并写入本地 `papers`。
+
+| 编号 | 需求 | 优先级 | 数据/API 对齐 | 验收标准 |
+| --- | --- | --- | --- | --- |
+| P1-C1 | 支持 OpenAlex/Crossref 客户端，按 ISSN 和日期范围拉取 works | P0 | `POST /crawl/run` | 给定 ISSN 和日期能获得归一化论文列表 |
+| P1-C2 | 归一化字段至少包括 DOI、标题、摘要、作者、期刊、发表日期、落地页 URL、来源 API、原始元数据 | P0 | `papers` | 入库记录字段完整，原始响应可重处理 |
+| P1-C3 | 抓取前后记录 `crawl_jobs`，包含期刊、周期、日期范围、状态、found/new/error、开始/结束时间 | P0 | `crawl_jobs`；`GET /crawl/jobs` | 每次抓取都有可追溯任务记录 |
+| P1-C4 | 使用 DOI 去重，重复抓取同 DOI 更新已有记录，不新增重复行 | P0 | `papers.doi UNIQUE` | 同 DOI 多次抓取只有一条记录 |
+| P1-C5 | 对无 DOI 文献允许入库，但必须保留来源 URL 和原始元数据，降低误合并风险 | P1 | `papers.doi` 可空 | 无 DOI 文献不阻塞抓取任务 |
+| P1-C6 | 支持关键词过滤；不命中期刊关键词的文献不入库 | P0 | `journals.keywords` | 抽样验证无关键词命中的文献被过滤 |
+| P1-C7 | 客户端需要设置 polite pool / mailto、限流和重试策略 | P0 | settings / external clients | API 限流时任务失败原因清晰可见 |
+
+**增量规则**：
+
+- 手动触发可显式传 `date_from` 和 `date_to`。
+- 未传日期时，以该期刊最近一次成功 `crawl_jobs.date_to` 作为下次 `date_from` 的依据。
+- 首次抓取可按期刊 `year_from` 起算，但实际任务可通过较小日期窗口控制，避免一次性请求过大。
+
+### 5.3 OA 链接补全
+
+**目标**：最大化自动发现合法开放获取全文链接，同时不绕过访问控制。
+
+| 编号 | 需求 | 优先级 | 数据/API 对齐 | 验收标准 |
+| --- | --- | --- | --- | --- |
+| P1-O1 | 对有 DOI 的论文调用 Unpaywall 补全 `oa_status` 和 `oa_pdf_url` | P0 | `papers.oa_status`、`papers.oa_pdf_url` | 给定 DOI 可写入 OA 状态与 PDF 链接 |
+| P1-O2 | 对无 OA 链接或请求失败的论文，状态置为 `unknown` 或保留失败原因，不编造链接 | P0 | `papers.raw_metadata` / job error | 无合法链接时字段为空或 unknown |
+| P1-O3 | 支持用户对单篇论文重新解析 OA 链接 | P1 | `POST /papers/{id}/resolve-oa` | 重新解析后更新 OA 字段 |
+
+**合规约束**：
+
+- 只自动下载或跳转直接可访问的 OA PDF 或 allowlisted 来源。
+- 不绕过付费墙、验证码、登录、访问控制、robots 限制或站点条款。
+- 若需要用户授权会话但当前不可用，只记录失败原因和元数据链接。
+
+### 5.4 定时调度
+
+**目标**：让文献元数据保持可控更新，但不要求实时。
+
+| 编号 | 需求 | 优先级 | 数据/API 对齐 | 验收标准 |
+| --- | --- | --- | --- | --- |
+| P1-S1 | 支持 daily / weekly / monthly 抓取周期配置 | P0 | APScheduler；`crawl_jobs.period` | 配置周期能自动创建 crawl job |
+| P1-S2 | 定时任务与手动抓取调用同一编排逻辑 | P0 | `POST /crawl/run` 内部服务 | 手动和定时记录结构一致 |
+| P1-S3 | 抓取失败不影响已有检索数据；失败原因写入 `crawl_jobs.error` | P0 | `crawl_jobs.status/error` | API 失败后历史数据仍可检索 |
+
+### 5.5 文献检索
+
+**目标**：为工程师提供本地文献库检索能力，结果包含关键元数据、分类和 OA 跳转。
+
+| 编号 | 需求 | 优先级 | 数据/API 对齐 | 验收标准 |
+| --- | --- | --- | --- | --- |
+| P1-P1 | 支持标题与摘要全文检索，使用 SQLite FTS5 | P0 | `papers_fts`；`GET /papers?q=` | 输入关键词返回相关论文 |
+| P1-P2 | 支持分类、期刊、年份范围、OA-only 过滤 | P0 | `GET /papers` query | 多条件组合过滤正确 |
+| P1-P3 | 支持 `date_desc` 默认排序和 `relevance` 排序 | P0 | `GET /papers?sort=` | 排序结果符合参数语义 |
+| P1-P4 | 列表响应使用统一分页结构 | P0 | `{items,total,page,page_size}` | 分页字段完整且数量正确 |
+| P1-P5 | 结果项展示 DOI、标题、期刊、发表日期、OA 状态、OA PDF URL、落地页 URL、分类 | P0 | `papers` + `paper_categories` | 前端列表可以直接展示和跳转 |
+| P1-P6 | 文献详情接口返回单篇论文的完整元数据 | P0 | `GET /papers/{id}` | 详情页可用于核对原始信息 |
+
+### 5.6 分类体系
+
+**目标**：提供领域主题 taxonomy，用于筛选和后续 LLM 分类。
+
+| 编号 | 需求 | 优先级 | 数据/API 对齐 | 验收标准 |
+| --- | --- | --- | --- | --- |
+| P1-T1 | 初始化 7 个种子分类：放电与等离子体源、等离子体化学、鞘层与边界、输运与扩散、等离子体诊断、仿真方法、截面与速率数据 | P0 | `categories` | 初始化后分类可查询 |
+| P1-T2 | 支持分类列表，保留 `parent_id` 扩展层级能力 | P0 | `GET /categories` | 返回 slug/name/description/parent_id |
+| P1-T3 | 支持人工覆盖论文分类，为后续 LLM 分类打基础 | P1 | `PUT /papers/{id}/categories` | 覆盖后 `method=manual` |
+
+### 5.7 最小前端
+
+**目标**：提供一个可演示的检索入口，不做复杂工作台。
+
+| 编号 | 需求 | 优先级 | 验收标准 |
+| --- | --- | --- | --- |
+| P1-U1 | Streamlit 页面支持关键词输入、期刊筛选、日期筛选、OA-only 开关 | P0 | 用户能组合条件检索 |
+| P1-U2 | 检索结果以列表展示标题、期刊、日期、摘要片段、OA 状态和链接 | P0 | 结果可读且可跳转 OA/落地页 |
+| P1-U3 | 空结果、抓取失败、API 错误需要显示明确错误或空态 | P0 | 不出现无解释的空白页 |
+
+### 5.8 阶段 1 里程碑验收
+
+从空库开始：
+
+1. 用 `schema.sql` 初始化 SQLite 数据库。
+2. 确认可查询 6 本种子期刊和 7 个种子分类。
+3. 手动触发一次 `/crawl/run`，至少针对一个 active 期刊和一个短日期窗口。
+4. 抓取任务写入 `crawl_jobs`，状态、found/new/error 可查。
+5. 命中文献写入 `papers`，重复 DOI 不产生重复行。
+6. 对有 DOI 文献补全 OA 状态和合法 OA PDF URL。
+7. `GET /papers` 可按关键词、期刊、日期和 OA-only 检索。
+8. Streamlit 前端可展示检索结果并跳转 OA 链接。
+
