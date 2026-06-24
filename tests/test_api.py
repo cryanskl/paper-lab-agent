@@ -3478,6 +3478,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "python -m scripts.smoke_check",
         "bash scripts/release_check.sh",
         "PAPER_LAB_SCHEDULER_ENABLED=true",
+        "翻译、化学抽取、复核闸门和导出",
         "DEV_READY_TIMEOUT",
         "/_stcore/health",
     ]:

@@ -82,7 +82,7 @@ bash scripts/release_check.sh
 python -m scripts.smoke_check
 ```
 
-该 smoke 会在临时目录初始化空库、导入 fixture 论文、验证 `/papers` 检索，并跑通 PDF fallback 的上传、解析、索引和 RAG 查询，不访问外部服务。
+该 smoke 会在临时目录初始化空库、导入 fixture 论文、验证 `/papers` 检索，并跑通 PDF fallback 的上传、解析、索引、RAG 查询，以及翻译、化学抽取、复核闸门和导出，不访问外部服务。
 
 如需只跑测试：
 
