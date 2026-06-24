@@ -334,7 +334,9 @@ with documents_tab:
         else:
             st.warning(payload)
     docs = api_get("/documents", page_size=50)["items"]
-    if docs:
+    if not docs:
+        st.info("暂无文档，请先上传 PDF。")
+    else:
         selected = st.selectbox("文档", docs, format_func=lambda d: f"#{d['id']} {d.get('original_name') or Path(d['file_path']).name} · {d['parse_status']}")
         document_detail = api_get(f"/documents/{selected['id']}")
         if document_detail.get("parse_error"):

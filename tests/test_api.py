@@ -4703,6 +4703,14 @@ def test_streamlit_document_upload_shows_duplicate_result():
         assert required in documents_section
 
 
+def test_streamlit_documents_tab_shows_empty_state():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    assert "暂无文档，请先上传 PDF。" in documents_section
+
+
 def test_streamlit_sidebar_exposes_runtime_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
