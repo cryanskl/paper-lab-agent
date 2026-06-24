@@ -77,13 +77,15 @@ with search_tab:
     st.caption("可先运行 `python scripts/import_fixtures.py` 导入离线样例。")
     journals = api_get("/journals", active=True, page_size=100)["items"]
     categories = api_get("/categories")["items"]
-    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+    col1, col2, col3, col4, col5, col6 = st.columns([2, 1, 1, 1, 1, 1])
     q = col1.text_input("关键词", value="plasma")
     journal_names = ["全部"] + [j["name"] for j in journals]
     journal_choice = col2.selectbox("期刊", journal_names)
     category_slugs = ["全部"] + [c["slug"] for c in categories]
     category_choice = col3.selectbox("分类", category_slugs)
-    oa_only = col4.checkbox("OA only")
+    year_from = col4.number_input("year_from", min_value=0, max_value=2100, value=0)
+    year_to = col5.number_input("year_to", min_value=0, max_value=2100, value=0)
+    oa_only = col6.checkbox("OA only")
     params = {
         "q": q or None,
         "page_size": 20,
@@ -93,7 +95,15 @@ with search_tab:
         params["journal_id"] = next(j["id"] for j in journals if j["name"] == journal_choice)
     if category_choice != "全部":
         params["category"] = category_choice
-    papers = api_get("/papers", **{k: v for k, v in params.items() if v is not None})
+    if year_from:
+        params["year_from"] = int(year_from)
+    if year_to:
+        params["year_to"] = int(year_to)
+    if year_from and year_to and year_from > year_to:
+        st.warning("year_from must be less than or equal to year_to")
+        papers = {"items": [], "total": 0, "page": 1, "page_size": 20}
+    else:
+        papers = api_get("/papers", **{k: v for k, v in params.items() if v is not None})
     st.metric("结果", papers["total"])
     for paper in papers["items"]:
         with st.container(border=True):

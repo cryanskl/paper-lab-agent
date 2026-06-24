@@ -4414,6 +4414,20 @@ def test_streamlit_search_results_show_dedupe_strategy():
     assert "dedupe_strategy=" in search_section
 
 
+def test_streamlit_search_tab_exposes_year_filters():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    for required in [
+        'number_input("year_from"',
+        'number_input("year_to"',
+        'params["year_from"]',
+        'params["year_to"]',
+    ]:
+        assert required in search_section
+
+
 def test_streamlit_api_put_preserves_json_errors_for_callers():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
