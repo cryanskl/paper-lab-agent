@@ -3289,7 +3289,8 @@ def test_reaction_export_bolsig_text_and_rejects_unknown_format(tmp_path):
     assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
     reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
     detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
-    reaction_id = detail["reactions"][0]["id"]
+    reaction = detail["reactions"][0]
+    reaction_id = reaction["id"]
     client.put(
         f"/api/v1/reactions/{reaction_id}/verify",
         json={
@@ -3313,6 +3314,17 @@ def test_reaction_export_bolsig_text_and_rejects_unknown_format(tmp_path):
     assert "RATE_TYPE: cross_section" in text
     assert "THRESHOLD_EV: 15.76" in text
     assert "CROSS_SECTION_URL: https://nl.lxcat.net/data/set/example" in text
+    assert f"SOURCE_SECTION_TITLE: {reaction['source_section_title']}" in text
+    assert f"SOURCE_SECTION_TYPE: {reaction['source_section_type']}" in text
+    assert f"SOURCE_SECTION_SEQ: {reaction['source_section_seq']}" in text
+
+    exported_txt = client.post(f"/api/v1/reaction-sets/{reaction_set['id']}/export?format=txt").json()
+    assert exported_txt["output_path"] != exported["output_path"]
+    txt = Path(exported_txt["output_path"]).read_text(encoding="utf-8")
+    assert f"source_section_title: {reaction['source_section_title']}" in txt
+    assert f"source_section_type: {reaction['source_section_type']}" in txt
+    assert f"source_section_seq: {reaction['source_section_seq']}" in txt
+    assert "BOLSIG+" in Path(exported["output_path"]).read_text(encoding="utf-8")
 
     invalid = client.post(f"/api/v1/reaction-sets/{reaction_set['id']}/export?format=docx")
     assert invalid.status_code == 400

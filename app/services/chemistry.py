@@ -269,8 +269,8 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
         if remaining:
             raise PermissionError("reaction set has unverified reactions")
         detail = reaction_set_detail(dict_from_row(rs), conn)
-    suffix = "json" if fmt == "json" else "txt"
-    out_path = settings.export_dir / f"reaction-set-{reaction_set_id}.{suffix}"
+    suffix_by_format = {"json": "json", "txt": "txt", "bolsig": "bolsig.txt"}
+    out_path = settings.export_dir / f"reaction-set-{reaction_set_id}.{suffix_by_format[fmt]}"
     if fmt == "json":
         out_path.write_text(json.dumps(detail, ensure_ascii=False, indent=2), encoding="utf-8")
         mime_type = "application/json"
@@ -304,6 +304,12 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
                 lines.append(f"REFERENCE: {reaction['reference']}")
             if reaction.get("source_section_id"):
                 lines.append(f"SOURCE_SECTION_ID: {reaction['source_section_id']}")
+            if reaction.get("source_section_title"):
+                lines.append(f"SOURCE_SECTION_TITLE: {reaction['source_section_title']}")
+            if reaction.get("source_section_type"):
+                lines.append(f"SOURCE_SECTION_TYPE: {reaction['source_section_type']}")
+            if reaction.get("source_section_seq") is not None:
+                lines.append(f"SOURCE_SECTION_SEQ: {reaction['source_section_seq']}")
             if reaction.get("source_excerpt"):
                 lines.append(f"SOURCE_EXCERPT: {reaction['source_excerpt']}")
             lines.append("END")
@@ -315,6 +321,12 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
             lines.append(reaction["reaction"])
             if reaction.get("rate_value"):
                 lines.append(f"rate: {reaction['rate_value']}")
+            if reaction.get("source_section_title"):
+                lines.append(f"source_section_title: {reaction['source_section_title']}")
+            if reaction.get("source_section_type"):
+                lines.append(f"source_section_type: {reaction['source_section_type']}")
+            if reaction.get("source_section_seq") is not None:
+                lines.append(f"source_section_seq: {reaction['source_section_seq']}")
         out_path.write_text("\n".join(lines), encoding="utf-8")
         mime_type = "text/plain"
     return {"reaction_set_id": reaction_set_id, "format": fmt, "output_path": str(out_path), "mime_type": mime_type}
