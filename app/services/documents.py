@@ -157,7 +157,7 @@ def sections_from_tei(tei: str) -> list[dict]:
     reference_index = 1
     for list_bibl in findall(root, ".//tei:text//tei:back//tei:listBibl"):
         for bibl in list(list_bibl):
-            if local_name(bibl) not in {"biblStruct", "bibl"}:
+            if local_name(bibl) not in {"biblStruct", "biblFull", "bibl"}:
                 continue
             append_section(f"Reference {reference_index}", " ".join(bibl.itertext()), "reference")
             reference_index += 1

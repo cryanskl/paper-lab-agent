@@ -3563,6 +3563,36 @@ def test_sections_from_tei_extracts_simple_bibl_references():
     ]
 
 
+def test_sections_from_tei_extracts_biblfull_references():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <back>
+          <listBibl>
+            <biblFull>
+              <titleStmt><title>Argon plasma kinetics</title></titleStmt>
+              <publicationStmt><date>2026</date></publicationStmt>
+            </biblFull>
+          </listBibl>
+        </back>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Reference 1",
+            "content": "Argon plasma kinetics 2026",
+            "section_type": "reference",
+        }
+    ]
+
+
 def test_translation_adapter_preserves_formula_masks():
     from app.services.translation import translate_text_preserving_formulas
 
