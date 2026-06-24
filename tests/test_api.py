@@ -54,6 +54,7 @@ def test_health_seed_and_search(tmp_path):
     assert system["counts"]["reaction_sets"] == 0
     assert system["counts"]["reactions"] == 0
     assert system["runtime"]["scheduler_enabled"] is False
+    assert system["runtime"]["version"] == "0.1.0"
 
     from app.db import get_conn
 
@@ -3795,7 +3796,7 @@ def test_system_status_contract_documents_operational_counts():
     api_doc = (repo / "docs" / "接口设计文档.md").read_text(encoding="utf-8")
     system_section = api_doc[api_doc.index("## 模块 0") : api_doc.index("## 模块 A")]
 
-    for required in ["config_warnings", "categories", "crawl_jobs", "reaction_sets", "reactions"]:
+    for required in ["version", "config_warnings", "categories", "crawl_jobs", "reaction_sets", "reactions"]:
         assert required in system_section
 
 
@@ -3883,6 +3884,45 @@ def test_health_check_fails_when_runtime_status_is_missing(monkeypatch, capsys):
     assert "runtime" in captured.err
 
 
+def test_health_check_requires_runtime_version():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_runtime_version", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "embedding_model": "local-hash",
+            },
+            "counts": health_check_counts(),
+        }
+    )
+
+    assert "runtime missing keys: version" in errors
+
+
 def test_health_check_fails_when_database_path_is_invalid(monkeypatch, capsys):
     import importlib.util
     import sys
@@ -3900,7 +3940,7 @@ def test_health_check_fails_when_database_path_is_invalid(monkeypatch, capsys):
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
             "storage": {
                 "data_dir": "/tmp/data",
                 "pdf_dir": "/tmp/data/pdfs",
@@ -3976,7 +4016,7 @@ def test_health_check_fails_when_storage_values_are_invalid(monkeypatch, capsys)
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
             "storage": {
                 "data_dir": "/tmp/data",
                 "pdf_dir": "",
@@ -4023,7 +4063,7 @@ def test_health_check_fails_when_external_capability_values_are_invalid(monkeypa
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -4073,7 +4113,7 @@ def test_health_check_fails_when_grobid_values_are_invalid(monkeypatch, capsys):
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -4123,7 +4163,7 @@ def test_health_check_fails_when_count_values_are_invalid(monkeypatch, capsys):
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -4173,7 +4213,7 @@ def test_health_check_requires_operational_count_keys():
     errors = health_check.validate_system_status(
         {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
             "storage": {
                 "data_dir": "/tmp/data",
                 "pdf_dir": "/tmp/data/pdfs",
@@ -4213,7 +4253,7 @@ def test_health_check_requires_config_warnings_key():
     errors = health_check.validate_system_status(
         {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
             "storage": {
                 "data_dir": "/tmp/data",
                 "pdf_dir": "/tmp/data/pdfs",
@@ -4251,7 +4291,7 @@ def test_health_check_rejects_invalid_config_warning_shape():
     errors = health_check.validate_system_status(
         {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
             "config_warnings": [
                 {"code": "missing_llm_api_key", "capability": "", "message": "LLM_API_KEY is not configured."},
                 "not an object",
@@ -4393,7 +4433,7 @@ def test_health_check_fails_when_health_service_is_unexpected(monkeypatch, capsy
             return {"status": "ok", "service": "other-service"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -4444,7 +4484,7 @@ def test_health_check_accepts_valid_system_status(monkeypatch):
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -4494,7 +4534,7 @@ def test_health_check_outputs_config_warnings(monkeypatch, capsys):
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
             "config_warnings": [
                 {
                     "code": "missing_llm_api_key",
@@ -4559,7 +4599,7 @@ def test_health_check_compact_outputs_single_line_json(monkeypatch, capsys):
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -4611,7 +4651,7 @@ def test_health_check_require_grobid_fails_when_external_grobid_is_unavailable(m
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -4671,7 +4711,7 @@ def test_health_check_uses_api_base_url_from_env_file(monkeypatch, tmp_path):
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -5268,7 +5308,7 @@ def test_streamlit_sidebar_exposes_runtime_status():
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
 
-    for required in ["runtime", "scheduler_enabled", "api_prefix"]:
+    for required in ["runtime", "scheduler_enabled", "api_prefix", "version"]:
         assert required in sidebar_section
 
 

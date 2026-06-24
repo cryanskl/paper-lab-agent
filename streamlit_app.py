@@ -82,6 +82,7 @@ with st.sidebar:
     st.metric("文档", status["counts"]["documents"])
     runtime = status.get("runtime", {})
     st.caption(f"API: {runtime.get('api_prefix', '/api/v1')}")
+    st.caption(f"version: {runtime.get('version') or '-'}")
     st.caption(f"scheduler_enabled: {runtime.get('scheduler_enabled', False)}")
     st.caption(f"DB: {status['database_path']}")
     external_capabilities = status.get("external_capabilities", {})

@@ -15,7 +15,7 @@ EXPECTED_API_PREFIX = "/api/v1"
 EXPECTED_SERVICE = "paper-lab-agent"
 STATUS_REQUIRED_KEYS = {"database_path", "runtime", "config_warnings", "storage", "external_capabilities", "counts"}
 CONFIG_WARNING_REQUIRED_KEYS = {"code", "capability", "message"}
-RUNTIME_REQUIRED_KEYS = {"api_prefix", "scheduler_enabled"}
+RUNTIME_REQUIRED_KEYS = {"api_prefix", "scheduler_enabled", "version"}
 STORAGE_REQUIRED_KEYS = {"data_dir", "pdf_dir", "tei_dir", "translation_dir", "export_dir", "vector_db_path"}
 EXTERNAL_CAPABILITY_REQUIRED_KEYS = {
     "openalex_mailto",
@@ -111,6 +111,8 @@ def validate_system_status(status: dict) -> list[str]:
             invalid_runtime.append("api_prefix")
         if "scheduler_enabled" in runtime and not isinstance(runtime["scheduler_enabled"], bool):
             invalid_runtime.append("scheduler_enabled")
+        if "version" in runtime and (not isinstance(runtime["version"], str) or not runtime["version"]):
+            invalid_runtime.append("version")
         if invalid_runtime:
             errors.append(f"runtime invalid values: {', '.join(sorted(invalid_runtime))}")
         if isinstance(runtime.get("api_prefix"), str) and runtime["api_prefix"] != EXPECTED_API_PREFIX:

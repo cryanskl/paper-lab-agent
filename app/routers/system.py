@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app import __version__
 from app.clients.grobid import GrobidClient
 from app.config import get_settings
 from app.db import fetch_one
@@ -61,6 +62,7 @@ async def status(check_external: bool = False) -> dict:
         "runtime": {
             "api_prefix": settings.api_prefix,
             "scheduler_enabled": settings.scheduler_enabled,
+            "version": __version__,
         },
         "config_warnings": config_warnings(settings),
         "storage": {

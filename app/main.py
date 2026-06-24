@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app import __version__
 from app.config import get_settings
 from app.db import init_db
 from app.errors import install_error_handlers
@@ -25,7 +26,7 @@ async def lifespan(_: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title="paper-lab-agent", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="paper-lab-agent", version=__version__, lifespan=lifespan)
     install_error_handlers(app)
 
     @app.get("/health")
