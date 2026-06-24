@@ -4212,6 +4212,8 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         "threshold_ev",
         "confidence",
         "source_section_id",
+        "source_section_title",
+        "source_section_type",
         "source_excerpt",
         "cross_section_url",
         "verified_by",
@@ -4323,6 +4325,9 @@ def test_extracted_reaction_keeps_source_section_and_excerpt(tmp_path):
     reaction = detail["reactions"][0]
 
     assert reaction["source_section_id"] == sections[0]["id"]
+    assert reaction["source_section_title"] == sections[0]["title"]
+    assert reaction["source_section_type"] == sections[0]["section_type"]
+    assert reaction["source_section_seq"] == sections[0]["seq"]
     assert "e + Ar -> e + e + Ar" in reaction["source_excerpt"]
     assert "Section text before" in reaction["source_excerpt"]
     assert reaction["reactants"] == ["e", "Ar"]

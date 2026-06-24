@@ -507,10 +507,14 @@ with chemistry_tab:
         for reaction in display_reactions:
             with st.container(border=True):
                 st.write(reaction["reaction"])
+                source_section_title = reaction.get("source_section_title") or "-"
+                source_section_type = reaction.get("source_section_type") or "-"
                 st.caption(
                     f"verified: {bool(reaction.get('verified'))} · "
                     f"confidence: {reaction.get('confidence')} · "
-                    f"source_section_id: {reaction.get('source_section_id')}"
+                    f"source_section_id: {reaction.get('source_section_id')} · "
+                    f"source_section_title: {source_section_title} · "
+                    f"source_section_type: {source_section_type}"
                 )
                 source_excerpt = reaction.get("source_excerpt")
                 if source_excerpt:

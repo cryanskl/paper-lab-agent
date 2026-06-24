@@ -156,7 +156,20 @@ def reaction_set_detail(reaction_set: dict, conn=None) -> dict:
     if conn is None:
         with get_conn() as owned_conn:
             return reaction_set_detail(reaction_set, owned_conn)
-    rows = conn.execute("SELECT * FROM reactions WHERE reaction_set_id=? ORDER BY id", (reaction_set["id"],)).fetchall()
+    rows = conn.execute(
+        """
+        SELECT
+            reactions.*,
+            sections.title AS source_section_title,
+            sections.section_type AS source_section_type,
+            sections.seq AS source_section_seq
+        FROM reactions
+        LEFT JOIN sections ON sections.id = reactions.source_section_id
+        WHERE reactions.reaction_set_id=?
+        ORDER BY reactions.id
+        """,
+        (reaction_set["id"],),
+    ).fetchall()
     reaction_set["reactions"] = [dict_from_row(row) for row in rows]
     for reaction in reaction_set["reactions"]:
         reaction["reactants"] = json.loads(reaction["reactants"] or "[]")
