@@ -77,8 +77,8 @@ class VerifyIn(BaseModel):
 
     @model_validator(mode="after")
     def reviewer_required_for_verified_reaction(self) -> "VerifyIn":
-        if self.verified and self.verified_by is None:
-            raise ValueError("verified_by is required when verified is true")
+        if self.verified_by is None:
+            raise ValueError("verified_by is required for reaction review actions")
         return self
 
 
