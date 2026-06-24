@@ -112,6 +112,17 @@ def validate_system_status(status: dict) -> list[str]:
         missing_capabilities = sorted(EXTERNAL_CAPABILITY_REQUIRED_KEYS - set(external_capabilities))
         if missing_capabilities:
             errors.append(f"external_capabilities missing keys: {', '.join(missing_capabilities)}")
+        invalid_capabilities = []
+        for key in ("openalex_mailto", "unpaywall_email", "llm_api_key"):
+            if key in external_capabilities and not isinstance(external_capabilities[key], bool):
+                invalid_capabilities.append(key)
+        for key in ("grobid_url", "embedding_model"):
+            if key in external_capabilities and (
+                not isinstance(external_capabilities[key], str) or not external_capabilities[key]
+            ):
+                invalid_capabilities.append(key)
+        if invalid_capabilities:
+            errors.append(f"external_capabilities invalid values: {', '.join(sorted(invalid_capabilities))}")
         grobid = external_capabilities.get("grobid")
         if not isinstance(grobid, dict):
             errors.append("grobid must be an object")
