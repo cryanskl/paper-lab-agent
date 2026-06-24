@@ -5716,6 +5716,37 @@ def test_translate_rejects_blank_target_lang(tmp_path):
     assert rejected.json()["error"]["code"] == "validation_error"
 
 
+def test_translate_document_uses_filesystem_safe_target_lang_slug(tmp_path):
+    make_client(tmp_path)
+    from app.db import get_conn
+    from app.services import translation as translation_service
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            (str(tmp_path / "target-lang.pdf"), "target-lang-slug", "target-lang.pdf"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Body', 'Argon plasma text', 'body')
+            """,
+            (document_id,),
+        )
+
+    result = translation_service.translate_document(document_id, "zh/CN")
+
+    assert result["status"] == "done"
+    assert result["target_lang"] == "zh/CN"
+    output_path = Path(result["output_path"])
+    assert output_path.name == f"document-{document_id}-zh-CN.md"
+    assert output_path.exists()
+
+
 def test_index_unparsed_document_records_failed_status(tmp_path):
     client = make_client(tmp_path)
     response = client.post(

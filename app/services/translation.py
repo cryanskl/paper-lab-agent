@@ -10,6 +10,7 @@ from app.db import dict_from_row, get_conn
 
 FORMULA_RE = re.compile(r"(\$\$.*?\$\$|\$.*?\$)", re.DOTALL)
 PRESERVE_SECTION_TYPES = {"table", "reference"}
+MAX_TARGET_LANG_SLUG_LENGTH = 80
 
 
 class Translator(Protocol):
@@ -91,6 +92,12 @@ def translate_section_text(section: dict, translator: Translator, target_lang: s
     return translate_text_preserving_formulas(text, translator, target_lang)
 
 
+def safe_target_lang_slug(target_lang: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", (target_lang or "").strip())
+    slug = slug.strip(".-")
+    return (slug or "target")[:MAX_TARGET_LANG_SLUG_LENGTH]
+
+
 def create_translation_job(document_id: int, target_lang: str) -> dict:
     with get_conn() as conn:
         cursor = conn.execute(
@@ -141,7 +148,7 @@ def translate_document(document_id: int, target_lang: str, translation_id: Optio
                     target_text,
                 ]
             )
-        out_path = settings.translation_dir / f"document-{document_id}-{target_lang}.md"
+        out_path = settings.translation_dir / f"document-{document_id}-{safe_target_lang_slug(target_lang)}.md"
         out_path.write_text("\n".join(blocks), encoding="utf-8")
         with get_conn() as conn:
             conn.execute(
