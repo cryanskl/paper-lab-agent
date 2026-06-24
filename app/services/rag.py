@@ -116,6 +116,7 @@ def chunk_text(text: str, max_words: int = 220) -> Iterable[str]:
 
 def mark_index_queued(document_id: int) -> None:
     with get_conn() as conn:
+        conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
         conn.execute(
             "UPDATE documents SET index_status='indexing', index_error=NULL WHERE id=?",
             (document_id,),

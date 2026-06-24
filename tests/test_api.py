@@ -7142,6 +7142,47 @@ def test_document_chunks_endpoint_orders_by_section_then_chunk_sequence(tmp_path
     assert [item["section_title"] for item in chunks["items"]] == ["Earlier section", "Later section"]
 
 
+def test_document_index_route_clears_stale_chunks_before_background_task_runs(tmp_path):
+    from fastapi import BackgroundTasks
+
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import documents as document_router
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (str(tmp_path / "queued-index.pdf"), "queued-index", "queued-index.pdf"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Parsed section', 'fresh parsed text', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'old indexed text', 3, 'old-vector', 1)
+            """,
+            (document_id, section_id),
+        )
+
+    index_payload = document_router.index(document_id, BackgroundTasks())
+    chunks = client.get(f"/api/v1/documents/{document_id}/chunks").json()
+
+    assert index_payload["document_id"] == document_id
+    assert index_payload["index_status"] == "indexing"
+    assert chunks["index_status"] == "indexing"
+    assert chunks["index_error"] is None
+    assert chunks["total"] == 0
+
+
 def test_document_async_routes_mark_queued_status_before_background_tasks_run(tmp_path):
     from fastapi import BackgroundTasks
 
