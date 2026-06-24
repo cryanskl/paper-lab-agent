@@ -4756,6 +4756,22 @@ def test_streamlit_crawl_jobs_show_empty_state():
     assert "暂无抓取任务。" in search_section
 
 
+def test_streamlit_crawl_run_surfaces_success_and_error_states():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+
+    for required in [
+        'status_code, crawl_payload = api_post("/crawl/run", json=body)',
+        "if status_code < 400:",
+        "已创建抓取任务",
+        "else:",
+        "st.warning(crawl_payload)",
+        "st.json(crawl_payload)",
+    ]:
+        assert required in search_section
+
+
 def test_streamlit_search_results_show_dedupe_strategy():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

@@ -186,7 +186,12 @@ with search_tab:
             body["date_from"] = date_from
         if date_to:
             body["date_to"] = date_to
-        st.json(api_post("/crawl/run", json=body)[1])
+        status_code, crawl_payload = api_post("/crawl/run", json=body)
+        if status_code < 400:
+            st.success("已创建抓取任务")
+        else:
+            st.warning(crawl_payload)
+        st.json(crawl_payload)
     jobs = api_get("/crawl/jobs", page_size=10)["items"]
     st.dataframe(flatten_crawl_job_rows(jobs), use_container_width=True)
     if not jobs:
