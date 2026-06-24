@@ -83,6 +83,14 @@ def sections_from_tei(tei: str) -> list[dict]:
             return
         sections.append({"seq": len(sections) + 1, "title": title, "content": text, "section_type": section_type})
 
+    def table_rows(table: ET.Element) -> list[str]:
+        rows = []
+        for row in findall(table, ".//tei:row"):
+            cells = [clean_text(" ".join(cell.itertext())) for cell in findall(row, ".//tei:cell")]
+            if any(cells):
+                rows.append(" ".join(cell for cell in cells if cell))
+        return rows
+
     for abstract in findall(root, ".//tei:text//tei:front//tei:abstract"):
         append_section("Abstract", " ".join(abstract.itertext()), "abstract")
 
@@ -95,9 +103,27 @@ def sections_from_tei(tei: str) -> list[dict]:
             "body",
         )
 
+    handled_tables = set()
     for figure in findall(root, ".//tei:text//tei:body//tei:figure"):
         head = find(figure, "tei:head")
         caption = find(figure, "tei:figDesc")
+        if figure.get("type") == "table":
+            nested_table = find(figure, ".//tei:table")
+            if nested_table is not None:
+                handled_tables.add(id(nested_table))
+            content_parts = []
+            if caption is not None:
+                content_parts.append(" ".join(caption.itertext()))
+            if nested_table is not None:
+                content_parts.extend(table_rows(nested_table))
+            else:
+                content_parts.append(" ".join(figure.itertext()))
+            append_section(
+                clean_text(" ".join(head.itertext())) if head is not None else f"Table {len(sections) + 1}",
+                "\n".join(content_parts),
+                "table",
+            )
+            continue
         append_section(
             clean_text(" ".join(head.itertext())) if head is not None else f"Figure {len(sections) + 1}",
             " ".join(caption.itertext()) if caption is not None else " ".join(figure.itertext()),
@@ -105,12 +131,10 @@ def sections_from_tei(tei: str) -> list[dict]:
         )
 
     for table in findall(root, ".//tei:text//tei:body//tei:table"):
+        if id(table) in handled_tables:
+            continue
         head = find(table, "tei:head")
-        rows = []
-        for row in findall(table, ".//tei:row"):
-            cells = [clean_text(" ".join(cell.itertext())) for cell in findall(row, ".//tei:cell")]
-            if any(cells):
-                rows.append(" ".join(cell for cell in cells if cell))
+        rows = table_rows(table)
         append_section(
             clean_text(" ".join(head.itertext())) if head is not None else f"Table {len(sections) + 1}",
             "\n".join(rows) or " ".join(table.itertext()),
