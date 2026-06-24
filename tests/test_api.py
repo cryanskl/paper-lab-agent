@@ -4517,6 +4517,23 @@ def test_streamlit_rag_tab_separates_answer_and_sources():
         assert required in rag_section
 
 
+def test_streamlit_rag_tab_validates_document_ids_before_query():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+
+    for required in [
+        "document_id_error",
+        "document_ids 只能包含整数",
+        "try:",
+        "except ValueError",
+        "if document_id_error:",
+        "else:",
+        'api_post("/rag/query"',
+    ]:
+        assert required in rag_section
+
+
 def test_streamlit_document_upload_shows_duplicate_result():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
