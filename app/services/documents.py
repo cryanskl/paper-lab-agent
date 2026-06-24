@@ -159,18 +159,28 @@ def sections_from_tei(tei: str) -> list[dict]:
         )
 
     for body in findall(root, ".//tei:text//tei:body"):
+        pending_body_head = None
         for child in list(body):
             child_name = local_name(child)
-            if child_name == "div":
+            if child_name == "head":
+                pending_body_head = clean_text(" ".join(child.itertext()))
+            elif child_name == "div":
+                pending_body_head = None
                 append_body_div(child)
             elif child_name == "p":
-                append_section(f"Section {len(sections) + 1}", " ".join(child.itertext()), "body")
+                title = pending_body_head or f"Section {len(sections) + 1}"
+                append_section(title, " ".join(child.itertext()), "body")
+                pending_body_head = None
             elif child_name == "list":
                 list_items = [clean_text(" ".join(item.itertext())) for item in findall(child, "tei:item")]
-                append_section(f"Section {len(sections) + 1}", "\n\n".join(item for item in list_items if item), "body")
+                title = pending_body_head or f"Section {len(sections) + 1}"
+                append_section(title, "\n\n".join(item for item in list_items if item), "body")
+                pending_body_head = None
             elif child_name == "figure":
+                pending_body_head = None
                 append_figure(child)
             elif child_name == "table":
+                pending_body_head = None
                 append_table(child)
 
     reference_index = 1

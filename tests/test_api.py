@@ -3532,6 +3532,32 @@ def test_sections_from_tei_extracts_direct_body_paragraphs():
     ]
 
 
+def test_sections_from_tei_uses_direct_body_head_for_following_paragraph():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <head>Results overview</head>
+          <p>Standalone results paragraph.</p>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Results overview",
+            "content": "Standalone results paragraph.",
+            "section_type": "body",
+        }
+    ]
+
+
 def test_sections_from_tei_extracts_direct_body_list_items():
     from app.services.documents import sections_from_tei
 
