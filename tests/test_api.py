@@ -306,6 +306,39 @@ def test_classify_paper_preserves_manual_category_overrides(tmp_path, monkeypatc
     ]
 
 
+def test_classify_paper_failure_returns_json_error(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.main import app
+    from app.routers import papers as papers_router
+    from fastapi.testclient import TestClient
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO papers (title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, '[]', 'fixture', '{}')
+            """,
+            ("Classifier outage paper", "plasma chemistry",),
+        )
+        paper_id = conn.execute("SELECT id FROM papers WHERE title=?", ("Classifier outage paper",)).fetchone()["id"]
+
+    class FailingClassifier:
+        def classify(self, text, categories):
+            raise RuntimeError("classifier backend unavailable")
+
+    monkeypatch.setattr(papers_router, "get_classifier", lambda settings: FailingClassifier(), raising=False)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.post(f"/api/v1/papers/{paper_id}/classify")
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "paper_classification_failed"
+    assert "classifier backend unavailable" in payload["error"]["message"]
+
+
 def test_papers_reject_unknown_sort(tmp_path):
     client = make_client(tmp_path)
 
