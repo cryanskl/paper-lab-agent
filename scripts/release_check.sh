@@ -11,9 +11,33 @@ else
   PYTHON_CMD=("python")
 fi
 
+FIXTURE_DIR="$(mktemp -d -t paper-lab-fixtures-XXXXXX)"
+cleanup() {
+  rm -rf "${FIXTURE_DIR}"
+}
+trap cleanup EXIT
+
 bash -n scripts/env.sh
 bash -n scripts/dev.sh
 "${PYTHON_CMD[@]}" -m py_compile scripts/health_check.py scripts/import_fixtures.py scripts/smoke_check.py streamlit_app.py
+FIXTURE_JSON="$(PAPER_LAB_DATA_DIR="${FIXTURE_DIR}" "${PYTHON_CMD[@]}" scripts/import_fixtures.py)"
+printf '%s\n' "${FIXTURE_JSON}"
+FIXTURE_JSON="${FIXTURE_JSON}" "${PYTHON_CMD[@]}" - <<'PY'
+import json
+import os
+import sys
+
+payload = json.loads(os.environ["FIXTURE_JSON"])
+expected = {
+    ("papers", "inserted"): 2,
+    ("documents", "inserted"): 1,
+}
+for (section, key), value in expected.items():
+    actual = payload.get(section, {}).get(key)
+    if actual != value:
+        print(f"release_check failed: fixture {section}.{key}={actual!r}, expected {value!r}", file=sys.stderr)
+        raise SystemExit(1)
+PY
 SMOKE_JSON="$("${PYTHON_CMD[@]}" -m scripts.smoke_check)"
 printf '%s\n' "${SMOKE_JSON}"
 SMOKE_JSON="${SMOKE_JSON}" "${PYTHON_CMD[@]}" - <<'PY'
