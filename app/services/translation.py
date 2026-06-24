@@ -9,6 +9,7 @@ from app.db import dict_from_row, get_conn
 
 
 FORMULA_RE = re.compile(r"(\$\$.*?\$\$|\$.*?\$)", re.DOTALL)
+PRESERVE_SECTION_TYPES = {"table", "reference"}
 
 
 class Translator(Protocol):
@@ -82,6 +83,13 @@ def translate_text_preserving_formulas(text: str, translator: Translator, target
     return unmask_formulas(translated, formulas)
 
 
+def translate_section_text(section: dict, translator: Translator, target_lang: str) -> str:
+    text = section["content"] or ""
+    if (section.get("section_type") or "").strip().lower() in PRESERVE_SECTION_TYPES:
+        return text
+    return translate_text_preserving_formulas(text, translator, target_lang)
+
+
 def translate_document(document_id: int, target_lang: str) -> dict:
     settings = get_settings()
     with get_conn() as conn:
@@ -109,7 +117,7 @@ def translate_document(document_id: int, target_lang: str) -> dict:
         blocks = ["# Bilingual Translation", "", note]
         for row in sections:
             section = dict_from_row(row)
-            target_text = translate_text_preserving_formulas(section["content"] or "", translator, target_lang)
+            target_text = translate_section_text(section, translator, target_lang)
             blocks.extend(
                 [
                     "",

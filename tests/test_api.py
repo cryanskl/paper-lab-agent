@@ -2254,6 +2254,64 @@ def test_translation_adapter_preserves_formula_masks():
     assert "<EQ_" not in translated
 
 
+def test_translate_document_preserves_table_and_reference_sections(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import translation as translation_service
+
+    calls = []
+
+    class RecordingTranslator:
+        def translate(self, text, target_lang):
+            calls.append((text, target_lang))
+            return f"translated::{text}"
+
+    monkeypatch.setattr(translation_service, "get_translator", lambda settings: RecordingTranslator())
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            (str(tmp_path / "translated.pdf"), "translate-section-types", "translated.pdf"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Body', 'Body plasma equation $k_1$', 'body')
+            """,
+            (document_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 2, 'Reaction Table', 'Reaction Rate e + Ar -> Ar+', 'table')
+            """,
+            (document_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 3, 'Reference 1', 'Smith 2026 Plasma Chemistry', 'reference')
+            """,
+            (document_id,),
+        )
+
+    result = translation_service.translate_document(document_id, "zh")
+
+    output = Path(result["output_path"]).read_text(encoding="utf-8")
+    assert result["status"] == "done"
+    assert calls == [("Body plasma equation <EQ_000>", "zh")]
+    assert "translated::Body plasma equation $k_1$" in output
+    assert "Reaction Rate e + Ar -> Ar+" in output
+    assert "translated::Reaction Rate" not in output
+    assert "Smith 2026 Plasma Chemistry" in output
+    assert "translated::Smith" not in output
+
+
 def test_rag_index_uses_local_vector_store(tmp_path):
     client = make_client(tmp_path)
 
