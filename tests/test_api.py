@@ -7217,6 +7217,22 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         assert required in chemistry_section
 
 
+def test_streamlit_chemistry_audit_log_surfaces_field_changes():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    for required in [
+        "field_changes",
+        "field_change_rows",
+        '"field"',
+        '"before"',
+        '"after"',
+        "st.dataframe(field_change_rows",
+    ]:
+        assert required in chemistry_section
+
+
 def test_streamlit_chemistry_review_surfaces_save_success_state():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

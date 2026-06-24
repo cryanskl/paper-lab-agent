@@ -655,6 +655,20 @@ with chemistry_tab:
                 verified = st.checkbox("verified", value=bool(reaction.get("verified")), key=f"verified-{reaction['id']}")
                 if reaction.get("audit_log"):
                     with st.expander("audit_log"):
+                        field_change_rows = []
+                        for audit in reaction["audit_log"]:
+                            for field, change in (audit.get("field_changes") or {}).items():
+                                field_change_rows.append(
+                                    {
+                                        "field": field,
+                                        "before": change.get("before"),
+                                        "after": change.get("after"),
+                                        "verified_by": audit.get("verified_by"),
+                                        "verified_at": audit.get("verified_at"),
+                                    }
+                                )
+                        if field_change_rows:
+                            st.dataframe(field_change_rows, use_container_width=True)
                         st.json(reaction["audit_log"])
                 if st.button("保存复核", key=f"verify-{reaction['id']}"):
                     payload = {
