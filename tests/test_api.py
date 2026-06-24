@@ -5646,6 +5646,53 @@ def test_document_chunks_endpoint_reports_index_status(tmp_path):
     assert empty_page["index_status"] == "indexed"
 
 
+def test_document_chunks_endpoint_orders_by_section_then_chunk_sequence(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            ("/tmp/chunk-order.pdf", "chunk-order", "chunk-order.pdf"),
+        ).lastrowid
+        later_section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 2, 'Later section', 'later evidence', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        earlier_section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Earlier section', 'earlier evidence', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'later chunk', 2, 'later-vector', 1)
+            """,
+            (document_id, later_section_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'earlier chunk', 2, 'earlier-vector', 1)
+            """,
+            (document_id, earlier_section_id),
+        )
+
+    chunks = client.get(f"/api/v1/documents/{document_id}/chunks").json()
+
+    assert [item["section_title"] for item in chunks["items"]] == ["Earlier section", "Later section"]
+
+
 def test_document_async_routes_mark_queued_status_before_background_tasks_run(tmp_path):
     from fastapi import BackgroundTasks
 

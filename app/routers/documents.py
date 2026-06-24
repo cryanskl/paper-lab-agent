@@ -142,7 +142,7 @@ def list_chunks(
             FROM chunks ch
             LEFT JOIN sections s ON s.id = ch.section_id
             WHERE ch.document_id=?
-            ORDER BY ch.seq
+            ORDER BY s.seq, ch.seq, ch.id
             LIMIT ? OFFSET ?
             """,
             (document_id, page_size, offset),
