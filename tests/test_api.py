@@ -7885,6 +7885,8 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
         "translation_preview",
         "index_status",
         "index_error",
+        "chemistry_status",
+        "chemistry_error",
         "section_preview",
         "parse_error",
         "vector_id",

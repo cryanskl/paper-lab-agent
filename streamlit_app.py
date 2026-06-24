@@ -395,6 +395,9 @@ with documents_tab:
         document_detail = api_get(f"/documents/{selected['id']}")
         if document_detail.get("parse_error"):
             st.warning(f"parse_error: {document_detail['parse_error']}")
+        st.caption(f"chemistry_status: {document_detail.get('chemistry_status') or 'unknown'}")
+        if document_detail.get("chemistry_error"):
+            st.warning(f"chemistry_error: {document_detail['chemistry_error']}")
         linked_paper = document_detail.get("paper")
         if linked_paper:
             st.caption(
