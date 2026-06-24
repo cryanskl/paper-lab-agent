@@ -543,6 +543,21 @@ def test_duplicate_document_upload_returns_existing_resource(tmp_path):
     assert payload["document"]["original_name"] == "duplicate.pdf"
 
 
+def test_document_upload_stores_pdf_with_pdf_extension_even_when_filename_is_misleading(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("misleading.txt", pdf_bytes(b"Argon plasma chemistry"), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    assert document["original_name"] == "misleading.txt"
+    assert document["file_path"].endswith(".pdf")
+    assert Path(document["file_path"]).suffix == ".pdf"
+
+
 def test_document_upload_rejects_non_pdf_file(tmp_path):
     client = make_client(tmp_path)
 

@@ -30,8 +30,7 @@ async def save_upload(file: UploadFile, paper_id: Optional[int]) -> tuple[dict, 
         existing = conn.execute("SELECT * FROM documents WHERE file_hash=?", (digest,)).fetchone()
         if existing:
             return dict_from_row(existing), False
-        suffix = Path(file.filename or "paper.pdf").suffix or ".pdf"
-        stored = settings.pdf_dir / f"{digest}{suffix}"
+        stored = settings.pdf_dir / f"{digest}.pdf"
         stored.write_bytes(content)
         cursor = conn.execute(
             """
