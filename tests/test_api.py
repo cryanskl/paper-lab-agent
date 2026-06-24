@@ -3216,6 +3216,21 @@ def test_system_status_reports_missing_optional_config_without_blocking(tmp_path
     assert all(warning["capability"] for warning in warnings)
 
 
+def test_system_status_reports_corrupt_vector_store_health(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text("{not valid json", encoding="utf-8")
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert "Expecting property name enclosed in double quotes" in vector_db["error"]
+
+
 def test_parse_document_records_grobid_fallback_reason(tmp_path, monkeypatch):
     client = make_client(tmp_path)
     response = client.post(
