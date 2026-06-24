@@ -4024,6 +4024,7 @@ def test_health_check_fails_when_external_capability_values_are_invalid(monkeypa
         return {
             "database_path": "/tmp/plasma.db",
             "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
                 "pdf_dir": "/tmp/data/pdfs",
@@ -4073,6 +4074,7 @@ def test_health_check_fails_when_grobid_values_are_invalid(monkeypatch, capsys):
         return {
             "database_path": "/tmp/plasma.db",
             "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
                 "pdf_dir": "/tmp/data/pdfs",
@@ -4122,6 +4124,7 @@ def test_health_check_fails_when_count_values_are_invalid(monkeypatch, capsys):
         return {
             "database_path": "/tmp/plasma.db",
             "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
                 "pdf_dir": "/tmp/data/pdfs",
@@ -4194,6 +4197,89 @@ def test_health_check_requires_operational_count_keys():
     assert "counts missing keys" in "; ".join(errors)
     for required in ["categories", "crawl_jobs", "reaction_sets", "reactions"]:
         assert required in "; ".join(errors)
+
+
+def test_health_check_requires_config_warnings_key():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_config_warning_key", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "embedding_model": "local-hash",
+            },
+            "counts": health_check_counts(),
+        }
+    )
+
+    assert "missing keys: config_warnings" in errors
+
+
+def test_health_check_rejects_invalid_config_warning_shape():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_config_warning_shape", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "config_warnings": [
+                {"code": "missing_llm_api_key", "capability": "", "message": "LLM_API_KEY is not configured."},
+                "not an object",
+            ],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "embedding_model": "local-hash",
+            },
+            "counts": health_check_counts(),
+        }
+    )
+
+    joined = "; ".join(errors)
+    assert "config_warnings invalid values" in joined
+    assert "0.capability" in joined
+    assert "1" in joined
 
 
 def test_health_check_fails_when_grobid_status_keys_are_missing(monkeypatch, capsys):
@@ -4308,6 +4394,7 @@ def test_health_check_fails_when_health_service_is_unexpected(monkeypatch, capsy
         return {
             "database_path": "/tmp/plasma.db",
             "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
                 "pdf_dir": "/tmp/data/pdfs",
@@ -4358,6 +4445,7 @@ def test_health_check_accepts_valid_system_status(monkeypatch):
         return {
             "database_path": "/tmp/plasma.db",
             "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
                 "pdf_dir": "/tmp/data/pdfs",
@@ -4472,6 +4560,7 @@ def test_health_check_compact_outputs_single_line_json(monkeypatch, capsys):
         return {
             "database_path": "/tmp/plasma.db",
             "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
                 "pdf_dir": "/tmp/data/pdfs",
@@ -4523,6 +4612,7 @@ def test_health_check_require_grobid_fails_when_external_grobid_is_unavailable(m
         return {
             "database_path": "/tmp/plasma.db",
             "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
                 "pdf_dir": "/tmp/data/pdfs",
@@ -4582,6 +4672,7 @@ def test_health_check_uses_api_base_url_from_env_file(monkeypatch, tmp_path):
         return {
             "database_path": "/tmp/plasma.db",
             "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
                 "pdf_dir": "/tmp/data/pdfs",

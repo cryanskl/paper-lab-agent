@@ -13,7 +13,8 @@ STATUS_PATH = "/api/v1/system/status"
 EXTERNAL_STATUS_PATH = "/api/v1/system/status?check_external=true"
 EXPECTED_API_PREFIX = "/api/v1"
 EXPECTED_SERVICE = "paper-lab-agent"
-STATUS_REQUIRED_KEYS = {"database_path", "runtime", "storage", "external_capabilities", "counts"}
+STATUS_REQUIRED_KEYS = {"database_path", "runtime", "config_warnings", "storage", "external_capabilities", "counts"}
+CONFIG_WARNING_REQUIRED_KEYS = {"code", "capability", "message"}
 RUNTIME_REQUIRED_KEYS = {"api_prefix", "scheduler_enabled"}
 STORAGE_REQUIRED_KEYS = {"data_dir", "pdf_dir", "tei_dir", "translation_dir", "export_dir", "vector_db_path"}
 EXTERNAL_CAPABILITY_REQUIRED_KEYS = {
@@ -80,6 +81,24 @@ def validate_system_status(status: dict) -> list[str]:
         errors.append(f"missing keys: {', '.join(missing)}")
     if "database_path" in status and (not isinstance(status["database_path"], str) or not status["database_path"]):
         errors.append("database_path must be a non-empty string")
+    config_warnings = status.get("config_warnings")
+    if not isinstance(config_warnings, list):
+        errors.append("config_warnings must be a list")
+    else:
+        invalid_warnings = []
+        for index, warning in enumerate(config_warnings):
+            if not isinstance(warning, dict):
+                invalid_warnings.append(str(index))
+                continue
+            missing_warning_keys = CONFIG_WARNING_REQUIRED_KEYS - set(warning)
+            invalid_warnings.extend(f"{index}.{key}" for key in sorted(missing_warning_keys))
+            invalid_warnings.extend(
+                f"{index}.{key}"
+                for key in sorted(CONFIG_WARNING_REQUIRED_KEYS & set(warning))
+                if not isinstance(warning[key], str) or not warning[key].strip()
+            )
+        if invalid_warnings:
+            errors.append(f"config_warnings invalid values: {', '.join(invalid_warnings)}")
     runtime = status.get("runtime")
     if not isinstance(runtime, dict):
         errors.append("runtime must be an object")
