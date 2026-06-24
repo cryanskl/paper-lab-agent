@@ -182,6 +182,11 @@ def verify_reaction(
                 "UPDATE reaction_sets SET status='verified', verified_by=?, verified_at=? WHERE id=?",
                 (verified_by, now_iso(), reaction_set_id),
             )
+        else:
+            conn.execute(
+                "UPDATE reaction_sets SET status='pending', verified_by=NULL, verified_at=NULL WHERE id=?",
+                (reaction_set_id,),
+            )
         rs = conn.execute("SELECT * FROM reaction_sets WHERE id=?", (reaction_set_id,)).fetchone()
         return reaction_set_detail(dict_from_row(rs), conn)
 

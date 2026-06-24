@@ -2507,6 +2507,36 @@ def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
     assert audit["changes"]["reaction_type"] == "ionization"
 
 
+def test_reaction_unverify_returns_reaction_set_to_pending(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("unverify.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+    reaction_id = detail["reactions"][0]["id"]
+
+    verified = client.put(
+        f"/api/v1/reactions/{reaction_id}/verify",
+        json={"verified": True, "verified_by": "chemist-a"},
+    ).json()
+    unverified = client.put(
+        f"/api/v1/reactions/{reaction_id}/verify",
+        json={"verified": False, "verified_by": "chemist-a"},
+    ).json()
+
+    assert verified["status"] == "verified"
+    assert unverified["status"] == "pending"
+    assert unverified["verified_by"] is None
+    assert unverified["verified_at"] is None
+    assert unverified["reactions"][0]["verified"] is False
+    assert unverified["reactions"][0]["audit_log"][0]["action"] == "unverify"
+
+
 def test_reaction_verify_rejects_blank_verified_by(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
