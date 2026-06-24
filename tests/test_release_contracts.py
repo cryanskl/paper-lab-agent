@@ -226,6 +226,15 @@ def test_api_contract_documented_endpoints_exist_in_app():
     assert missing == []
 
 
+def test_api_contract_app_routes_are_documented():
+    validate_api_contract = load_validate_api_contract()
+    repo = Path(__file__).resolve().parent.parent
+
+    undocumented = validate_api_contract.undocumented_app_routes(repo / "docs" / "接口设计文档.md")
+
+    assert undocumented == []
+
+
 def test_api_contract_validator_runs_as_release_script():
     import subprocess
     import sys

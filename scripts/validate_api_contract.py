@@ -82,16 +82,31 @@ def missing_documented_routes(contract_path: Path = DEFAULT_CONTRACT_PATH) -> li
     return missing
 
 
+def undocumented_app_routes(contract_path: Path = DEFAULT_CONTRACT_PATH) -> list[str]:
+    documented = {(method, normalized) for method, _display, normalized in documented_routes(contract_path)}
+    undocumented: list[str] = []
+    for method, normalized in sorted(app_routes()):
+        if (method, normalized) not in documented:
+            undocumented.append(f"{method} {normalized}")
+    return undocumented
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate documented API endpoints against FastAPI routes.")
     parser.add_argument("contract_path", nargs="?", default=str(DEFAULT_CONTRACT_PATH))
     args = parser.parse_args()
 
     missing = missing_documented_routes(Path(args.contract_path))
-    if missing:
-        print("api contract missing routes:", file=sys.stderr)
-        for route in missing:
-            print(f"- {route}", file=sys.stderr)
+    undocumented = undocumented_app_routes(Path(args.contract_path))
+    if missing or undocumented:
+        if missing:
+            print("api contract missing routes:", file=sys.stderr)
+            for route in missing:
+                print(f"- {route}", file=sys.stderr)
+        if undocumented:
+            print("api contract undocumented app routes:", file=sys.stderr)
+            for route in undocumented:
+                print(f"- {route}", file=sys.stderr)
         return 1
     return 0
 
