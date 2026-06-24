@@ -48,8 +48,6 @@ class LocalTaxonomyClassifier:
             slug_text = slug.replace("-", " ")
             if slug and (slug in lowered or slug_text in lowered or name.lower() in lowered):
                 raw_items.append({"slug": slug, "confidence": 0.5})
-        if not raw_items and any(category.get("slug") == "methods" for category in categories):
-            raw_items.append({"slug": "methods", "confidence": 0.5})
         return normalize_classifier_results(raw_items, categories)
 
 

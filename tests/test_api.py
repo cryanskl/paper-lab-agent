@@ -233,6 +233,32 @@ def test_classify_paper_records_classifier_confidence(tmp_path, monkeypatch):
     assert row["method"] == "auto"
 
 
+def test_local_classifier_does_not_invent_default_category(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO papers (title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, '[]', 'fixture', '{}')
+            """,
+            ("Out of scope material paper", "thermal coating measurements without taxonomy terms",),
+        )
+        paper_id = conn.execute("SELECT id FROM papers WHERE title=?", ("Out of scope material paper",)).fetchone()[
+            "id"
+        ]
+
+    response = client.post(f"/api/v1/papers/{paper_id}/classify")
+
+    assert response.status_code == 200
+    assert response.json()["categories"] == []
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM paper_categories WHERE paper_id=?", (paper_id,)).fetchall()
+    assert rows == []
+
+
 def test_classify_paper_preserves_manual_category_overrides(tmp_path, monkeypatch):
     client = make_client(tmp_path)
 
