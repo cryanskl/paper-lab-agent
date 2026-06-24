@@ -4457,6 +4457,42 @@ def test_rag_index_failure_discards_partial_chunks(tmp_path, monkeypatch):
     assert all(record["document_id"] != document_id for record in vector_index.values())
 
 
+def test_rag_index_fails_when_sections_have_no_indexable_text(tmp_path):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import index_document
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            ("/tmp/empty-index.txt", "empty-index", "empty-index.txt"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Empty section', '   ', 'body')
+            """,
+            (document_id,),
+        )
+
+    failed = index_document(document_id)
+
+    assert failed["status"] == "failed"
+    assert failed["chunks"] == 0
+    assert "document has no indexable section text" in failed["error"]
+    with get_conn() as conn:
+        document = conn.execute("SELECT index_status, index_error FROM documents WHERE id=?", (document_id,)).fetchone()
+        chunk_count = conn.execute("SELECT COUNT(*) AS n FROM chunks WHERE document_id=?", (document_id,)).fetchone()["n"]
+    assert chunk_count == 0
+    assert document["index_status"] == "failed"
+    assert "document has no indexable section text" in document["index_error"]
+
+
 def test_rag_index_records_failed_status_when_vector_cleanup_fails(tmp_path, monkeypatch):
     make_client(tmp_path)
 

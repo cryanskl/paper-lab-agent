@@ -164,6 +164,8 @@ def index_document(document_id: int) -> dict:
                         "dimensions": len(embedding),
                     }
                     count += 1
+            if count == 0:
+                raise ValueError("document has no indexable section text")
             vector_store.delete_document(document_id)
             vector_store.upsert_many(vector_index)
             conn.execute(
