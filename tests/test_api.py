@@ -3507,6 +3507,33 @@ def test_sections_from_tei_preserves_body_table_document_order():
     ]
 
 
+def test_sections_from_tei_preserves_div_table_document_order():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <div>
+            <head>Experiment</head>
+            <p>Before the table.</p>
+            <table><head>Table 3</head><row><cell>Species</cell><cell>Density</cell></row></table>
+            <p>After the table.</p>
+          </div>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert [(section["section_type"], section["title"], section["content"]) for section in sections] == [
+        ("body", "Experiment", "Before the table."),
+        ("table", "Table 3", "Species Density"),
+        ("body", "Experiment", "After the table."),
+    ]
+
+
 def test_sections_from_tei_extracts_direct_body_paragraphs():
     from app.services.documents import sections_from_tei
 

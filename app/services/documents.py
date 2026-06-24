@@ -107,21 +107,32 @@ def sections_from_tei(tei: str) -> list[dict]:
 
     def append_body_div(div: ET.Element) -> None:
         head = find(div, "tei:head")
-        paragraphs = [clean_text(" ".join(p.itertext())) for p in findall(div, "tei:p")]
-        list_items = [clean_text(" ".join(item.itertext())) for item in findall(div, "tei:list/tei:item")]
-        append_section(
-            clean_text(" ".join(head.itertext())) if head is not None else f"Section {len(sections) + 1}",
-            "\n\n".join(item for item in paragraphs + list_items if item),
-            "body",
-        )
+        title = clean_text(" ".join(head.itertext())) if head is not None else f"Section {len(sections) + 1}"
+        content_parts = []
+
+        def flush_body_content() -> None:
+            nonlocal content_parts
+            append_section(title, "\n\n".join(item for item in content_parts if item), "body")
+            content_parts = []
+
         for child in list(div):
             child_name = local_name(child)
-            if child_name == "div":
+            if child_name == "head":
+                continue
+            if child_name == "p":
+                content_parts.append(clean_text(" ".join(child.itertext())))
+            elif child_name == "list":
+                content_parts.extend(clean_text(" ".join(item.itertext())) for item in findall(child, "tei:item"))
+            elif child_name == "div":
+                flush_body_content()
                 append_body_div(child)
             elif child_name == "figure":
+                flush_body_content()
                 append_figure(child)
             elif child_name == "table":
+                flush_body_content()
                 append_table(child)
+        flush_body_content()
 
     def append_figure(figure: ET.Element) -> None:
         head = find(figure, "tei:head")
