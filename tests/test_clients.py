@@ -18,6 +18,14 @@ def test_crossref_normalizes_url_doi_to_bare_identifier():
     assert work["doi"] == "10.5555/abc.def"
 
 
+def test_openalex_normalizes_url_doi_to_bare_identifier():
+    client = OpenAlexClient()
+
+    work = client.normalize({"doi": "https://doi.org/10.5555/ABC.Def", "title": "Example"})
+
+    assert work["doi"] == "10.5555/abc.def"
+
+
 @pytest.mark.asyncio
 async def test_openalex_waits_between_paginated_requests():
     sleep_calls = []

@@ -94,10 +94,16 @@ class OpenAlexClient:
         positioned_words.sort(key=lambda pair: pair[0])
         return " ".join(word for _, word in positioned_words)
 
+    def normalize_doi(self, value: Any) -> Optional[str]:
+        if not isinstance(value, str):
+            return None
+        doi = value.strip().lower()
+        if not doi:
+            return None
+        return doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/")
+
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
-        doi = item.get("doi")
-        if isinstance(doi, str) and doi.startswith("https://doi.org/"):
-            doi = doi.replace("https://doi.org/", "")
+        doi = self.normalize_doi(item.get("doi"))
         primary_location = item.get("primary_location") or {}
         source = primary_location.get("source") or {}
         authorships = item.get("authorships") or []
