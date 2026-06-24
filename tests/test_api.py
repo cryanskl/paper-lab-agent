@@ -4388,6 +4388,46 @@ def test_reaction_export_rejects_empty_reaction_set(tmp_path):
     assert response.json()["error"]["code"] == "reaction_set_unverified"
 
 
+def test_reaction_export_write_failure_returns_json_error(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from pathlib import Path as PathClass
+
+    from app.db import get_conn
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    with get_conn() as conn:
+        reaction_set_id = conn.execute(
+            "INSERT INTO reaction_sets (name, status) VALUES (?, ?)",
+            ("Write failure set", "verified"),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO reactions (reaction_set_id, reaction, verified)
+            VALUES (?, ?, 1)
+            """,
+            (reaction_set_id, "e + Ar -> e + e + Ar+"),
+        )
+
+    original_write_text = PathClass.write_text
+
+    def failing_write_text(self, *args, **kwargs):
+        if self.name == f"reaction-set-{reaction_set_id}.json":
+            raise OSError("export disk full")
+        return original_write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(PathClass, "write_text", failing_write_text)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=json")
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "reaction_export_failed"
+    assert "export disk full" in payload["error"]["message"]
+
+
 def test_release_runbook_artifacts_exist_and_document_commands():
     repo = Path(__file__).resolve().parent.parent
     health_check = repo / "scripts" / "health_check.py"
