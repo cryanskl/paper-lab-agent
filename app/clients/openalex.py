@@ -102,16 +102,26 @@ class OpenAlexClient:
             return None
         return doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/")
 
+    def normalize_authors(self, value: Any) -> list[dict[str, Optional[str]]]:
+        if not isinstance(value, list):
+            return []
+        authors = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            author = item.get("author") or {}
+            if not isinstance(author, dict):
+                continue
+            name = author.get("display_name")
+            if name:
+                authors.append({"name": name, "affiliation": None})
+        return authors
+
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         doi = self.normalize_doi(item.get("doi"))
         primary_location = item.get("primary_location") or {}
         source = primary_location.get("source") or {}
-        authorships = item.get("authorships") or []
-        authors = [
-            {"name": (a.get("author") or {}).get("display_name"), "affiliation": None}
-            for a in authorships
-            if (a.get("author") or {}).get("display_name")
-        ]
+        authors = self.normalize_authors(item.get("authorships"))
         abstract = self.abstract_text(item)
         return {
             "doi": doi,
