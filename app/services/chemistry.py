@@ -97,12 +97,14 @@ def extract_reactions(document_id: int) -> dict:
         )
         sections = conn.execute("SELECT * FROM sections WHERE document_id=? ORDER BY seq", (document_id,)).fetchall()
         if not sections:
+            conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
             conn.execute(
                 "UPDATE documents SET chemistry_status='failed', chemistry_error=? WHERE id=?",
                 ("document has no parsed sections", document_id),
             )
             return {"document_id": document_id, "status": "failed", "error": "document has no parsed sections"}
         if not any((section["content"] or "").strip() for section in sections):
+            conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
             conn.execute(
                 "UPDATE documents SET chemistry_status='failed', chemistry_error=? WHERE id=?",
                 ("document has no extractable section text", document_id),
