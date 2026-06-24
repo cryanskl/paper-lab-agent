@@ -64,6 +64,8 @@ import json
 import os
 import sys
 
+from app import __version__
+
 payload = json.loads(os.environ["SMOKE_JSON"])
 expected = {
     "crawl_job_status": "success",
@@ -71,7 +73,7 @@ expected = {
     "blocked_export_status": 409,
     "verified_export_format": "json",
     "verified_export_formats": ["json", "txt", "bolsig"],
-    "runtime_version": "0.1.0",
+    "runtime_version": __version__,
     "config_warning_count": 3,
     "duplicate_upload_status": 409,
     "verified_export_reactions": 1,

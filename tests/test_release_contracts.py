@@ -109,3 +109,12 @@ def test_readme_documents_current_runtime_version():
     readme = (repo / "README.md").read_text(encoding="utf-8")
 
     assert f"当前版本：`{namespace['__version__']}`" in readme
+
+
+def test_release_check_derives_expected_runtime_version_from_app_version():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert "from app import __version__" in release_text
+    assert '"runtime_version": __version__' in release_text
+    assert '"runtime_version": "0.1.0"' not in release_text
