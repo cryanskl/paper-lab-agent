@@ -41,7 +41,10 @@ class OpenAlexClient:
                 page_results = payload.get("results") or []
                 if isinstance(page_results, list):
                     results.extend(self.normalize(item) for item in page_results if isinstance(item, dict))
-                next_cursor = (payload.get("meta") or {}).get("next_cursor")
+                meta = payload.get("meta") or {}
+                if not isinstance(meta, dict):
+                    meta = {}
+                next_cursor = meta.get("next_cursor")
                 if not next_cursor or next_cursor == params["cursor"]:
                     break
                 await self.wait_between_requests()

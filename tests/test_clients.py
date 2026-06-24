@@ -169,6 +169,23 @@ async def test_openalex_skips_malformed_result_items():
 
 
 @pytest.mark.asyncio
+async def test_openalex_tolerates_malformed_meta_payload():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "results": [{"id": "https://openalex.org/W1", "title": "Valid work"}],
+                "meta": "not-a-meta-object",
+            }
+        )
+
+    client = OpenAlexClient(transport=httpx.MockTransport(handler))
+
+    works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert [work["title"] for work in works] == ["Valid work"]
+
+
+@pytest.mark.asyncio
 async def test_crossref_waits_between_paginated_requests():
     sleep_calls = []
     seen_cursors = []
