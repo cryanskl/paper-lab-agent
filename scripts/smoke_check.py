@@ -231,6 +231,27 @@ def run_smoke() -> dict:
             "verified reaction export",
         )
         assert_ok(Path(verified_export["output_path"]).exists(), "expected verified export file")
+        verified_export_payload = json.loads(Path(verified_export["output_path"]).read_text(encoding="utf-8"))
+        exported_reactions = verified_export_payload.get("reactions") or []
+        assert_ok(len(exported_reactions) == 1, f"expected one reaction in JSON export, got {exported_reactions}")
+        export_audit_entries = [
+            audit
+            for reaction in exported_reactions
+            for audit in reaction.get("audit_log") or []
+        ]
+        assert_ok(
+            any(audit.get("verified_by") == "smoke-check" for audit in export_audit_entries),
+            f"expected smoke-check audit entry in JSON export, got {export_audit_entries}",
+        )
+        export_source_sections = [
+            reaction.get("source_section_id")
+            for reaction in exported_reactions
+            if reaction.get("source_section_id")
+            and reaction.get("source_section_title")
+            and reaction.get("source_section_type")
+            and reaction.get("source_section_seq") is not None
+        ]
+        assert_ok(export_source_sections, f"expected source section fields in JSON export, got {exported_reactions}")
 
         status = assert_status(client.get("/api/v1/system/status"), 200, "system status")
         runtime = status["runtime"]
@@ -268,6 +289,9 @@ def run_smoke() -> dict:
             "blocked_export_status": blocked_export.status_code,
             "verified_export_format": verified_export["format"],
             "verified_export_path": verified_export["output_path"],
+            "verified_export_reactions": len(exported_reactions),
+            "verified_export_audit_entries": len(export_audit_entries),
+            "verified_export_source_sections": len(export_source_sections),
             "runtime_version": runtime["version"],
             "config_warning_count": len(config_warnings),
         }

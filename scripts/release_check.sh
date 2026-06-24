@@ -72,6 +72,8 @@ expected = {
     "runtime_version": "0.1.0",
     "config_warning_count": 3,
     "duplicate_upload_status": 409,
+    "verified_export_reactions": 1,
+    "verified_export_source_sections": 1,
 }
 for key, value in expected.items():
     if payload.get(key) != value:
@@ -91,6 +93,12 @@ if payload.get("crawled_papers", 0) < 1:
     raise SystemExit(1)
 if not payload.get("duplicate_document_id"):
     print("release_check failed: smoke duplicate_document_id is missing", file=sys.stderr)
+    raise SystemExit(1)
+if payload.get("verified_export_audit_entries", 0) < 1:
+    print(
+        f"release_check failed: smoke verified_export_audit_entries={payload.get('verified_export_audit_entries')!r}, expected >= 1",
+        file=sys.stderr,
+    )
     raise SystemExit(1)
 PY
 "${PYTHON_CMD[@]}" -m pytest -q
