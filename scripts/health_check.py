@@ -36,6 +36,7 @@ STORAGE_HEALTH_REQUIRED_KEYS = {
     "vector_db",
 }
 STORAGE_HEALTH_ENTRY_REQUIRED_KEYS = {"path", "exists", "writable"}
+STORAGE_HEALTH_PATH_KEYS = {"data_dir", "pdf_dir", "tei_dir", "translation_dir", "export_dir"}
 VECTOR_DB_HEALTH_REQUIRED_KEYS = {"path", "exists", "readable", "writable", "valid_json", "error"}
 EXTERNAL_CAPABILITY_REQUIRED_KEYS = {
     "openalex_mailto",
@@ -166,6 +167,14 @@ def validate_system_status(status: dict) -> list[str]:
             invalid_storage_health.extend(f"{key}.{entry_key}" for entry_key in sorted(missing_entry_keys))
             if "path" in value and (not isinstance(value["path"], str) or not value["path"]):
                 invalid_storage_health.append(f"{key}.path")
+            expected_path = storage.get(key) if isinstance(storage, dict) and key in STORAGE_HEALTH_PATH_KEYS else None
+            if (
+                isinstance(expected_path, str)
+                and expected_path
+                and isinstance(value.get("path"), str)
+                and value["path"] != expected_path
+            ):
+                invalid_storage_health.append(f"{key}.path must match storage.{key}")
             for entry_key in ("exists", "writable"):
                 if entry_key in value and not isinstance(value[entry_key], bool):
                     invalid_storage_health.append(f"{key}.{entry_key}")
