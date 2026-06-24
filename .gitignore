@@ -30,11 +30,13 @@ yarn-debug.log*
 yarn-error.log*
 .turbo/
 .cache/
+.uv-cache/
 coverage/
 test-results/
 playwright-report/
 
 # Python simulation outputs and caches
+.venv/
 __pycache__/
 *.pyc
 .pytest_cache/

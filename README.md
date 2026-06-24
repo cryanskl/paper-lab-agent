@@ -1,64 +1,116 @@
 # paper-lab-agent
 
-`paper-lab-agent` is a local-first research assistant for paper discovery, bilingual reading, RAG Q&A, and simulation-oriented experiment support.
-
-The project is designed for a single researcher first. V1 should make the full loop work on a local machine: discover relevant papers, store and parse them, read them in English/Chinese side-by-side, ask cited questions across the paper library, and generate small physics/engineering simulation artifacts from paper methods.
-
-## V1 Scope
-
-- Paper intake from stable sources such as arXiv, RSS feeds, APIs, and journal search endpoints.
-- Relevance filtering from a research profile that combines keywords and seed papers.
-- Local paper library using SQLite metadata and a local file store for PDFs, parsed text, translations, and experiment artifacts.
-- Bilingual reader with paragraph-level English/Chinese alignment.
-- RAG Q&A across all ingested papers, with required paper and segment citations.
-- Experiment Lab for physics/engineering toy simulations with assumptions, parameters, units, boundary conditions, runnable artifacts, and visual explanations.
-- Deterministic fake model adapter first; local model integration comes after the product flow is stable.
-
-## Non-Goals For V1
-
-- No cloud sync, account system, team collaboration, or hosted multi-user deployment.
-- No promise of full benchmark reproduction from papers.
-- No bypassing paywalls, CAPTCHA, access controls, robots restrictions, or site terms.
-- No real model dependency in the core harness; tests must run without network and without an LLM.
-
-## Planned Stack
-
-- Next.js + TypeScript + pnpm for the local web app.
-- SQLite for metadata and task state.
-- Local `data/` directory for PDFs, parsed text, translations, indexes, and simulation outputs.
-- Fake model adapter for deterministic translation, relevance, Q&A, and simulation spec outputs.
-- Later optional model adapters for Ollama or another local model runtime.
-
-## Repository Layout
-
-```text
-docs/
-  research-assistant-v1-plan.md
-  product-spec.md
-  architecture.md
-  source-and-download-policy.md
-  evaluation.md
-  harness.md
-fixtures/
-  intake/
-  papers/
-  rag/
-  simulation/
-```
-
-## Development Status
-
-This repository currently contains product and engineering constraints plus fixture seeds. It has not yet been initialized as a Next.js application.
+低温等离子体文献检索与理解系统。V1 采用 local-first 架构：FastAPI + SQLite + APScheduler + GROBID + Chroma/FAISS 兼容的本地索引约定，前端使用 Streamlit。
 
 ## Quick Start
 
-For now, review the planning documents:
-
 ```bash
-ls docs
-cat docs/product-spec.md
-cat docs/architecture.md
-cat docs/harness.md
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+bash scripts/dev.sh
 ```
 
-When code is added, core tests should default to fixture-backed no-network mode.
+服务启动时会自动用 `docs/schema.sql` 初始化 `data/plasma.db`。
+`scripts/dev.sh` 会等待 FastAPI `/api/v1/health` 和 Streamlit `/_stcore/health` 都可访问后再打印地址。
+
+验证：
+
+```bash
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/api/v1/health
+curl http://127.0.0.1:8000/api/v1/system/status
+curl 'http://127.0.0.1:8000/api/v1/journals?active=true'
+python scripts/health_check.py
+python scripts/health_check.py --compact
+API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
+```
+
+`/api/v1/system/status` 会返回 `config_warnings`，用于提示 OpenAlex、Unpaywall、LLM 等可选外部能力是否还未配置；缺失不会阻断默认离线模式。
+
+导入离线样例论文和 PDF 文档：
+
+```bash
+python scripts/import_fixtures.py
+curl 'http://127.0.0.1:8000/api/v1/papers?q=plasma'
+curl 'http://127.0.0.1:8000/api/v1/documents'
+```
+
+启用定时抓取：
+
+```bash
+PAPER_LAB_SCHEDULER_ENABLED=true bash scripts/dev.sh
+```
+
+默认关闭 scheduler，避免本地离线测试和首次启动时自动访问外部 API。启用后可在 Streamlit 侧边栏或 `/api/v1/system/status` 的 `runtime.scheduler_enabled` 确认状态。
+
+## Backend Only
+
+```bash
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+## Streamlit
+
+```bash
+python -m streamlit run streamlit_app.py
+```
+
+默认前端连接 `http://127.0.0.1:8000/api/v1`。如需修改：
+
+```bash
+API_BASE_URL=http://127.0.0.1:8000/api/v1 python -m streamlit run streamlit_app.py
+```
+
+## Optional GROBID
+
+GROBID 只在解析真实 PDF 时需要。离线测试和本地文本 fallback 不依赖它。
+`--check-external` 会主动检查 GROBID；默认健康检查不访问外部服务。
+
+```bash
+docker run --rm -p 8070:8070 lfoppiano/grobid
+python scripts/health_check.py --check-external
+python scripts/health_check.py --require-grobid
+```
+
+`--require-grobid` 会主动检查 GROBID，并在不可用时返回非零退出码，适合真实 PDF 解析部署前的强制门禁。
+
+## Verification
+
+```bash
+bash scripts/release_check.sh
+```
+
+这条命令会执行与 CI 相同的离线发布检查：校验启动脚本语法、编译关键脚本、运行全量测试。
+
+如需只跑离线 walking skeleton smoke：
+
+```bash
+python -m scripts.smoke_check
+```
+
+该 smoke 会在临时目录初始化空库、导入 fixture 论文、验证 `/papers` 检索，并跑通 PDF fallback 的上传、解析、索引、RAG 查询，以及翻译、化学抽取、复核闸门和导出，不访问外部服务。
+
+如需只跑测试：
+
+```bash
+python -m pytest -q
+```
+
+默认测试使用临时 SQLite 数据库和本地 fixture，不依赖外部网络、GROBID 或真实模型。
+
+CI 配置在 `.github/workflows/ci.yml`，默认跑同一条离线测试命令。
+
+## Troubleshooting
+
+- API 端口冲突：`API_PORT=8001 bash scripts/dev.sh`
+- Streamlit 端口冲突：`STREAMLIT_PORT=8502 bash scripts/dev.sh`
+- 慢机器启动超时：`DEV_READY_TIMEOUT=60 bash scripts/dev.sh`
+- 指定解释器：`PYTHON=.venv/bin/python bash scripts/dev.sh`
+- GROBID 未启动：解析会降级为本地文本 fallback，`documents.parse_error` 会记录原因。
+- 外部 API 未配置：OpenAlex、Unpaywall、LLM 均从 `.env` 读取；未配置时系统保持本地可运行，不用假数据冒充外部能力。
+
+## Productization Roadmap
+
+成品化阶段见 [docs/productization-roadmap.md](docs/productization-roadmap.md)。

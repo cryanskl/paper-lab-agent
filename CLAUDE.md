@@ -1,4 +1,4 @@
-# AGENTS.md
+# CLAUDE.md · 项目编码规则
 
 > 给 AI 编码 agent（Claude Code / Cursor 等）的项目上下文。每次开始任务前先读本文件。
 > Cursor 用户可把本文件内容放进 `.cursorrules`。
