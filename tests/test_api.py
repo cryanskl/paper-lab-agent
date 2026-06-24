@@ -4343,6 +4343,22 @@ def test_streamlit_chemistry_review_can_preserve_zero_threshold():
     assert '"threshold_ev": threshold_ev if threshold_ev else None' not in chemistry_section
 
 
+def test_streamlit_chemistry_export_blocks_empty_reaction_sets():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    for required in [
+        "no_reactions = not reactions",
+        "export_blocked = no_reactions or bool(unverified_reactions)",
+        "if no_reactions:",
+        "没有可导出的反应。",
+        "elif export_blocked:",
+        "disabled=export_blocked",
+    ]:
+        assert required in chemistry_section
+
+
 def test_document_chunks_endpoint_reports_index_status(tmp_path):
     client = make_client(tmp_path)
     response = client.post(

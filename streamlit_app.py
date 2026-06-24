@@ -481,8 +481,11 @@ with chemistry_tab:
         unverified_reactions = [reaction for reaction in reactions if not reaction.get("verified")]
         st.caption(f"status: {detail.get('status')} · reactions: {len(reactions)} · 未复核: {len(unverified_reactions)}")
         show_only_unverified = st.checkbox("只显示未复核", value=False, key="show_only_unverified")
-        export_blocked = bool(unverified_reactions)
-        if export_blocked:
+        no_reactions = not reactions
+        export_blocked = no_reactions or bool(unverified_reactions)
+        if no_reactions:
+            st.info("没有可导出的反应。")
+        elif export_blocked:
             st.info("未全复核不可导出：请先完成所有反应复核。")
         export_format = st.selectbox("导出格式", ["json", "txt", "bolsig"], key="reaction_export_format")
         if st.button("导出反应集", key="export-reaction-set", disabled=export_blocked):
