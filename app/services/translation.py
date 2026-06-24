@@ -92,6 +92,11 @@ def translate_section_text(section: dict, translator: Translator, target_lang: s
     return translate_text_preserving_formulas(text, translator, target_lang)
 
 
+def has_translatable_text(section: dict) -> bool:
+    section_type = (section.get("section_type") or "").strip().lower()
+    return section_type not in PRESERVE_SECTION_TYPES and bool((section.get("content") or "").strip())
+
+
 def safe_target_lang_slug(target_lang: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", (target_lang or "").strip())
     slug = slug.strip(".-")
@@ -124,7 +129,7 @@ def translate_document(document_id: int, target_lang: str, translation_id: Optio
     try:
         if not sections:
             raise ValueError("document has no parsed sections")
-        if not any((row["content"] or "").strip() for row in sections):
+        if not any(has_translatable_text(dict_from_row(row)) for row in sections):
             raise ValueError("document has no translatable section text")
         translator = get_translator(settings)
         note = (

@@ -4228,6 +4228,53 @@ def test_translate_document_fails_when_sections_have_no_text(tmp_path):
     assert "document has no translatable section text" in row["error"]
 
 
+def test_translate_document_fails_when_only_preserved_sections_have_text(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import translation as translation_service
+
+    calls = []
+
+    class RecordingTranslator:
+        def translate(self, text, target_lang):
+            calls.append((text, target_lang))
+            return f"translated::{text}"
+
+    monkeypatch.setattr(translation_service, "get_translator", lambda settings: RecordingTranslator())
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            (str(tmp_path / "preserved-only.pdf"), "preserved-only", "preserved-only.pdf"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Reaction Table', 'Reaction Rate e + Ar -> Ar+', 'table')
+            """,
+            (document_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 2, 'Reference 1', 'Smith 2026 Plasma Chemistry', 'reference')
+            """,
+            (document_id,),
+        )
+
+    result = translation_service.translate_document(document_id, "zh")
+
+    assert result["status"] == "failed"
+    assert result["output_path"] is None
+    assert "document has no translatable section text" in result["error"]
+    assert calls == []
+
+
 def test_translate_document_failure_clears_stale_output_path(tmp_path):
     make_client(tmp_path)
 
