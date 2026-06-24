@@ -90,6 +90,14 @@ def chunk_text(text: str, max_words: int = 220) -> Iterable[str]:
     return [" ".join(words[i : i + max_words]) for i in range(0, len(words), max_words)]
 
 
+def mark_index_queued(document_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE documents SET index_status='indexing', index_error=NULL WHERE id=?",
+            (document_id,),
+        )
+
+
 def index_document(document_id: int) -> dict:
     settings = get_settings()
     vector_store = JsonVectorStore(settings.vector_db_path)

@@ -14,6 +14,14 @@ from app.services.rag import JsonVectorStore
 from app.utils import now_iso
 
 
+def mark_parse_queued(document_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE documents SET parse_status='parsing', parse_error=NULL WHERE id=?",
+            (document_id,),
+        )
+
+
 async def save_upload(file: UploadFile, paper_id: Optional[int]) -> tuple[dict, bool]:
     settings = get_settings()
     content = await file.read()

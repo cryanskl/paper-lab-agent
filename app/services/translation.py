@@ -1,5 +1,5 @@
 import re
-from typing import Protocol
+from typing import Optional, Protocol
 
 import httpx
 
@@ -90,8 +90,7 @@ def translate_section_text(section: dict, translator: Translator, target_lang: s
     return translate_text_preserving_formulas(text, translator, target_lang)
 
 
-def translate_document(document_id: int, target_lang: str) -> dict:
-    settings = get_settings()
+def create_translation_job(document_id: int, target_lang: str) -> dict:
     with get_conn() as conn:
         cursor = conn.execute(
             """
@@ -101,6 +100,15 @@ def translate_document(document_id: int, target_lang: str) -> dict:
             (document_id, target_lang),
         )
         translation_id = cursor.lastrowid
+        row = conn.execute("SELECT * FROM translations WHERE id=?", (translation_id,)).fetchone()
+        return dict_from_row(row)
+
+
+def translate_document(document_id: int, target_lang: str, translation_id: Optional[int] = None) -> dict:
+    settings = get_settings()
+    if translation_id is None:
+        translation_id = create_translation_job(document_id, target_lang)["id"]
+    with get_conn() as conn:
         sections = conn.execute(
             "SELECT * FROM sections WHERE document_id=? ORDER BY seq", (document_id,)
         ).fetchall()

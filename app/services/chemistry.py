@@ -37,6 +37,14 @@ def detect_cross_section_url(text: str) -> Optional[str]:
     return None
 
 
+def mark_chemistry_queued(document_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE documents SET chemistry_status='extracting', chemistry_error=NULL WHERE id=?",
+            (document_id,),
+        )
+
+
 def extract_reactions(document_id: int) -> dict:
     with get_conn() as conn:
         conn.execute(

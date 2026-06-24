@@ -6,10 +6,10 @@ from pydantic import BaseModel, field_validator
 
 from app.db import dict_from_row, get_conn
 from app.errors import AppError, page
-from app.services.chemistry import extract_reactions
-from app.services.documents import parse_document, save_upload
-from app.services.rag import index_document
-from app.services.translation import translate_document
+from app.services.chemistry import extract_reactions, mark_chemistry_queued
+from app.services.documents import mark_parse_queued, parse_document, save_upload
+from app.services.rag import index_document, mark_index_queued
+from app.services.translation import create_translation_job, translate_document
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -82,6 +82,7 @@ def get_document(document_id: int) -> dict:
 @router.post("/{document_id}/parse", status_code=202)
 def parse(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
+    mark_parse_queued(document_id)
     background_tasks.add_task(parse_document, document_id)
     return {"job_id": document_id, "status": "pending"}
 
@@ -139,8 +140,9 @@ def list_chunks(
 @router.post("/{document_id}/translate", status_code=202)
 def translate(document_id: int, body: TranslateIn, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
-    background_tasks.add_task(translate_document, document_id, body.target_lang)
-    return {"job_id": document_id, "status": "pending"}
+    translation = create_translation_job(document_id, body.target_lang)
+    background_tasks.add_task(translate_document, document_id, body.target_lang, translation["id"])
+    return {"job_id": translation["id"], "status": "pending"}
 
 
 @router.get("/{document_id}/translation")
@@ -159,6 +161,7 @@ def get_translation(document_id: int) -> dict:
 @router.post("/{document_id}/index", status_code=202)
 def index(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
+    mark_index_queued(document_id)
     background_tasks.add_task(index_document, document_id)
     return {"job_id": document_id, "status": "pending"}
 
@@ -166,6 +169,7 @@ def index(document_id: int, background_tasks: BackgroundTasks) -> dict:
 @router.post("/{document_id}/extract-chemistry", status_code=202)
 def extract_chemistry(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
+    mark_chemistry_queued(document_id)
     background_tasks.add_task(extract_reactions, document_id)
     return {"job_id": document_id, "status": "pending"}
 

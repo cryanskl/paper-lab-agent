@@ -3260,6 +3260,39 @@ def test_document_chunks_endpoint_reports_index_status(tmp_path):
     assert after["items"][0]["section_title"]
 
 
+def test_document_async_routes_mark_queued_status_before_background_tasks_run(tmp_path):
+    from fastapi import BackgroundTasks
+
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("queued.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    from app.routers import documents as document_router
+
+    document_router.parse(document_id, BackgroundTasks())
+    document = client.get(f"/api/v1/documents/{document_id}").json()
+    assert document["parse_status"] == "parsing"
+    assert document["parse_error"] is None
+
+    document_router.translate(document_id, document_router.TranslateIn(target_lang="zh"), BackgroundTasks())
+    translation = client.get(f"/api/v1/documents/{document_id}/translation").json()
+    assert translation["status"] == "pending"
+    assert translation["target_lang"] == "zh"
+
+    document_router.index(document_id, BackgroundTasks())
+    chunks = client.get(f"/api/v1/documents/{document_id}/chunks").json()
+    assert chunks["index_status"] == "indexing"
+    assert chunks["index_error"] is None
+
+    document_router.extract_chemistry(document_id, BackgroundTasks())
+    document = client.get(f"/api/v1/documents/{document_id}").json()
+    assert document["chemistry_status"] == "extracting"
+    assert document["chemistry_error"] is None
+
+
 def test_extracted_reaction_keeps_source_section_and_excerpt(tmp_path):
     client = make_client(tmp_path)
     content = pdf_bytes(b"Section text before. e + Ar -> e + e + Ar+ . Section text after.")
