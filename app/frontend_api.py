@@ -48,15 +48,18 @@ def request_json_status(
     data: Any = None,
     timeout: float = 20,
 ) -> tuple[int, dict[str, Any]]:
-    response = requests.request(
-        method,
-        f"{normalize_base_url(base_url)}{path}",
-        params=params,
-        json=json,
-        files=files,
-        data=data,
-        timeout=timeout,
-    )
+    try:
+        response = requests.request(
+            method,
+            f"{normalize_base_url(base_url)}{path}",
+            params=params,
+            json=json,
+            files=files,
+            data=data,
+            timeout=timeout,
+        )
+    except requests.RequestException as exc:
+        return 0, {"error": {"code": "request_failed", "message": str(exc) or exc.__class__.__name__}}
     return response.status_code, response_payload(response)
 
 

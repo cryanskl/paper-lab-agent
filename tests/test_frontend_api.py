@@ -53,3 +53,27 @@ def test_frontend_api_get_raises_readable_api_error_for_json_error(monkeypatch):
         assert exc.payload["error"]["code"] == "reaction_set_unverified"
     else:
         raise AssertionError("expected FrontendApiError")
+
+
+def test_frontend_api_status_request_converts_network_error_to_payload(monkeypatch):
+    from app import frontend_api
+
+    def fake_request(*args, **kwargs):
+        raise frontend_api.requests.Timeout("timed out")
+
+    monkeypatch.setattr(frontend_api.requests, "request", fake_request)
+
+    status_code, payload = frontend_api.request_json_status(
+        "GET",
+        "http://api.test/api/v1",
+        "/system/status",
+        timeout=1,
+    )
+
+    assert status_code == 0
+    assert payload == {
+        "error": {
+            "code": "request_failed",
+            "message": "timed out",
+        }
+    }
