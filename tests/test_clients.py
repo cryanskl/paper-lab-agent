@@ -301,3 +301,24 @@ async def test_unpaywall_waits_after_successful_resolution():
     assert result["oa_status"] == "gold"
     assert result["oa_pdf_url"] == "https://example.test/paper.pdf"
     assert sleep_calls == [0.25]
+
+
+@pytest.mark.asyncio
+async def test_unpaywall_tolerates_malformed_best_oa_location():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "oa_status": "green",
+                "best_oa_location": "not-a-location-object",
+            }
+        )
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.resolve("10.1/malformed-location")
+
+    assert result["oa_status"] == "green"
+    assert result["oa_pdf_url"] is None

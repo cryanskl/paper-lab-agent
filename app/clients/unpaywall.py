@@ -72,7 +72,9 @@ class UnpaywallClient:
         return self.retry_backoff_seconds * (attempt + 1)
 
 
-def best_pdf_url(location: dict[str, Any]) -> Optional[str]:
+def best_pdf_url(location: Any) -> Optional[str]:
+    if not isinstance(location, dict):
+        return None
     url_for_pdf = location.get("url_for_pdf")
     if url_for_pdf:
         return url_for_pdf
