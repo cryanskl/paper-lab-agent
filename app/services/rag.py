@@ -173,7 +173,7 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
                 placeholders = ",".join("?" for _ in chunk_ids)
                 rows = conn.execute(
                     f"""
-                    SELECT ch.id, ch.document_id, ch.vector_id, s.title AS section_title
+                    SELECT ch.id, ch.document_id, ch.vector_id, ch.text, s.title AS section_title
                     FROM chunks ch
                     LEFT JOIN sections s ON s.id = ch.section_id
                     WHERE ch.id IN ({placeholders})
@@ -185,7 +185,7 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
                 placeholders = ",".join("?" for _ in vector_ids)
                 rows = conn.execute(
                     f"""
-                    SELECT ch.id, ch.document_id, ch.vector_id, s.title AS section_title
+                    SELECT ch.id, ch.document_id, ch.vector_id, ch.text, s.title AS section_title
                     FROM chunks ch
                     LEFT JOIN sections s ON s.id = ch.section_id
                     WHERE ch.vector_id IN ({placeholders})
@@ -198,14 +198,18 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
             chunk = chunks_by_id.get(hit.get("chunk_id")) or chunks_by_vector.get(hit.get("vector_id"))
             if not chunk or chunk["document_id"] != hit["document_id"]:
                 continue
+            chunk_text_value = chunk.get("text") or ""
+            if hit.get("embedding_model") == "local-hash" and score(question_terms, chunk_text_value) <= 0:
+                continue
             item = dict(hit)
             item["_chunk_id"] = chunk["id"]
             item["_section_title"] = chunk["section_title"]
+            item["_text"] = chunk_text_value
             validated_hits.append(item)
         vector_hits = validated_hits
     if vector_hits:
         return {
-            "answer": vector_hits[0]["text"][:600],
+            "answer": (vector_hits[0].get("_text") or vector_hits[0]["text"])[:600],
             "sources": [
                 {
                     "document_id": item["document_id"],

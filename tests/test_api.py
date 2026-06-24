@@ -2461,6 +2461,56 @@ def test_rag_query_ignores_orphan_vector_records_without_chunks(tmp_path):
     assert "证据不足" in result["answer"]
 
 
+def test_rag_query_ignores_stale_vector_text_that_no_longer_matches_chunk(tmp_path):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import JsonVectorStore, local_hash_embedding, query
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            ("/tmp/stale-vector.txt", "stale-vector", "stale-vector.txt"),
+        )
+        document_id = cursor.lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Current section', 'oxygen plasma current evidence', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        chunk_id = conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'oxygen plasma current evidence', 4, 'stale-vector-id', 1)
+            """,
+            (document_id, section_id),
+        ).lastrowid
+
+    JsonVectorStore(tmp_path / "vector-index.json").upsert_many(
+        {
+            "stale-vector-id": {
+                "chunk_id": chunk_id,
+                "document_id": document_id,
+                "section_id": section_id,
+                "text": "metastable stale evidence",
+                "embedding": local_hash_embedding("metastable stale evidence"),
+                "embedding_model": "local-hash",
+                "dimensions": 64,
+            }
+        }
+    )
+
+    result = query("metastable", [document_id], 3)
+
+    assert result["sources"] == []
+    assert "证据不足" in result["answer"]
+
+
 def test_rag_reindex_replaces_stale_vectors_for_document(tmp_path):
     make_client(tmp_path)
 
