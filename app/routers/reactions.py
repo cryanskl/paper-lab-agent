@@ -96,7 +96,7 @@ def verify(reaction_id: int, body: VerifyIn) -> dict:
     try:
         clear_fields = {
             field_name
-            for field_name in {"rate_value", "threshold_ev", "cross_section_url"}
+            for field_name in {"reaction_type", "rate_type", "rate_value", "threshold_ev", "cross_section_url"}
             if field_name in body.model_fields_set and getattr(body, field_name) is None
         }
         return verify_reaction(

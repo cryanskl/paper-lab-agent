@@ -3085,6 +3085,8 @@ def test_reaction_verify_can_clear_optional_review_fields(tmp_path):
         f"/api/v1/reactions/{reaction_id}/verify",
         json={
             "verified": True,
+            "reaction_type": "ionization",
+            "rate_type": "cross_section",
             "rate_value": "LXCat table",
             "threshold_ev": 15.76,
             "cross_section_url": "https://nl.lxcat.net/data/set/example",
@@ -3095,6 +3097,8 @@ def test_reaction_verify_can_clear_optional_review_fields(tmp_path):
         f"/api/v1/reactions/{reaction_id}/verify",
         json={
             "verified": True,
+            "reaction_type": None,
+            "rate_type": None,
             "rate_value": None,
             "threshold_ev": None,
             "cross_section_url": None,
@@ -3103,9 +3107,13 @@ def test_reaction_verify_can_clear_optional_review_fields(tmp_path):
     ).json()
 
     reaction = cleared["reactions"][0]
+    assert reaction["reaction_type"] is None
+    assert reaction["rate_type"] is None
     assert reaction["rate_value"] is None
     assert reaction["threshold_ev"] is None
     assert reaction["cross_section_url"] is None
+    assert reaction["audit_log"][0]["changes"]["reaction_type"] is None
+    assert reaction["audit_log"][0]["changes"]["rate_type"] is None
     assert reaction["audit_log"][0]["changes"]["rate_value"] is None
     assert reaction["audit_log"][0]["changes"]["threshold_ev"] is None
     assert reaction["audit_log"][0]["changes"]["cross_section_url"] is None
