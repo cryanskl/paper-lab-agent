@@ -8,6 +8,7 @@ from app.clients.unpaywall import UnpaywallClient
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
 from app.errors import AppError, page
+from app.services.crawl import unpaywall_client_options
 from app.utils import json_loads
 
 router = APIRouter(prefix="/papers", tags=["papers"])
@@ -147,7 +148,7 @@ async def resolve_oa(paper_id: int) -> dict:
     paper = dict_from_row(row)
     if not paper.get("doi"):
         raise AppError(422, "paper_missing_doi", "Paper has no DOI")
-    result = await UnpaywallClient(settings.unpaywall_email).resolve(paper["doi"])
+    result = await UnpaywallClient(settings.unpaywall_email, **unpaywall_client_options(settings)).resolve(paper["doi"])
     with get_conn() as conn:
         conn.execute(
             "UPDATE papers SET oa_status=?, oa_pdf_url=?, updated_at=datetime('now') WHERE id=?",

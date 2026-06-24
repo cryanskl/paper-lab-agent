@@ -1710,6 +1710,51 @@ def test_unpaywall_client_honors_retry_after_without_real_sleep():
     assert delays == [2.0]
 
 
+def test_resolve_oa_passes_unpaywall_retry_and_timeout_settings(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.config import get_settings
+    from app.db import get_conn
+    from app.routers import papers as papers_router
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("UNPAYWALL_API_MAX_RETRIES", "6")
+    monkeypatch.setenv("UNPAYWALL_API_RETRY_BACKOFF_SECONDS", "0")
+    monkeypatch.setenv("UNPAYWALL_API_TIMEOUT_SECONDS", "11")
+
+    created = []
+
+    class FakeUnpaywallClient:
+        def __init__(self, email, **kwargs):
+            created.append((email, kwargs))
+
+        async def resolve(self, doi):
+            return {"oa_status": "gold", "oa_pdf_url": "https://example.test/manual-oa.pdf"}
+
+    monkeypatch.setattr(papers_router, "UnpaywallClient", FakeUnpaywallClient)
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, ?, '[]', 'fixture', '{}')
+            """,
+            ("10.7/manual-resolve", "Manual OA resolve", "argon plasma"),
+        )
+        paper_id = cursor.lastrowid
+
+    response = client.post(f"/api/v1/papers/{paper_id}/resolve-oa")
+
+    assert response.status_code == 200
+    assert response.json()["oa_pdf_url"] == "https://example.test/manual-oa.pdf"
+    assert created == [
+        (
+            None,
+            {"max_retries": 6, "retry_backoff_seconds": 0.0, "timeout": 11.0},
+        )
+    ]
+
+
 def test_crawl_job_passes_api_retry_and_page_settings(tmp_path, monkeypatch):
     make_client(tmp_path)
 
