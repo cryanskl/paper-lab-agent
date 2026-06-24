@@ -39,24 +39,26 @@ def test_env_example_contains_required_external_dependency_keys():
 
 def test_env_example_validator_reports_missing_required_key(tmp_path):
     validate_env_example = load_validate_env_example()
+    repo = Path(__file__).resolve().parent.parent
     env_path = tmp_path / ".env.example"
-    env_path.write_text(
-        "\n".join(
-            [
-                "OPENALEX_MAILTO=",
-                "UNPAYWALL_EMAIL=",
-                "GROBID_URL=http://127.0.0.1:8070",
-                "LLM_API_KEY=",
-                "EMBEDDING_MODEL=local-hash",
-                "DATABASE_PATH=./data/plasma.db",
-            ]
-        ),
-        encoding="utf-8",
-    )
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_path.write_text(env_text.replace("VECTOR_DB_PATH=./data/vector-index.json\n", ""), encoding="utf-8")
 
     missing = validate_env_example.missing_required_keys(env_path)
 
     assert missing == ["VECTOR_DB_PATH"]
+
+
+def test_env_example_validator_reports_missing_settings_alias(tmp_path):
+    validate_env_example = load_validate_env_example()
+    repo = Path(__file__).resolve().parent.parent
+    env_path = tmp_path / ".env.example"
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_path.write_text(env_text.replace("LLM_BASE_URL=https://api.openai.com/v1\n", ""), encoding="utf-8")
+
+    missing = validate_env_example.missing_required_keys(env_path)
+
+    assert missing == ["LLM_BASE_URL"]
 
 
 def test_gitignore_contains_required_release_hygiene_patterns():

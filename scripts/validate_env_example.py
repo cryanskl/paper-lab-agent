@@ -3,10 +3,14 @@
 
 from __future__ import annotations
 
+import ast
 import argparse
 from pathlib import Path
 import sys
 
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SETTINGS_CONFIG_PATH = REPO_ROOT / "app" / "config.py"
 
 REQUIRED_ENV_KEYS = [
     "OPENALEX_MAILTO",
@@ -17,6 +21,33 @@ REQUIRED_ENV_KEYS = [
     "VECTOR_DB_PATH",
     "DATABASE_PATH",
 ]
+
+
+def settings_env_aliases(path: Path = SETTINGS_CONFIG_PATH) -> list[str]:
+    if not path.exists():
+        return []
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    aliases: list[str] = []
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef) or node.name != "Settings":
+            continue
+        for statement in node.body:
+            if not isinstance(statement, ast.AnnAssign) or not isinstance(statement.value, ast.Call):
+                continue
+            if getattr(statement.value.func, "id", "") != "Field":
+                continue
+            for keyword in statement.value.keywords:
+                if keyword.arg == "alias" and isinstance(keyword.value, ast.Constant):
+                    aliases.append(str(keyword.value.value))
+    return aliases
+
+
+def required_env_keys(config_path: Path = SETTINGS_CONFIG_PATH) -> list[str]:
+    keys: list[str] = []
+    for key in [*REQUIRED_ENV_KEYS, *settings_env_aliases(config_path)]:
+        if key not in keys:
+            keys.append(key)
+    return keys
 
 
 def parse_env_keys(path: Path) -> set[str]:
@@ -35,7 +66,7 @@ def parse_env_keys(path: Path) -> set[str]:
 
 def missing_required_keys(path: Path) -> list[str]:
     keys = parse_env_keys(path)
-    return [key for key in REQUIRED_ENV_KEYS if key not in keys]
+    return [key for key in required_env_keys() if key not in keys]
 
 
 def main() -> int:
