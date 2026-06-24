@@ -298,7 +298,28 @@ with rag_tab:
         st.json(api_post("/rag/query", json={"question": question, "document_ids": ids, "top_k": 6})[1])
 
 with chemistry_tab:
-    rs_id = st.number_input("reaction_set_id", min_value=1, value=1)
+    chemistry_document_id = st.number_input("chemistry_document_id", min_value=1, value=1)
+    if st.button("加载文档反应集"):
+        try:
+            st.session_state["document_reaction_sets"] = api_get(f"/documents/{chemistry_document_id}/reaction-sets")
+        except Exception as exc:
+            st.warning(exc)
+            st.session_state["document_reaction_sets"] = None
+
+    selected_reaction_set_id = None
+    document_reaction_sets = st.session_state.get("document_reaction_sets")
+    if document_reaction_sets:
+        reaction_set_items = document_reaction_sets.get("items", [])
+        st.dataframe(reaction_set_items)
+        if reaction_set_items:
+            selected_reaction_set = st.selectbox(
+                "document_reaction_sets",
+                reaction_set_items,
+                format_func=lambda item: f"#{item['id']} · {item.get('status') or 'unknown'} · {item.get('name') or 'Reaction set'}",
+            )
+            selected_reaction_set_id = selected_reaction_set["id"]
+
+    rs_id = st.number_input("reaction_set_id", min_value=1, value=int(selected_reaction_set_id or 1))
     if st.button("加载反应集") or "reaction_set_detail" not in st.session_state:
         try:
             st.session_state["reaction_set_detail"] = api_get(f"/reaction-sets/{rs_id}")
