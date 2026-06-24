@@ -504,7 +504,18 @@ with rag_tab:
             else:
                 answer = rag_payload.get("answer") or ""
                 st.markdown(answer)
-                sources = rag_payload.get("sources") or []
+                sources = [
+                    {
+                        "document_id": source.get("document_id"),
+                        "paper_id": source.get("paper_id"),
+                        "paper_title": source.get("paper_title"),
+                        "section_title": source.get("section_title"),
+                        "chunk_id": source.get("chunk_id"),
+                        "vector_id": source.get("vector_id"),
+                        "score": source.get("score"),
+                    }
+                    for source in rag_payload.get("sources") or []
+                ]
                 st.subheader("引用来源")
                 if sources:
                     st.dataframe(sources, use_container_width=True)
@@ -512,6 +523,7 @@ with rag_tab:
                         "source chunk",
                         sources,
                         format_func=lambda source: (
+                            f"paper {source.get('paper_id') or '-'} · "
                             f"doc {source.get('document_id')} · "
                             f"chunk_id={source.get('chunk_id')} · "
                             f"{source.get('section_title') or '-'}"

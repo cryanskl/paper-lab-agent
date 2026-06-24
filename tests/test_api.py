@@ -8011,6 +8011,8 @@ def test_streamlit_rag_tab_separates_answer_and_sources():
         'rag_payload.get("sources")',
         "引用来源",
         "st.dataframe(sources",
+        "paper_id",
+        "paper_title",
         "chunk_id",
         "section_title",
     ]:
