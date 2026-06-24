@@ -1918,6 +1918,21 @@ def test_crossref_client_strips_jats_tags_from_abstract():
     assert work["abstract"] == "Argon plasma chemistry & kinetics."
 
 
+def test_crossref_client_uses_issued_date_when_published_dates_are_missing():
+    from app.clients.crossref import CrossrefClient
+
+    work = CrossrefClient().normalize(
+        {
+            "DOI": "10.2/issued",
+            "title": ["Issued date only"],
+            "issued": {"date-parts": [[2026, 6, 24]]},
+        }
+    )
+
+    assert work["published_date"] == "2026-06-24"
+    assert work["published_year"] == 2026
+
+
 def test_unpaywall_client_honors_retry_after_without_real_sleep():
     import asyncio
 

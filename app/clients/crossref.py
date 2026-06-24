@@ -81,7 +81,7 @@ class CrossrefClient:
         return re.sub(r"\s+", " ", decoded).strip()
 
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
-        published = item.get("published-print") or item.get("published-online") or {}
+        published = item.get("published-print") or item.get("published-online") or item.get("issued") or {}
         parts = (published.get("date-parts") or [[None]])[0]
         year = parts[0] if parts else None
         published_date = "-".join(str(p).zfill(2) for p in parts if p is not None) if parts else None
