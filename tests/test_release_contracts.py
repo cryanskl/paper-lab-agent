@@ -374,6 +374,19 @@ def test_requirements_validator_rejects_duplicate_packages(tmp_path):
     assert duplicates == ["requests"]
 
 
+def test_requirements_validator_reports_imported_package_missing_from_requirements(tmp_path):
+    validate_requirements = load_validate_requirements()
+    source_dir = tmp_path / "app"
+    source_dir.mkdir()
+    (source_dir / "uses_bs4.py").write_text("import bs4\nfrom pathlib import Path\n", encoding="utf-8")
+    requirements_path = tmp_path / "requirements.txt"
+    requirements_path.write_text("requests==2.32.3\n", encoding="utf-8")
+
+    missing = validate_requirements.missing_imported_packages(requirements_path, [source_dir])
+
+    assert missing == ["beautifulsoup4"]
+
+
 def test_requirements_validator_runs_as_release_script():
     import subprocess
     import sys

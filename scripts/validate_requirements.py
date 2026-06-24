@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 import sys
 from pathlib import Path
@@ -14,6 +15,7 @@ DEFAULT_REQUIREMENTS_PATH = REPO_ROOT / "requirements.txt"
 REQUIRED_PACKAGES = [
     "fastapi",
     "uvicorn",
+    "pydantic",
     "pydantic-settings",
     "python-multipart",
     "httpx",
@@ -23,6 +25,44 @@ REQUIRED_PACKAGES = [
     "pytest",
     "pytest-asyncio",
 ]
+SOURCE_PATHS = [REPO_ROOT / "app", REPO_ROOT / "scripts", REPO_ROOT / "streamlit_app.py"]
+LOCAL_MODULES = {"app", "scripts", "streamlit_app", "tests"}
+FALLBACK_STDLIB_MODULES = {
+    "__future__",
+    "argparse",
+    "ast",
+    "asyncio",
+    "collections",
+    "contextlib",
+    "datetime",
+    "functools",
+    "hashlib",
+    "html",
+    "json",
+    "logging",
+    "math",
+    "os",
+    "pathlib",
+    "re",
+    "sqlite3",
+    "sys",
+    "tempfile",
+    "typing",
+    "urllib",
+    "xml",
+}
+STDLIB_MODULES = getattr(sys, "stdlib_module_names", FALLBACK_STDLIB_MODULES)
+IMPORT_PACKAGE_ALIASES = {
+    "apscheduler": "apscheduler",
+    "bs4": "beautifulsoup4",
+    "fastapi": "fastapi",
+    "httpx": "httpx",
+    "pydantic": "pydantic",
+    "pydantic_settings": "pydantic-settings",
+    "pytest": "pytest",
+    "requests": "requests",
+    "streamlit": "streamlit",
+}
 
 
 def normalize_package_name(name: str) -> str:
@@ -73,6 +113,55 @@ def duplicate_packages(path: Path = DEFAULT_REQUIREMENTS_PATH) -> list[str]:
     return duplicates
 
 
+def python_files(paths: list[Path]) -> list[Path]:
+    files: list[Path] = []
+    for path in paths:
+        if path.is_file() and path.suffix == ".py":
+            files.append(path)
+        elif path.is_dir():
+            files.extend(sorted(file for file in path.rglob("*.py") if file.is_file()))
+    return files
+
+
+def imported_top_level_modules(paths: list[Path] = SOURCE_PATHS) -> set[str]:
+    modules: set[str] = set()
+    for path in python_files(paths):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    modules.add(alias.name.split(".", 1)[0])
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                modules.add(node.module.split(".", 1)[0])
+    return modules
+
+
+def required_packages_from_imports(paths: list[Path] = SOURCE_PATHS) -> list[str]:
+    packages: list[str] = []
+    for module in sorted(imported_top_level_modules(paths)):
+        if module in LOCAL_MODULES or module in STDLIB_MODULES:
+            continue
+        package = IMPORT_PACKAGE_ALIASES.get(module, module.replace("_", "-"))
+        if package not in packages:
+            packages.append(package)
+    return packages
+
+
+def missing_imported_packages(
+    requirements_path: Path = DEFAULT_REQUIREMENTS_PATH,
+    source_paths: list[Path] = SOURCE_PATHS,
+) -> list[str]:
+    declared = declared_packages(requirements_path)
+    return [
+        package
+        for package in required_packages_from_imports(source_paths)
+        if normalize_package_name(package) not in declared
+    ]
+
+
 def missing_required_packages(path: Path = DEFAULT_REQUIREMENTS_PATH) -> list[str]:
     declared = declared_packages(path)
     return [package for package in REQUIRED_PACKAGES if normalize_package_name(package) not in declared]
@@ -84,11 +173,14 @@ def main() -> int:
     args = parser.parse_args()
 
     missing = missing_required_packages(Path(args.requirements_path))
+    missing_imports = missing_imported_packages(Path(args.requirements_path))
     unpinned = unpinned_packages(Path(args.requirements_path))
     duplicates = duplicate_packages(Path(args.requirements_path))
-    if missing or unpinned or duplicates:
+    if missing or missing_imports or unpinned or duplicates:
         if missing:
             print(f"requirements missing packages: {', '.join(missing)}", file=sys.stderr)
+        if missing_imports:
+            print(f"requirements missing imported packages: {', '.join(missing_imports)}", file=sys.stderr)
         if unpinned:
             print(f"requirements unpinned packages: {', '.join(unpinned)}", file=sys.stderr)
         if duplicates:
