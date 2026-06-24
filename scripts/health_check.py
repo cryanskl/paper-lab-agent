@@ -166,11 +166,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Check paper-lab-agent API health.")
     parser.add_argument("--base-url", default=default_base_url(), help="FastAPI base URL without /api/v1")
     parser.add_argument("--check-external", action="store_true", help="Also check configured external services")
+    parser.add_argument("--require-grobid", action="store_true", help="Fail when GROBID is unavailable")
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args()
 
     base_url = normalize_base_url(args.base_url)
-    status_path = EXTERNAL_STATUS_PATH if args.check_external else STATUS_PATH
+    status_path = EXTERNAL_STATUS_PATH if args.check_external or args.require_grobid else STATUS_PATH
     status_url = f"{base_url}{status_path}"
     try:
         health = fetch_json(f"{base_url}{HEALTH_PATH}", args.timeout)
@@ -196,6 +197,12 @@ def main() -> int:
     if status_errors:
         print(f"health_check failed: system status invalid ({'; '.join(status_errors)})", file=sys.stderr)
         return 1
+    if args.require_grobid:
+        grobid = status["external_capabilities"]["grobid"]
+        if grobid.get("available") is not True:
+            detail = grobid.get("error") or f"status_code={grobid.get('status_code')}"
+            print(f"health_check failed: GROBID is required but unavailable ({detail})", file=sys.stderr)
+            return 1
     return 0
 
 

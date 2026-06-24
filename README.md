@@ -66,7 +66,10 @@ GROBID 只在解析真实 PDF 时需要。离线测试和本地文本 fallback �
 ```bash
 docker run --rm -p 8070:8070 lfoppiano/grobid
 python scripts/health_check.py --check-external
+python scripts/health_check.py --require-grobid
 ```
+
+`--require-grobid` 会主动检查 GROBID，并在不可用时返回非零退出码，适合真实 PDF 解析部署前的强制门禁。
 
 ## Verification
 
