@@ -3630,6 +3630,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     dev_script = repo / "scripts" / "dev.sh"
     release_check = repo / "scripts" / "release_check.sh"
     smoke_check = repo / "scripts" / "smoke_check.py"
+    validate_env_example = repo / "scripts" / "validate_env_example.py"
     ci_workflow = repo / ".github" / "workflows" / "ci.yml"
     readme = (repo / "README.md").read_text(encoding="utf-8")
     env_example = (repo / ".env.example").read_text(encoding="utf-8")
@@ -3663,11 +3664,17 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "rm -rf" not in release_text
     assert "bash -n scripts/env.sh" in release_text
     assert "bash -n scripts/dev.sh" in release_text
-    assert (
-        "-m py_compile scripts/health_check.py scripts/import_fixtures.py scripts/smoke_check.py streamlit_app.py"
-        in release_text
-    )
+    assert "-m py_compile" in release_text
+    for compiled_script in [
+        "scripts/health_check.py",
+        "scripts/import_fixtures.py",
+        "scripts/smoke_check.py",
+        "scripts/validate_env_example.py",
+        "streamlit_app.py",
+    ]:
+        assert compiled_script in release_text
     assert "scripts/health_check.py --help" in release_text
+    assert "scripts/validate_env_example.py" in release_text
     assert "PAPER_LAB_DATA_DIR" in release_text
     assert "TemporaryDirectory" in release_text
     assert "scripts/import_fixtures.py" in release_text
@@ -3680,6 +3687,8 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "config_warning_count" in release_text
     assert "-m pytest -q" in release_text
     assert smoke_check.exists()
+    assert validate_env_example.exists()
+    assert "REQUIRED_ENV_KEYS" in validate_env_example.read_text(encoding="utf-8")
     smoke_text = smoke_check.read_text(encoding="utf-8")
     assert "load_fixture_papers" in smoke_text
     assert '"/api/v1/papers?q=plasma"' in smoke_text

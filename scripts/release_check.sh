@@ -13,8 +13,9 @@ fi
 
 bash -n scripts/env.sh
 bash -n scripts/dev.sh
-"${PYTHON_CMD[@]}" -m py_compile scripts/health_check.py scripts/import_fixtures.py scripts/smoke_check.py streamlit_app.py
+"${PYTHON_CMD[@]}" -m py_compile scripts/health_check.py scripts/import_fixtures.py scripts/smoke_check.py scripts/validate_env_example.py streamlit_app.py
 "${PYTHON_CMD[@]}" scripts/health_check.py --help >/dev/null
+"${PYTHON_CMD[@]}" scripts/validate_env_example.py
 FIXTURE_JSON="$("${PYTHON_CMD[@]}" - <<'PY'
 import json
 import os
