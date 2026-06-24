@@ -3944,6 +3944,42 @@ def test_rag_index_records_failed_status_when_vector_cleanup_fails(tmp_path, mon
     assert "vector cleanup failed" in document["index_error"]
 
 
+def test_rag_index_records_failed_status_when_vector_store_json_is_corrupt(tmp_path):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import index_document
+
+    (tmp_path / "vector-index.json").write_text("{not valid json", encoding="utf-8")
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            ("/tmp/corrupt-vector-store.txt", "corrupt-vector-store", "corrupt-vector-store.txt"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Corrupt vector store', 'argon plasma evidence', 'body')
+            """,
+            (document_id,),
+        )
+
+    failed = index_document(document_id)
+
+    assert failed["status"] == "failed"
+    assert "vector store JSON is invalid" in failed["error"]
+    with get_conn() as conn:
+        document = conn.execute("SELECT index_status, index_error FROM documents WHERE id=?", (document_id,)).fetchone()
+        chunk_count = conn.execute("SELECT COUNT(*) AS n FROM chunks WHERE document_id=?", (document_id,)).fetchone()["n"]
+    assert chunk_count == 0
+    assert document["index_status"] == "failed"
+    assert "vector store JSON is invalid" in document["index_error"]
+
+
 def test_reparse_document_clears_stale_downstream_artifacts(tmp_path):
     client = make_client(tmp_path)
 

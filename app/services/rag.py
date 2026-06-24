@@ -71,8 +71,8 @@ class JsonVectorStore:
             return {}
         try:
             return json.loads(self.path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return {}
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"vector store JSON is invalid: {exc}") from exc
 
     def upsert_many(self, records: dict[str, dict]) -> None:
         existing = self.load()
