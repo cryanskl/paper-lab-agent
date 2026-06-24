@@ -96,3 +96,21 @@ def test_frontend_api_get_raises_readable_api_error_for_network_error(monkeypatc
         assert exc.payload["error"]["code"] == "request_failed"
     else:
         raise AssertionError("expected FrontendApiError")
+
+
+def test_frontend_api_non_json_error_message_is_bounded():
+    from app import frontend_api
+
+    class FakeResponse:
+        status_code = 502
+        text = "x" * 2000
+
+        def json(self):
+            raise ValueError("not json")
+
+    payload = frontend_api.response_payload(FakeResponse())
+    message = payload["error"]["message"]
+
+    assert len(message) <= 560
+    assert message.startswith("HTTP 502: ")
+    assert message.endswith("...")

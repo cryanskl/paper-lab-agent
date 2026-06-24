@@ -3,6 +3,9 @@ from typing import Any, Optional
 import requests
 
 
+ERROR_TEXT_LIMIT = 500
+
+
 class FrontendApiError(RuntimeError):
     def __init__(self, status_code: int, payload: dict[str, Any]):
         self.status_code = status_code
@@ -14,11 +17,18 @@ def normalize_base_url(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
+def summarize_text(text: str, limit: int = ERROR_TEXT_LIMIT) -> str:
+    value = " ".join((text or "").split())
+    if len(value) <= limit:
+        return value
+    return f"{value[:limit].rstrip()}..."
+
+
 def response_payload(response) -> dict[str, Any]:
     try:
         payload = response.json()
     except ValueError:
-        text = (getattr(response, "text", "") or "").strip()
+        text = summarize_text(getattr(response, "text", "") or "")
         message = text or "non-JSON response"
         return {"error": {"code": "http_error", "message": f"HTTP {response.status_code}: {message}"}}
     if isinstance(payload, dict):
