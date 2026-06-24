@@ -186,6 +186,18 @@ async def test_openalex_tolerates_malformed_meta_payload():
 
 
 @pytest.mark.asyncio
+async def test_openalex_tolerates_malformed_top_level_payload():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(["not-a-response-object"])
+
+    client = OpenAlexClient(transport=httpx.MockTransport(handler))
+
+    works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert works == []
+
+
+@pytest.mark.asyncio
 async def test_crossref_waits_between_paginated_requests():
     sleep_calls = []
     seen_cursors = []
@@ -245,6 +257,18 @@ async def test_crossref_skips_malformed_result_items():
 async def test_crossref_tolerates_malformed_message_payload():
     def handler(request: httpx.Request) -> httpx.Response:
         return json_response({"message": "not-a-message-object"})
+
+    client = CrossrefClient(transport=httpx.MockTransport(handler))
+
+    works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert works == []
+
+
+@pytest.mark.asyncio
+async def test_crossref_tolerates_malformed_top_level_payload():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(["not-a-response-object"])
 
     client = CrossrefClient(transport=httpx.MockTransport(handler))
 

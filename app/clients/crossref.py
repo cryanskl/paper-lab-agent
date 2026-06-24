@@ -42,6 +42,8 @@ class CrossrefClient:
         async with httpx.AsyncClient(timeout=self.timeout, headers=headers, transport=self.transport) as client:
             for _ in range(max_pages):
                 payload = await self._get_json(client, f"{self.base_url}/journals/{issn}/works", params)
+                if not isinstance(payload, dict):
+                    break
                 message = payload.get("message") or {}
                 if not isinstance(message, dict):
                     message = {}

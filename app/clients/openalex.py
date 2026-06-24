@@ -38,6 +38,8 @@ class OpenAlexClient:
         async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as client:
             for _ in range(max_pages):
                 payload = await self._get_json(client, f"{self.base_url}/works", params)
+                if not isinstance(payload, dict):
+                    break
                 page_results = payload.get("results") or []
                 if isinstance(page_results, list):
                     results.extend(self.normalize(item) for item in page_results if isinstance(item, dict))
