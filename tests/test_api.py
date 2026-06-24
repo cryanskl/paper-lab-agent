@@ -3694,6 +3694,31 @@ def test_sections_from_tei_figure_fallback_omits_title_from_caption():
     ]
 
 
+def test_sections_from_tei_figure_fallback_preserves_text_after_head():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <figure><head>Figure 5</head>Measured ion density profile.</figure>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Figure 5",
+            "content": "Measured ion density profile.",
+            "section_type": "figure_caption",
+        }
+    ]
+
+
 def test_sections_from_tei_table_fallback_omits_title_from_content():
     from app.services.documents import sections_from_tei
 

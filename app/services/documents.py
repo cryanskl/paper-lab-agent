@@ -92,11 +92,13 @@ def sections_from_tei(tei: str) -> list[dict]:
         return rows
 
     def content_without_children(node: ET.Element, excluded: list[Optional[ET.Element]]) -> str:
-        return " ".join(
-            " ".join(child.itertext())
-            for child in list(node)
-            if all(child is not excluded_child for excluded_child in excluded if excluded_child is not None)
-        )
+        excluded_children = [excluded_child for excluded_child in excluded if excluded_child is not None]
+        parts = [node.text or ""]
+        for child in list(node):
+            if all(child is not excluded_child for excluded_child in excluded_children):
+                parts.append(" ".join(child.itertext()))
+            parts.append(child.tail or "")
+        return " ".join(parts)
 
     def local_name(node: ET.Element) -> str:
         return node.tag.rsplit("}", 1)[-1]
