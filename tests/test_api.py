@@ -3378,6 +3378,36 @@ def test_parse_document_records_failed_status_when_artifact_cleanup_fails(tmp_pa
         def delete_document(self, document_id):
             raise RuntimeError("vector cleanup failed")
 
+    with get_conn() as conn:
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Stale', 'old parse section', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'old parse chunk', 3, 'stale-vector-id', 1)
+            """,
+            (document_id, section_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO translations (document_id, source_lang, target_lang, status, output_path)
+            VALUES (?, 'en', 'zh', 'done', ?)
+            """,
+            (document_id, str(tmp_path / "translations" / "stale.md")),
+        )
+        conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, source_note, status)
+            VALUES (?, 'Stale reaction set', 'Old extraction', 'pending')
+            """,
+            (document_id,),
+        )
+
     monkeypatch.setattr(document_service.GrobidClient, "health_detail", fake_health_detail)
     monkeypatch.setattr(document_service, "JsonVectorStore", FailingVectorStore)
 
@@ -3387,8 +3417,13 @@ def test_parse_document_records_failed_status_when_artifact_cleanup_fails(tmp_pa
     assert "vector cleanup failed" in result["parse_error"]
     with get_conn() as conn:
         document = conn.execute("SELECT parse_status, parse_error FROM documents WHERE id=?", (document_id,)).fetchone()
+        counts = {
+            table: conn.execute(f"SELECT COUNT(*) AS n FROM {table} WHERE document_id=?", (document_id,)).fetchone()["n"]
+            for table in ["sections", "chunks", "translations", "reaction_sets"]
+        }
     assert document["parse_status"] == "failed"
     assert "vector cleanup failed" in document["parse_error"]
+    assert counts == {"sections": 0, "chunks": 0, "translations": 0, "reaction_sets": 0}
 
 
 def test_parse_document_fallback_failure_clears_stale_artifacts(tmp_path, monkeypatch):

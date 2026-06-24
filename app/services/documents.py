@@ -308,6 +308,10 @@ async def parse_document(document_id: int) -> dict:
             return dict_from_row(row)
     except Exception as exc:
         with get_conn() as conn:
+            conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM sections WHERE document_id=?", (document_id,))
             conn.execute(
                 "UPDATE documents SET parse_status='failed', parse_error=? WHERE id=?",
                 (f"Parse finalization failed: {exc}", document_id),
