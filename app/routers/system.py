@@ -7,6 +7,7 @@ from app import __version__
 from app.clients.grobid import GrobidClient
 from app.config import get_settings
 from app.db import fetch_one
+from app.services.rag import SUPPORTED_EMBEDDING_MODELS
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -70,6 +71,14 @@ def config_warnings(settings) -> list[dict]:
                 "code": "missing_llm_api_key",
                 "capability": "llm_translation",
                 "message": "LLM_API_KEY is not configured; translation uses the local deterministic adapter.",
+            }
+        )
+    if (settings.embedding_model or "").strip().lower() not in SUPPORTED_EMBEDDING_MODELS:
+        warnings.append(
+            {
+                "code": "unsupported_embedding_model",
+                "capability": "rag_indexing",
+                "message": f"EMBEDDING_MODEL={settings.embedding_model} is not supported by the local adapter registry.",
             }
         )
     return warnings

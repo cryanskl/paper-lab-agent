@@ -3,7 +3,7 @@ import math
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Protocol
 
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
@@ -30,6 +30,30 @@ def local_hash_embedding(text: str, dimensions: int = 64) -> list[float]:
     if not norm:
         return vector
     return [value / norm for value in vector]
+
+
+class EmbeddingAdapter(Protocol):
+    model_name: str
+
+    def embed(self, text: str) -> list[float]:
+        ...
+
+
+class LocalHashEmbeddingAdapter:
+    model_name = "local-hash"
+
+    def embed(self, text: str) -> list[float]:
+        return local_hash_embedding(text)
+
+
+SUPPORTED_EMBEDDING_MODELS = {"local-hash"}
+
+
+def get_embedding_adapter(model_name: str) -> EmbeddingAdapter:
+    normalized = (model_name or "local-hash").strip().lower()
+    if normalized == "local-hash":
+        return LocalHashEmbeddingAdapter()
+    raise ValueError(f"unsupported embedding model: {model_name}")
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:
@@ -117,6 +141,7 @@ def index_document(document_id: int) -> dict:
         conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
         count = 0
         try:
+            embedding_adapter = get_embedding_adapter(settings.embedding_model)
             for section in sections:
                 for seq, chunk in enumerate(chunk_text(section["content"] or ""), start=1):
                     vector_id = f"doc-{document_id}-section-{section['id']}-chunk-{seq}"
@@ -127,14 +152,14 @@ def index_document(document_id: int) -> dict:
                         """,
                         (document_id, section["id"], seq, chunk, len(tokenize(chunk)), vector_id),
                     )
-                    embedding = local_hash_embedding(chunk)
+                    embedding = embedding_adapter.embed(chunk)
                     vector_index[vector_id] = {
                         "chunk_id": cursor.lastrowid,
                         "document_id": document_id,
                         "section_id": section["id"],
                         "text": chunk,
                         "embedding": embedding,
-                        "embedding_model": "local-hash",
+                        "embedding_model": embedding_adapter.model_name,
                         "dimensions": len(embedding),
                     }
                     count += 1
