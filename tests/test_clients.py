@@ -89,6 +89,22 @@ def test_openalex_tolerates_malformed_title_fields():
     assert object_title["title"] == "Untitled"
 
 
+def test_openalex_tolerates_malformed_publication_fields():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-publication-fields",
+            "title": "Malformed publication fields",
+            "publication_date": ["2026-01-01"],
+            "publication_year": {"value": 2026},
+        }
+    )
+
+    assert work["published_date"] is None
+    assert work["published_year"] is None
+
+
 def test_openalex_skips_malformed_authorship_items():
     client = OpenAlexClient()
 

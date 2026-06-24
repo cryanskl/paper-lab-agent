@@ -129,6 +129,16 @@ class OpenAlexClient:
             return value
         return "Untitled"
 
+    def normalize_publication_date(self, value: Any) -> Optional[str]:
+        if isinstance(value, str) and value.strip():
+            return value
+        return None
+
+    def normalize_publication_year(self, value: Any) -> Optional[int]:
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        return None
+
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         doi = self.normalize_doi(item.get("doi"))
         primary_location = item.get("primary_location") or {}
@@ -145,8 +155,8 @@ class OpenAlexClient:
             "abstract": abstract,
             "authors": authors,
             "journal_name": source.get("display_name"),
-            "published_date": item.get("publication_date"),
-            "published_year": item.get("publication_year"),
+            "published_date": self.normalize_publication_date(item.get("publication_date")),
+            "published_year": self.normalize_publication_year(item.get("publication_year")),
             "landing_url": primary_location.get("landing_page_url") or item.get("id"),
             "source_api": "openalex",
             "raw_metadata": item,
