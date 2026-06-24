@@ -2671,6 +2671,63 @@ def test_crawl_job_records_found_filtered_and_new_counts(tmp_path, monkeypatch):
     assert [paper["doi"] for paper in papers] == ["10.3/match"]
 
 
+def test_crawl_job_auto_classifies_accepted_papers(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLM_API_KEY", "")
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import crawl as crawl_service
+
+    class FakeOpenAlexClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def works_by_issn(self, *args, **kwargs):
+            return [
+                {
+                    "doi": "10.3/auto-classified",
+                    "title": "Plasma chemistry benchmark",
+                    "abstract": "argon oxygen plasma chemistry",
+                    "authors": [],
+                    "published_date": "2026-01-01",
+                    "published_year": 2026,
+                    "landing_url": "https://example.test/auto-classified",
+                    "source_api": "openalex",
+                    "raw_metadata": {},
+                }
+            ]
+
+    class FakeUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            return {"oa_status": "gold", "oa_pdf_url": f"https://example.test/{doi}.pdf"}
+
+    monkeypatch.setattr(crawl_service, "OpenAlexClient", FakeOpenAlexClient)
+    monkeypatch.setattr(crawl_service, "UnpaywallClient", FakeUnpaywallClient)
+
+    job_ids = crawl_service.create_jobs([2], "manual", "2026-01-01", "2026-01-31")
+    import asyncio
+
+    asyncio.run(crawl_service.run_crawl_job(job_ids[0]["job_id"], 2, "2026-01-01", "2026-01-31"))
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT c.slug, pc.method
+            FROM papers p
+            JOIN paper_categories pc ON pc.paper_id = p.id
+            JOIN categories c ON c.id = pc.category_id
+            WHERE p.doi = ?
+            ORDER BY c.slug
+            """,
+            ("10.3/auto-classified",),
+        ).fetchall()
+
+    assert [(row["slug"], row["method"]) for row in rows] == [("chemistry", "auto")]
+
+
 def test_crawl_job_resolves_oa_with_normalized_doi(tmp_path, monkeypatch):
     make_client(tmp_path)
 

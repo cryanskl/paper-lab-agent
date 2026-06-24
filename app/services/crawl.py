@@ -7,6 +7,7 @@ from app.clients.openalex import OpenAlexClient
 from app.clients.unpaywall import UnpaywallClient
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
+from app.services.classification import get_classifier
 from app.utils import json_dumps, json_loads, now_iso, today_iso
 
 
@@ -85,7 +86,7 @@ def build_dedupe_key(journal: dict[str, Any], work: dict[str, Any]) -> Optional[
     return f"no-doi:{hashlib.sha256(fingerprint.encode('utf-8')).hexdigest()}"
 
 
-def upsert_paper(conn, journal: dict[str, Any], work: dict[str, Any], oa: dict[str, Any]) -> bool:
+def upsert_paper_record(conn, journal: dict[str, Any], work: dict[str, Any], oa: dict[str, Any]) -> tuple[bool, int]:
     doi = normalize_doi(work.get("doi"))
     dedupe_key = build_dedupe_key(journal, work)
     existing = None
@@ -121,8 +122,8 @@ def upsert_paper(conn, journal: dict[str, Any], work: dict[str, Any], oa: dict[s
             """,
             payload[1:] + (existing["id"],),
         )
-        return False
-    conn.execute(
+        return False, existing["id"]
+    cursor = conn.execute(
         """
         INSERT INTO papers (
             doi, title, abstract, authors, journal_id, journal_name, published_date,
@@ -132,7 +133,30 @@ def upsert_paper(conn, journal: dict[str, Any], work: dict[str, Any], oa: dict[s
         """,
         payload,
     )
-    return True
+    return True, cursor.lastrowid
+
+
+def upsert_paper(conn, journal: dict[str, Any], work: dict[str, Any], oa: dict[str, Any]) -> bool:
+    created, _paper_id = upsert_paper_record(conn, journal, work, oa)
+    return created
+
+
+def classify_paper(conn, settings, paper_id: int) -> None:
+    row = conn.execute("SELECT title, abstract FROM papers WHERE id=?", (paper_id,)).fetchone()
+    if not row:
+        return
+    categories = [dict_from_row(category_row) for category_row in conn.execute("SELECT * FROM categories").fetchall()]
+    text = f"{row['title']} {row['abstract'] or ''}"
+    classified = get_classifier(settings).classify(text, categories)
+    conn.execute("DELETE FROM paper_categories WHERE paper_id=? AND method='auto'", (paper_id,))
+    for item in classified:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO paper_categories (paper_id, category_id, confidence, method)
+            VALUES (?, ?, ?, 'auto')
+            """,
+            (paper_id, item["category_id"], item["confidence"]),
+        )
 
 
 def academic_client_options(settings) -> dict[str, Any]:
@@ -203,6 +227,7 @@ async def run_crawl_job(job_id: int, journal_id: int, date_from: str, date_to: s
         found = len(works)
         filtered = 0
         new_count = 0
+        classification_errors = []
         unpaywall = UnpaywallClient(settings.unpaywall_email, **unpaywall_client_options(settings))
         with get_conn() as conn:
             for work in works:
@@ -216,15 +241,26 @@ async def run_crawl_job(job_id: int, journal_id: int, date_from: str, date_to: s
                         oa = await unpaywall.resolve(normalized_doi)
                     except Exception as exc:
                         oa = {"oa_status": "unknown", "oa_pdf_url": None, "error": str(exc)}
-                if upsert_paper(conn, journal, work, oa):
+                created, paper_id = upsert_paper_record(conn, journal, work, oa)
+                if created:
                     new_count += 1
+                try:
+                    classify_paper(conn, settings, paper_id)
+                except Exception as exc:
+                    classification_errors.append(f"paper {paper_id}: {exc}")
+            job_error = source_warning
+            if classification_errors:
+                message = f"classification failed for {len(classification_errors)} paper(s): " + "; ".join(
+                    classification_errors[:3]
+                )
+                job_error = f"{job_error}; {message}" if job_error else message
             conn.execute(
                 """
                 UPDATE crawl_jobs
                 SET status='success', papers_found=?, papers_filtered=?, papers_new=?, error=?, finished_at=?
                 WHERE id=?
                 """,
-                (found, filtered, new_count, source_warning, now_iso(), job_id),
+                (found, filtered, new_count, job_error, now_iso(), job_id),
             )
     except Exception as exc:
         with get_conn() as conn:
