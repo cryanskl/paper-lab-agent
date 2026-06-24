@@ -3600,6 +3600,21 @@ def test_system_status_contract_documents_operational_counts():
         assert required in system_section
 
 
+def test_reaction_verify_contract_documents_clearable_review_fields():
+    repo = Path(__file__).resolve().parent.parent
+    api_doc = (repo / "docs" / "接口设计文档.md").read_text(encoding="utf-8")
+    chemistry_section = api_doc[api_doc.index("## 模块 H") :]
+
+    for required in [
+        "`reaction_type: null`",
+        "`rate_type: null`",
+        "`rate_value: null`",
+        "`threshold_ev: null`",
+        "`cross_section_url: null`",
+    ]:
+        assert required in chemistry_section
+
+
 def test_health_check_fails_when_system_status_shape_is_invalid(monkeypatch, capsys):
     import importlib.util
     import sys
