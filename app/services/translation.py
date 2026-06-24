@@ -92,6 +92,13 @@ def translate_section_text(section: dict, translator: Translator, target_lang: s
     return translate_text_preserving_formulas(text, translator, target_lang)
 
 
+def preserved_section_note(section: dict) -> Optional[str]:
+    section_type = (section.get("section_type") or "").strip().lower()
+    if section_type not in PRESERVE_SECTION_TYPES:
+        return None
+    return f"> Section type `{section_type}` is preserved without machine translation."
+
+
 def has_translatable_text(section: dict) -> bool:
     section_type = (section.get("section_type") or "").strip().lower()
     return section_type not in PRESERVE_SECTION_TYPES and bool((section.get("content") or "").strip())
@@ -141,6 +148,11 @@ def translate_document(document_id: int, target_lang: str, translation_id: Optio
         for row in sections:
             section = dict_from_row(row)
             target_text = translate_section_text(section, translator, target_lang)
+            target_blocks = [f"### {target_lang}", ""]
+            preserved_note = preserved_section_note(section)
+            if preserved_note:
+                target_blocks.extend([preserved_note, ""])
+            target_blocks.append(target_text)
             blocks.extend(
                 [
                     "",
@@ -150,9 +162,7 @@ def translate_document(document_id: int, target_lang: str, translation_id: Optio
                     "",
                     section["content"] or "",
                     "",
-                    f"### {target_lang}",
-                    "",
-                    target_text,
+                    *target_blocks,
                 ]
             )
         out_path = settings.translation_dir / f"document-{document_id}-{safe_target_lang_slug(target_lang)}.md"

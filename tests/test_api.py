@@ -4267,8 +4267,10 @@ def test_translate_document_preserves_table_and_reference_sections(tmp_path, mon
     assert calls == [("Body plasma equation <EQ_000>", "zh")]
     assert "translated::Body plasma equation $k_1$" in output
     assert "Reaction Rate e + Ar -> Ar+" in output
+    assert "> Section type `table` is preserved without machine translation." in output
     assert "translated::Reaction Rate" not in output
     assert "Smith 2026 Plasma Chemistry" in output
+    assert "> Section type `reference` is preserved without machine translation." in output
     assert "translated::Smith" not in output
 
 
