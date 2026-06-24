@@ -57,7 +57,11 @@ def run_smoke() -> dict:
                 files={
                     "file": (
                         "smoke.pdf",
-                        b"%PDF-1.4\nArgon plasma chemistry and electron impact reactions. The rate is $k_1$.",
+                        (
+                            b"%PDF-1.4\nArgon plasma chemistry and electron impact reactions. "
+                            b"The rate is $k_1$. LXCat IST-Lisbon https://nl.lxcat.net/data/set/example "
+                            b"e + Ar -> e + e + Ar+ ."
+                        ),
                         "application/pdf",
                     )
                 },
@@ -75,6 +79,19 @@ def run_smoke() -> dict:
         chunks = assert_status(client.get(f"/api/v1/documents/{document_id}/chunks"), 200, "document chunks")
         assert_ok(chunks["total"] >= 1, "expected indexed document chunks")
 
+        assert_status(
+            client.post(f"/api/v1/documents/{document_id}/translate", json={"target_lang": "zh"}),
+            202,
+            "document translate",
+        )
+        translation = assert_status(
+            client.get(f"/api/v1/documents/{document_id}/translation"),
+            200,
+            "document translation",
+        )
+        assert_ok(translation["status"] == "done", f"expected translation done, got {translation['status']}")
+        assert_ok(Path(translation["output_path"]).exists(), "expected translation output file")
+
         rag = assert_status(
             client.post(
                 "/api/v1/rag/query",
@@ -85,12 +102,63 @@ def run_smoke() -> dict:
         )
         assert_ok(bool(rag["sources"]), "expected RAG sources")
 
+        assert_status(
+            client.post(f"/api/v1/documents/{document_id}/extract-chemistry"),
+            202,
+            "chemistry extraction",
+        )
+        reaction_sets = assert_status(
+            client.get(f"/api/v1/documents/{document_id}/reaction-sets"),
+            200,
+            "document reaction sets",
+        )
+        assert_ok(reaction_sets["total"] == 1, f"expected one reaction set, got {reaction_sets['total']}")
+        reaction_set_id = reaction_sets["items"][0]["id"]
+        reaction_detail = assert_status(
+            client.get(f"/api/v1/reaction-sets/{reaction_set_id}"),
+            200,
+            "reaction set detail",
+        )
+        assert_ok(len(reaction_detail["reactions"]) == 1, "expected one extracted reaction")
+        reaction_id = reaction_detail["reactions"][0]["id"]
+        blocked_export = client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=json")
+        assert_ok(
+            blocked_export.status_code == 409,
+            f"expected unverified export gate, got {blocked_export.status_code}: {blocked_export.text}",
+        )
+        verified = assert_status(
+            client.put(
+                f"/api/v1/reactions/{reaction_id}/verify",
+                json={
+                    "verified": True,
+                    "reaction_type": "ionization",
+                    "rate_type": "cross_section",
+                    "rate_value": "original source value",
+                    "threshold_ev": 15.76,
+                    "cross_section_url": "https://nl.lxcat.net/data/set/example",
+                    "verified_by": "smoke-check",
+                },
+            ),
+            200,
+            "reaction verify",
+        )
+        assert_ok(verified["status"] == "verified", f"expected verified reaction set, got {verified['status']}")
+        verified_export = assert_status(
+            client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=json"),
+            200,
+            "verified reaction export",
+        )
+        assert_ok(Path(verified_export["output_path"]).exists(), "expected verified export file")
+
         status = assert_status(client.get("/api/v1/system/status"), 200, "system status")
         counts = status["counts"]
         assert_ok(counts["papers"] >= 2, "expected system status to include fixture papers")
         assert_ok(counts["documents"] == 1, "expected one smoke document")
         assert_ok(counts["sections"] >= 1, "expected parsed section count")
         assert_ok(counts["chunks"] >= 1, "expected indexed chunk count")
+        assert_ok(counts["translations"] == 1, "expected one translation")
+        assert_ok(counts["reaction_sets"] == 1, "expected one reaction set")
+        assert_ok(counts["reactions"] == 1, "expected one reaction")
 
         return {
             "fixture": fixture_result,
@@ -99,6 +167,13 @@ def run_smoke() -> dict:
             "sections": counts["sections"],
             "chunks": counts["chunks"],
             "rag_sources": len(rag["sources"]),
+            "translation_status": translation["status"],
+            "translation_output_path": translation["output_path"],
+            "reaction_sets": counts["reaction_sets"],
+            "reactions": counts["reactions"],
+            "blocked_export_status": blocked_export.status_code,
+            "verified_export_format": verified_export["format"],
+            "verified_export_path": verified_export["output_path"],
         }
 
 

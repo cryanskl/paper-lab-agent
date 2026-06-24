@@ -625,6 +625,20 @@ def test_fixture_import_script_runs_from_repo_root(tmp_path):
     assert "inserted" in result.stdout
 
 
+def test_smoke_check_covers_translation_and_chemistry_chain():
+    from scripts.smoke_check import run_smoke
+
+    result = run_smoke()
+
+    assert result["translation_status"] == "done"
+    assert result["reaction_sets"] == 1
+    assert result["reactions"] == 1
+    assert result["blocked_export_status"] == 409
+    assert result["verified_export_format"] == "json"
+    assert result["translation_output_path"].endswith("document-1-zh.md")
+    assert result["verified_export_path"].endswith("reaction-set-1.json")
+
+
 def test_migrations_add_lxcat_db_to_legacy_reaction_sets():
     import sqlite3
 
