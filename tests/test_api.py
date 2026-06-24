@@ -146,6 +146,92 @@ def test_paper_category_override_rejects_blank_method(tmp_path):
     assert response.json()["error"]["code"] == "validation_error"
 
 
+def test_classify_paper_records_classifier_confidence(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import papers as papers_router
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO papers (title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, '[]', 'fixture', '{}')
+            """,
+            ("Classifier confidence paper", "no taxonomy keyword here",),
+        )
+        paper_id = conn.execute("SELECT id FROM papers WHERE title=?", ("Classifier confidence paper",)).fetchone()[
+            "id"
+        ]
+
+    class FakeClassifier:
+        def classify(self, text, categories):
+            assert "Classifier confidence paper" in text
+            assert any(category["slug"] == "chemistry" for category in categories)
+            return [{"category_id": 2, "slug": "chemistry", "confidence": 0.91, "method": "auto"}]
+
+    monkeypatch.setattr(papers_router, "get_classifier", lambda settings: FakeClassifier(), raising=False)
+
+    response = client.post(f"/api/v1/papers/{paper_id}/classify")
+
+    assert response.status_code == 200
+    assert response.json()["categories"] == ["chemistry"]
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT confidence, method FROM paper_categories WHERE paper_id=? AND category_id=2",
+            (paper_id,),
+        ).fetchone()
+    assert row["confidence"] == 0.91
+    assert row["method"] == "auto"
+
+
+def test_classify_paper_preserves_manual_category_overrides(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import papers as papers_router
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO papers (title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, '[]', 'fixture', '{}')
+            """,
+            ("Manual priority paper", "plasma chemistry methods",),
+        )
+        paper_id = conn.execute("SELECT id FROM papers WHERE title=?", ("Manual priority paper",)).fetchone()["id"]
+        conn.execute(
+            """
+            INSERT INTO paper_categories (paper_id, category_id, confidence, method)
+            VALUES (?, ?, ?, ?)
+            """,
+            (paper_id, 2, 1.0, "manual"),
+        )
+
+    class FakeClassifier:
+        def classify(self, text, categories):
+            return [
+                {"category_id": 2, "slug": "chemistry", "confidence": 0.42, "method": "auto"},
+                {"category_id": 6, "slug": "methods", "confidence": 0.88, "method": "auto"},
+            ]
+
+    monkeypatch.setattr(papers_router, "get_classifier", lambda settings: FakeClassifier(), raising=False)
+
+    response = client.post(f"/api/v1/papers/{paper_id}/classify")
+
+    assert response.status_code == 200
+    assert set(response.json()["categories"]) == {"chemistry", "methods"}
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT category_id, confidence, method FROM paper_categories WHERE paper_id=? ORDER BY category_id",
+            (paper_id,),
+        ).fetchall()
+    assert [(row["category_id"], row["confidence"], row["method"]) for row in rows] == [
+        (2, 1.0, "manual"),
+        (6, 0.88, "auto"),
+    ]
+
+
 def test_papers_reject_unknown_sort(tmp_path):
     client = make_client(tmp_path)
 
@@ -2370,6 +2456,56 @@ def test_translation_adapter_preserves_formula_masks():
     assert "$k_1$" in translated
     assert "$$E=mc^2$$" in translated
     assert "<EQ_" not in translated
+
+
+def test_openai_classifier_keeps_only_registered_taxonomy_slugs():
+    import json
+
+    import httpx
+
+    from app.services.classification import OpenAICompatibleClassifier
+
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        payload = json.loads(request.content)
+        assert payload["model"] == "classify-model"
+        assert "chemistry" in payload["messages"][1]["content"]
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "categories": [
+                                        {"slug": "chemistry", "confidence": 0.91},
+                                        {"slug": "imagined-category", "confidence": 0.8},
+                                    ]
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    classifier = OpenAICompatibleClassifier(
+        "test-key",
+        "http://llm.test/v1",
+        "classify-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = classifier.classify(
+        "argon oxygen plasma chemistry",
+        [{"id": 2, "slug": "chemistry", "name": "等离子体化学", "description": "reaction pathways"}],
+    )
+
+    assert result == [{"category_id": 2, "slug": "chemistry", "confidence": 0.91, "method": "auto"}]
+    assert requests[0].headers["authorization"] == "Bearer test-key"
 
 
 def test_translate_document_preserves_table_and_reference_sections(tmp_path, monkeypatch):

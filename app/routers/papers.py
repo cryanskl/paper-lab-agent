@@ -8,6 +8,7 @@ from app.clients.unpaywall import UnpaywallClient
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
 from app.errors import AppError, page
+from app.services.classification import get_classifier
 from app.services.crawl import unpaywall_client_options
 from app.utils import json_dumps, json_loads
 
@@ -170,29 +171,22 @@ async def resolve_oa(paper_id: int) -> dict:
 
 @router.post("/{paper_id}/classify")
 def classify_paper(paper_id: int) -> dict:
+    settings = get_settings()
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM papers WHERE id=?", (paper_id,)).fetchone()
         if not row:
             raise AppError(404, "paper_not_found", "Paper not found")
-        text = f"{row['title']} {row['abstract'] or ''}".lower()
-        categories = conn.execute("SELECT * FROM categories").fetchall()
-        matched_ids = []
-        for category_row in categories:
-            slug = category_row["slug"]
-            if slug in text or (category_row["name"] and category_row["name"].lower() in text):
-                matched_ids.append(category_row["id"])
-        if not matched_ids:
-            method_id = conn.execute("SELECT id FROM categories WHERE slug='methods'").fetchone()
-            if method_id:
-                matched_ids.append(method_id["id"])
+        text = f"{row['title']} {row['abstract'] or ''}"
+        categories = [dict_from_row(category_row) for category_row in conn.execute("SELECT * FROM categories").fetchall()]
+        classified = get_classifier(settings).classify(text, categories)
         conn.execute("DELETE FROM paper_categories WHERE paper_id=? AND method='auto'", (paper_id,))
-        for category_id in matched_ids:
+        for item in classified:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO paper_categories (paper_id, category_id, confidence, method)
+                INSERT OR IGNORE INTO paper_categories (paper_id, category_id, confidence, method)
                 VALUES (?, ?, ?, 'auto')
                 """,
-                (paper_id, category_id, 0.5),
+                (paper_id, item["category_id"], item["confidence"]),
             )
     return get_paper(paper_id)
 
