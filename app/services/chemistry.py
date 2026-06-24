@@ -73,6 +73,7 @@ def detect_cross_section_url(text: str) -> Optional[str]:
 
 def mark_chemistry_queued(document_id: int) -> None:
     with get_conn() as conn:
+        conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
         conn.execute(
             "UPDATE documents SET chemistry_status='extracting', chemistry_error=NULL WHERE id=?",
             (document_id,),

@@ -7183,6 +7183,45 @@ def test_document_index_route_clears_stale_chunks_before_background_task_runs(tm
     assert chunks["total"] == 0
 
 
+def test_document_extract_route_clears_stale_reaction_sets_before_background_task_runs(tmp_path):
+    from fastapi import BackgroundTasks
+
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import documents as document_router
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, chemistry_status)
+            VALUES (?, ?, ?, 'parsed', 'extracted')
+            """,
+            (str(tmp_path / "queued-extract.pdf"), "queued-extract", "queued-extract.pdf"),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Parsed section', 'e + Ar -> e + e + Ar+ .', 'body')
+            """,
+            (document_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, source_note, status)
+            VALUES (?, 'Old reaction set', 'old extraction', 'pending')
+            """,
+            (document_id,),
+        )
+
+    extract_payload = document_router.extract_chemistry(document_id, BackgroundTasks())
+    reaction_sets = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()
+
+    assert extract_payload["document_id"] == document_id
+    assert extract_payload["chemistry_status"] == "extracting"
+    assert reaction_sets["total"] == 0
+
+
 def test_document_async_routes_mark_queued_status_before_background_tasks_run(tmp_path):
     from fastapi import BackgroundTasks
 
