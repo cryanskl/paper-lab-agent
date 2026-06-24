@@ -28,6 +28,19 @@ def load_validate_release_hygiene():
     return validate_release_hygiene
 
 
+def load_validate_api_contract():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_api_contract.py"
+    spec = importlib.util.spec_from_file_location("validate_api_contract_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_api_contract = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_api_contract)
+    return validate_api_contract
+
+
 def test_env_example_contains_required_external_dependency_keys():
     validate_env_example = load_validate_env_example()
     env_path = Path(__file__).resolve().parent.parent / ".env.example"
@@ -202,3 +215,44 @@ def test_release_check_derives_expected_runtime_version_from_app_version():
     assert "from app import __version__" in release_text
     assert '"runtime_version": __version__' in release_text
     assert '"runtime_version": "0.1.0"' not in release_text
+
+
+def test_api_contract_documented_endpoints_exist_in_app():
+    validate_api_contract = load_validate_api_contract()
+    repo = Path(__file__).resolve().parent.parent
+
+    missing = validate_api_contract.missing_documented_routes(repo / "docs" / "接口设计文档.md")
+
+    assert missing == []
+
+
+def test_api_contract_validator_runs_as_release_script():
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+
+    result = subprocess.run(
+        [sys.executable, "scripts/validate_api_contract.py"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_api_contract_validator_reports_documented_route_missing_from_app(tmp_path):
+    validate_api_contract = load_validate_api_contract()
+    repo = Path(__file__).resolve().parent.parent
+    contract_path = tmp_path / "接口设计文档.md"
+    contract_text = (repo / "docs" / "接口设计文档.md").read_text(encoding="utf-8")
+    contract_path.write_text(
+        contract_text + "\n| GET | `/nonexistent-release-contract-route` | should fail |\n",
+        encoding="utf-8",
+    )
+
+    missing = validate_api_contract.missing_documented_routes(contract_path)
+
+    assert missing == ["GET /api/v1/nonexistent-release-contract-route"]
