@@ -2079,6 +2079,51 @@ def test_resolve_oa_records_failure_without_server_error(tmp_path, monkeypatch):
     assert payload["raw_metadata"]["oa_resolution_error"] == "Unpaywall temporary outage"
 
 
+def test_resolve_oa_records_unpaywall_raw_metadata(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import papers as papers_router
+
+    class RawUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            return {
+                "oa_status": "green",
+                "oa_pdf_url": "https://repository.example.test/paper.pdf",
+                "raw": {
+                    "doi": doi,
+                    "oa_status": "green",
+                    "best_oa_location": {"url_for_pdf": "https://repository.example.test/paper.pdf"},
+                },
+            }
+
+    monkeypatch.setattr(papers_router, "UnpaywallClient", RawUnpaywallClient)
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, ?, '[]', 'fixture', ?)
+            """,
+            ("10.7/manual-resolve-raw", "Manual OA raw", "argon plasma", '{"source":"fixture"}'),
+        )
+        paper_id = cursor.lastrowid
+
+    response = client.post(f"/api/v1/papers/{paper_id}/resolve-oa")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["oa_status"] == "green"
+    assert payload["oa_pdf_url"] == "https://repository.example.test/paper.pdf"
+    assert payload["raw_metadata"]["source"] == "fixture"
+    assert payload["raw_metadata"]["unpaywall"]["doi"] == "10.7/manual-resolve-raw"
+    assert payload["raw_metadata"]["unpaywall"]["oa_status"] == "green"
+    assert "oa_resolution_error" not in payload["raw_metadata"]
+
+
 def test_crawl_job_passes_api_retry_and_page_settings(tmp_path, monkeypatch):
     make_client(tmp_path)
 

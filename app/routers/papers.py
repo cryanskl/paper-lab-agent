@@ -167,6 +167,8 @@ async def resolve_oa(paper_id: int) -> dict:
             raw_metadata["oa_resolution_error"] = result["error"]
         else:
             raw_metadata.pop("oa_resolution_error", None)
+            if isinstance(result.get("raw"), dict):
+                raw_metadata["unpaywall"] = result["raw"]
     except Exception as exc:
         result = {"oa_status": "unknown", "oa_pdf_url": None}
         raw_metadata["oa_resolution_error"] = str(exc)
