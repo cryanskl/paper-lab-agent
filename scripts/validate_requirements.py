@@ -35,6 +35,7 @@ FALLBACK_STDLIB_MODULES = {
     "collections",
     "contextlib",
     "datetime",
+    "fnmatch",
     "functools",
     "hashlib",
     "html",
@@ -45,13 +46,14 @@ FALLBACK_STDLIB_MODULES = {
     "pathlib",
     "re",
     "sqlite3",
+    "subprocess",
     "sys",
     "tempfile",
     "typing",
     "urllib",
     "xml",
 }
-STDLIB_MODULES = getattr(sys, "stdlib_module_names", FALLBACK_STDLIB_MODULES)
+STDLIB_MODULES = set(FALLBACK_STDLIB_MODULES) | set(getattr(sys, "stdlib_module_names", set()))
 IMPORT_PACKAGE_ALIASES = {
     "apscheduler": "apscheduler",
     "bs4": "beautifulsoup4",

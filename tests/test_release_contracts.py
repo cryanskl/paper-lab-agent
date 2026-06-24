@@ -155,6 +155,24 @@ def test_gitignore_contains_required_release_hygiene_patterns():
     assert missing == []
 
 
+def test_release_hygiene_validator_accepts_current_tracked_files():
+    import subprocess
+
+    validate_release_hygiene = load_validate_release_hygiene()
+    repo = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        ["git", "ls-files"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    forbidden = validate_release_hygiene.forbidden_tracked_paths(result.stdout.splitlines())
+
+    assert forbidden == []
+
+
 def test_release_hygiene_validator_reports_missing_gitignore_pattern(tmp_path):
     validate_release_hygiene = load_validate_release_hygiene()
     gitignore_path = tmp_path / ".gitignore"
@@ -163,6 +181,27 @@ def test_release_hygiene_validator_reports_missing_gitignore_pattern(tmp_path):
     missing = validate_release_hygiene.missing_required_gitignore_patterns(gitignore_path)
 
     assert ".next/" in missing
+
+
+def test_release_hygiene_validator_reports_tracked_generated_artifacts():
+    validate_release_hygiene = load_validate_release_hygiene()
+
+    forbidden = validate_release_hygiene.forbidden_tracked_paths(
+        [
+            "README.md",
+            ".env",
+            "data/plasma.db",
+            "scripts/__pycache__/smoke_check.cpython-313.pyc",
+            "coverage/index.html",
+        ]
+    )
+
+    assert forbidden == [
+        ".env",
+        "data/plasma.db",
+        "scripts/__pycache__/smoke_check.cpython-313.pyc",
+        "coverage/index.html",
+    ]
 
 
 def test_release_hygiene_validator_requires_ci_release_gate():
@@ -398,6 +437,19 @@ def test_requirements_validator_reports_imported_package_missing_from_requiremen
     missing = validate_requirements.missing_imported_packages(requirements_path, [source_dir])
 
     assert missing == ["beautifulsoup4"]
+
+
+def test_requirements_validator_ignores_standard_library_imports(tmp_path):
+    validate_requirements = load_validate_requirements()
+    source_dir = tmp_path / "scripts"
+    source_dir.mkdir()
+    (source_dir / "uses_stdlib.py").write_text("import fnmatch\nimport subprocess\n", encoding="utf-8")
+    requirements_path = tmp_path / "requirements.txt"
+    requirements_path.write_text("", encoding="utf-8")
+
+    missing = validate_requirements.missing_imported_packages(requirements_path, [source_dir])
+
+    assert missing == []
 
 
 def test_requirements_validator_runs_as_release_script():
