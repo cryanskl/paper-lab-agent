@@ -354,6 +354,26 @@ def test_requirements_validator_reports_missing_direct_dependency(tmp_path):
     assert missing == ["requests"]
 
 
+def test_requirements_validator_rejects_unpinned_packages(tmp_path):
+    validate_requirements = load_validate_requirements()
+    requirements_path = tmp_path / "requirements.txt"
+    requirements_path.write_text("fastapi==0.115.6\nrequests>=2.32\nstreamlit\n", encoding="utf-8")
+
+    unpinned = validate_requirements.unpinned_packages(requirements_path)
+
+    assert unpinned == ["requests", "streamlit"]
+
+
+def test_requirements_validator_rejects_duplicate_packages(tmp_path):
+    validate_requirements = load_validate_requirements()
+    requirements_path = tmp_path / "requirements.txt"
+    requirements_path.write_text("requests==2.32.3\nRequests==2.32.3\nhttpx==0.28.1\n", encoding="utf-8")
+
+    duplicates = validate_requirements.duplicate_packages(requirements_path)
+
+    assert duplicates == ["requests"]
+
+
 def test_requirements_validator_runs_as_release_script():
     import subprocess
     import sys

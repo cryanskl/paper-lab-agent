@@ -29,16 +29,48 @@ def normalize_package_name(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def declared_packages(path: Path = DEFAULT_REQUIREMENTS_PATH) -> set[str]:
-    packages: set[str] = set()
+def requirement_lines(path: Path = DEFAULT_REQUIREMENTS_PATH) -> list[str]:
+    lines: list[str] = []
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or line.startswith("-"):
             continue
-        package = re.split(r"\s*(?:==|>=|<=|~=|!=|>|<|\[)", line, maxsplit=1)[0].strip()
+        lines.append(line)
+    return lines
+
+
+def package_name_from_requirement(line: str) -> str:
+    return re.split(r"\s*(?:==|>=|<=|~=|!=|>|<|\[)", line, maxsplit=1)[0].strip()
+
+
+def declared_packages(path: Path = DEFAULT_REQUIREMENTS_PATH) -> set[str]:
+    packages: set[str] = set()
+    for line in requirement_lines(path):
+        package = package_name_from_requirement(line)
         if package:
             packages.add(normalize_package_name(package))
     return packages
+
+
+def unpinned_packages(path: Path = DEFAULT_REQUIREMENTS_PATH) -> list[str]:
+    packages: list[str] = []
+    for line in requirement_lines(path):
+        package = package_name_from_requirement(line)
+        if package and "==" not in line:
+            packages.append(normalize_package_name(package))
+    return packages
+
+
+def duplicate_packages(path: Path = DEFAULT_REQUIREMENTS_PATH) -> list[str]:
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for line in requirement_lines(path):
+        package = re.split(r"\s*(?:==|>=|<=|~=|!=|>|<|\[)", line, maxsplit=1)[0].strip()
+        normalized = normalize_package_name(package)
+        if normalized in seen and normalized not in duplicates:
+            duplicates.append(normalized)
+        seen.add(normalized)
+    return duplicates
 
 
 def missing_required_packages(path: Path = DEFAULT_REQUIREMENTS_PATH) -> list[str]:
@@ -52,8 +84,15 @@ def main() -> int:
     args = parser.parse_args()
 
     missing = missing_required_packages(Path(args.requirements_path))
-    if missing:
-        print(f"requirements missing packages: {', '.join(missing)}", file=sys.stderr)
+    unpinned = unpinned_packages(Path(args.requirements_path))
+    duplicates = duplicate_packages(Path(args.requirements_path))
+    if missing or unpinned or duplicates:
+        if missing:
+            print(f"requirements missing packages: {', '.join(missing)}", file=sys.stderr)
+        if unpinned:
+            print(f"requirements unpinned packages: {', '.join(unpinned)}", file=sys.stderr)
+        if duplicates:
+            print(f"requirements duplicate packages: {', '.join(duplicates)}", file=sys.stderr)
         return 1
     return 0
 
