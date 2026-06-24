@@ -198,8 +198,11 @@ def classify_paper(paper_id: int) -> dict:
             classified = get_classifier(settings).classify(text, categories)
         except Exception as exc:
             raise AppError(500, "paper_classification_failed", str(exc))
+        registered_category_ids = {category["id"] for category in categories}
         conn.execute("DELETE FROM paper_categories WHERE paper_id=? AND method='auto'", (paper_id,))
         for item in classified:
+            if item.get("category_id") not in registered_category_ids:
+                continue
             conn.execute(
                 """
                 INSERT OR IGNORE INTO paper_categories (paper_id, category_id, confidence, method)
