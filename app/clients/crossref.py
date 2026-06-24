@@ -122,6 +122,11 @@ class CrossrefClient:
                 authors.append({"name": name, "affiliation": None})
         return authors
 
+    def normalize_url(self, value: Any) -> Optional[str]:
+        if isinstance(value, str) and value.strip():
+            return value
+        return None
+
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         published = item.get("published-print") or item.get("published-online") or item.get("issued") or {}
         if not isinstance(published, dict):
@@ -139,7 +144,7 @@ class CrossrefClient:
             "journal_name": self.first_text(item.get("container-title")),
             "published_date": published_date,
             "published_year": year,
-            "landing_url": item.get("URL"),
+            "landing_url": self.normalize_url(item.get("URL")),
             "source_api": "crossref",
             "raw_metadata": item,
         }

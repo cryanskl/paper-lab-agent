@@ -71,6 +71,20 @@ def test_crossref_tolerates_malformed_published_date_fields():
     assert work["published_year"] is None
 
 
+def test_crossref_tolerates_malformed_landing_url_field():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/malformed-url",
+            "title": ["Malformed URL"],
+            "URL": {"value": "https://publisher.example/article"},
+        }
+    )
+
+    assert work["landing_url"] is None
+
+
 def test_openalex_normalizes_url_doi_to_bare_identifier():
     client = OpenAlexClient()
 
@@ -103,6 +117,28 @@ def test_openalex_tolerates_malformed_publication_fields():
 
     assert work["published_date"] is None
     assert work["published_year"] is None
+
+
+def test_openalex_tolerates_malformed_landing_url_fields():
+    client = OpenAlexClient()
+
+    malformed_primary_url = client.normalize(
+        {
+            "id": "https://openalex.org/W-safe-fallback",
+            "title": "Malformed primary URL",
+            "primary_location": {"landing_page_url": ["https://publisher.example/article"]},
+        }
+    )
+    malformed_primary_and_id = client.normalize(
+        {
+            "id": {"value": "https://openalex.org/W-malformed-id"},
+            "title": "Malformed primary URL and id",
+            "primary_location": {"landing_page_url": {"value": "https://publisher.example/article"}},
+        }
+    )
+
+    assert malformed_primary_url["landing_url"] == "https://openalex.org/W-safe-fallback"
+    assert malformed_primary_and_id["landing_url"] is None
 
 
 def test_openalex_skips_malformed_authorship_items():
