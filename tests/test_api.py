@@ -846,12 +846,21 @@ def test_fixture_loader_imports_idempotent_document_sample(tmp_path):
 
 def test_fixture_import_script_runs_from_repo_root(tmp_path):
     import json
+    import sqlite3
     import subprocess
     import sys
 
     env = os.environ.copy()
     env["DATABASE_PATH"] = str(tmp_path / "script.db")
     env["PAPER_LAB_DATA_DIR"] = str(tmp_path)
+    for key in [
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+    ]:
+        env.pop(key, None)
     result = subprocess.run(
         [sys.executable, "scripts/import_fixtures.py"],
         cwd=Path(__file__).resolve().parent.parent,
@@ -863,6 +872,11 @@ def test_fixture_import_script_runs_from_repo_root(tmp_path):
     payload = json.loads(result.stdout)
     assert payload["papers"]["inserted"] == 2
     assert payload["documents"]["inserted"] == 1
+    with sqlite3.connect(tmp_path / "script.db") as conn:
+        conn.row_factory = sqlite3.Row
+        document = conn.execute("SELECT file_path FROM documents").fetchone()
+    assert document is not None
+    assert Path(document["file_path"]).resolve().is_relative_to(tmp_path.resolve())
 
 
 def test_smoke_check_covers_translation_and_chemistry_chain():
