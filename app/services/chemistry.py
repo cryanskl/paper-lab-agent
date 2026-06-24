@@ -204,6 +204,12 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
             "SELECT COUNT(*) AS n FROM reactions WHERE reaction_set_id=? AND verified=0",
             (reaction_set_id,),
         ).fetchone()["n"]
+        total = conn.execute(
+            "SELECT COUNT(*) AS n FROM reactions WHERE reaction_set_id=?",
+            (reaction_set_id,),
+        ).fetchone()["n"]
+        if total == 0:
+            raise PermissionError("reaction set has no reactions to export")
         if remaining:
             raise PermissionError("reaction set has unverified reactions")
         detail = reaction_set_detail(dict_from_row(rs), conn)

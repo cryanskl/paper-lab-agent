@@ -2648,6 +2648,35 @@ def test_reaction_export_bolsig_text_and_rejects_unknown_format(tmp_path):
     assert blank.json()["error"]["code"] == "unsupported_export_format"
 
 
+def test_reaction_export_rejects_empty_reaction_set(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, chemistry_status)
+            VALUES (?, ?, ?, 'parsed', 'rejected')
+            """,
+            ("/tmp/empty-reaction-set.pdf", "empty-reaction-set", "empty-reaction-set.pdf"),
+        )
+        document_id = cursor.lastrowid
+        cursor = conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, source_note, status)
+            VALUES (?, 'Empty reaction set', 'No reaction expressions found', 'rejected')
+            """,
+            (document_id,),
+        )
+        reaction_set_id = cursor.lastrowid
+
+    response = client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=json")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "reaction_set_unverified"
+
+
 def test_release_runbook_artifacts_exist_and_document_commands():
     repo = Path(__file__).resolve().parent.parent
     health_check = repo / "scripts" / "health_check.py"
