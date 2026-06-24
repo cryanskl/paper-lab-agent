@@ -3795,7 +3795,7 @@ def test_system_status_contract_documents_operational_counts():
     api_doc = (repo / "docs" / "接口设计文档.md").read_text(encoding="utf-8")
     system_section = api_doc[api_doc.index("## 模块 0") : api_doc.index("## 模块 A")]
 
-    for required in ["categories", "crawl_jobs", "reaction_sets", "reactions"]:
+    for required in ["config_warnings", "categories", "crawl_jobs", "reaction_sets", "reactions"]:
         assert required in system_section
 
 
