@@ -95,7 +95,13 @@ def list_jobs(page_num: int = Query(1, alias="page", ge=1), page_size: int = Que
     with get_conn() as conn:
         total = conn.execute("SELECT COUNT(*) AS n FROM crawl_jobs").fetchone()["n"]
         rows = conn.execute("SELECT * FROM crawl_jobs ORDER BY id DESC LIMIT ? OFFSET ?", (page_size, offset)).fetchall()
-    return page([dict_from_row(row) for row in rows], total, page_num, page_size)
+        jobs = []
+        for row in rows:
+            journal_row = None
+            if row["journal_id"] is not None:
+                journal_row = conn.execute("SELECT * FROM journals WHERE id=?", (row["journal_id"],)).fetchone()
+            jobs.append(serialize_job_detail(dict_from_row(row), dict_from_row(journal_row) if journal_row else None))
+    return page(jobs, total, page_num, page_size)
 
 
 @router.get("/jobs/{job_id}")

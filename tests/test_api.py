@@ -364,6 +364,43 @@ def test_crawl_job_detail_includes_journal_and_diagnostics(tmp_path):
     }
 
 
+def test_crawl_job_list_includes_journal_and_diagnostics(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO crawl_jobs (
+                journal_id, period, date_from, date_to, status,
+                papers_found, papers_filtered, papers_new, error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (3, "weekly", "2026-06-01", "2026-06-07", "success", 8, 2, 4, "Crossref fallback"),
+        )
+
+    response = client.get("/api/v1/crawl/jobs")
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["journal"]["id"] == 3
+    assert item["journal"]["name"] == "Plasma Chemistry and Plasma Processing"
+    assert item["diagnostics"] == {
+        "journal_id": 3,
+        "journal_name": "Plasma Chemistry and Plasma Processing",
+        "period": "weekly",
+        "date_from": "2026-06-01",
+        "date_to": "2026-06-07",
+        "status": "success",
+        "papers_found": 8,
+        "papers_filtered": 2,
+        "papers_new": 4,
+        "papers_accepted": 6,
+        "error": "Crossref fallback",
+    }
+
+
 def test_journal_crud_accepts_keyword_config_and_soft_deletes(tmp_path):
     client = make_client(tmp_path)
 
