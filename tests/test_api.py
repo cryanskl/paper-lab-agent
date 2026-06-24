@@ -4644,6 +4644,22 @@ def test_streamlit_document_index_surfaces_success_and_error_states():
         assert required in documents_section
 
 
+def test_streamlit_document_extract_surfaces_success_and_error_states():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    for required in [
+        'status_code, extract_payload = api_post(f"/documents/{selected[\'id\']}/extract-chemistry")',
+        "if status_code < 400:",
+        "已创建化学抽取任务",
+        "else:",
+        "st.warning(extract_payload)",
+        "st.json(extract_payload)",
+    ]:
+        assert required in documents_section
+
+
 def test_streamlit_documents_tab_shows_linked_paper_summary():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

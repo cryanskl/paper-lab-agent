@@ -378,7 +378,12 @@ with documents_tab:
                 st.warning(index_payload)
             st.json(index_payload)
         if c4.button("抽取"):
-            st.json(api_post(f"/documents/{selected['id']}/extract-chemistry")[1])
+            status_code, extract_payload = api_post(f"/documents/{selected['id']}/extract-chemistry")
+            if status_code < 400:
+                st.success("已创建化学抽取任务")
+            else:
+                st.warning(extract_payload)
+            st.json(extract_payload)
         sections = api_get(f"/documents/{selected['id']}/sections")["items"]
         chunks = api_get(f"/documents/{selected['id']}/chunks")
         index_status = "indexed" if chunks["indexed"] else "not indexed"
