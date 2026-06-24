@@ -16,6 +16,7 @@ REQUIRED_GITIGNORE_PATTERNS = [
 ]
 REQUIRED_CI_WORKFLOW = Path(".github/workflows/ci.yml")
 REQUIRED_CI_RELEASE_CHECK = "bash scripts/release_check.sh"
+REQUIRED_CI_TRIGGERS = ["push", "pull_request"]
 
 
 def load_gitignore_patterns(path: Path) -> set[str]:
@@ -40,9 +41,13 @@ def missing_required_ci_release_gate(repo: Path) -> list[str]:
     if not workflow_path.exists():
         return ["ci_workflow"]
     workflow_text = workflow_path.read_text(encoding="utf-8")
+    missing = []
+    for trigger in REQUIRED_CI_TRIGGERS:
+        if f"\n  {trigger}:" not in workflow_text and f"\n  - {trigger}" not in workflow_text:
+            missing.append(f"ci_{trigger}_trigger")
     if REQUIRED_CI_RELEASE_CHECK not in workflow_text:
-        return ["ci_runs_release_check"]
-    return []
+        missing.append("ci_runs_release_check")
+    return missing
 
 
 def main() -> int:
