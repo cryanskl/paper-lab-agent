@@ -33,6 +33,23 @@ def test_crossref_normalizes_scalar_title_fields():
     assert work["journal_name"] == "Scalar journal"
 
 
+def test_crossref_skips_malformed_text_list_items():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/malformed-text-list",
+            "title": [{"value": "Malformed"}, "Usable title"],
+            "container-title": [{"value": "Malformed journal"}, "Usable journal"],
+        }
+    )
+    untitled = client.normalize({"DOI": "10.5555/no-usable-title", "title": [{"value": "Malformed"}]})
+
+    assert work["title"] == "Usable title"
+    assert work["journal_name"] == "Usable journal"
+    assert untitled["title"] == "Untitled"
+
+
 def test_crossref_skips_malformed_author_items():
     client = CrossrefClient()
 

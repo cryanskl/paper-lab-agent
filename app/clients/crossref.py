@@ -104,10 +104,12 @@ class CrossrefClient:
         return doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/")
 
     def first_text(self, value: Any, default: Optional[str] = None) -> Optional[str]:
-        if isinstance(value, str):
+        if isinstance(value, str) and value:
             return value
-        if isinstance(value, list) and value:
-            return str(value[0])
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, str) and item:
+                    return item
         return default
 
     def normalize_authors(self, value: Any) -> list[dict[str, Optional[str]]]:
