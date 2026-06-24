@@ -139,7 +139,7 @@ class OpenAlexClient:
             return value
         return None
 
-    def normalize_url(self, value: Any) -> Optional[str]:
+    def normalize_optional_text(self, value: Any) -> Optional[str]:
         if isinstance(value, str) and value.strip():
             return value
         return None
@@ -159,10 +159,11 @@ class OpenAlexClient:
             "title": self.normalize_title(item.get("title")),
             "abstract": abstract,
             "authors": authors,
-            "journal_name": source.get("display_name"),
+            "journal_name": self.normalize_optional_text(source.get("display_name")),
             "published_date": self.normalize_publication_date(item.get("publication_date")),
             "published_year": self.normalize_publication_year(item.get("publication_year")),
-            "landing_url": self.normalize_url(primary_location.get("landing_page_url")) or self.normalize_url(item.get("id")),
+            "landing_url": self.normalize_optional_text(primary_location.get("landing_page_url"))
+            or self.normalize_optional_text(item.get("id")),
             "source_api": "openalex",
             "raw_metadata": item,
         }

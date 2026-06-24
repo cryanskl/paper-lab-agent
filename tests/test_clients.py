@@ -178,6 +178,20 @@ def test_openalex_tolerates_malformed_landing_url_fields():
     assert malformed_primary_and_id["landing_url"] is None
 
 
+def test_openalex_tolerates_malformed_source_display_name():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-source-display-name",
+            "title": "Malformed source display name",
+            "primary_location": {"source": {"display_name": {"value": "Journal"}}},
+        }
+    )
+
+    assert work["journal_name"] is None
+
+
 def test_openalex_skips_malformed_authorship_items():
     client = OpenAlexClient()
 
