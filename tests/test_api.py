@@ -5453,6 +5453,57 @@ def test_health_check_rejects_corrupt_vector_store_health():
     assert "Expecting property name enclosed in double quotes" in joined
 
 
+def test_health_check_rejects_vector_store_health_path_mismatch():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_vector_store_health_path", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "config_warnings": [],
+            "storage_health": health_check_storage_health(
+                vector_db={
+                    "path": "/tmp/other/vector-index.json",
+                    "exists": False,
+                    "readable": False,
+                    "writable": False,
+                    "valid_json": None,
+                    "error": None,
+                },
+            ),
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "embedding_model": "local-hash",
+            },
+            "counts": health_check_counts(),
+        }
+    )
+
+    joined = "; ".join(errors)
+    assert "storage_health invalid values" in joined
+    assert "vector_db.path must match storage.vector_db_path" in joined
+
+
 def test_health_check_rejects_invalid_config_warning_shape():
     import importlib.util
 

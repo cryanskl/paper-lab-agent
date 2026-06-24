@@ -178,6 +178,14 @@ def validate_system_status(status: dict) -> list[str]:
             invalid_vector_db.extend(f"vector_db.{key}" for key in sorted(missing_vector_db_keys))
             if "path" in vector_db and (not isinstance(vector_db["path"], str) or not vector_db["path"]):
                 invalid_vector_db.append("vector_db.path")
+            expected_vector_db_path = storage.get("vector_db_path") if isinstance(storage, dict) else None
+            if (
+                isinstance(expected_vector_db_path, str)
+                and expected_vector_db_path
+                and isinstance(vector_db.get("path"), str)
+                and vector_db["path"] != expected_vector_db_path
+            ):
+                invalid_vector_db.append("vector_db.path must match storage.vector_db_path")
             for entry_key in ("exists", "readable", "writable"):
                 if entry_key in vector_db and not isinstance(vector_db[entry_key], bool):
                     invalid_vector_db.append(f"vector_db.{entry_key}")
