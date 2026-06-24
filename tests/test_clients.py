@@ -33,6 +33,27 @@ def test_crossref_normalizes_scalar_title_fields():
     assert work["journal_name"] == "Scalar journal"
 
 
+def test_crossref_skips_malformed_author_items():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/authors",
+            "title": ["Author robustness"],
+            "author": [
+                {"given": "Jane", "family": "Doe"},
+                "malformed-author",
+                {"family": "Solo"},
+            ],
+        }
+    )
+
+    assert work["authors"] == [
+        {"name": "Jane Doe", "affiliation": None},
+        {"name": "Solo", "affiliation": None},
+    ]
+
+
 def test_openalex_normalizes_url_doi_to_bare_identifier():
     client = OpenAlexClient()
 

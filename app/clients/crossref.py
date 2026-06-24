@@ -104,15 +104,24 @@ class CrossrefClient:
             return str(value[0])
         return default
 
+    def normalize_authors(self, value: Any) -> list[dict[str, Optional[str]]]:
+        if not isinstance(value, list):
+            return []
+        authors = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            name = " ".join(v for v in [item.get("given"), item.get("family")] if v)
+            if name:
+                authors.append({"name": name, "affiliation": None})
+        return authors
+
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         published = item.get("published-print") or item.get("published-online") or item.get("issued") or {}
         parts = (published.get("date-parts") or [[None]])[0]
         year = parts[0] if parts else None
         published_date = "-".join(str(p).zfill(2) for p in parts if p is not None) if parts else None
-        authors = [
-            {"name": " ".join(v for v in [a.get("given"), a.get("family")] if v), "affiliation": None}
-            for a in item.get("author", [])
-        ]
+        authors = self.normalize_authors(item.get("author"))
         return {
             "doi": self.normalize_doi(item.get("DOI")),
             "title": self.first_text(item.get("title"), "Untitled"),
