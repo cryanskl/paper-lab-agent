@@ -25,11 +25,12 @@ python scripts/health_check.py
 API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
 ```
 
-导入离线样例论文：
+导入离线样例论文和 PDF 文档：
 
 ```bash
 python scripts/import_fixtures.py
 curl 'http://127.0.0.1:8000/api/v1/papers?q=plasma'
+curl 'http://127.0.0.1:8000/api/v1/documents'
 ```
 
 启用定时抓取：

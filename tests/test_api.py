@@ -821,6 +821,29 @@ def test_fixture_loader_supports_walking_skeleton(tmp_path):
     assert repeat["updated"] == 2
 
 
+def test_fixture_loader_imports_idempotent_document_sample(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.fixture_loader import load_fixture_documents, load_fixture_papers
+
+    load_fixture_papers()
+    first = load_fixture_documents()
+    repeat = load_fixture_documents()
+
+    assert first["inserted"] == 1
+    assert first["updated"] == 0
+    assert repeat["inserted"] == 0
+    assert repeat["updated"] == 1
+
+    documents = client.get("/api/v1/documents").json()
+    assert documents["total"] == 1
+    document = documents["items"][0]
+    assert document["original_name"] == "fixture-plasma-chemistry.pdf"
+    assert document["parse_status"] == "uploaded"
+    assert Path(document["file_path"]).exists()
+    assert document["paper"]["doi"] == "10.1088/1361-6595/fixture-ar-o2"
+
+
 def test_fixture_import_script_runs_from_repo_root(tmp_path):
     import subprocess
     import sys
@@ -837,6 +860,8 @@ def test_fixture_import_script_runs_from_repo_root(tmp_path):
         check=True,
     )
     assert "inserted" in result.stdout
+    assert "papers" in result.stdout
+    assert "documents" in result.stdout
 
 
 def test_smoke_check_covers_translation_and_chemistry_chain():
