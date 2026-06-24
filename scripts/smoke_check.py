@@ -152,6 +152,10 @@ def run_smoke() -> dict:
         assert_ok(Path(verified_export["output_path"]).exists(), "expected verified export file")
 
         status = assert_status(client.get("/api/v1/system/status"), 200, "system status")
+        runtime = status["runtime"]
+        config_warnings = status["config_warnings"]
+        assert_ok(runtime["version"], "expected runtime version")
+        assert_ok(isinstance(config_warnings, list), "expected config_warnings list")
         counts = status["counts"]
         assert_ok(counts["papers"] >= 2, "expected system status to include fixture papers")
         assert_ok(counts["documents"] == 1, "expected one smoke document")
@@ -175,6 +179,8 @@ def run_smoke() -> dict:
             "blocked_export_status": blocked_export.status_code,
             "verified_export_format": verified_export["format"],
             "verified_export_path": verified_export["output_path"],
+            "runtime_version": runtime["version"],
+            "config_warning_count": len(config_warnings),
         }
 
 

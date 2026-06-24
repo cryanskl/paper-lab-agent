@@ -892,6 +892,8 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["verified_export_format"] == "json"
     assert result["translation_output_path"].endswith("document-1-zh.md")
     assert result["verified_export_path"].endswith("reaction-set-1.json")
+    assert result["runtime_version"] == "0.1.0"
+    assert result["config_warning_count"] == 3
 
 
 def test_smoke_check_script_outputs_json():
@@ -911,6 +913,8 @@ def test_smoke_check_script_outputs_json():
     assert payload["translation_status"] == "done"
     assert payload["blocked_export_status"] == 409
     assert payload["verified_export_format"] == "json"
+    assert payload["runtime_version"] == "0.1.0"
+    assert payload["config_warning_count"] == 3
 
 
 def test_migrations_add_lxcat_db_to_legacy_reaction_sets():
@@ -3660,6 +3664,8 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "load_fixture_papers" in smoke_text
     assert '"/api/v1/papers?q=plasma"' in smoke_text
     assert '"/api/v1/system/status"' in smoke_text
+    assert "runtime_version" in smoke_text
+    assert "config_warning_count" in smoke_text
     assert ci_workflow.exists()
     ci_text = ci_workflow.read_text(encoding="utf-8")
     assert "bash scripts/release_check.sh" in ci_text
