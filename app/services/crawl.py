@@ -117,6 +117,14 @@ def academic_client_options(settings) -> dict[str, Any]:
     }
 
 
+def unpaywall_client_options(settings) -> dict[str, Any]:
+    return {
+        "max_retries": settings.unpaywall_api_max_retries,
+        "retry_backoff_seconds": settings.unpaywall_api_retry_backoff_seconds,
+        "timeout": settings.unpaywall_api_timeout_seconds,
+    }
+
+
 async def fetch_metadata_works(settings, issn: str, date_from: str, date_to: str) -> tuple[list[dict[str, Any]], Optional[str]]:
     client_options = academic_client_options(settings)
     openalex_error = None
@@ -163,7 +171,7 @@ async def run_crawl_job(job_id: int, journal_id: int, date_from: str, date_to: s
         found = len(works)
         filtered = 0
         new_count = 0
-        unpaywall = UnpaywallClient(settings.unpaywall_email)
+        unpaywall = UnpaywallClient(settings.unpaywall_email, **unpaywall_client_options(settings))
         with get_conn() as conn:
             for work in works:
                 if not matches_keywords(work, keywords):

@@ -1672,6 +1672,44 @@ def test_crossref_client_strips_jats_tags_from_abstract():
     assert work["abstract"] == "Argon plasma chemistry & kinetics."
 
 
+def test_unpaywall_client_honors_retry_after_without_real_sleep():
+    import asyncio
+
+    import httpx
+
+    from app.clients.unpaywall import UnpaywallClient
+
+    attempts = 0
+    delays = []
+
+    def handler(request):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(429, headers={"Retry-After": "2"}, json={"error": "rate limited"})
+        return httpx.Response(
+            200,
+            json={"oa_status": "green", "best_oa_location": {"url_for_pdf": "https://example.test/paper.pdf"}},
+        )
+
+    async def fake_sleep(delay):
+        delays.append(delay)
+
+    client = UnpaywallClient(
+        "lab@example.test",
+        transport=httpx.MockTransport(handler),
+        max_retries=2,
+        retry_backoff_seconds=0.25,
+        sleep=fake_sleep,
+    )
+    result = asyncio.run(client.resolve("10.1/rate-limited"))
+
+    assert result["oa_status"] == "green"
+    assert result["oa_pdf_url"] == "https://example.test/paper.pdf"
+    assert attempts == 2
+    assert delays == [2.0]
+
+
 def test_crawl_job_passes_api_retry_and_page_settings(tmp_path, monkeypatch):
     make_client(tmp_path)
 
@@ -1791,6 +1829,61 @@ def test_crawl_job_falls_back_to_crossref_when_openalex_fails(tmp_path, monkeypa
     assert stored_job["papers_new"] == 1
     assert "OpenAlex failed; used Crossref fallback" in stored_job["error"]
     assert paper["source_api"] == "crossref"
+
+
+def test_crawl_job_passes_unpaywall_retry_and_timeout_settings(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.config import get_settings
+    from app.services import crawl as crawl_service
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("UNPAYWALL_API_MAX_RETRIES", "4")
+    monkeypatch.setenv("UNPAYWALL_API_RETRY_BACKOFF_SECONDS", "0")
+    monkeypatch.setenv("UNPAYWALL_API_TIMEOUT_SECONDS", "9")
+
+    created = []
+
+    class FakeOpenAlexClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def works_by_issn(self, *args, **kwargs):
+            return [
+                {
+                    "doi": "10.5/unpaywall-options",
+                    "title": "Plasma chemistry OA options",
+                    "abstract": "argon plasma chemistry",
+                    "authors": [],
+                    "published_date": "2026-02-01",
+                    "published_year": 2026,
+                    "landing_url": "https://example.test/oa-options",
+                    "source_api": "openalex",
+                    "raw_metadata": {},
+                }
+            ]
+
+    class FakeUnpaywallClient:
+        def __init__(self, email, **kwargs):
+            created.append((email, kwargs))
+
+        async def resolve(self, doi):
+            return {"oa_status": "green", "oa_pdf_url": "https://example.test/oa.pdf"}
+
+    monkeypatch.setattr(crawl_service, "OpenAlexClient", FakeOpenAlexClient)
+    monkeypatch.setattr(crawl_service, "UnpaywallClient", FakeUnpaywallClient)
+
+    job = crawl_service.create_jobs([2], "manual", "2026-02-01", "2026-02-28")[0]
+    import asyncio
+
+    asyncio.run(crawl_service.run_crawl_job(job["job_id"], 2, "2026-02-01", "2026-02-28"))
+
+    assert created == [
+        (
+            None,
+            {"max_retries": 4, "retry_backoff_seconds": 0.0, "timeout": 9.0},
+        )
+    ]
 
 
 def test_crawl_job_records_found_filtered_and_new_counts(tmp_path, monkeypatch):
@@ -2411,6 +2504,9 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "ACADEMIC_API_MAX_RETRIES",
         "ACADEMIC_API_RETRY_BACKOFF_SECONDS",
         "ACADEMIC_API_TIMEOUT_SECONDS",
+        "UNPAYWALL_API_MAX_RETRIES",
+        "UNPAYWALL_API_RETRY_BACKOFF_SECONDS",
+        "UNPAYWALL_API_TIMEOUT_SECONDS",
     ]:
         assert required in env_example
     assert "EMBEDDING_MODEL=local-hash" in env_example
@@ -2420,6 +2516,9 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert 'alias="ACADEMIC_API_MAX_RETRIES"' in config_text
     assert 'alias="ACADEMIC_API_RETRY_BACKOFF_SECONDS"' in config_text
     assert 'alias="ACADEMIC_API_TIMEOUT_SECONDS"' in config_text
+    assert 'alias="UNPAYWALL_API_MAX_RETRIES"' in config_text
+    assert 'alias="UNPAYWALL_API_RETRY_BACKOFF_SECONDS"' in config_text
+    assert 'alias="UNPAYWALL_API_TIMEOUT_SECONDS"' in config_text
 
 
 def test_system_status_contract_documents_operational_counts():
