@@ -3623,6 +3623,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "-m py_compile scripts/health_check.py scripts/import_fixtures.py scripts/smoke_check.py streamlit_app.py"
         in release_text
     )
+    assert "scripts/health_check.py --help" in release_text
     assert "FIXTURE_DIR" in release_text
     assert "scripts/import_fixtures.py" in release_text
     assert '"documents"' in release_text

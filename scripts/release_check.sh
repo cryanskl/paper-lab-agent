@@ -20,6 +20,7 @@ trap cleanup EXIT
 bash -n scripts/env.sh
 bash -n scripts/dev.sh
 "${PYTHON_CMD[@]}" -m py_compile scripts/health_check.py scripts/import_fixtures.py scripts/smoke_check.py streamlit_app.py
+"${PYTHON_CMD[@]}" scripts/health_check.py --help >/dev/null
 FIXTURE_JSON="$(PAPER_LAB_DATA_DIR="${FIXTURE_DIR}" "${PYTHON_CMD[@]}" scripts/import_fixtures.py)"
 printf '%s\n' "${FIXTURE_JSON}"
 FIXTURE_JSON="${FIXTURE_JSON}" "${PYTHON_CMD[@]}" - <<'PY'
