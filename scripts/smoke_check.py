@@ -37,9 +37,11 @@ def run_smoke() -> dict:
         configure_runtime(base_dir)
 
         from app.config import get_settings
-        from app.db import init_db
+        from app.db import get_conn, init_db
         from app.fixture_loader import load_fixture_papers
         from app.main import app
+        from app.routers import crawl as crawl_router
+        from app.utils import now_iso
         from fastapi.testclient import TestClient
 
         get_settings.cache_clear()
@@ -51,6 +53,50 @@ def run_smoke() -> dict:
 
         papers = assert_status(client.get("/api/v1/papers?q=plasma"), 200, "paper search")
         assert_ok(papers["total"] >= 2, f"expected fixture papers to be searchable, got {papers['total']}")
+
+        original_crawl_runner = crawl_router.run_crawl_job
+
+        async def offline_crawl_runner(job_id: int, journal_id: int, date_from: str, date_to: str) -> None:
+            with get_conn() as conn:
+                conn.execute(
+                    """
+                    UPDATE crawl_jobs
+                    SET status='success',
+                        started_at=?,
+                        finished_at=?,
+                        papers_found=2,
+                        papers_filtered=1,
+                        papers_new=0,
+                        error=NULL
+                    WHERE id=?
+                    """,
+                    (now_iso(), now_iso(), job_id),
+                )
+
+        crawl_router.run_crawl_job = offline_crawl_runner
+        try:
+            crawl_run = assert_status(
+                client.post(
+                    "/api/v1/crawl/run",
+                    json={
+                        "journal_ids": [2],
+                        "period": "manual",
+                        "date_from": "2026-01-01",
+                        "date_to": "2026-01-31",
+                    },
+                ),
+                202,
+                "crawl run",
+            )
+        finally:
+            crawl_router.run_crawl_job = original_crawl_runner
+        assert_ok(crawl_run["jobs"], "expected crawl run to create a job")
+        crawl_job_id = crawl_run["jobs"][0]["job_id"]
+        crawl_job = assert_status(client.get(f"/api/v1/crawl/jobs/{crawl_job_id}"), 200, "crawl job detail")
+        crawl_diagnostics = crawl_job["diagnostics"]
+        assert_ok(crawl_diagnostics["status"] == "success", f"expected crawl job success, got {crawl_diagnostics}")
+        assert_ok(crawl_diagnostics["papers_found"] == 2, f"expected crawl papers_found=2, got {crawl_diagnostics}")
+        assert_ok(crawl_diagnostics["papers_filtered"] == 1, f"expected crawl papers_filtered=1, got {crawl_diagnostics}")
 
         upload = assert_status(
             client.post(
@@ -168,6 +214,11 @@ def run_smoke() -> dict:
         return {
             "fixture": fixture_result,
             "papers": papers["total"],
+            "crawl_jobs": counts["crawl_jobs"],
+            "crawl_job_status": crawl_diagnostics["status"],
+            "crawl_job_found": crawl_diagnostics["papers_found"],
+            "crawl_job_filtered": crawl_diagnostics["papers_filtered"],
+            "crawl_job_new": crawl_diagnostics["papers_new"],
             "document_id": document_id,
             "sections": counts["sections"],
             "chunks": counts["chunks"],

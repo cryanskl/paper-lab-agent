@@ -65,6 +65,7 @@ import sys
 
 payload = json.loads(os.environ["SMOKE_JSON"])
 expected = {
+    "crawl_job_status": "success",
     "translation_status": "done",
     "blocked_export_status": 409,
     "verified_export_format": "json",
@@ -77,6 +78,9 @@ for key, value in expected.items():
         raise SystemExit(1)
 if not payload.get("verified_export_path"):
     print("release_check failed: smoke verified_export_path is missing", file=sys.stderr)
+    raise SystemExit(1)
+if payload.get("crawl_job_found", 0) < 1:
+    print(f"release_check failed: smoke crawl_job_found={payload.get('crawl_job_found')!r}, expected >= 1", file=sys.stderr)
     raise SystemExit(1)
 PY
 "${PYTHON_CMD[@]}" -m pytest -q
