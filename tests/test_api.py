@@ -1657,6 +1657,21 @@ def test_crossref_client_paginates():
     assert seen_cursors == ["*", "next-crossref"]
 
 
+def test_crossref_client_strips_jats_tags_from_abstract():
+    from app.clients.crossref import CrossrefClient
+
+    work = CrossrefClient().normalize(
+        {
+            "DOI": "10.2/jats",
+            "title": ["Tagged abstract"],
+            "abstract": "<jats:p>Argon <jats:italic>plasma</jats:italic> chemistry &amp; kinetics.</jats:p>",
+            "published-online": {"date-parts": [[2026, 4, 5]]},
+        }
+    )
+
+    assert work["abstract"] == "Argon plasma chemistry & kinetics."
+
+
 def test_crawl_job_passes_api_retry_and_page_settings(tmp_path, monkeypatch):
     make_client(tmp_path)
 

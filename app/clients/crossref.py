@@ -1,4 +1,6 @@
 import asyncio
+import html
+import re
 from typing import Any, Optional
 
 import httpx
@@ -71,6 +73,13 @@ class CrossrefClient:
                     pass
         return self.retry_backoff_seconds * (attempt + 1)
 
+    def clean_abstract(self, value: Any) -> str:
+        if not isinstance(value, str):
+            return ""
+        without_tags = re.sub(r"<[^>]+>", " ", value)
+        decoded = html.unescape(without_tags)
+        return re.sub(r"\s+", " ", decoded).strip()
+
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         published = item.get("published-print") or item.get("published-online") or {}
         parts = (published.get("date-parts") or [[None]])[0]
@@ -83,7 +92,7 @@ class CrossrefClient:
         return {
             "doi": item.get("DOI"),
             "title": (item.get("title") or ["Untitled"])[0],
-            "abstract": item.get("abstract") or "",
+            "abstract": self.clean_abstract(item.get("abstract")),
             "authors": authors,
             "journal_name": (item.get("container-title") or [None])[0],
             "published_date": published_date,
