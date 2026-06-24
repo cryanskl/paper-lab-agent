@@ -3296,6 +3296,60 @@ def test_parse_document_fallback_writes_valid_tei_xml(tmp_path, monkeypatch):
     assert "Ar &amp; O2 &lt;plasma&gt; chemistry" in tei_text
 
 
+def test_parse_document_falls_back_when_grobid_returns_only_references(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("reference-only.pdf", pdf_bytes(b"local plasma body text"), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    from app.db import get_conn
+    from app.services import documents as document_service
+
+    async def fake_health_detail(self):
+        return {
+            "available": True,
+            "url": "http://grobid.test",
+            "status_code": 200,
+            "error": None,
+        }
+
+    async def fake_process_fulltext(self, file_path):
+        return """
+        <TEI xmlns="http://www.tei-c.org/ns/1.0">
+          <text>
+            <back>
+              <listBibl>
+                <bibl>Reference-only extraction.</bibl>
+              </listBibl>
+            </back>
+          </text>
+        </TEI>
+        """
+
+    monkeypatch.setattr(document_service.GrobidClient, "health_detail", fake_health_detail)
+    monkeypatch.setattr(document_service.GrobidClient, "process_fulltext", fake_process_fulltext)
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    document = client.get(f"/api/v1/documents/{document_id}").json()
+
+    assert document["parse_status"] == "parsed"
+    assert "GROBID returned no body sections" in document["parse_error"]
+    with get_conn() as conn:
+        sections = conn.execute(
+            "SELECT title, content, section_type FROM sections WHERE document_id=? ORDER BY seq",
+            (document_id,),
+        ).fetchall()
+    assert [dict(section) for section in sections] == [
+        {
+            "title": "Local extracted text",
+            "content": "local plasma body text",
+            "section_type": "body",
+        }
+    ]
+
+
 def test_parse_document_records_failed_status_when_artifact_cleanup_fails(tmp_path, monkeypatch):
     import asyncio
 

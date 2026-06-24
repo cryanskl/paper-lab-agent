@@ -231,7 +231,9 @@ async def parse_document(document_id: int) -> dict:
         if grobid_health.get("available"):
             tei_text = await grobid.process_fulltext(doc["file_path"])
             sections = sections_from_tei(tei_text or "")
-            if not sections:
+            has_body_content = any(item.get("section_type") != "reference" for item in sections)
+            if not has_body_content:
+                sections = []
                 parse_error = "GROBID returned no body sections; used local text fallback"
         else:
             reason_parts = [
