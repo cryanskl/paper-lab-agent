@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -75,3 +76,25 @@ def test_release_hygiene_validator_reports_missing_gitignore_pattern(tmp_path):
     missing = validate_release_hygiene.missing_required_gitignore_patterns(gitignore_path)
 
     assert ".next/" in missing
+
+
+def test_agents_truth_source_references_point_to_existing_files():
+    repo = Path(__file__).resolve().parent.parent
+    agents_path = repo / "AGENTS.md"
+    agents_text = agents_path.read_text(encoding="utf-8")
+    truth_source_names = {
+        "PRD_等离子体文献系统.md",
+        "schema.sql",
+        "接口设计文档.md",
+        "任务拆分_开发路线.md",
+    }
+
+    references = [
+        reference
+        for reference in re.findall(r"`([^`]+)`", agents_text)
+        if Path(reference).name in truth_source_names
+    ]
+    missing = [reference for reference in references if not (repo / reference).exists()]
+
+    assert references
+    assert missing == []
