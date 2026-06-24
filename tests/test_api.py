@@ -3534,6 +3534,32 @@ def test_sections_from_tei_preserves_div_table_document_order():
     ]
 
 
+def test_sections_from_tei_uses_sequential_titles_for_split_untitled_div():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <div>
+            <p>Before the table.</p>
+            <table><head>Table 3</head><row><cell>Species</cell><cell>Density</cell></row></table>
+            <p>After the table.</p>
+          </div>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert [(section["section_type"], section["title"]) for section in sections] == [
+        ("body", "Section 1"),
+        ("table", "Table 3"),
+        ("body", "Section 3"),
+    ]
+
+
 def test_sections_from_tei_extracts_direct_body_paragraphs():
     from app.services.documents import sections_from_tei
 

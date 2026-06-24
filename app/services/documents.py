@@ -107,11 +107,12 @@ def sections_from_tei(tei: str) -> list[dict]:
 
     def append_body_div(div: ET.Element) -> None:
         head = find(div, "tei:head")
-        title = clean_text(" ".join(head.itertext())) if head is not None else f"Section {len(sections) + 1}"
+        explicit_title = clean_text(" ".join(head.itertext())) if head is not None else None
         content_parts = []
 
         def flush_body_content() -> None:
             nonlocal content_parts
+            title = explicit_title or f"Section {len(sections) + 1}"
             append_section(title, "\n\n".join(item for item in content_parts if item), "body")
             content_parts = []
 
