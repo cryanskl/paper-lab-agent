@@ -3508,6 +3508,33 @@ def test_sections_from_tei_table_figure_fallback_omits_title_and_duplicate_capti
     ]
 
 
+def test_sections_from_tei_extracts_simple_bibl_references():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <back>
+          <listBibl>
+            <bibl>Smith 2026 Plasma Chemistry reference.</bibl>
+          </listBibl>
+        </back>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Reference 1",
+            "content": "Smith 2026 Plasma Chemistry reference.",
+            "section_type": "reference",
+        }
+    ]
+
+
 def test_translation_adapter_preserves_formula_masks():
     from app.services.translation import translate_text_preserving_formulas
 

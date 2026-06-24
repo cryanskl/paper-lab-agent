@@ -98,6 +98,9 @@ def sections_from_tei(tei: str) -> list[dict]:
             if all(child is not excluded_child for excluded_child in excluded if excluded_child is not None)
         )
 
+    def local_name(node: ET.Element) -> str:
+        return node.tag.rsplit("}", 1)[-1]
+
     for abstract in findall(root, ".//tei:text//tei:front//tei:abstract"):
         append_section("Abstract", " ".join(abstract.itertext()), "abstract")
 
@@ -150,8 +153,13 @@ def sections_from_tei(tei: str) -> list[dict]:
             "table",
         )
 
-    for idx, bibl in enumerate(findall(root, ".//tei:text//tei:back//tei:listBibl//tei:biblStruct"), start=1):
-        append_section(f"Reference {idx}", " ".join(bibl.itertext()), "reference")
+    reference_index = 1
+    for list_bibl in findall(root, ".//tei:text//tei:back//tei:listBibl"):
+        for bibl in list(list_bibl):
+            if local_name(bibl) not in {"biblStruct", "bibl"}:
+                continue
+            append_section(f"Reference {reference_index}", " ".join(bibl.itertext()), "reference")
+            reference_index += 1
     return sections
 
 
