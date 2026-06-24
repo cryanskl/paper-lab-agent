@@ -4312,6 +4312,25 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         assert required in chemistry_section
 
 
+def test_streamlit_chemistry_review_surfaces_save_success_state():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    for required in [
+        'review_message = st.session_state.pop("reaction_review_message", None)',
+        "if review_message:",
+        "st.success(review_message)",
+    ]:
+        assert required in streamlit
+
+    for required in [
+        'st.session_state["reaction_review_message"] = "已保存复核结果"',
+        "st.rerun()",
+    ]:
+        assert required in chemistry_section
+
+
 def test_streamlit_chemistry_export_offers_download():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

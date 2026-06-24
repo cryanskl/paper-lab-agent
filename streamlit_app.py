@@ -60,6 +60,10 @@ except Exception as exc:
     st.error(f"API unavailable: {exc}")
     st.stop()
 
+review_message = st.session_state.pop("reaction_review_message", None)
+if review_message:
+    st.success(review_message)
+
 search_tab, config_tab, documents_tab, rag_tab, chemistry_tab = st.tabs(["检索", "配置", "文档", "问答", "化学库"])
 
 with st.sidebar:
@@ -620,6 +624,7 @@ with chemistry_tab:
                     status_code, result = api_put(f"/reactions/{reaction['id']}/verify", json=payload)
                     if status_code < 400:
                         st.session_state["reaction_set_detail"] = result
+                        st.session_state["reaction_review_message"] = "已保存复核结果"
                         st.rerun()
                     else:
                         st.warning(result)
