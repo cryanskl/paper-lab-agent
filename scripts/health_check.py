@@ -77,6 +77,8 @@ def validate_system_status(status: dict) -> list[str]:
     missing = sorted(STATUS_REQUIRED_KEYS - set(status))
     if missing:
         errors.append(f"missing keys: {', '.join(missing)}")
+    if "database_path" in status and (not isinstance(status["database_path"], str) or not status["database_path"]):
+        errors.append("database_path must be a non-empty string")
     runtime = status.get("runtime")
     if not isinstance(runtime, dict):
         errors.append("runtime must be an object")
