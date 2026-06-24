@@ -3451,6 +3451,38 @@ def test_sections_from_tei_does_not_duplicate_nested_div_paragraphs():
     assert sections[1]["content"] == "Nested discharge pressure details."
 
 
+def test_sections_from_tei_body_includes_direct_list_items():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <div>
+            <head>Operating conditions</head>
+            <p>Base discharge setup.</p>
+            <list>
+              <item>Pressure 10 Pa.</item>
+              <item>Power 100 W.</item>
+            </list>
+          </div>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Operating conditions",
+            "content": "Base discharge setup. Pressure 10 Pa. Power 100 W.",
+            "section_type": "body",
+        }
+    ]
+
+
 def test_sections_from_tei_figure_fallback_omits_title_from_caption():
     from app.services.documents import sections_from_tei
 

@@ -108,9 +108,10 @@ def sections_from_tei(tei: str) -> list[dict]:
     for div in findall(root, ".//tei:text//tei:body//tei:div"):
         head = find(div, "tei:head")
         paragraphs = [clean_text(" ".join(p.itertext())) for p in findall(div, "tei:p")]
+        list_items = [clean_text(" ".join(item.itertext())) for item in findall(div, "tei:list/tei:item")]
         append_section(
             clean_text(" ".join(head.itertext())) if head is not None else f"Section {len(sections) + 1}",
-            "\n\n".join(p for p in paragraphs if p),
+            "\n\n".join(item for item in paragraphs + list_items if item),
             "body",
         )
 
