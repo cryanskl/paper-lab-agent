@@ -92,6 +92,7 @@ def extract_reactions(document_id: int) -> dict:
                 ("document has no parsed sections", document_id),
             )
             return {"document_id": document_id, "status": "failed", "error": "document has no parsed sections"}
+        conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
         cursor = conn.execute(
             """
             INSERT INTO reaction_sets (document_id, name, gas_mixture, lxcat_db, source_note, status)

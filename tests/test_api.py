@@ -5550,6 +5550,28 @@ def test_extracted_reaction_keeps_source_section_and_excerpt(tmp_path):
     assert reaction["products"] == ["e", "e", "Ar+"]
 
 
+def test_extract_chemistry_rerun_replaces_previous_reaction_set(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(b"Ar/O2 chemistry. e + Ar -> e + e + Ar+ .")
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("rerun-extract.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    first = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()
+
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    second = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()
+
+    assert first["total"] == 1
+    assert second["total"] == 1
+    detail = client.get(f"/api/v1/reaction-sets/{second['items'][0]['id']}").json()
+    assert len(detail["reactions"]) == 1
+    assert detail["reactions"][0]["reaction"] == "e + Ar -> e + e + Ar+"
+
+
 def test_extract_reactions_detects_lxcat_database_and_url(tmp_path):
     client = make_client(tmp_path)
     content = pdf_bytes(
