@@ -4335,6 +4335,30 @@ def test_reaction_verify_rejects_unknown_reaction_type(tmp_path):
     assert rejected.json()["error"]["code"] == "validation_error"
 
 
+def test_reaction_verify_backend_failure_returns_json_error(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.main import app
+    from app.routers import reactions as reactions_router
+    from fastapi.testclient import TestClient
+
+    def failing_verify_reaction(*args, **kwargs):
+        raise RuntimeError("audit database unavailable")
+
+    monkeypatch.setattr(reactions_router, "verify_reaction", failing_verify_reaction)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.put(
+        "/api/v1/reactions/123/verify",
+        json={"verified": True, "verified_by": "chemist-a"},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "reaction_verify_failed"
+    assert "audit database unavailable" in payload["error"]["message"]
+
+
 def test_reaction_export_bolsig_text_and_rejects_unknown_format(tmp_path):
     client = make_client(tmp_path)
     response = client.post(

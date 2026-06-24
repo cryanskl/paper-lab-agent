@@ -112,6 +112,8 @@ def verify(reaction_id: int, body: VerifyIn) -> dict:
         )
     except ValueError:
         raise AppError(404, "reaction_not_found", "Reaction not found")
+    except Exception as exc:
+        raise AppError(500, "reaction_verify_failed", str(exc))
 
 
 @router.post("/reaction-sets/{reaction_set_id}/export")
