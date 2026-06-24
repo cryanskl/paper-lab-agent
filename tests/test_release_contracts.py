@@ -54,6 +54,19 @@ def load_validate_schema():
     return validate_schema
 
 
+def load_validate_requirements():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_requirements.py"
+    spec = importlib.util.spec_from_file_location("validate_requirements_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_requirements = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_requirements)
+    return validate_requirements
+
+
 def test_env_example_contains_required_external_dependency_keys():
     validate_env_example = load_validate_env_example()
     env_path = Path(__file__).resolve().parent.parent / ".env.example"
@@ -308,6 +321,47 @@ def test_schema_validator_runs_as_release_script():
 
     result = subprocess.run(
         [sys.executable, "scripts/validate_schema.py"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_requirements_validator_accepts_declared_direct_dependencies():
+    validate_requirements = load_validate_requirements()
+    repo = Path(__file__).resolve().parent.parent
+
+    missing = validate_requirements.missing_required_packages(repo / "requirements.txt")
+
+    assert missing == []
+
+
+def test_requirements_validator_reports_missing_direct_dependency(tmp_path):
+    validate_requirements = load_validate_requirements()
+    repo = Path(__file__).resolve().parent.parent
+    requirements_path = tmp_path / "requirements.txt"
+    requirements_text = (repo / "requirements.txt").read_text(encoding="utf-8")
+    requirements_path.write_text(
+        requirements_text.replace("requests==2.32.3\n", ""),
+        encoding="utf-8",
+    )
+
+    missing = validate_requirements.missing_required_packages(requirements_path)
+
+    assert missing == ["requests"]
+
+
+def test_requirements_validator_runs_as_release_script():
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+
+    result = subprocess.run(
+        [sys.executable, "scripts/validate_requirements.py"],
         cwd=repo,
         check=False,
         capture_output=True,
