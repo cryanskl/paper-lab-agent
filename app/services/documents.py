@@ -165,6 +165,9 @@ def sections_from_tei(tei: str) -> list[dict]:
                 append_body_div(child)
             elif child_name == "p":
                 append_section(f"Section {len(sections) + 1}", " ".join(child.itertext()), "body")
+            elif child_name == "list":
+                list_items = [clean_text(" ".join(item.itertext())) for item in findall(child, "tei:item")]
+                append_section(f"Section {len(sections) + 1}", "\n\n".join(item for item in list_items if item), "body")
             elif child_name == "figure":
                 append_figure(child)
             elif child_name == "table":
