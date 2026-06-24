@@ -697,6 +697,31 @@ def test_create_category_with_unknown_parent_returns_json_error(tmp_path):
     assert response.json()["error"]["code"] == "category_parent_not_found"
 
 
+def test_unhandled_exceptions_return_contract_json_error():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.errors import install_error_handlers
+
+    app = FastAPI()
+    install_error_handlers(app)
+
+    @app.get("/boom")
+    def boom():
+        raise RuntimeError("unexpected backend failure")
+
+    response = TestClient(app, raise_server_exceptions=False).get("/boom")
+
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json() == {
+        "error": {
+            "code": "internal_server_error",
+            "message": "Internal server error",
+        }
+    }
+
+
 def test_document_related_lists_use_page_query_and_metadata(tmp_path):
     client = make_client(tmp_path)
 
