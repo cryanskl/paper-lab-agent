@@ -10,6 +10,7 @@ from app.utils import now_iso
 REACTION_RE = re.compile(r"([A-Za-z0-9+()\-\s]+(?:->|=>)[A-Za-z0-9+()\-\s]+)")
 URL_RE = re.compile(r"https?://[^\s),;]+")
 LXCAT_DB_RE = re.compile(r"LXCat\s+([A-Za-z0-9_.-]+)", re.IGNORECASE)
+GAS_MIXTURE_RE = re.compile(r"\b([A-Z][a-z]?\d?(?:/[A-Z][a-z]?\d?)+)\b")
 
 
 def split_species(side: str) -> list[str]:
@@ -52,6 +53,13 @@ def detect_lxcat_db(text: str) -> Optional[str]:
     return match.group(1).strip(" .,:;")
 
 
+def detect_gas_mixture(text: str) -> Optional[str]:
+    match = GAS_MIXTURE_RE.search(text)
+    if not match:
+        return None
+    return match.group(1)
+
+
 def detect_cross_section_url(text: str) -> Optional[str]:
     for match in URL_RE.finditer(text):
         url = match.group(0).rstrip(".,")
@@ -90,9 +98,11 @@ def extract_reactions(document_id: int) -> dict:
         )
         reaction_set_id = cursor.lastrowid
         found = 0
+        detected_gas_mixture = None
         detected_lxcat_db = None
         for section in sections:
             text = section["content"] or ""
+            detected_gas_mixture = detected_gas_mixture or detect_gas_mixture(text)
             detected_lxcat_db = detected_lxcat_db or detect_lxcat_db(text)
             cross_section_url = detect_cross_section_url(text)
             for match in REACTION_RE.finditer(text):
@@ -123,6 +133,8 @@ def extract_reactions(document_id: int) -> dict:
                     ),
                 )
                 found += 1
+        if detected_gas_mixture:
+            conn.execute("UPDATE reaction_sets SET gas_mixture=? WHERE id=?", (detected_gas_mixture, reaction_set_id))
         if detected_lxcat_db:
             conn.execute("UPDATE reaction_sets SET lxcat_db=? WHERE id=?", (detected_lxcat_db, reaction_set_id))
         if found == 0:
