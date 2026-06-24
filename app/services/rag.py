@@ -173,9 +173,15 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
                 placeholders = ",".join("?" for _ in chunk_ids)
                 rows = conn.execute(
                     f"""
-                    SELECT ch.id, ch.document_id, ch.vector_id, ch.text, s.title AS section_title
+                    SELECT
+                        ch.id, ch.document_id, ch.vector_id, ch.text,
+                        s.title AS section_title,
+                        d.paper_id AS paper_id,
+                        p.title AS paper_title
                     FROM chunks ch
                     LEFT JOIN sections s ON s.id = ch.section_id
+                    LEFT JOIN documents d ON d.id = ch.document_id
+                    LEFT JOIN papers p ON p.id = d.paper_id
                     WHERE ch.id IN ({placeholders})
                     """,
                     chunk_ids,
@@ -185,9 +191,15 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
                 placeholders = ",".join("?" for _ in vector_ids)
                 rows = conn.execute(
                     f"""
-                    SELECT ch.id, ch.document_id, ch.vector_id, ch.text, s.title AS section_title
+                    SELECT
+                        ch.id, ch.document_id, ch.vector_id, ch.text,
+                        s.title AS section_title,
+                        d.paper_id AS paper_id,
+                        p.title AS paper_title
                     FROM chunks ch
                     LEFT JOIN sections s ON s.id = ch.section_id
+                    LEFT JOIN documents d ON d.id = ch.document_id
+                    LEFT JOIN papers p ON p.id = d.paper_id
                     WHERE ch.vector_id IN ({placeholders})
                     """,
                     vector_ids,
@@ -204,6 +216,8 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
             item = dict(hit)
             item["_chunk_id"] = chunk["id"]
             item["_section_title"] = chunk["section_title"]
+            item["_paper_id"] = chunk["paper_id"]
+            item["_paper_title"] = chunk["paper_title"]
             item["_text"] = chunk_text_value
             validated_hits.append(item)
         vector_hits = validated_hits
@@ -213,6 +227,8 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
             "sources": [
                 {
                     "document_id": item["document_id"],
+                    "paper_id": item.get("_paper_id"),
+                    "paper_title": item.get("_paper_title"),
                     "section_title": item.get("_section_title"),
                     "chunk_id": item.get("_chunk_id"),
                     "vector_id": item["vector_id"],
@@ -231,9 +247,15 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
     with get_conn() as conn:
         rows = conn.execute(
             f"""
-            SELECT ch.*, s.title AS section_title
+            SELECT
+                ch.*,
+                s.title AS section_title,
+                d.paper_id AS paper_id,
+                p.title AS paper_title
             FROM chunks ch
             LEFT JOIN sections s ON s.id = ch.section_id
+            LEFT JOIN documents d ON d.id = ch.document_id
+            LEFT JOIN papers p ON p.id = d.paper_id
             {where}
             """,
             params,
@@ -254,6 +276,8 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
         "sources": [
             {
                 "document_id": item["document_id"],
+                "paper_id": item.get("paper_id"),
+                "paper_title": item.get("paper_title"),
                 "section_title": item["section_title"],
                 "chunk_id": item["id"],
                 "vector_id": item.get("vector_id"),

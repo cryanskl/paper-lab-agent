@@ -2596,6 +2596,57 @@ def test_rag_index_uses_local_vector_store(tmp_path):
     assert isinstance(rag["sources"][0]["chunk_id"], int)
 
 
+def test_rag_sources_include_linked_paper_identity(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO papers (
+                doi, title, abstract, authors, journal_id, journal_name,
+                published_date, published_year, landing_url, oa_status,
+                oa_pdf_url, source_api, raw_metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "10.1/rag-source",
+                "Traceable argon plasma paper",
+                "electron impact chemistry",
+                "[]",
+                2,
+                "Plasma Sources Science and Technology",
+                "2026-01-01",
+                2026,
+                "https://example.test/rag-source",
+                "green",
+                "https://example.test/rag-source.pdf",
+                "fixture",
+                "{}",
+            ),
+        )
+        paper_id = cursor.lastrowid
+
+    response = client.post(
+        "/api/v1/documents",
+        data={"paper_id": str(paper_id)},
+        files={"file": ("traceable.pdf", pdf_bytes(b"Argon plasma electron impact chemistry evidence."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/index").status_code == 202
+
+    rag = client.post(
+        "/api/v1/rag/query",
+        json={"question": "electron impact chemistry", "document_ids": [document_id], "top_k": 2},
+    ).json()
+
+    assert rag["sources"]
+    assert rag["sources"][0]["paper_id"] == paper_id
+    assert rag["sources"][0]["paper_title"] == "Traceable argon plasma paper"
+
+
 def test_rag_query_treats_local_hash_collision_as_insufficient_evidence(tmp_path):
     make_client(tmp_path)
 
