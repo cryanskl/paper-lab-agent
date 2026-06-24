@@ -9,7 +9,7 @@ from app.config import get_settings
 from app.db import dict_from_row, get_conn
 from app.errors import AppError, page
 from app.services.crawl import unpaywall_client_options
-from app.utils import json_loads
+from app.utils import json_dumps, json_loads
 
 router = APIRouter(prefix="/papers", tags=["papers"])
 
@@ -148,11 +148,22 @@ async def resolve_oa(paper_id: int) -> dict:
     paper = dict_from_row(row)
     if not paper.get("doi"):
         raise AppError(422, "paper_missing_doi", "Paper has no DOI")
-    result = await UnpaywallClient(settings.unpaywall_email, **unpaywall_client_options(settings)).resolve(paper["doi"])
+    raw_metadata = json_loads(paper.get("raw_metadata"), {})
+    if not isinstance(raw_metadata, dict):
+        raw_metadata = {}
+    try:
+        result = await UnpaywallClient(settings.unpaywall_email, **unpaywall_client_options(settings)).resolve(paper["doi"])
+        if result.get("error"):
+            raw_metadata["oa_resolution_error"] = result["error"]
+        else:
+            raw_metadata.pop("oa_resolution_error", None)
+    except Exception as exc:
+        result = {"oa_status": "unknown", "oa_pdf_url": None}
+        raw_metadata["oa_resolution_error"] = str(exc)
     with get_conn() as conn:
         conn.execute(
-            "UPDATE papers SET oa_status=?, oa_pdf_url=?, updated_at=datetime('now') WHERE id=?",
-            (result.get("oa_status") or "unknown", result.get("oa_pdf_url"), paper_id),
+            "UPDATE papers SET oa_status=?, oa_pdf_url=?, raw_metadata=?, updated_at=datetime('now') WHERE id=?",
+            (result.get("oa_status") or "unknown", result.get("oa_pdf_url"), json_dumps(raw_metadata), paper_id),
         )
     return get_paper(paper_id)
 

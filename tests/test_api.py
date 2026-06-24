@@ -1769,6 +1769,41 @@ def test_resolve_oa_passes_unpaywall_retry_and_timeout_settings(tmp_path, monkey
     ]
 
 
+def test_resolve_oa_records_failure_without_server_error(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import papers as papers_router
+
+    class FailingUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            raise RuntimeError("Unpaywall temporary outage")
+
+    monkeypatch.setattr(papers_router, "UnpaywallClient", FailingUnpaywallClient)
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, ?, '[]', 'fixture', ?)
+            """,
+            ("10.7/manual-resolve-failure", "Manual OA failure", "argon plasma", '{"source":"fixture"}'),
+        )
+        paper_id = cursor.lastrowid
+
+    response = client.post(f"/api/v1/papers/{paper_id}/resolve-oa")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["oa_status"] == "unknown"
+    assert payload["oa_pdf_url"] is None
+    assert payload["raw_metadata"]["source"] == "fixture"
+    assert payload["raw_metadata"]["oa_resolution_error"] == "Unpaywall temporary outage"
+
+
 def test_crawl_job_passes_api_retry_and_page_settings(tmp_path, monkeypatch):
     make_client(tmp_path)
 
