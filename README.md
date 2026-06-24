@@ -22,6 +22,7 @@ curl http://127.0.0.1:8000/health
 curl http://127.0.0.1:8000/api/v1/health
 curl 'http://127.0.0.1:8000/api/v1/journals?active=true'
 python scripts/health_check.py
+API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
 ```
 
 导入离线样例论文：
@@ -60,6 +61,7 @@ API_BASE_URL=http://127.0.0.1:8000/api/v1 python -m streamlit run streamlit_app.
 ## Optional GROBID
 
 GROBID 只在解析真实 PDF 时需要。离线测试和本地文本 fallback 不依赖它。
+`--check-external` 会主动检查 GROBID；默认健康检查不访问外部服务。
 
 ```bash
 docker run --rm -p 8070:8070 lfoppiano/grobid

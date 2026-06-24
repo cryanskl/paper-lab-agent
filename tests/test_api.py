@@ -3224,7 +3224,9 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     for required in [
         "bash scripts/dev.sh",
         "python scripts/health_check.py",
+        "API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py",
         "docker run --rm -p 8070:8070 lfoppiano/grobid",
+        "`--check-external` 会主动检查 GROBID",
         "python scripts/import_fixtures.py",
         "python -m scripts.smoke_check",
         "bash scripts/release_check.sh",
