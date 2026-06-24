@@ -86,7 +86,19 @@ def run_crawl(body: CrawlRunIn, background_tasks: BackgroundTasks) -> dict:
         background_tasks.add_task(run_crawl_job, job["job_id"], job["journal_id"], job["date_from"], job["date_to"])
     if not jobs:
         raise AppError(404, "no_active_journals", "No active journals matched crawl request")
-    return {"jobs": [{"job_id": job["job_id"], "status": "pending"} for job in jobs]}
+    return {
+        "jobs": [
+            {
+                "job_id": job["job_id"],
+                "journal_id": job["journal_id"],
+                "period": body.period,
+                "date_from": job["date_from"],
+                "date_to": job["date_to"],
+                "status": "pending",
+            }
+            for job in jobs
+        ]
+    }
 
 
 @router.get("/jobs")
