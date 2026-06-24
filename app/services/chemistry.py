@@ -7,7 +7,8 @@ from app.db import dict_from_row, get_conn
 from app.utils import now_iso
 
 
-REACTION_RE = re.compile(r"([A-Za-z0-9+()\-\s]+(?:->|=>|→)[A-Za-z0-9+()\-\s]+)")
+REACTION_SPECIES_CHARS = r"A-Za-z0-9+()\-\s\u2070-\u209f\u2212"
+REACTION_RE = re.compile(rf"([{REACTION_SPECIES_CHARS}]+(?:->|=>|→)[{REACTION_SPECIES_CHARS}]+)")
 URL_RE = re.compile(r"https?://[^\s),;]+")
 LXCAT_DB_RE = re.compile(r"LXCat\s+([A-Za-z0-9_.-]+)", re.IGNORECASE)
 GAS_MIXTURE_RE = re.compile(r"\b([A-Z][a-z]?\d?(?:/[A-Z][a-z]?\d?)+)\b")
