@@ -4393,6 +4393,24 @@ def test_streamlit_translation_preview_shows_failed_status():
         assert required in translation_section
 
 
+def test_streamlit_translation_preview_offers_download():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    translation_section = documents_section[
+        documents_section.index("with translation_tab:") : documents_section.index("with chunks_tab:")
+    ]
+
+    for required in [
+        "translation_text",
+        "st.download_button",
+        "下载双语翻译",
+        'mime="text/markdown"',
+        "file_name=output_path.name",
+    ]:
+        assert required in translation_section
+
+
 def test_streamlit_rag_tab_separates_answer_and_sources():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

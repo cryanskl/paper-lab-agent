@@ -323,7 +323,14 @@ with documents_tab:
                     st.json(translation_preview)
                 elif translation_preview.get("output_path") and Path(translation_preview.get("output_path")).exists():
                     output_path = Path(translation_preview.get("output_path"))
-                    st.markdown(output_path.read_text(encoding="utf-8")[:4000])
+                    translation_text = output_path.read_text(encoding="utf-8")
+                    st.download_button(
+                        "下载双语翻译",
+                        data=translation_text,
+                        file_name=output_path.name,
+                        mime="text/markdown",
+                    )
+                    st.markdown(translation_text[:4000])
                 else:
                     st.json(translation_preview)
             except Exception as exc:
