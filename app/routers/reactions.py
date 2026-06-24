@@ -1,4 +1,5 @@
 from typing import Optional
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, field_validator, model_validator
@@ -44,6 +45,16 @@ class VerifyIn(BaseModel):
     def threshold_ev_must_not_be_negative(cls, value: Optional[float]) -> Optional[float]:
         if value is not None and value < 0:
             raise ValueError("threshold_ev must be non-negative")
+        return value
+
+    @field_validator("cross_section_url")
+    @classmethod
+    def cross_section_url_must_be_http_url(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("cross_section_url must be an HTTP URL")
         return value
 
     @model_validator(mode="after")
