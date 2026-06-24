@@ -4277,6 +4277,7 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         "source_section_id",
         "source_section_title",
         "source_section_type",
+        "source_section_seq",
         "source_excerpt",
         "cross_section_url",
         "verified_by",
