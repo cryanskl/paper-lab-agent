@@ -4569,6 +4569,21 @@ def test_streamlit_search_results_show_dedupe_strategy():
     assert "dedupe_strategy=" in search_section
 
 
+def test_streamlit_search_results_can_trigger_classification():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    for required in [
+        "分类结果",
+        "触发分类",
+        'api_post(f"/papers/{paper[\'id\']}/classify")',
+        'classified_paper.get("categories")',
+        'key=f"classify-paper-{paper[\'id\']}"',
+    ]:
+        assert required in search_section
+
+
 def test_streamlit_search_tab_exposes_year_filters():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

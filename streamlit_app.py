@@ -116,6 +116,14 @@ with search_tab:
                 f"has_doi={paper.get('has_doi')} · key={dedupe_label or '-'}"
             )
             st.write((paper.get("abstract") or "")[:400])
+            categories_text = ", ".join(paper.get("categories") or []) or "-"
+            st.caption(f"分类结果: {categories_text}")
+            if st.button("触发分类", key=f"classify-paper-{paper['id']}"):
+                status_code, classified_paper = api_post(f"/papers/{paper['id']}/classify")
+                if status_code < 400:
+                    st.success(", ".join(classified_paper.get("categories") or []) or "无分类")
+                else:
+                    st.warning(classified_paper)
             links = []
             if paper.get("oa_pdf_url"):
                 links.append(f"[OA PDF]({paper['oa_pdf_url']})")
