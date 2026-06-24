@@ -893,6 +893,25 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["verified_export_path"].endswith("reaction-set-1.json")
 
 
+def test_smoke_check_script_outputs_json():
+    import json
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "scripts.smoke_check"],
+        cwd=Path(__file__).resolve().parent.parent,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["translation_status"] == "done"
+    assert payload["blocked_export_status"] == 409
+    assert payload["verified_export_format"] == "json"
+
+
 def test_migrations_add_lxcat_db_to_legacy_reaction_sets():
     import sqlite3
 

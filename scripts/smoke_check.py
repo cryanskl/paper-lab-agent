@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import os
 import sys
 import tempfile
@@ -179,7 +180,7 @@ def run_smoke() -> dict:
 
 def main() -> int:
     result = run_smoke()
-    print(result)
+    print(json.dumps(result, ensure_ascii=False))
     return 0
 
 
