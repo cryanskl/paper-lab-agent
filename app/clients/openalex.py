@@ -120,7 +120,7 @@ class OpenAlexClient:
             if not isinstance(author, dict):
                 continue
             name = author.get("display_name")
-            if name:
+            if isinstance(name, str) and name:
                 authors.append({"name": name, "affiliation": None})
         return authors
 

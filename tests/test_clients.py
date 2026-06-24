@@ -203,6 +203,8 @@ def test_openalex_skips_malformed_authorship_items():
                 {"author": {"display_name": "Jane Doe"}},
                 "malformed-authorship",
                 {"author": "malformed-author"},
+                {"author": {"display_name": {"value": "Malformed"}}},
+                {"author": {"display_name": ["Malformed"]}},
                 {"author": {"display_name": "Solo"}},
             ],
         }
