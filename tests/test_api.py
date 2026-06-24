@@ -3787,6 +3787,49 @@ def test_rag_index_failure_discards_partial_chunks(tmp_path, monkeypatch):
     assert all(record["document_id"] != document_id for record in vector_index.values())
 
 
+def test_rag_index_records_failed_status_when_vector_cleanup_fails(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import rag as rag_service
+    from app.services.rag import index_document
+
+    class FailingVectorStore:
+        def __init__(self, path):
+            self.path = path
+
+        def delete_document(self, document_id):
+            raise RuntimeError("vector cleanup failed")
+
+    monkeypatch.setattr(rag_service, "JsonVectorStore", FailingVectorStore)
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            ("/tmp/vector-cleanup-fail.txt", "vector-cleanup-fail", "vector-cleanup-fail.txt"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Cleanup', 'argon plasma evidence', 'body')
+            """,
+            (document_id,),
+        )
+
+    failed = index_document(document_id)
+
+    assert failed["status"] == "failed"
+    assert "vector cleanup failed" in failed["error"]
+    with get_conn() as conn:
+        document = conn.execute("SELECT index_status, index_error FROM documents WHERE id=?", (document_id,)).fetchone()
+    assert document["index_status"] == "failed"
+    assert "vector cleanup failed" in document["index_error"]
+
+
 def test_reparse_document_clears_stale_downstream_artifacts(tmp_path):
     client = make_client(tmp_path)
 

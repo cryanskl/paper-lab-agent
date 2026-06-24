@@ -138,10 +138,10 @@ def index_document(document_id: int) -> dict:
                 ("document has no parsed sections", document_id),
             )
             return {"document_id": document_id, "chunks": 0, "embedded": 0, "status": "failed"}
-        conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
-        vector_store.delete_document(document_id)
         count = 0
         try:
+            conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+            vector_store.delete_document(document_id)
             embedding_adapter = get_embedding_adapter(settings.embedding_model)
             for section in sections:
                 for seq, chunk in enumerate(chunk_text(section["content"] or ""), start=1):
@@ -173,7 +173,10 @@ def index_document(document_id: int) -> dict:
             return {"document_id": document_id, "chunks": count, "embedded": 1, "status": "indexed"}
         except Exception as exc:
             conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
-            vector_store.delete_document(document_id)
+            try:
+                vector_store.delete_document(document_id)
+            except Exception:
+                pass
             conn.execute(
                 "UPDATE documents SET index_status='failed', index_error=? WHERE id=?",
                 (str(exc), document_id),
