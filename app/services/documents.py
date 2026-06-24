@@ -14,6 +14,11 @@ from app.services.rag import JsonVectorStore
 from app.utils import now_iso
 
 
+def count_pdf_pages(content: bytes) -> Optional[int]:
+    matches = re.findall(rb"/Type\s*/Page\b", content)
+    return len(matches) or None
+
+
 def mark_parse_queued(document_id: int) -> None:
     with get_conn() as conn:
         conn.execute(
@@ -37,7 +42,7 @@ async def save_upload(file: UploadFile, paper_id: Optional[int]) -> tuple[dict, 
             INSERT INTO documents (paper_id, file_path, file_hash, original_name, num_pages, parse_status)
             VALUES (?, ?, ?, ?, ?, 'uploaded')
             """,
-            (paper_id, str(stored), digest, file.filename, None),
+            (paper_id, str(stored), digest, file.filename, count_pdf_pages(content)),
         )
         row = conn.execute("SELECT * FROM documents WHERE id=?", (cursor.lastrowid,)).fetchone()
         return dict_from_row(row), True

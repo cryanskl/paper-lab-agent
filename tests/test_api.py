@@ -558,6 +558,23 @@ def test_document_upload_stores_pdf_with_pdf_extension_even_when_filename_is_mis
     assert Path(document["file_path"]).suffix == ".pdf"
 
 
+def test_document_upload_records_pdf_page_count(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(
+        b"1 0 obj << /Type /Page >> endobj\n"
+        b"2 0 obj << /Type /Pages /Count 2 >> endobj\n"
+        b"3 0 obj << /Type /Page >> endobj\n"
+    )
+
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("two-pages.pdf", content, "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["num_pages"] == 2
+
+
 def test_document_upload_rejects_non_pdf_file(tmp_path):
     client = make_client(tmp_path)
 
