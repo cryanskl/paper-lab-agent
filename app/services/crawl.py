@@ -130,18 +130,22 @@ def unpaywall_client_options(settings) -> dict[str, Any]:
 async def fetch_metadata_works(settings, issn: str, date_from: str, date_to: str) -> tuple[list[dict[str, Any]], Optional[str]]:
     client_options = academic_client_options(settings)
     openalex_error = None
+    openalex_empty = False
     try:
         works = await OpenAlexClient(settings.openalex_mailto, **client_options).works_by_issn(
             issn, date_from, date_to, max_pages=settings.academic_api_max_pages
         )
         if works:
             return works, None
+        openalex_empty = True
     except Exception as exc:
         openalex_error = str(exc)
 
     works = await CrossrefClient(settings.openalex_mailto, **client_options).works_by_issn(
         issn, date_from, date_to, max_pages=settings.academic_api_max_pages
     )
+    if openalex_empty:
+        return works, "OpenAlex returned no works; used Crossref fallback"
     if openalex_error:
         return works, f"OpenAlex failed; used Crossref fallback: {openalex_error}"
     return works, None
