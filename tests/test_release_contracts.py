@@ -41,6 +41,19 @@ def load_validate_api_contract():
     return validate_api_contract
 
 
+def load_validate_schema():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_schema.py"
+    spec = importlib.util.spec_from_file_location("validate_schema_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_schema = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_schema)
+    return validate_schema
+
+
 def test_env_example_contains_required_external_dependency_keys():
     validate_env_example = load_validate_env_example()
     env_path = Path(__file__).resolve().parent.parent / ".env.example"
@@ -265,3 +278,40 @@ def test_api_contract_validator_reports_documented_route_missing_from_app(tmp_pa
     missing = validate_api_contract.missing_documented_routes(contract_path)
 
     assert missing == ["GET /api/v1/nonexistent-release-contract-route"]
+
+
+def test_schema_validator_accepts_schema_truth_source():
+    validate_schema = load_validate_schema()
+    repo = Path(__file__).resolve().parent.parent
+
+    issues = validate_schema.validate_schema(repo / "docs" / "schema.sql")
+
+    assert issues == []
+
+
+def test_schema_validator_reports_missing_required_table(tmp_path):
+    validate_schema = load_validate_schema()
+    schema_path = tmp_path / "schema.sql"
+    schema_path.write_text("PRAGMA foreign_keys = ON;\nCREATE TABLE journals (id INTEGER PRIMARY KEY);\n", encoding="utf-8")
+
+    issues = validate_schema.validate_schema(schema_path)
+
+    assert "missing table: papers" in issues
+    assert "missing table: documents" in issues
+
+
+def test_schema_validator_runs_as_release_script():
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+
+    result = subprocess.run(
+        [sys.executable, "scripts/validate_schema.py"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
