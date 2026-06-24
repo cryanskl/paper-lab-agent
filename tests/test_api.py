@@ -3050,6 +3050,28 @@ def test_reaction_verify_rejects_unknown_rate_type(tmp_path):
     assert rejected.json()["error"]["code"] == "validation_error"
 
 
+def test_reaction_verify_rejects_unknown_reaction_type(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("unknown-reaction-type.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+    reaction_id = detail["reactions"][0]["id"]
+
+    rejected = client.put(
+        f"/api/v1/reactions/{reaction_id}/verify",
+        json={"verified": True, "verified_by": "chemist-a", "reaction_type": "magic_reaction"},
+    )
+
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["code"] == "validation_error"
+
+
 def test_reaction_export_bolsig_text_and_rejects_unknown_format(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
