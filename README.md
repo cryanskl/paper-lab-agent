@@ -20,11 +20,14 @@ bash scripts/dev.sh
 ```bash
 curl http://127.0.0.1:8000/health
 curl http://127.0.0.1:8000/api/v1/health
+curl http://127.0.0.1:8000/api/v1/system/status
 curl 'http://127.0.0.1:8000/api/v1/journals?active=true'
 python scripts/health_check.py
 python scripts/health_check.py --compact
 API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
 ```
+
+`/api/v1/system/status` 会返回 `config_warnings`，用于提示 OpenAlex、Unpaywall、LLM 等可选外部能力是否还未配置；缺失不会阻断默认离线模式。
 
 导入离线样例论文和 PDF 文档：
 

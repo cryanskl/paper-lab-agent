@@ -21,6 +21,35 @@ def table_count(table: str) -> int:
     return row["n"]
 
 
+def config_warnings(settings) -> list[dict]:
+    warnings = []
+    if not settings.openalex_mailto:
+        warnings.append(
+            {
+                "code": "missing_openalex_mailto",
+                "capability": "openalex_crawl",
+                "message": "OPENALEX_MAILTO is not configured; local offline mode still works, but production crawl diagnostics are weaker.",
+            }
+        )
+    if not settings.unpaywall_email:
+        warnings.append(
+            {
+                "code": "missing_unpaywall_email",
+                "capability": "oa_lookup",
+                "message": "UNPAYWALL_EMAIL is not configured; OA link enrichment may fail against the public API.",
+            }
+        )
+    if not settings.llm_api_key:
+        warnings.append(
+            {
+                "code": "missing_llm_api_key",
+                "capability": "llm_translation",
+                "message": "LLM_API_KEY is not configured; translation uses the local deterministic adapter.",
+            }
+        )
+    return warnings
+
+
 @router.get("/status")
 async def status(check_external: bool = False) -> dict:
     settings = get_settings()
@@ -33,6 +62,7 @@ async def status(check_external: bool = False) -> dict:
             "api_prefix": settings.api_prefix,
             "scheduler_enabled": settings.scheduler_enabled,
         },
+        "config_warnings": config_warnings(settings),
         "storage": {
             "data_dir": str(settings.data_dir),
             "pdf_dir": str(settings.pdf_dir),

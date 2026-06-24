@@ -2622,6 +2622,26 @@ def test_system_status_can_check_grobid_health(tmp_path, monkeypatch):
     assert status["external_capabilities"]["grobid"]["error"] == "connection refused"
 
 
+def test_system_status_reports_missing_optional_config_without_blocking(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_MAILTO", "")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "")
+    monkeypatch.setenv("LLM_API_KEY", "")
+
+    client = make_client(tmp_path)
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    status = response.json()
+    warnings = status["config_warnings"]
+    codes = {warning["code"] for warning in warnings}
+    assert "missing_openalex_mailto" in codes
+    assert "missing_unpaywall_email" in codes
+    assert "missing_llm_api_key" in codes
+    assert all(warning["message"] for warning in warnings)
+    assert all(warning["capability"] for warning in warnings)
+
+
 def test_parse_document_records_grobid_fallback_reason(tmp_path, monkeypatch):
     client = make_client(tmp_path)
     response = client.post(
@@ -3647,6 +3667,8 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "python scripts/health_check.py",
         "python scripts/health_check.py --compact",
         "API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py",
+        "curl http://127.0.0.1:8000/api/v1/system/status",
+        "`config_warnings`",
         "docker run --rm -p 8070:8070 lfoppiano/grobid",
         "`--check-external` 会主动检查 GROBID",
         "python scripts/health_check.py --require-grobid",
