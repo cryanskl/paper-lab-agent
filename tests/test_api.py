@@ -3667,6 +3667,8 @@ def test_extracted_reaction_keeps_source_section_and_excerpt(tmp_path):
     assert reaction["source_section_id"] == sections[0]["id"]
     assert "e + Ar -> e + e + Ar" in reaction["source_excerpt"]
     assert "Section text before" in reaction["source_excerpt"]
+    assert reaction["reactants"] == ["e", "Ar"]
+    assert reaction["products"] == ["e", "e", "Ar+"]
 
 
 def test_extract_reactions_detects_lxcat_database_and_url(tmp_path):

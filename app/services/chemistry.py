@@ -13,7 +13,7 @@ LXCAT_DB_RE = re.compile(r"LXCat\s+([A-Za-z0-9_.-]+)", re.IGNORECASE)
 
 
 def split_species(side: str) -> list[str]:
-    return [part.strip() for part in side.split("+") if part.strip()]
+    return [part.strip() for part in re.split(r"\s+\+\s+", side) if part.strip()]
 
 
 def source_excerpt(text: str, start: int, end: int, window: int = 80) -> str:
