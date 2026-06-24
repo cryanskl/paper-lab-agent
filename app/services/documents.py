@@ -91,8 +91,12 @@ def sections_from_tei(tei: str) -> list[dict]:
                 rows.append(" ".join(cell for cell in cells if cell))
         return rows
 
-    def content_without_head(node: ET.Element, head: Optional[ET.Element]) -> str:
-        return " ".join(" ".join(child.itertext()) for child in list(node) if child is not head)
+    def content_without_children(node: ET.Element, excluded: list[Optional[ET.Element]]) -> str:
+        return " ".join(
+            " ".join(child.itertext())
+            for child in list(node)
+            if all(child is not excluded_child for excluded_child in excluded if excluded_child is not None)
+        )
 
     for abstract in findall(root, ".//tei:text//tei:front//tei:abstract"):
         append_section("Abstract", " ".join(abstract.itertext()), "abstract")
@@ -120,7 +124,9 @@ def sections_from_tei(tei: str) -> list[dict]:
             if nested_table is not None:
                 content_parts.extend(table_rows(nested_table))
             else:
-                content_parts.append(" ".join(figure.itertext()))
+                fallback_content = content_without_children(figure, [head, caption])
+                if fallback_content:
+                    content_parts.append(fallback_content)
             append_section(
                 clean_text(" ".join(head.itertext())) if head is not None else f"Table {len(sections) + 1}",
                 "\n".join(content_parts),
@@ -129,7 +135,7 @@ def sections_from_tei(tei: str) -> list[dict]:
             continue
         append_section(
             clean_text(" ".join(head.itertext())) if head is not None else f"Figure {len(sections) + 1}",
-            " ".join(caption.itertext()) if caption is not None else content_without_head(figure, head),
+            " ".join(caption.itertext()) if caption is not None else content_without_children(figure, [head]),
             "figure_caption",
         )
 
@@ -140,7 +146,7 @@ def sections_from_tei(tei: str) -> list[dict]:
         rows = table_rows(table)
         append_section(
             clean_text(" ".join(head.itertext())) if head is not None else f"Table {len(sections) + 1}",
-            "\n".join(rows) or content_without_head(table, head),
+            "\n".join(rows) or content_without_children(table, [head]),
             "table",
         )
 

@@ -3479,6 +3479,35 @@ def test_sections_from_tei_table_fallback_omits_title_from_content():
     ]
 
 
+def test_sections_from_tei_table_figure_fallback_omits_title_and_duplicate_caption():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <figure type="table">
+            <head>Table 4</head>
+            <figDesc>Measured reaction rates.</figDesc>
+            <p>e + Ar -> e + e + Ar+</p>
+          </figure>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Table 4",
+            "content": "Measured reaction rates. e + Ar -> e + e + Ar+",
+            "section_type": "table",
+        }
+    ]
+
+
 def test_translation_adapter_preserves_formula_masks():
     from app.services.translation import translate_text_preserving_formulas
 
