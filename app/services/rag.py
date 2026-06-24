@@ -148,7 +148,13 @@ def index_document(document_id: int) -> dict:
 def query(question: str, document_ids: list[int], top_k: int) -> dict:
     settings = get_settings()
     vector_store = JsonVectorStore(settings.vector_db_path)
+    question_terms = Counter(tokenize(question))
     vector_hits = vector_store.search(local_hash_embedding(question), document_ids, top_k)
+    vector_hits = [
+        hit
+        for hit in vector_hits
+        if hit.get("embedding_model") != "local-hash" or score(question_terms, hit.get("text") or "") > 0
+    ]
     if vector_hits:
         section_ids = [hit["section_id"] for hit in vector_hits if hit.get("section_id")]
         section_titles = {}
@@ -181,7 +187,6 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
             ],
         }
 
-    question_terms = Counter(tokenize(question))
     params = []
     where = ""
     if document_ids:

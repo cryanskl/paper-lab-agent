@@ -2342,6 +2342,37 @@ def test_rag_index_uses_local_vector_store(tmp_path):
     assert isinstance(rag["sources"][0]["chunk_id"], int)
 
 
+def test_rag_query_treats_local_hash_collision_as_insufficient_evidence(tmp_path):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import index_document, query
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            ("/tmp/hash-collision.txt", "hash-collision", "hash-collision.txt"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Argon evidence', 'argon plasma chemistry evidence', 'body')
+            """,
+            (document_id,),
+        )
+
+    assert index_document(document_id)["status"] == "indexed"
+
+    result = query("av", [document_id], 3)
+
+    assert result["sources"] == []
+    assert "证据不足" in result["answer"]
+
+
 def test_rag_reindex_replaces_stale_vectors_for_document(tmp_path):
     make_client(tmp_path)
 
