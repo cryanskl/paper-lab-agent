@@ -2256,6 +2256,43 @@ def test_sections_from_tei_extracts_structured_sections():
     assert "Reference paper" in sections[4]["content"]
 
 
+def test_sections_from_tei_handles_tei_without_namespace():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI>
+      <text>
+        <front>
+          <abstract><p>Abstract plasma chemistry summary.</p></abstract>
+        </front>
+        <body>
+          <div><head>Introduction</head><p>Low temperature plasma body text.</p></div>
+          <figure><head>Figure 1</head><figDesc>Discharge geometry caption.</figDesc></figure>
+          <table><head>Table 1</head><row><cell>Reaction</cell><cell>Rate</cell></row></table>
+        </body>
+        <back>
+          <listBibl>
+            <biblStruct><analytic><title>Reference paper</title></analytic></biblStruct>
+          </listBibl>
+        </back>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert [section["section_type"] for section in sections] == [
+        "abstract",
+        "body",
+        "figure_caption",
+        "table",
+        "reference",
+    ]
+    assert sections[1]["title"] == "Introduction"
+    assert "Reaction Rate" in sections[3]["content"]
+    assert "Reference paper" in sections[4]["content"]
+
+
 def test_translation_adapter_preserves_formula_masks():
     from app.services.translation import translate_text_preserving_formulas
 

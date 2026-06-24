@@ -59,6 +59,16 @@ def sections_from_tei(tei: str) -> list[dict]:
     except ET.ParseError:
         return sections
     ns = {"tei": "http://www.tei-c.org/ns/1.0"}
+    has_namespace = root.tag.startswith("{")
+
+    def xpath(path: str) -> str:
+        return path if has_namespace else path.replace("tei:", "")
+
+    def findall(node: ET.Element, path: str) -> list[ET.Element]:
+        return node.findall(xpath(path), ns if has_namespace else {})
+
+    def find(node: ET.Element, path: str) -> Optional[ET.Element]:
+        return node.find(xpath(path), ns if has_namespace else {})
 
     def clean_text(value: str) -> str:
         return re.sub(r"\s+", " ", value).strip()
@@ -69,32 +79,32 @@ def sections_from_tei(tei: str) -> list[dict]:
             return
         sections.append({"seq": len(sections) + 1, "title": title, "content": text, "section_type": section_type})
 
-    for abstract in root.findall(".//tei:text//tei:front//tei:abstract", ns):
+    for abstract in findall(root, ".//tei:text//tei:front//tei:abstract"):
         append_section("Abstract", " ".join(abstract.itertext()), "abstract")
 
-    for div in root.findall(".//tei:text//tei:body//tei:div", ns):
-        head = div.find("tei:head", ns)
-        paragraphs = [clean_text(" ".join(p.itertext())) for p in div.findall(".//tei:p", ns)]
+    for div in findall(root, ".//tei:text//tei:body//tei:div"):
+        head = find(div, "tei:head")
+        paragraphs = [clean_text(" ".join(p.itertext())) for p in findall(div, ".//tei:p")]
         append_section(
             clean_text(" ".join(head.itertext())) if head is not None else f"Section {len(sections) + 1}",
             "\n\n".join(p for p in paragraphs if p),
             "body",
         )
 
-    for figure in root.findall(".//tei:text//tei:body//tei:figure", ns):
-        head = figure.find("tei:head", ns)
-        caption = figure.find("tei:figDesc", ns)
+    for figure in findall(root, ".//tei:text//tei:body//tei:figure"):
+        head = find(figure, "tei:head")
+        caption = find(figure, "tei:figDesc")
         append_section(
             clean_text(" ".join(head.itertext())) if head is not None else f"Figure {len(sections) + 1}",
             " ".join(caption.itertext()) if caption is not None else " ".join(figure.itertext()),
             "figure_caption",
         )
 
-    for table in root.findall(".//tei:text//tei:body//tei:table", ns):
-        head = table.find("tei:head", ns)
+    for table in findall(root, ".//tei:text//tei:body//tei:table"):
+        head = find(table, "tei:head")
         rows = []
-        for row in table.findall(".//tei:row", ns):
-            cells = [clean_text(" ".join(cell.itertext())) for cell in row.findall(".//tei:cell", ns)]
+        for row in findall(table, ".//tei:row"):
+            cells = [clean_text(" ".join(cell.itertext())) for cell in findall(row, ".//tei:cell")]
             if any(cells):
                 rows.append(" ".join(cell for cell in cells if cell))
         append_section(
@@ -103,7 +113,7 @@ def sections_from_tei(tei: str) -> list[dict]:
             "table",
         )
 
-    for idx, bibl in enumerate(root.findall(".//tei:text//tei:back//tei:listBibl//tei:biblStruct", ns), start=1):
+    for idx, bibl in enumerate(findall(root, ".//tei:text//tei:back//tei:listBibl//tei:biblStruct"), start=1):
         append_section(f"Reference {idx}", " ".join(bibl.itertext()), "reference")
     return sections
 
