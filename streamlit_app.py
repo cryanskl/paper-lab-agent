@@ -542,9 +542,18 @@ with chemistry_tab:
                     index=rate_type_options.index(rate_type_value) if rate_type_value in rate_type_options else 0,
                     key=f"rate-type-{reaction['id']}",
                 )
+                include_threshold_ev = c3.checkbox(
+                    "include_threshold_ev",
+                    value=reaction.get("threshold_ev") is not None,
+                    key=f"include-threshold-ev-{reaction['id']}",
+                )
+                threshold_ev_value = (
+                    float(reaction["threshold_ev"]) if reaction.get("threshold_ev") is not None else 0.0
+                )
                 threshold_ev = c3.number_input(
                     "threshold_ev",
-                    value=float(reaction["threshold_ev"]) if reaction.get("threshold_ev") is not None else 0.0,
+                    value=threshold_ev_value,
+                    disabled=not include_threshold_ev,
                     key=f"threshold-ev-{reaction['id']}",
                 )
                 rate_value = st.text_area(
@@ -568,7 +577,7 @@ with chemistry_tab:
                         "reaction_type": reaction_type or None,
                         "rate_type": rate_type or None,
                         "rate_value": rate_value or None,
-                        "threshold_ev": threshold_ev if threshold_ev else None,
+                        "threshold_ev": threshold_ev if include_threshold_ev else None,
                         "cross_section_url": cross_section_url or None,
                         "verified_by": verified_by or None,
                     }

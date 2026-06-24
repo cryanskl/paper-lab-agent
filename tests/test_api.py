@@ -4281,6 +4281,25 @@ def test_streamlit_chemistry_review_uses_controlled_type_options():
         assert required in chemistry_section
 
 
+def test_streamlit_chemistry_review_can_preserve_zero_threshold():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    for required in [
+        'include_threshold_ev = c3.checkbox(',
+        '"include_threshold_ev"',
+        'value=reaction.get("threshold_ev") is not None',
+        "threshold_ev_value = (",
+        'float(reaction["threshold_ev"]) if reaction.get("threshold_ev") is not None else 0.0',
+        'disabled=not include_threshold_ev',
+        '"threshold_ev": threshold_ev if include_threshold_ev else None',
+    ]:
+        assert required in chemistry_section
+
+    assert '"threshold_ev": threshold_ev if threshold_ev else None' not in chemistry_section
+
+
 def test_document_chunks_endpoint_reports_index_status(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
