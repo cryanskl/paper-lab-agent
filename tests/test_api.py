@@ -1132,6 +1132,10 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["verified_export_text_files"] == 2
     assert result["verified_export_bolsig_contains_header"] is True
     assert result["verified_export_txt_contains_reaction"] is True
+    assert result["rag_answer_has_citation"] is True
+    assert result["rag_source_excerpts"] == 1
+    assert result["verified_export_txt_has_verification_metadata"] is True
+    assert result["verified_export_bolsig_has_verification_metadata"] is True
     assert result["translation_output_path"].endswith("document-1-zh.md")
     assert result["verified_export_path"].endswith("reaction-set-1.json")
     assert result["runtime_version"] == "0.1.0"
@@ -1165,6 +1169,10 @@ def test_smoke_check_script_outputs_json():
     assert payload["verified_export_text_files"] == 2
     assert payload["verified_export_bolsig_contains_header"] is True
     assert payload["verified_export_txt_contains_reaction"] is True
+    assert payload["rag_answer_has_citation"] is True
+    assert payload["rag_source_excerpts"] == 1
+    assert payload["verified_export_txt_has_verification_metadata"] is True
+    assert payload["verified_export_bolsig_has_verification_metadata"] is True
     assert payload["runtime_version"] == "0.1.0"
     assert payload["config_warning_count"] == 3
 
@@ -5607,6 +5615,10 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "verified_export_text_files" in release_text
     assert "verified_export_bolsig_contains_header" in release_text
     assert "verified_export_txt_contains_reaction" in release_text
+    assert "rag_answer_has_citation" in release_text
+    assert "rag_source_excerpts" in release_text
+    assert "verified_export_txt_has_verification_metadata" in release_text
+    assert "verified_export_bolsig_has_verification_metadata" in release_text
     assert "-m pytest -q" in release_text
     assert smoke_check.exists()
     assert validate_env_example.exists()
@@ -5624,6 +5636,10 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert '"verified_export_text_files"' in smoke_text
     assert '"verified_export_bolsig_contains_header"' in smoke_text
     assert '"verified_export_txt_contains_reaction"' in smoke_text
+    assert '"rag_answer_has_citation"' in smoke_text
+    assert '"rag_source_excerpts"' in smoke_text
+    assert '"verified_export_txt_has_verification_metadata"' in smoke_text
+    assert '"verified_export_bolsig_has_verification_metadata"' in smoke_text
     assert '"/api/v1/system/status"' in smoke_text
     assert "runtime_version" in smoke_text
     assert "config_warning_count" in smoke_text

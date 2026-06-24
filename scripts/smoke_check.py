@@ -183,6 +183,14 @@ def run_smoke() -> dict:
             "rag query",
         )
         assert_ok(bool(rag["sources"]), "expected RAG sources")
+        rag_answer_has_citation = (
+            "Source:" in (rag.get("answer") or "")
+            and ("paper_id=" in (rag.get("answer") or "") or "document_id=" in (rag.get("answer") or ""))
+            and "chunk_id=" in (rag.get("answer") or "")
+        )
+        rag_source_excerpts = len([source for source in rag["sources"] if source.get("source_excerpt")])
+        assert_ok(rag_answer_has_citation, f"expected RAG answer citation, got {rag.get('answer')!r}")
+        assert_ok(rag_source_excerpts == len(rag["sources"]), f"expected source excerpts in RAG sources, got {rag['sources']}")
 
         assert_status(
             client.post(f"/api/v1/documents/{document_id}/extract-chemistry"),
@@ -274,8 +282,15 @@ def run_smoke() -> dict:
             and "PROCESS 1" in bolsig_content
             and "REACTION: e + Ar -> e + e + Ar+" in bolsig_content
         )
+        txt_has_verification_metadata = "verified_by: smoke-check" in txt_content and "verified_at:" in txt_content
+        bolsig_has_verification_metadata = "# VERIFIED_BY: smoke-check" in bolsig_content and "# VERIFIED_AT:" in bolsig_content
         assert_ok(txt_contains_reaction, f"expected reaction and rate in txt export, got {txt_content!r}")
         assert_ok(bolsig_contains_header, f"expected BOLSIG header and reaction, got {bolsig_content!r}")
+        assert_ok(txt_has_verification_metadata, f"expected verification metadata in txt export, got {txt_content!r}")
+        assert_ok(
+            bolsig_has_verification_metadata,
+            f"expected verification metadata in BOLSIG export, got {bolsig_content!r}",
+        )
 
         status = assert_status(client.get("/api/v1/system/status"), 200, "system status")
         runtime = status["runtime"]
@@ -306,6 +321,8 @@ def run_smoke() -> dict:
             "sections": counts["sections"],
             "chunks": counts["chunks"],
             "rag_sources": len(rag["sources"]),
+            "rag_answer_has_citation": rag_answer_has_citation,
+            "rag_source_excerpts": rag_source_excerpts,
             "translation_status": translation["status"],
             "translation_output_path": translation["output_path"],
             "reaction_sets": counts["reaction_sets"],
@@ -320,6 +337,8 @@ def run_smoke() -> dict:
             "verified_export_text_files": len([txt_export["output_path"], bolsig_export["output_path"]]),
             "verified_export_bolsig_contains_header": bolsig_contains_header,
             "verified_export_txt_contains_reaction": txt_contains_reaction,
+            "verified_export_txt_has_verification_metadata": txt_has_verification_metadata,
+            "verified_export_bolsig_has_verification_metadata": bolsig_has_verification_metadata,
             "runtime_version": runtime["version"],
             "config_warning_count": len(config_warnings),
         }
