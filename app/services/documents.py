@@ -172,28 +172,34 @@ def sections_from_tei(tei: str) -> list[dict]:
 
     for body in findall(root, ".//tei:text//tei:body"):
         pending_body_head = None
+        content_parts = []
+
+        def flush_body_content() -> None:
+            nonlocal content_parts, pending_body_head
+            title = pending_body_head or f"Section {len(sections) + 1}"
+            append_section(title, "\n\n".join(item for item in content_parts if item), "body")
+            content_parts = []
+            pending_body_head = None
+
         for child in list(body):
             child_name = local_name(child)
             if child_name == "head":
+                flush_body_content()
                 pending_body_head = clean_text(" ".join(child.itertext()))
             elif child_name == "div":
-                pending_body_head = None
+                flush_body_content()
                 append_body_div(child)
             elif child_name == "p":
-                title = pending_body_head or f"Section {len(sections) + 1}"
-                append_section(title, " ".join(child.itertext()), "body")
-                pending_body_head = None
+                content_parts.append(clean_text(" ".join(child.itertext())))
             elif child_name == "list":
-                list_items = [clean_text(" ".join(item.itertext())) for item in findall(child, "tei:item")]
-                title = pending_body_head or f"Section {len(sections) + 1}"
-                append_section(title, "\n\n".join(item for item in list_items if item), "body")
-                pending_body_head = None
+                content_parts.extend(clean_text(" ".join(item.itertext())) for item in findall(child, "tei:item"))
             elif child_name == "figure":
-                pending_body_head = None
+                flush_body_content()
                 append_figure(child)
             elif child_name == "table":
-                pending_body_head = None
+                flush_body_content()
                 append_table(child)
+        flush_body_content()
 
     reference_index = 1
     for list_bibl in findall(root, ".//tei:text//tei:back//tei:listBibl"):
