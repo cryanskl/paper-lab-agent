@@ -100,7 +100,11 @@ with search_tab:
             st.subheader(paper["title"])
             st.caption(f"{paper.get('journal_name') or '-'} · {paper.get('published_date') or '-'} · {paper.get('oa_status') or 'unknown'}")
             dedupe_label = paper.get("doi") or (paper.get("dedupe_key") or "")[:24]
-            st.caption(f"source={paper.get('source_api') or '-'} · has_doi={paper.get('has_doi')} · key={dedupe_label or '-'}")
+            st.caption(
+                f"source={paper.get('source_api') or '-'} · "
+                f"dedupe_strategy={paper.get('dedupe_strategy') or '-'} · "
+                f"has_doi={paper.get('has_doi')} · key={dedupe_label or '-'}"
+            )
             st.write((paper.get("abstract") or "")[:400])
             links = []
             if paper.get("oa_pdf_url"):
