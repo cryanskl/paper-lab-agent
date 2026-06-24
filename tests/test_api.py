@@ -7219,6 +7219,8 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         "show_only_unverified",
         "export_blocked",
         "disabled=export_blocked",
+        "detail.get('verified_by')",
+        "detail.get('verified_at')",
         "未全复核不可导出",
         "未复核",
         "bolsig",

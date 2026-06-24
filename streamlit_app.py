@@ -577,7 +577,13 @@ with chemistry_tab:
     if detail:
         reactions = detail.get("reactions", [])
         unverified_reactions = [reaction for reaction in reactions if not reaction.get("verified")]
-        st.caption(f"status: {detail.get('status')} · reactions: {len(reactions)} · 未复核: {len(unverified_reactions)}")
+        st.caption(
+            f"status: {detail.get('status')} · "
+            f"reactions: {len(reactions)} · "
+            f"未复核: {len(unverified_reactions)} · "
+            f"verified_by: {detail.get('verified_by') or '-'} · "
+            f"verified_at: {detail.get('verified_at') or '-'}"
+        )
         show_only_unverified = st.checkbox("只显示未复核", value=False, key="show_only_unverified")
         no_reactions = not reactions
         export_blocked = no_reactions or bool(unverified_reactions)
