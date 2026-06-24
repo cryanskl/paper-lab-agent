@@ -67,6 +67,8 @@ expected = {
     "translation_status": "done",
     "blocked_export_status": 409,
     "verified_export_format": "json",
+    "runtime_version": "0.1.0",
+    "config_warning_count": 3,
 }
 for key, value in expected.items():
     if payload.get(key) != value:

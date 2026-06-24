@@ -3658,6 +3658,8 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "SMOKE_JSON" in release_text
     assert "json.loads" in release_text
     assert "verified_export_format" in release_text
+    assert "runtime_version" in release_text
+    assert "config_warning_count" in release_text
     assert "-m pytest -q" in release_text
     assert smoke_check.exists()
     smoke_text = smoke_check.read_text(encoding="utf-8")
