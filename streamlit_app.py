@@ -520,14 +520,26 @@ with chemistry_tab:
                 if source_excerpt:
                     st.code(source_excerpt)
                 c1, c2, c3 = st.columns(3)
-                reaction_type = c1.text_input(
+                reaction_type_options = ["", "elastic", "excitation", "ionization", "attachment", "recombination"]
+                rate_type_options = ["", "cross_section", "arrhenius", "constant"]
+                reaction_type_value = reaction.get("reaction_type") or ""
+                rate_type_value = reaction.get("rate_type") or ""
+                if reaction_type_value == "unknown":
+                    reaction_type_value = ""
+                if rate_type_value == "unknown":
+                    rate_type_value = ""
+                reaction_type = c1.selectbox(
                     "reaction_type",
-                    value=reaction.get("reaction_type") or "",
+                    reaction_type_options,
+                    index=reaction_type_options.index(reaction_type_value)
+                    if reaction_type_value in reaction_type_options
+                    else 0,
                     key=f"reaction-type-{reaction['id']}",
                 )
-                rate_type = c2.text_input(
+                rate_type = c2.selectbox(
                     "rate_type",
-                    value=reaction.get("rate_type") or "",
+                    rate_type_options,
+                    index=rate_type_options.index(rate_type_value) if rate_type_value in rate_type_options else 0,
                     key=f"rate-type-{reaction['id']}",
                 )
                 threshold_ev = c3.number_input(

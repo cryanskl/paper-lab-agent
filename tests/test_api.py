@@ -4261,6 +4261,26 @@ def test_streamlit_chemistry_export_offers_download():
         assert required in chemistry_section
 
 
+def test_streamlit_chemistry_review_uses_controlled_type_options():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    for required in [
+        'reaction_type_options = ["", "elastic", "excitation", "ionization", "attachment", "recombination"]',
+        'rate_type_options = ["", "cross_section", "arrhenius", "constant"]',
+        'reaction_type_value = reaction.get("reaction_type") or ""',
+        'rate_type_value = reaction.get("rate_type") or ""',
+        'if reaction_type_value == "unknown":',
+        'if rate_type_value == "unknown":',
+        'c1.selectbox(',
+        'c2.selectbox(',
+        '"reaction_type": reaction_type or None',
+        '"rate_type": rate_type or None',
+    ]:
+        assert required in chemistry_section
+
+
 def test_document_chunks_endpoint_reports_index_status(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
