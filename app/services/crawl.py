@@ -180,9 +180,10 @@ async def run_crawl_job(job_id: int, journal_id: int, date_from: str, date_to: s
                     filtered += 1
                     continue
                 oa = {"oa_status": "unknown", "oa_pdf_url": None}
-                if work.get("doi"):
+                normalized_doi = normalize_doi(work.get("doi"))
+                if normalized_doi:
                     try:
-                        oa = await unpaywall.resolve(work["doi"])
+                        oa = await unpaywall.resolve(normalized_doi)
                     except Exception as exc:
                         oa = {"oa_status": "unknown", "oa_pdf_url": None, "error": str(exc)}
                 if upsert_paper(conn, journal, work, oa):

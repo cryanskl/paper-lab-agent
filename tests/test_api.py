@@ -2516,6 +2516,58 @@ def test_crawl_job_records_found_filtered_and_new_counts(tmp_path, monkeypatch):
     assert [paper["doi"] for paper in papers] == ["10.3/match"]
 
 
+def test_crawl_job_resolves_oa_with_normalized_doi(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import crawl as crawl_service
+
+    resolved_dois = []
+
+    class FakeOpenAlexClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def works_by_issn(self, *args, **kwargs):
+            return [
+                {
+                    "doi": "https://doi.org/10.3/Match.Case",
+                    "title": "Plasma chemistry model",
+                    "abstract": "argon oxygen plasma chemistry",
+                    "authors": [],
+                    "published_date": "2026-01-01",
+                    "published_year": 2026,
+                    "landing_url": "https://example.test/match",
+                    "source_api": "openalex",
+                    "raw_metadata": {},
+                }
+            ]
+
+    class FakeUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            resolved_dois.append(doi)
+            return {"oa_status": "gold", "oa_pdf_url": f"https://example.test/{doi}.pdf"}
+
+    monkeypatch.setattr(crawl_service, "OpenAlexClient", FakeOpenAlexClient)
+    monkeypatch.setattr(crawl_service, "UnpaywallClient", FakeUnpaywallClient)
+
+    job_ids = crawl_service.create_jobs([2], "manual", "2026-01-01", "2026-01-31")
+    import asyncio
+
+    job_id = job_ids[0]["job_id"]
+    asyncio.run(crawl_service.run_crawl_job(job_id, 2, "2026-01-01", "2026-01-31"))
+
+    with get_conn() as conn:
+        paper = conn.execute("SELECT doi, oa_pdf_url FROM papers WHERE title=?", ("Plasma chemistry model",)).fetchone()
+
+    assert resolved_dois == ["10.3/match.case"]
+    assert paper["doi"] == "10.3/match.case"
+    assert paper["oa_pdf_url"] == "https://example.test/10.3/match.case.pdf"
+
+
 def test_crawl_run_rejects_invalid_period_and_reversed_dates(tmp_path):
     client = make_client(tmp_path)
 
