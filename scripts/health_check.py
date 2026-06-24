@@ -181,7 +181,8 @@ def main() -> int:
         print(f"health_check failed: {exc}", file=sys.stderr)
         return 1
 
-    output = {"health": health, "status": status}
+    config_warnings = status.get("config_warnings", []) if isinstance(status, dict) else []
+    output = {"health": health, "status": status, "config_warnings": config_warnings}
     print(json.dumps(output, ensure_ascii=False, indent=None if args.compact else 2))
     if not isinstance(health, dict):
         print("health_check failed: health response must be an object", file=sys.stderr)
