@@ -4596,6 +4596,22 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
     assert 'type=["pdf", "txt"]' not in documents_section
 
 
+def test_streamlit_document_parse_surfaces_success_and_error_states():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    for required in [
+        'status_code, parse_payload = api_post(f"/documents/{selected[\'id\']}/parse")',
+        "if status_code < 400:",
+        "已创建解析任务",
+        "else:",
+        "st.warning(parse_payload)",
+        "st.json(parse_payload)",
+    ]:
+        assert required in documents_section
+
+
 def test_streamlit_documents_tab_shows_linked_paper_summary():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

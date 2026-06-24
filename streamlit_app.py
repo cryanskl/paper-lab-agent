@@ -357,7 +357,12 @@ with documents_tab:
             )
         c1, c2, c3, c4 = st.columns(4)
         if c1.button("解析"):
-            st.json(api_post(f"/documents/{selected['id']}/parse")[1])
+            status_code, parse_payload = api_post(f"/documents/{selected['id']}/parse")
+            if status_code < 400:
+                st.success("已创建解析任务")
+            else:
+                st.warning(parse_payload)
+            st.json(parse_payload)
         if c2.button("翻译"):
             st.json(api_post(f"/documents/{selected['id']}/translate", json={"target_lang": "zh"})[1])
         if c3.button("索引"):
