@@ -23,6 +23,20 @@ def health_check_counts(**overrides):
     return counts
 
 
+def health_check_storage_health(**overrides):
+    storage_health = {
+        "data_dir": {"path": "/tmp/data", "exists": True, "writable": True},
+        "pdf_dir": {"path": "/tmp/data/pdfs", "exists": True, "writable": True},
+        "tei_dir": {"path": "/tmp/data/tei", "exists": True, "writable": True},
+        "translation_dir": {"path": "/tmp/data/translations", "exists": True, "writable": True},
+        "export_dir": {"path": "/tmp/data/exports", "exists": True, "writable": True},
+        "database_parent": {"path": "/tmp", "exists": True, "writable": True},
+        "vector_db_parent": {"path": "/tmp/data", "exists": True, "writable": True},
+    }
+    storage_health.update(overrides)
+    return storage_health
+
+
 def make_client(tmp_path):
     os.environ["DATABASE_PATH"] = str(tmp_path / "test.db")
     os.environ["PAPER_LAB_DATA_DIR"] = str(tmp_path)
@@ -3877,6 +3891,7 @@ def test_health_check_fails_when_runtime_status_is_missing(monkeypatch, capsys):
                 "export_dir": "/tmp/data/exports",
                 "vector_db_path": "/tmp/data/vector-index.json",
             },
+            "storage_health": health_check_storage_health(),
             "external_capabilities": {
                 "openalex_mailto": True,
                 "unpaywall_email": True,
@@ -3920,6 +3935,7 @@ def test_health_check_requires_runtime_version():
                 "export_dir": "/tmp/data/exports",
                 "vector_db_path": "/tmp/data/vector-index.json",
             },
+            "storage_health": health_check_storage_health(),
             "external_capabilities": {
                 "openalex_mailto": True,
                 "unpaywall_email": True,
@@ -3961,6 +3977,7 @@ def test_health_check_fails_when_database_path_is_invalid(monkeypatch, capsys):
                 "export_dir": "/tmp/data/exports",
                 "vector_db_path": "/tmp/data/vector-index.json",
             },
+            "storage_health": health_check_storage_health(),
             "external_capabilities": {
                 "openalex_mailto": True,
                 "unpaywall_email": True,
@@ -4037,6 +4054,7 @@ def test_health_check_fails_when_storage_values_are_invalid(monkeypatch, capsys)
                 "export_dir": "/tmp/data/exports",
                 "vector_db_path": 123,
             },
+            "storage_health": health_check_storage_health(),
             "external_capabilities": {
                 "openalex_mailto": True,
                 "unpaywall_email": True,
@@ -4085,6 +4103,7 @@ def test_health_check_fails_when_external_capability_values_are_invalid(monkeypa
                 "export_dir": "/tmp/data/exports",
                 "vector_db_path": "/tmp/data/vector-index.json",
             },
+            "storage_health": health_check_storage_health(),
             "external_capabilities": {
                 "openalex_mailto": "yes",
                 "unpaywall_email": True,
@@ -4135,6 +4154,7 @@ def test_health_check_fails_when_grobid_values_are_invalid(monkeypatch, capsys):
                 "export_dir": "/tmp/data/exports",
                 "vector_db_path": "/tmp/data/vector-index.json",
             },
+            "storage_health": health_check_storage_health(),
             "external_capabilities": {
                 "openalex_mailto": True,
                 "unpaywall_email": True,
@@ -4185,6 +4205,7 @@ def test_health_check_fails_when_count_values_are_invalid(monkeypatch, capsys):
                 "export_dir": "/tmp/data/exports",
                 "vector_db_path": "/tmp/data/vector-index.json",
             },
+            "storage_health": health_check_storage_health(),
             "external_capabilities": {
                 "openalex_mailto": True,
                 "unpaywall_email": True,
@@ -4234,6 +4255,7 @@ def test_health_check_requires_operational_count_keys():
                 "export_dir": "/tmp/data/exports",
                 "vector_db_path": "/tmp/data/vector-index.json",
             },
+            "storage_health": health_check_storage_health(),
             "external_capabilities": {
                 "openalex_mailto": True,
                 "unpaywall_email": True,
@@ -4274,6 +4296,7 @@ def test_health_check_requires_config_warnings_key():
                 "export_dir": "/tmp/data/exports",
                 "vector_db_path": "/tmp/data/vector-index.json",
             },
+            "storage_health": health_check_storage_health(),
             "external_capabilities": {
                 "openalex_mailto": True,
                 "unpaywall_email": True,
@@ -4287,6 +4310,93 @@ def test_health_check_requires_config_warnings_key():
     )
 
     assert "missing keys: config_warnings" in errors
+
+
+def test_health_check_requires_storage_health_key():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_storage_health_key", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "embedding_model": "local-hash",
+            },
+            "counts": health_check_counts(),
+        }
+    )
+
+    assert "missing keys: storage_health" in errors
+
+
+def test_health_check_rejects_invalid_storage_health_shape():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_storage_health_shape", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "config_warnings": [],
+            "storage_health": health_check_storage_health(
+                data_dir={"path": "", "exists": True, "writable": True},
+                pdf_dir={"path": "/tmp/data/pdfs", "exists": "yes", "writable": True},
+                database_parent="not an object",
+            ),
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "embedding_model": "local-hash",
+            },
+            "counts": health_check_counts(),
+        }
+    )
+
+    joined = "; ".join(errors)
+    assert "storage_health invalid values" in joined
+    assert "data_dir.path" in joined
+    assert "pdf_dir.exists" in joined
+    assert "database_parent" in joined
 
 
 def test_health_check_rejects_invalid_config_warning_shape():
@@ -4316,6 +4426,7 @@ def test_health_check_rejects_invalid_config_warning_shape():
                 "export_dir": "/tmp/data/exports",
                 "vector_db_path": "/tmp/data/vector-index.json",
             },
+            "storage_health": health_check_storage_health(),
             "external_capabilities": {
                 "openalex_mailto": True,
                 "unpaywall_email": True,
@@ -4506,6 +4617,7 @@ def test_health_check_accepts_valid_system_status(monkeypatch):
                 "export_dir": "/tmp/data/exports",
                 "vector_db_path": "/tmp/data/vector-index.json",
             },
+            "storage_health": health_check_storage_health(),
             "external_capabilities": {
                 "openalex_mailto": True,
                 "unpaywall_email": True,
@@ -4562,6 +4674,7 @@ def test_health_check_outputs_config_warnings(monkeypatch, capsys):
                 "export_dir": "/tmp/data/exports",
                 "vector_db_path": "/tmp/data/vector-index.json",
             },
+            "storage_health": health_check_storage_health(),
             "external_capabilities": {
                 "openalex_mailto": True,
                 "unpaywall_email": True,
@@ -4621,6 +4734,7 @@ def test_health_check_compact_outputs_single_line_json(monkeypatch, capsys):
                 "export_dir": "/tmp/data/exports",
                 "vector_db_path": "/tmp/data/vector-index.json",
             },
+            "storage_health": health_check_storage_health(),
             "external_capabilities": {
                 "openalex_mailto": True,
                 "unpaywall_email": True,
@@ -4673,6 +4787,7 @@ def test_health_check_require_grobid_fails_when_external_grobid_is_unavailable(m
                 "export_dir": "/tmp/data/exports",
                 "vector_db_path": "/tmp/data/vector-index.json",
             },
+            "storage_health": health_check_storage_health(),
             "external_capabilities": {
                 "openalex_mailto": True,
                 "unpaywall_email": True,
@@ -4733,6 +4848,7 @@ def test_health_check_uses_api_base_url_from_env_file(monkeypatch, tmp_path):
                 "export_dir": "/tmp/data/exports",
                 "vector_db_path": "/tmp/data/vector-index.json",
             },
+            "storage_health": health_check_storage_health(),
             "external_capabilities": {
                 "openalex_mailto": True,
                 "unpaywall_email": True,
@@ -4777,6 +4893,7 @@ def test_health_check_rejects_unexpected_api_prefix():
                 "export_dir": "/tmp/data/exports",
                 "vector_db_path": "/tmp/data/vector-index.json",
             },
+            "storage_health": health_check_storage_health(),
             "external_capabilities": {
                 "openalex_mailto": True,
                 "unpaywall_email": True,

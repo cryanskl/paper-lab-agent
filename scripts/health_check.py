@@ -13,10 +13,28 @@ STATUS_PATH = "/api/v1/system/status"
 EXTERNAL_STATUS_PATH = "/api/v1/system/status?check_external=true"
 EXPECTED_API_PREFIX = "/api/v1"
 EXPECTED_SERVICE = "paper-lab-agent"
-STATUS_REQUIRED_KEYS = {"database_path", "runtime", "config_warnings", "storage", "external_capabilities", "counts"}
+STATUS_REQUIRED_KEYS = {
+    "database_path",
+    "runtime",
+    "config_warnings",
+    "storage",
+    "storage_health",
+    "external_capabilities",
+    "counts",
+}
 CONFIG_WARNING_REQUIRED_KEYS = {"code", "capability", "message"}
 RUNTIME_REQUIRED_KEYS = {"api_prefix", "scheduler_enabled", "version"}
 STORAGE_REQUIRED_KEYS = {"data_dir", "pdf_dir", "tei_dir", "translation_dir", "export_dir", "vector_db_path"}
+STORAGE_HEALTH_REQUIRED_KEYS = {
+    "data_dir",
+    "pdf_dir",
+    "tei_dir",
+    "translation_dir",
+    "export_dir",
+    "database_parent",
+    "vector_db_parent",
+}
+STORAGE_HEALTH_ENTRY_REQUIRED_KEYS = {"path", "exists", "writable"}
 EXTERNAL_CAPABILITY_REQUIRED_KEYS = {
     "openalex_mailto",
     "unpaywall_email",
@@ -129,6 +147,28 @@ def validate_system_status(status: dict) -> list[str]:
         )
         if invalid_storage:
             errors.append(f"storage invalid values: {', '.join(invalid_storage)}")
+    storage_health = status.get("storage_health")
+    if not isinstance(storage_health, dict):
+        errors.append("storage_health must be an object")
+    else:
+        missing_storage_health = sorted(STORAGE_HEALTH_REQUIRED_KEYS - set(storage_health))
+        if missing_storage_health:
+            errors.append(f"storage_health missing keys: {', '.join(missing_storage_health)}")
+        invalid_storage_health = []
+        for key in sorted(STORAGE_HEALTH_REQUIRED_KEYS & set(storage_health)):
+            value = storage_health[key]
+            if not isinstance(value, dict):
+                invalid_storage_health.append(key)
+                continue
+            missing_entry_keys = STORAGE_HEALTH_ENTRY_REQUIRED_KEYS - set(value)
+            invalid_storage_health.extend(f"{key}.{entry_key}" for entry_key in sorted(missing_entry_keys))
+            if "path" in value and (not isinstance(value["path"], str) or not value["path"]):
+                invalid_storage_health.append(f"{key}.path")
+            for entry_key in ("exists", "writable"):
+                if entry_key in value and not isinstance(value[entry_key], bool):
+                    invalid_storage_health.append(f"{key}.{entry_key}")
+        if invalid_storage_health:
+            errors.append(f"storage_health invalid values: {', '.join(invalid_storage_health)}")
     external_capabilities = status.get("external_capabilities")
     if not isinstance(external_capabilities, dict):
         errors.append("external_capabilities must be an object")
