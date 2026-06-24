@@ -124,6 +124,8 @@ def translate_document(document_id: int, target_lang: str, translation_id: Optio
     try:
         if not sections:
             raise ValueError("document has no parsed sections")
+        if not any((row["content"] or "").strip() for row in sections):
+            raise ValueError("document has no translatable section text")
         translator = get_translator(settings)
         note = (
             "> LLM_API_KEY is not configured; target text preserves source text honestly."

@@ -4069,6 +4069,44 @@ def test_translate_document_preserves_table_and_reference_sections(tmp_path, mon
     assert "translated::Smith" not in output
 
 
+def test_translate_document_fails_when_sections_have_no_text(tmp_path):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import translation as translation_service
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            (str(tmp_path / "empty-translation.pdf"), "empty-translation", "empty-translation.pdf"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Empty', '   ', 'body')
+            """,
+            (document_id,),
+        )
+
+    result = translation_service.translate_document(document_id, "zh")
+
+    assert result["status"] == "failed"
+    assert result["output_path"] is None
+    assert "document has no translatable section text" in result["error"]
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT status, output_path, error FROM translations WHERE document_id=? ORDER BY id DESC LIMIT 1",
+            (document_id,),
+        ).fetchone()
+    assert row["status"] == "failed"
+    assert row["output_path"] is None
+    assert "document has no translatable section text" in row["error"]
+
+
 def test_rag_index_uses_local_vector_store(tmp_path):
     client = make_client(tmp_path)
 
