@@ -1,3 +1,6 @@
+import os
+from pathlib import Path
+
 from fastapi import APIRouter
 
 from app import __version__
@@ -20,6 +23,27 @@ def normalize_grobid_status(detail: dict, fallback_url: str) -> dict:
 def table_count(table: str) -> int:
     row = fetch_one(f"SELECT COUNT(*) AS n FROM {table}") or {"n": 0}
     return row["n"]
+
+
+def storage_path_health(path: Path) -> dict:
+    exists = path.exists()
+    return {
+        "path": str(path),
+        "exists": exists,
+        "writable": bool(exists and os.access(path, os.W_OK)),
+    }
+
+
+def storage_health(settings) -> dict:
+    return {
+        "data_dir": storage_path_health(settings.data_dir),
+        "pdf_dir": storage_path_health(settings.pdf_dir),
+        "tei_dir": storage_path_health(settings.tei_dir),
+        "translation_dir": storage_path_health(settings.translation_dir),
+        "export_dir": storage_path_health(settings.export_dir),
+        "database_parent": storage_path_health(settings.database_path.parent),
+        "vector_db_parent": storage_path_health(settings.vector_db_path.parent),
+    }
 
 
 def config_warnings(settings) -> list[dict]:
@@ -73,6 +97,7 @@ async def status(check_external: bool = False) -> dict:
             "export_dir": str(settings.export_dir),
             "vector_db_path": str(settings.vector_db_path),
         },
+        "storage_health": storage_health(settings),
         "external_capabilities": {
             "openalex_mailto": bool(settings.openalex_mailto),
             "unpaywall_email": bool(settings.unpaywall_email),

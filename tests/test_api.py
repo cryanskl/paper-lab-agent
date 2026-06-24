@@ -55,6 +55,10 @@ def test_health_seed_and_search(tmp_path):
     assert system["counts"]["reactions"] == 0
     assert system["runtime"]["scheduler_enabled"] is False
     assert system["runtime"]["version"] == "0.1.0"
+    storage_health = system["storage_health"]
+    for required in ["data_dir", "pdf_dir", "tei_dir", "translation_dir", "export_dir", "database_parent", "vector_db_parent"]:
+        assert storage_health[required]["exists"] is True
+        assert isinstance(storage_health[required]["writable"], bool)
 
     from app.db import get_conn
 
@@ -3804,7 +3808,7 @@ def test_system_status_contract_documents_operational_counts():
     api_doc = (repo / "docs" / "接口设计文档.md").read_text(encoding="utf-8")
     system_section = api_doc[api_doc.index("## 模块 0") : api_doc.index("## 模块 A")]
 
-    for required in ["version", "config_warnings", "categories", "crawl_jobs", "reaction_sets", "reactions"]:
+    for required in ["version", "storage_health", "config_warnings", "categories", "crawl_jobs", "reaction_sets", "reactions"]:
         assert required in system_section
 
 
