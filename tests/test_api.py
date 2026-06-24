@@ -3369,6 +3369,53 @@ def test_health_check_fails_when_storage_or_capability_keys_are_missing(monkeypa
     assert "external_capabilities missing keys" in captured.err
 
 
+def test_health_check_fails_when_storage_values_are_invalid(monkeypatch, capsys):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_invalid_storage_values", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": 123,
+            },
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "embedding_model": "local-hash",
+            },
+            "counts": health_check_counts(),
+        }
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(sys, "argv", ["health_check.py", "--base-url", "http://api.test"])
+
+    assert health_check.main() == 1
+    captured = capsys.readouterr()
+    assert "storage invalid values" in captured.err
+    assert "pdf_dir" in captured.err
+    assert "vector_db_path" in captured.err
+
+
 def test_health_check_fails_when_count_values_are_invalid(monkeypatch, capsys):
     import importlib.util
     import sys

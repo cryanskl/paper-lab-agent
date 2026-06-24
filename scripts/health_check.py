@@ -100,6 +100,11 @@ def validate_system_status(status: dict) -> list[str]:
         missing_storage = sorted(STORAGE_REQUIRED_KEYS - set(storage))
         if missing_storage:
             errors.append(f"storage missing keys: {', '.join(missing_storage)}")
+        invalid_storage = sorted(
+            key for key in STORAGE_REQUIRED_KEYS & set(storage) if not isinstance(storage[key], str) or not storage[key]
+        )
+        if invalid_storage:
+            errors.append(f"storage invalid values: {', '.join(invalid_storage)}")
     external_capabilities = status.get("external_capabilities")
     if not isinstance(external_capabilities, dict):
         errors.append("external_capabilities must be an object")
