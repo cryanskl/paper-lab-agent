@@ -2260,6 +2260,47 @@ def test_resolve_oa_records_unpaywall_raw_metadata(tmp_path, monkeypatch):
     assert "oa_resolution_error" not in payload["raw_metadata"]
 
 
+def test_resolve_oa_uses_and_stores_normalized_doi(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import papers as papers_router
+
+    resolved_dois = []
+
+    class RawUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            resolved_dois.append(doi)
+            return {
+                "oa_status": "green",
+                "oa_pdf_url": "https://repository.example.test/normalized.pdf",
+                "raw": {"doi": doi, "oa_status": "green"},
+            }
+
+    monkeypatch.setattr(papers_router, "UnpaywallClient", RawUnpaywallClient)
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, ?, '[]', 'fixture', ?)
+            """,
+            ("https://doi.org/10.7/Manual.Resolve", "Manual OA normalized", "argon plasma", '{"source":"fixture"}'),
+        )
+        paper_id = cursor.lastrowid
+
+    response = client.post(f"/api/v1/papers/{paper_id}/resolve-oa")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert resolved_dois == ["10.7/manual.resolve"]
+    assert payload["doi"] == "10.7/manual.resolve"
+    assert payload["raw_metadata"]["unpaywall"]["doi"] == "10.7/manual.resolve"
+
+
 def test_crawl_job_passes_api_retry_and_page_settings(tmp_path, monkeypatch):
     make_client(tmp_path)
 
