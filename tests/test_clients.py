@@ -322,3 +322,20 @@ async def test_unpaywall_tolerates_malformed_best_oa_location():
 
     assert result["oa_status"] == "green"
     assert result["oa_pdf_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_unpaywall_tolerates_malformed_top_level_payload():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(["not-a-response-object"])
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.resolve("10.1/malformed-payload")
+
+    assert result["oa_status"] == "unknown"
+    assert result["oa_pdf_url"] is None
+    assert result["error"] == "Unpaywall response was not a JSON object"

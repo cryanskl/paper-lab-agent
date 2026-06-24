@@ -31,6 +31,12 @@ class UnpaywallClient:
             return {"oa_status": "unknown", "oa_pdf_url": None, "error": "UNPAYWALL_EMAIL is not configured"}
         async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as client:
             payload = await self._get_json(client, f"{self.base_url}/{doi}", {"email": self.email})
+        if not isinstance(payload, dict):
+            return {
+                "oa_status": "unknown",
+                "oa_pdf_url": None,
+                "error": "Unpaywall response was not a JSON object",
+            }
         best = payload.get("best_oa_location") or {}
         return {
             "oa_status": payload.get("oa_status") or "unknown",
