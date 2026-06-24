@@ -1,5 +1,6 @@
 import asyncio
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
 
@@ -31,7 +32,7 @@ class UnpaywallClient:
         best = payload.get("best_oa_location") or {}
         return {
             "oa_status": payload.get("oa_status") or "unknown",
-            "oa_pdf_url": best.get("url_for_pdf"),
+            "oa_pdf_url": best_pdf_url(best),
             "raw": payload,
         }
 
@@ -61,3 +62,14 @@ class UnpaywallClient:
                 except ValueError:
                     pass
         return self.retry_backoff_seconds * (attempt + 1)
+
+
+def best_pdf_url(location: dict[str, Any]) -> Optional[str]:
+    url_for_pdf = location.get("url_for_pdf")
+    if url_for_pdf:
+        return url_for_pdf
+    url = location.get("url")
+    if not url:
+        return None
+    path = urlparse(str(url)).path.lower()
+    return str(url) if path.endswith(".pdf") else None

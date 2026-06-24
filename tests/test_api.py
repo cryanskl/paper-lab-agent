@@ -1971,6 +1971,34 @@ def test_unpaywall_client_honors_retry_after_without_real_sleep():
     assert delays == [2.0]
 
 
+def test_unpaywall_client_uses_best_location_url_when_it_is_pdf():
+    import asyncio
+
+    import httpx
+
+    from app.clients.unpaywall import UnpaywallClient
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={
+                "oa_status": "green",
+                "best_oa_location": {
+                    "url_for_pdf": None,
+                    "url": "https://repository.example.test/article.pdf?download=1",
+                    "url_for_landing_page": "https://repository.example.test/article",
+                },
+            },
+        )
+
+    client = UnpaywallClient("lab@example.test", transport=httpx.MockTransport(handler))
+
+    result = asyncio.run(client.resolve("10.1/pdf-in-best-url"))
+
+    assert result["oa_status"] == "green"
+    assert result["oa_pdf_url"] == "https://repository.example.test/article.pdf?download=1"
+
+
 def test_resolve_oa_passes_unpaywall_retry_and_timeout_settings(tmp_path, monkeypatch):
     client = make_client(tmp_path)
 
