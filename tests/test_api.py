@@ -3423,6 +3423,34 @@ def test_sections_from_tei_does_not_duplicate_nested_div_paragraphs():
     assert sections[1]["content"] == "Nested discharge pressure details."
 
 
+def test_sections_from_tei_figure_fallback_omits_title_from_caption():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <figure>
+            <head>Figure 2</head>
+            <p>Measured ion density profile.</p>
+          </figure>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Figure 2",
+            "content": "Measured ion density profile.",
+            "section_type": "figure_caption",
+        }
+    ]
+
+
 def test_translation_adapter_preserves_formula_masks():
     from app.services.translation import translate_text_preserving_formulas
 

@@ -91,6 +91,9 @@ def sections_from_tei(tei: str) -> list[dict]:
                 rows.append(" ".join(cell for cell in cells if cell))
         return rows
 
+    def content_without_head(node: ET.Element, head: Optional[ET.Element]) -> str:
+        return " ".join(" ".join(child.itertext()) for child in list(node) if child is not head)
+
     for abstract in findall(root, ".//tei:text//tei:front//tei:abstract"):
         append_section("Abstract", " ".join(abstract.itertext()), "abstract")
 
@@ -126,7 +129,7 @@ def sections_from_tei(tei: str) -> list[dict]:
             continue
         append_section(
             clean_text(" ".join(head.itertext())) if head is not None else f"Figure {len(sections) + 1}",
-            " ".join(caption.itertext()) if caption is not None else " ".join(figure.itertext()),
+            " ".join(caption.itertext()) if caption is not None else content_without_head(figure, head),
             "figure_caption",
         )
 
