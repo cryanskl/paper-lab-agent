@@ -845,6 +845,7 @@ def test_fixture_loader_imports_idempotent_document_sample(tmp_path):
 
 
 def test_fixture_import_script_runs_from_repo_root(tmp_path):
+    import json
     import subprocess
     import sys
 
@@ -859,9 +860,9 @@ def test_fixture_import_script_runs_from_repo_root(tmp_path):
         capture_output=True,
         check=True,
     )
-    assert "inserted" in result.stdout
-    assert "papers" in result.stdout
-    assert "documents" in result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["papers"]["inserted"] == 2
+    assert payload["documents"]["inserted"] == 1
 
 
 def test_smoke_check_covers_translation_and_chemistry_chain():

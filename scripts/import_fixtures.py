@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -15,7 +16,7 @@ def main() -> None:
         "papers": load_fixture_papers(),
         "documents": load_fixture_documents(),
     }
-    print(result)
+    print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":
