@@ -210,7 +210,7 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
                     LEFT JOIN sections s ON s.id = ch.section_id
                     LEFT JOIN documents d ON d.id = ch.document_id
                     LEFT JOIN papers p ON p.id = d.paper_id
-                    WHERE ch.id IN ({placeholders})
+                    WHERE ch.embedded=1 AND ch.id IN ({placeholders})
                     """,
                     chunk_ids,
                 ).fetchall()
@@ -228,7 +228,7 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
                     LEFT JOIN sections s ON s.id = ch.section_id
                     LEFT JOIN documents d ON d.id = ch.document_id
                     LEFT JOIN papers p ON p.id = d.paper_id
-                    WHERE ch.vector_id IN ({placeholders})
+                    WHERE ch.embedded=1 AND ch.vector_id IN ({placeholders})
                     """,
                     vector_ids,
                 ).fetchall()
@@ -267,11 +267,12 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
         }
 
     params = []
-    where = ""
+    conditions = ["ch.embedded=1"]
     if document_ids:
         placeholders = ",".join("?" for _ in document_ids)
-        where = f"WHERE ch.document_id IN ({placeholders})"
+        conditions.append(f"ch.document_id IN ({placeholders})")
         params.extend(document_ids)
+    where = f"WHERE {' AND '.join(conditions)}"
     with get_conn() as conn:
         rows = conn.execute(
             f"""

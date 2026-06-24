@@ -3439,6 +3439,42 @@ def test_rag_query_ignores_stale_vector_text_that_no_longer_matches_chunk(tmp_pa
     assert "证据不足" in result["answer"]
 
 
+def test_rag_query_ignores_unembedded_chunks(tmp_path):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import query
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexing')
+            """,
+            ("/tmp/unembedded-rag.txt", "unembedded-rag", "unembedded-rag.txt"),
+        )
+        document_id = cursor.lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Unfinished evidence', 'argon plasma unfinished evidence', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'argon plasma unfinished evidence', 4, NULL, 0)
+            """,
+            (document_id, section_id),
+        )
+
+    result = query("argon plasma", [document_id], 3)
+
+    assert result["sources"] == []
+    assert "证据不足" in result["answer"]
+
+
 def test_rag_reindex_replaces_stale_vectors_for_document(tmp_path):
     make_client(tmp_path)
 
