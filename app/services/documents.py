@@ -22,7 +22,16 @@ def count_pdf_pages(content: bytes) -> Optional[int]:
 def mark_parse_queued(document_id: int) -> None:
     with get_conn() as conn:
         conn.execute(
-            "UPDATE documents SET parse_status='parsing', parse_error=NULL WHERE id=?",
+            """
+            UPDATE documents
+            SET parse_status='parsing',
+                parse_error=NULL,
+                index_status='not_indexed',
+                index_error=NULL,
+                chemistry_status='not_extracted',
+                chemistry_error=NULL
+            WHERE id=?
+            """,
             (document_id,),
         )
 
@@ -220,7 +229,19 @@ async def parse_document(document_id: int) -> dict:
         if not row:
             raise ValueError("document not found")
         doc = dict_from_row(row)
-        conn.execute("UPDATE documents SET parse_status='parsing', parse_error=NULL WHERE id=?", (document_id,))
+        conn.execute(
+            """
+            UPDATE documents
+            SET parse_status='parsing',
+                parse_error=NULL,
+                index_status='not_indexed',
+                index_error=NULL,
+                chemistry_status='not_extracted',
+                chemistry_error=NULL
+            WHERE id=?
+            """,
+            (document_id,),
+        )
 
     tei_text = None
     sections: list[dict] = []

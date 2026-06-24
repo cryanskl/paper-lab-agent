@@ -7153,6 +7153,20 @@ def test_document_async_routes_mark_queued_status_before_background_tasks_run(tm
     document_id = response.json()["id"]
 
     from app.routers import documents as document_router
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE documents
+            SET index_status='indexed',
+                index_error='old index error',
+                chemistry_status='extracted',
+                chemistry_error='old chemistry error'
+            WHERE id=?
+            """,
+            (document_id,),
+        )
 
     parse_payload = document_router.parse(document_id, BackgroundTasks())
     assert parse_payload["document_id"] == document_id
@@ -7160,6 +7174,10 @@ def test_document_async_routes_mark_queued_status_before_background_tasks_run(tm
     document = client.get(f"/api/v1/documents/{document_id}").json()
     assert document["parse_status"] == "parsing"
     assert document["parse_error"] is None
+    assert document["index_status"] == "not_indexed"
+    assert document["index_error"] is None
+    assert document["chemistry_status"] == "not_extracted"
+    assert document["chemistry_error"] is None
 
     document_router.translate(document_id, document_router.TranslateIn(target_lang="zh"), BackgroundTasks())
     translation = client.get(f"/api/v1/documents/{document_id}/translation").json()
