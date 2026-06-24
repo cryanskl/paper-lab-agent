@@ -148,12 +148,13 @@ def list_chunks(
             (document_id, page_size, offset),
         ).fetchall()
     items = [dict_from_row(row) for row in rows]
+    indexed = document.get("index_status") == "indexed" and total > 0
     return {
         "items": items,
         "total": total,
         "page": page_num,
         "page_size": page_size,
-        "indexed": document.get("index_status") == "indexed" and bool(items),
+        "indexed": indexed,
         "index_status": document.get("index_status") or ("indexed" if items else "not_indexed"),
         "index_error": document.get("index_error"),
     }

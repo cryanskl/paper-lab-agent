@@ -5548,6 +5548,14 @@ def test_document_chunks_endpoint_reports_index_status(tmp_path):
     assert after["total"] >= 1
     assert after["items"][0]["vector_id"]
     assert after["items"][0]["section_title"]
+    empty_page = client.get(
+        f"/api/v1/documents/{document_id}/chunks",
+        params={"page": after["total"] + 1, "page_size": 1},
+    ).json()
+    assert empty_page["items"] == []
+    assert empty_page["total"] == after["total"]
+    assert empty_page["indexed"] is True
+    assert empty_page["index_status"] == "indexed"
 
 
 def test_document_async_routes_mark_queued_status_before_background_tasks_run(tmp_path):
