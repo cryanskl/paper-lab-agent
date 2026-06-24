@@ -3255,6 +3255,49 @@ def test_rag_reindex_replaces_stale_vectors_for_document(tmp_path):
     assert all("metastable" not in record["text"] for record in vector_index.values())
 
 
+def test_rag_failed_reindex_removes_stale_vectors_for_document(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.config import get_settings
+    from app.db import get_conn
+    from app.services.rag import index_document, query
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            ("/tmp/failed-reindex.txt", "failed-reindex-hash", "failed-reindex.txt"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Old stale', 'metastable stale evidence', 'body')
+            """,
+            (document_id,),
+        )
+
+    assert index_document(document_id)["status"] == "indexed"
+    assert query("metastable", [document_id], 3)["sources"]
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("EMBEDDING_MODEL", "text-embedding-3-small")
+
+    failed = index_document(document_id)
+    stale = query("metastable", [document_id], 3)
+
+    assert failed["status"] == "failed"
+    assert "unsupported embedding model" in failed["error"]
+    assert stale["sources"] == []
+
+    import json
+
+    vector_index = json.loads((tmp_path / "vector-index.json").read_text(encoding="utf-8"))
+    assert all(record["document_id"] != document_id for record in vector_index.values())
+
+
 def test_reparse_document_clears_stale_downstream_artifacts(tmp_path):
     client = make_client(tmp_path)
 

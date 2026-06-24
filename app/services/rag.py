@@ -139,6 +139,7 @@ def index_document(document_id: int) -> dict:
             )
             return {"document_id": document_id, "chunks": 0, "embedded": 0, "status": "failed"}
         conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+        vector_store.delete_document(document_id)
         count = 0
         try:
             embedding_adapter = get_embedding_adapter(settings.embedding_model)
@@ -175,7 +176,7 @@ def index_document(document_id: int) -> dict:
                 "UPDATE documents SET index_status='failed', index_error=? WHERE id=?",
                 (str(exc), document_id),
             )
-            return {"document_id": document_id, "chunks": count, "embedded": 0, "status": "failed"}
+            return {"document_id": document_id, "chunks": count, "embedded": 0, "status": "failed", "error": str(exc)}
 
 
 def query(question: str, document_ids: list[int], top_k: int) -> dict:
