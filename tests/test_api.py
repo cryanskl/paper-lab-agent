@@ -4812,6 +4812,23 @@ def test_streamlit_sidebar_exposes_runtime_status():
         assert required in sidebar_section
 
 
+def test_streamlit_sidebar_exposes_external_capability_status():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+
+    for required in [
+        "外部能力",
+        "external_capabilities",
+        "openalex_mailto",
+        "unpaywall_email",
+        "grobid_url",
+        "llm_api_key",
+        "embedding_model",
+    ]:
+        assert required in sidebar_section
+
+
 def test_streamlit_crawl_jobs_table_flattens_diagnostics():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

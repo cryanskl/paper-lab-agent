@@ -76,6 +76,13 @@ with st.sidebar:
     st.caption(f"API: {runtime.get('api_prefix', '/api/v1')}")
     st.caption(f"scheduler_enabled: {runtime.get('scheduler_enabled', False)}")
     st.caption(f"DB: {status['database_path']}")
+    external_capabilities = status.get("external_capabilities", {})
+    st.subheader("外部能力")
+    st.caption(f"OpenAlex mailto: {'已配置' if external_capabilities.get('openalex_mailto') else '未配置'}")
+    st.caption(f"Unpaywall email: {'已配置' if external_capabilities.get('unpaywall_email') else '未配置'}")
+    st.caption(f"GROBID URL: {external_capabilities.get('grobid_url') or '-'}")
+    st.caption(f"LLM key: {'已配置' if external_capabilities.get('llm_api_key') else '未配置'}")
+    st.caption(f"Embedding: {external_capabilities.get('embedding_model') or '-'}")
 
 with search_tab:
     st.caption("可先运行 `python scripts/import_fixtures.py` 导入离线样例。")
