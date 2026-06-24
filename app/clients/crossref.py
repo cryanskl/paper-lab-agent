@@ -15,6 +15,7 @@ class CrossrefClient:
         transport: Optional[Any] = None,
         max_retries: int = 3,
         retry_backoff_seconds: float = 0.25,
+        request_interval_seconds: float = 0.0,
         timeout: float = 20.0,
         sleep: Any = asyncio.sleep,
     ):
@@ -22,6 +23,7 @@ class CrossrefClient:
         self.transport = transport
         self.max_retries = max(1, max_retries)
         self.retry_backoff_seconds = retry_backoff_seconds
+        self.request_interval_seconds = max(request_interval_seconds, 0.0)
         self.timeout = timeout
         self.sleep = sleep
 
@@ -43,8 +45,13 @@ class CrossrefClient:
                 next_cursor = message.get("next-cursor")
                 if not next_cursor or next_cursor == params["cursor"]:
                     break
+                await self.wait_between_requests()
                 params["cursor"] = next_cursor
         return results
+
+    async def wait_between_requests(self) -> None:
+        if self.request_interval_seconds > 0:
+            await self.sleep(self.request_interval_seconds)
 
     async def _get_json(self, client: httpx.AsyncClient, url: str, params: dict[str, Any]) -> dict[str, Any]:
         last_error: Optional[Exception] = None

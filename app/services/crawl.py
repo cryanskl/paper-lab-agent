@@ -113,6 +113,7 @@ def academic_client_options(settings) -> dict[str, Any]:
     return {
         "max_retries": settings.academic_api_max_retries,
         "retry_backoff_seconds": settings.academic_api_retry_backoff_seconds,
+        "request_interval_seconds": settings.academic_api_request_interval_seconds,
         "timeout": settings.academic_api_timeout_seconds,
     }
 
@@ -121,6 +122,7 @@ def unpaywall_client_options(settings) -> dict[str, Any]:
     return {
         "max_retries": settings.unpaywall_api_max_retries,
         "retry_backoff_seconds": settings.unpaywall_api_retry_backoff_seconds,
+        "request_interval_seconds": settings.unpaywall_api_request_interval_seconds,
         "timeout": settings.unpaywall_api_timeout_seconds,
     }
 

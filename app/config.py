@@ -28,9 +28,11 @@ class Settings(BaseSettings):
     academic_api_max_pages: int = Field(default=3, alias="ACADEMIC_API_MAX_PAGES")
     academic_api_max_retries: int = Field(default=3, alias="ACADEMIC_API_MAX_RETRIES")
     academic_api_retry_backoff_seconds: float = Field(default=0.25, alias="ACADEMIC_API_RETRY_BACKOFF_SECONDS")
+    academic_api_request_interval_seconds: float = Field(default=0.0, alias="ACADEMIC_API_REQUEST_INTERVAL_SECONDS")
     academic_api_timeout_seconds: float = Field(default=20.0, alias="ACADEMIC_API_TIMEOUT_SECONDS")
     unpaywall_api_max_retries: int = Field(default=3, alias="UNPAYWALL_API_MAX_RETRIES")
     unpaywall_api_retry_backoff_seconds: float = Field(default=0.25, alias="UNPAYWALL_API_RETRY_BACKOFF_SECONDS")
+    unpaywall_api_request_interval_seconds: float = Field(default=0.0, alias="UNPAYWALL_API_REQUEST_INTERVAL_SECONDS")
     unpaywall_api_timeout_seconds: float = Field(default=20.0, alias="UNPAYWALL_API_TIMEOUT_SECONDS")
 
     api_prefix: str = "/api/v1"

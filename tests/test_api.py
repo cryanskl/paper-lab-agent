@@ -2116,6 +2116,7 @@ def test_resolve_oa_passes_unpaywall_retry_and_timeout_settings(tmp_path, monkey
     get_settings.cache_clear()
     monkeypatch.setenv("UNPAYWALL_API_MAX_RETRIES", "6")
     monkeypatch.setenv("UNPAYWALL_API_RETRY_BACKOFF_SECONDS", "0")
+    monkeypatch.setenv("UNPAYWALL_API_REQUEST_INTERVAL_SECONDS", "0.4")
     monkeypatch.setenv("UNPAYWALL_API_TIMEOUT_SECONDS", "11")
 
     created = []
@@ -2146,7 +2147,12 @@ def test_resolve_oa_passes_unpaywall_retry_and_timeout_settings(tmp_path, monkey
     assert created == [
         (
             None,
-            {"max_retries": 6, "retry_backoff_seconds": 0.0, "timeout": 11.0},
+            {
+                "max_retries": 6,
+                "retry_backoff_seconds": 0.0,
+                "request_interval_seconds": 0.4,
+                "timeout": 11.0,
+            },
         )
     ]
 
@@ -2241,6 +2247,7 @@ def test_crawl_job_passes_api_retry_and_page_settings(tmp_path, monkeypatch):
     monkeypatch.setenv("ACADEMIC_API_MAX_PAGES", "4")
     monkeypatch.setenv("ACADEMIC_API_MAX_RETRIES", "5")
     monkeypatch.setenv("ACADEMIC_API_RETRY_BACKOFF_SECONDS", "0")
+    monkeypatch.setenv("ACADEMIC_API_REQUEST_INTERVAL_SECONDS", "0.3")
     monkeypatch.setenv("ACADEMIC_API_TIMEOUT_SECONDS", "7")
 
     created = []
@@ -2279,12 +2286,22 @@ def test_crawl_job_passes_api_retry_and_page_settings(tmp_path, monkeypatch):
         (
             "openalex",
             None,
-            {"max_retries": 5, "retry_backoff_seconds": 0.0, "timeout": 7.0},
+            {
+                "max_retries": 5,
+                "retry_backoff_seconds": 0.0,
+                "request_interval_seconds": 0.3,
+                "timeout": 7.0,
+            },
         ),
         (
             "crossref",
             None,
-            {"max_retries": 5, "retry_backoff_seconds": 0.0, "timeout": 7.0},
+            {
+                "max_retries": 5,
+                "retry_backoff_seconds": 0.0,
+                "request_interval_seconds": 0.3,
+                "timeout": 7.0,
+            },
         ),
     ]
     assert calls == [
@@ -2361,6 +2378,7 @@ def test_crawl_job_passes_unpaywall_retry_and_timeout_settings(tmp_path, monkeyp
     get_settings.cache_clear()
     monkeypatch.setenv("UNPAYWALL_API_MAX_RETRIES", "4")
     monkeypatch.setenv("UNPAYWALL_API_RETRY_BACKOFF_SECONDS", "0")
+    monkeypatch.setenv("UNPAYWALL_API_REQUEST_INTERVAL_SECONDS", "0.2")
     monkeypatch.setenv("UNPAYWALL_API_TIMEOUT_SECONDS", "9")
 
     created = []
@@ -2402,7 +2420,12 @@ def test_crawl_job_passes_unpaywall_retry_and_timeout_settings(tmp_path, monkeyp
     assert created == [
         (
             None,
-            {"max_retries": 4, "retry_backoff_seconds": 0.0, "timeout": 9.0},
+            {
+                "max_retries": 4,
+                "retry_backoff_seconds": 0.0,
+                "request_interval_seconds": 0.2,
+                "timeout": 9.0,
+            },
         )
     ]
 
