@@ -162,7 +162,7 @@ def translate_document(document_id: int, target_lang: str, translation_id: Optio
     except Exception as exc:
         with get_conn() as conn:
             conn.execute(
-                "UPDATE translations SET status='failed', error=? WHERE id=?",
+                "UPDATE translations SET status='failed', output_path=NULL, error=? WHERE id=?",
                 (str(exc), translation_id),
             )
             row = conn.execute("SELECT * FROM translations WHERE id=?", (translation_id,)).fetchone()
