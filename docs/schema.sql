@@ -47,6 +47,7 @@ CREATE TABLE papers (
     oa_status       TEXT,                       -- gold/green/hybrid/bronze/closed/unknown
     oa_pdf_url      TEXT,                        -- Unpaywall 找到的合法全文链接
     source_api      TEXT,                       -- crossref/openalex/arxiv
+    dedupe_key      TEXT UNIQUE,                -- 无 DOI 时的保守去重键，NULL 表示不自动合并
     raw_metadata    TEXT,                        -- JSON 原始响应，便于重处理
     indexed_at      TEXT DEFAULT (datetime('now')),
     updated_at      TEXT DEFAULT (datetime('now'))
@@ -104,6 +105,7 @@ CREATE TABLE crawl_jobs (
     date_to      TEXT,
     status       TEXT DEFAULT 'pending',        -- pending/running/success/failed
     papers_found INTEGER DEFAULT 0,
+    papers_filtered INTEGER DEFAULT 0,
     papers_new   INTEGER DEFAULT 0,
     error        TEXT,
     started_at   TEXT,
@@ -123,6 +125,11 @@ CREATE TABLE documents (
     original_name TEXT,
     num_pages     INTEGER,
     parse_status  TEXT DEFAULT 'uploaded',      -- uploaded/parsing/parsed/failed
+    parse_error   TEXT,
+    index_status  TEXT DEFAULT 'not_indexed',   -- not_indexed/indexing/indexed/failed
+    index_error   TEXT,
+    chemistry_status TEXT DEFAULT 'not_extracted', -- not_extracted/extracting/extracted/rejected/failed
+    chemistry_error  TEXT,
     tei_path      TEXT,                         -- GROBID TEI/XML 存放路径
     created_at    TEXT DEFAULT (datetime('now'))
 );
@@ -150,6 +157,7 @@ CREATE TABLE translations (
     target_lang  TEXT,
     status       TEXT DEFAULT 'pending',        -- pending/done/failed
     output_path  TEXT,                          -- 双语对照文档路径
+    error        TEXT,
     created_at   TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_translations_doc ON translations(document_id);
@@ -200,11 +208,24 @@ CREATE TABLE reactions (
     threshold_ev      REAL,
     reference         TEXT,
     cross_section_url TEXT,                       -- LXCat 链接
+    source_section_id INTEGER REFERENCES sections(id),
+    source_excerpt    TEXT,
     confidence        REAL,
     verified          INTEGER DEFAULT 0,
     created_at        TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_reactions_set ON reactions(reaction_set_id);
+
+-- 人工复核审计日志：记录每次字段修正与复核动作，保证导出可追溯
+CREATE TABLE reaction_audits (
+    id          INTEGER PRIMARY KEY,
+    reaction_id INTEGER NOT NULL REFERENCES reactions(id) ON DELETE CASCADE,
+    action      TEXT NOT NULL,
+    changes     TEXT,                          -- JSON object
+    verified_by TEXT,
+    created_at  TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_reaction_audits_reaction ON reaction_audits(reaction_id);
 
 -- =============================================================
 -- 种子数据：6 本白名单期刊（ISSN 已填，电子版 ISSN 建议上线前核一遍）

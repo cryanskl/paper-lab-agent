@@ -23,8 +23,7 @@ def api_post(path: str, json=None, files=None, data=None):
 
 def api_put(path: str, json=None):
     response = requests.put(f"{API_BASE}{path}", json=json, timeout=20)
-    response.raise_for_status()
-    return response.json()
+    return response.status_code, response.json()
 
 
 st.set_page_config(page_title="paper-lab-agent", layout="wide")
@@ -37,7 +36,7 @@ except Exception as exc:
     st.error(f"API unavailable: {exc}")
     st.stop()
 
-search_tab, documents_tab, rag_tab, chemistry_tab = st.tabs(["检索", "文档", "问答", "化学库"])
+search_tab, config_tab, documents_tab, rag_tab, chemistry_tab = st.tabs(["检索", "配置", "文档", "问答", "化学库"])
 
 with st.sidebar:
     st.subheader("系统")
@@ -45,6 +44,9 @@ with st.sidebar:
     st.metric("期刊", status["counts"]["journals"])
     st.metric("论文", status["counts"]["papers"])
     st.metric("文档", status["counts"]["documents"])
+    runtime = status.get("runtime", {})
+    st.caption(f"API: {runtime.get('api_prefix', '/api/v1')}")
+    st.caption(f"scheduler_enabled: {runtime.get('scheduler_enabled', False)}")
     st.caption(f"DB: {status['database_path']}")
 
 with search_tab:
@@ -97,10 +99,134 @@ with search_tab:
         if date_to:
             body["date_to"] = date_to
         st.json(api_post("/crawl/run", json=body)[1])
-    st.dataframe(api_get("/crawl/jobs", page_size=10)["items"], use_container_width=True)
+    jobs = api_get("/crawl/jobs", page_size=10)["items"]
+    st.dataframe(jobs, use_container_width=True)
+    if jobs:
+        selected_job = st.selectbox(
+            "任务详情",
+            jobs,
+            format_func=lambda job: f"#{job['id']} · journal {job.get('journal_id') or '-'} · {job.get('status')}",
+        )
+        job_detail = api_get(f"/crawl/jobs/{selected_job['id']}")
+        diagnostics = job_detail.get("diagnostics", {})
+        j1, j2, j3, j4 = st.columns(4)
+        j1.metric("found", diagnostics.get("papers_found", 0))
+        j2.metric("filtered", diagnostics.get("papers_filtered", 0))
+        j3.metric("accepted", diagnostics.get("papers_accepted", 0))
+        j4.metric("new", diagnostics.get("papers_new", 0))
+        if diagnostics.get("error"):
+            st.warning(diagnostics["error"])
+        st.dataframe([diagnostics], use_container_width=True)
+        st.json(job_detail)
+
+with config_tab:
+    journals_response = api_get("/journals", page_size=100)
+    categories_response = api_get("/categories")
+    journals_all = journals_response["items"]
+    categories_all = categories_response["items"]
+
+    st.subheader("期刊白名单")
+    st.dataframe(journals_all, use_container_width=True)
+
+    with st.form("create-journal-form"):
+        st.markdown("新增期刊")
+        j1, j2 = st.columns(2)
+        journal_name = j1.text_input("name", key="new-journal-name")
+        publisher = j2.text_input("publisher", key="new-journal-publisher")
+        j3, j4 = st.columns(2)
+        issn_print = j3.text_input("issn_print", key="new-journal-issn-print")
+        issn_electronic = j4.text_input("issn_electronic", key="new-journal-issn-electronic")
+        j5, j6 = st.columns(2)
+        year_from = j5.number_input("year_from", min_value=1900, max_value=2100, value=1990, key="new-journal-year-from")
+        platform = j6.text_input("platform", key="new-journal-platform")
+        url = st.text_input("url", key="new-journal-url")
+        keywords_mode = st.selectbox("keywords_mode", ["or", "and"], key="new-journal-keywords-mode")
+        keywords_terms = st.text_area("keywords_terms", key="new-journal-keywords-terms")
+        create_journal = st.form_submit_button("新增期刊")
+        if create_journal:
+            terms = [term.strip() for term in keywords_terms.replace("\n", ",").split(",") if term.strip()]
+            payload = {
+                "name": journal_name,
+                "publisher": publisher or None,
+                "platform": platform or None,
+                "url": url or None,
+                "issn_print": issn_print or None,
+                "issn_electronic": issn_electronic or None,
+                "keywords": {"mode": keywords_mode, "terms": terms},
+                "year_from": int(year_from),
+            }
+            status_code, result = api_post("/journals", json=payload)
+            if status_code == 201:
+                st.success(f"journal #{result['id']}")
+                st.rerun()
+            else:
+                st.warning(result)
+
+    if journals_all:
+        selected_journal = st.selectbox(
+            "更新期刊",
+            journals_all,
+            format_func=lambda journal: f"#{journal['id']} {journal['name']} · active={journal.get('active')}",
+        )
+        active = st.checkbox("active", value=bool(selected_journal.get("active")), key=f"journal-active-{selected_journal['id']}")
+        edit_keywords_mode = st.selectbox(
+            "keywords_mode",
+            ["or", "and"],
+            index=1 if isinstance(selected_journal.get("keywords"), dict) and selected_journal["keywords"].get("mode") == "and" else 0,
+            key=f"journal-keywords-mode-{selected_journal['id']}",
+        )
+        existing_terms = selected_journal.get("keywords", [])
+        if isinstance(existing_terms, dict):
+            existing_terms = existing_terms.get("terms", [])
+        keywords_terms = st.text_area(
+            "keywords_terms",
+            value=", ".join(existing_terms),
+            key=f"journal-keywords-terms-{selected_journal['id']}",
+        )
+        if st.button("更新期刊", key=f"update-journal-{selected_journal['id']}"):
+            terms = [term.strip() for term in keywords_terms.replace("\n", ",").split(",") if term.strip()]
+            status_code, result = api_put(
+                f"/journals/{selected_journal['id']}",
+                json={"active": active, "keywords": {"mode": edit_keywords_mode, "terms": terms}},
+            )
+            if status_code < 400:
+                st.rerun()
+            else:
+                st.warning(result)
+
+    st.divider()
+    st.subheader("分类")
+    st.dataframe(categories_all, use_container_width=True)
+    with st.form("create-category-form"):
+        st.markdown("新增分类")
+        c1, c2 = st.columns(2)
+        category_name = c1.text_input("name", key="new-category-name")
+        category_slug = c2.text_input("slug", key="new-category-slug")
+        description = st.text_area("description", key="new-category-description")
+        parent_options = [None] + categories_all
+        parent_choice = st.selectbox(
+            "parent_id",
+            parent_options,
+            format_func=lambda category: "无" if category is None else f"#{category['id']} {category['slug']}",
+            key="new-category-parent",
+        )
+        create_category = st.form_submit_button("新增分类")
+        if create_category:
+            payload = {
+                "name": category_name,
+                "slug": category_slug,
+                "description": description or None,
+                "parent_id": parent_choice["id"] if parent_choice else None,
+            }
+            status_code, result = api_post("/categories", json=payload)
+            if status_code == 201:
+                st.success(f"category #{result['id']}")
+                st.rerun()
+            else:
+                st.warning(result)
 
 with documents_tab:
-    uploaded = st.file_uploader("PDF", type=["pdf", "txt"])
+    uploaded = st.file_uploader("PDF", type=["pdf"])
     paper_id = st.number_input("paper_id", min_value=0, value=0)
     if st.button("上传", disabled=uploaded is None):
         files = {"file": (uploaded.name, uploaded.getvalue(), uploaded.type or "application/pdf")}
@@ -113,6 +239,9 @@ with documents_tab:
     docs = api_get("/documents", page_size=50)["items"]
     if docs:
         selected = st.selectbox("文档", docs, format_func=lambda d: f"#{d['id']} {d.get('original_name') or Path(d['file_path']).name} · {d['parse_status']}")
+        document_detail = api_get(f"/documents/{selected['id']}")
+        if document_detail.get("parse_error"):
+            st.warning(f"parse_error: {document_detail['parse_error']}")
         c1, c2, c3, c4 = st.columns(4)
         if c1.button("解析"):
             st.json(api_post(f"/documents/{selected['id']}/parse")[1])
@@ -122,7 +251,42 @@ with documents_tab:
             st.json(api_post(f"/documents/{selected['id']}/index")[1])
         if c4.button("抽取"):
             st.json(api_post(f"/documents/{selected['id']}/extract-chemistry")[1])
-        st.dataframe(api_get(f"/documents/{selected['id']}/sections")["items"], use_container_width=True)
+        sections = api_get(f"/documents/{selected['id']}/sections")["items"]
+        chunks = api_get(f"/documents/{selected['id']}/chunks")
+        index_status = "indexed" if chunks["indexed"] else "not indexed"
+        st.caption(f"index_status: {index_status} · chunks: {chunks['total']}")
+        section_tab, translation_tab, chunks_tab = st.tabs(["章节", "翻译预览", "索引"])
+        with section_tab:
+            if sections:
+                section_preview = st.selectbox(
+                    "section_preview",
+                    sections,
+                    format_func=lambda section: f"{section.get('seq')}. {section.get('title') or section.get('section_type')}",
+                )
+                st.markdown(f"### {section_preview.get('title') or 'Section'}")
+                st.write(section_preview.get("content") or "")
+            st.dataframe(sections, use_container_width=True)
+        with translation_tab:
+            try:
+                translation_preview = api_get(f"/documents/{selected['id']}/translation")
+                st.caption(translation_preview.get("status"))
+                output_path = Path(translation_preview["output_path"])
+                if output_path.exists():
+                    st.markdown(output_path.read_text(encoding="utf-8")[:4000])
+                else:
+                    st.json(translation_preview)
+            except Exception as exc:
+                translation_preview = None
+                st.info(f"translation_preview unavailable: {exc}")
+        with chunks_tab:
+            if chunks["items"]:
+                chunk_preview = st.selectbox(
+                    "chunk / vector_id",
+                    chunks["items"],
+                    format_func=lambda chunk: f"{chunk.get('vector_id') or chunk.get('id')} · {chunk.get('section_title') or '-'}",
+                )
+                st.code(chunk_preview.get("text") or "")
+            st.dataframe(chunks["items"], use_container_width=True)
 
 with rag_tab:
     doc_ids = st.text_input("document_ids", value="")
@@ -133,15 +297,73 @@ with rag_tab:
 
 with chemistry_tab:
     rs_id = st.number_input("reaction_set_id", min_value=1, value=1)
-    if st.button("加载反应集"):
-        status, payload = api_post(f"/reaction-sets/{rs_id}/export", json=None)
-        if status == 409:
-            st.warning(payload)
-        detail = api_get(f"/reaction-sets/{rs_id}")
-        st.json(detail)
+    if st.button("加载反应集") or "reaction_set_detail" not in st.session_state:
+        try:
+            st.session_state["reaction_set_detail"] = api_get(f"/reaction-sets/{rs_id}")
+        except Exception as exc:
+            st.warning(exc)
+            st.session_state["reaction_set_detail"] = None
+
+    detail = st.session_state.get("reaction_set_detail")
+    if detail:
+        st.caption(f"status: {detail.get('status')} · reactions: {len(detail.get('reactions', []))}")
+        export_format = st.selectbox("导出格式", ["json", "txt", "bolsig"], key="reaction_export_format")
+        if st.button("导出反应集", key="export-reaction-set"):
+            status, payload = api_post(f"/reaction-sets/{rs_id}/export?format={export_format}", json=None)
+            if status == 409:
+                st.warning(payload)
+            elif status >= 400:
+                st.error(payload)
+            else:
+                st.success(payload["output_path"])
+                st.json(payload)
         for reaction in detail.get("reactions", []):
             with st.container(border=True):
                 st.write(reaction["reaction"])
-                rate_value = st.text_input("rate_value", value=reaction.get("rate_value") or "", key=f"rate-{reaction['id']}")
-                if st.button("复核通过", key=f"verify-{reaction['id']}"):
-                    st.json(api_put(f"/reactions/{reaction['id']}/verify", json={"verified": True, "rate_value": rate_value, "verified_by": "streamlit"}))
+                c1, c2, c3 = st.columns(3)
+                reaction_type = c1.text_input(
+                    "reaction_type",
+                    value=reaction.get("reaction_type") or "",
+                    key=f"reaction-type-{reaction['id']}",
+                )
+                rate_type = c2.text_input(
+                    "rate_type",
+                    value=reaction.get("rate_type") or "",
+                    key=f"rate-type-{reaction['id']}",
+                )
+                threshold_ev = c3.number_input(
+                    "threshold_ev",
+                    value=float(reaction["threshold_ev"]) if reaction.get("threshold_ev") is not None else 0.0,
+                    key=f"threshold-ev-{reaction['id']}",
+                )
+                rate_value = st.text_area(
+                    "rate_value",
+                    value=reaction.get("rate_value") or "",
+                    key=f"rate-value-{reaction['id']}",
+                )
+                cross_section_url = st.text_input(
+                    "cross_section_url",
+                    value=reaction.get("cross_section_url") or "",
+                    key=f"cross-section-url-{reaction['id']}",
+                )
+                verified_by = st.text_input("verified_by", value="streamlit", key=f"verified-by-{reaction['id']}")
+                verified = st.checkbox("verified", value=bool(reaction.get("verified")), key=f"verified-{reaction['id']}")
+                if reaction.get("audit_log"):
+                    with st.expander("audit_log"):
+                        st.json(reaction["audit_log"])
+                if st.button("保存复核", key=f"verify-{reaction['id']}"):
+                    payload = {
+                        "verified": verified,
+                        "reaction_type": reaction_type or None,
+                        "rate_type": rate_type or None,
+                        "rate_value": rate_value or None,
+                        "threshold_ev": threshold_ev if threshold_ev else None,
+                        "cross_section_url": cross_section_url or None,
+                        "verified_by": verified_by or None,
+                    }
+                    status_code, result = api_put(f"/reactions/{reaction['id']}/verify", json=payload)
+                    if status_code < 400:
+                        st.session_state["reaction_set_detail"] = result
+                        st.rerun()
+                    else:
+                        st.warning(result)

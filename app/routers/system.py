@@ -1,19 +1,38 @@
 from fastapi import APIRouter
 
+from app.clients.grobid import GrobidClient
 from app.config import get_settings
 from app.db import fetch_one
 
 router = APIRouter(prefix="/system", tags=["system"])
 
 
+def normalize_grobid_status(detail: dict, fallback_url: str) -> dict:
+    return {
+        "url": detail.get("url") or fallback_url,
+        "available": detail.get("available"),
+        "status_code": detail.get("status_code"),
+        "error": detail.get("error"),
+    }
+
+
+def table_count(table: str) -> int:
+    row = fetch_one(f"SELECT COUNT(*) AS n FROM {table}") or {"n": 0}
+    return row["n"]
+
+
 @router.get("/status")
-def status() -> dict:
+async def status(check_external: bool = False) -> dict:
     settings = get_settings()
-    journal_count = fetch_one("SELECT COUNT(*) AS n FROM journals") or {"n": 0}
-    paper_count = fetch_one("SELECT COUNT(*) AS n FROM papers") or {"n": 0}
-    document_count = fetch_one("SELECT COUNT(*) AS n FROM documents") or {"n": 0}
+    grobid = normalize_grobid_status({}, settings.grobid_url)
+    if check_external:
+        grobid = normalize_grobid_status(await GrobidClient(settings.grobid_url).health_detail(), settings.grobid_url)
     return {
         "database_path": str(settings.database_path),
+        "runtime": {
+            "api_prefix": settings.api_prefix,
+            "scheduler_enabled": settings.scheduler_enabled,
+        },
         "storage": {
             "data_dir": str(settings.data_dir),
             "pdf_dir": str(settings.pdf_dir),
@@ -26,13 +45,20 @@ def status() -> dict:
             "openalex_mailto": bool(settings.openalex_mailto),
             "unpaywall_email": bool(settings.unpaywall_email),
             "grobid_url": settings.grobid_url,
+            "grobid": grobid,
             "llm_api_key": bool(settings.llm_api_key),
             "embedding_model": settings.embedding_model,
         },
         "counts": {
-            "journals": journal_count["n"],
-            "papers": paper_count["n"],
-            "documents": document_count["n"],
+            "journals": table_count("journals"),
+            "papers": table_count("papers"),
+            "categories": table_count("categories"),
+            "crawl_jobs": table_count("crawl_jobs"),
+            "documents": table_count("documents"),
+            "sections": table_count("sections"),
+            "translations": table_count("translations"),
+            "chunks": table_count("chunks"),
+            "reaction_sets": table_count("reaction_sets"),
+            "reactions": table_count("reactions"),
         },
     }
-

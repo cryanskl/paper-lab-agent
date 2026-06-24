@@ -1,7 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
 
 from app.db import dict_from_row, get_conn
 from app.errors import AppError
@@ -12,8 +12,38 @@ router = APIRouter(tags=["reactions"])
 
 class VerifyIn(BaseModel):
     verified: bool
+    reaction_type: Optional[str] = None
+    rate_type: Optional[str] = None
     rate_value: Optional[str] = None
+    threshold_ev: Optional[float] = None
+    cross_section_url: Optional[str] = None
     verified_by: Optional[str] = None
+
+    @field_validator("reaction_type", "rate_type", "rate_value", "cross_section_url")
+    @classmethod
+    def optional_text_fields_must_not_be_blank(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("field must not be blank")
+        return normalized
+
+    @field_validator("verified_by")
+    @classmethod
+    def verified_by_must_not_be_blank(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("verified_by must not be blank")
+        return normalized
+
+    @model_validator(mode="after")
+    def reviewer_required_for_verified_reaction(self) -> "VerifyIn":
+        if self.verified and self.verified_by is None:
+            raise ValueError("verified_by is required when verified is true")
+        return self
 
 
 @router.get("/reaction-sets/{reaction_set_id}")
@@ -28,7 +58,16 @@ def get_reaction_set(reaction_set_id: int) -> dict:
 @router.put("/reactions/{reaction_id}/verify")
 def verify(reaction_id: int, body: VerifyIn) -> dict:
     try:
-        return verify_reaction(reaction_id, body.verified, body.rate_value, body.verified_by)
+        return verify_reaction(
+            reaction_id,
+            body.verified,
+            body.rate_value,
+            body.verified_by,
+            reaction_type=body.reaction_type,
+            rate_type=body.rate_type,
+            threshold_ev=body.threshold_ev,
+            cross_section_url=body.cross_section_url,
+        )
     except ValueError:
         raise AppError(404, "reaction_not_found", "Reaction not found")
 
@@ -39,6 +78,7 @@ def export(reaction_set_id: int, format: str = Query("json")) -> dict:
         return export_reaction_set(reaction_set_id, format)
     except PermissionError as exc:
         raise AppError(409, "reaction_set_unverified", str(exc))
-    except ValueError:
+    except ValueError as exc:
+        if str(exc).startswith("unsupported export format"):
+            raise AppError(400, "unsupported_export_format", str(exc))
         raise AppError(404, "reaction_set_not_found", "Reaction set not found")
-

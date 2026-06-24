@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -8,8 +10,11 @@ def error_response(code: str, message: str) -> dict:
 
 
 class AppError(HTTPException):
-    def __init__(self, status_code: int, code: str, message: str):
-        super().__init__(status_code=status_code, detail=error_response(code, message))
+    def __init__(self, status_code: int, code: str, message: str, extra: Optional[dict] = None):
+        detail = error_response(code, message)
+        if extra:
+            detail.update(extra)
+        super().__init__(status_code=status_code, detail=detail)
 
 
 def install_error_handlers(app: FastAPI) -> None:
@@ -30,4 +35,3 @@ def install_error_handlers(app: FastAPI) -> None:
 
 def page(items: list[dict], total: int, page_num: int, page_size: int) -> dict:
     return {"items": items, "total": total, "page": page_num, "page_size": page_size}
-

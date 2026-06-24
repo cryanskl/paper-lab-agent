@@ -1,7 +1,8 @@
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.clients.unpaywall import UnpaywallClient
 from app.config import get_settings
@@ -11,10 +12,20 @@ from app.utils import json_loads
 
 router = APIRouter(prefix="/papers", tags=["papers"])
 
+FTS_SAFE_QUERY_RE = re.compile(r"^[\w\s]+$")
+
 
 class CategoryOverrideIn(BaseModel):
     category_ids: list[int]
     method: str = "manual"
+
+    @field_validator("method")
+    @classmethod
+    def method_must_not_be_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("method must not be blank")
+        return normalized
 
 
 def categories_for(conn, paper_id: int) -> list[str]:
@@ -28,6 +39,12 @@ def categories_for(conn, paper_id: int) -> list[str]:
         (paper_id,),
     ).fetchall()
     return [row["slug"] for row in rows]
+
+
+def fts_query(value: str) -> str:
+    if FTS_SAFE_QUERY_RE.fullmatch(value):
+        return value
+    return f'"{value.replace(chr(34), chr(34) + chr(34))}"'
 
 
 def serialize_paper(row: dict, categories: list[str]) -> dict:
@@ -56,10 +73,14 @@ def list_papers(
     year_from: Optional[int] = None,
     year_to: Optional[int] = None,
     oa_only: bool = False,
-    sort: str = "date_desc",
+    sort: str = Query("date_desc", pattern="^(date_desc|relevance)$"),
     page_num: int = Query(1, alias="page", ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
+    q = q.strip() if q and q.strip() else None
+    category = category.strip() if category and category.strip() else None
+    if year_from is not None and year_to is not None and year_from > year_to:
+        raise AppError(422, "validation_error", "year_from must be less than or equal to year_to")
     params = []
     joins = []
     clauses = []
@@ -68,7 +89,7 @@ def list_papers(
     if q:
         joins.append("JOIN papers_fts fts ON fts.rowid = p.id")
         clauses.append("papers_fts MATCH ?")
-        params.append(q)
+        params.append(fts_query(q))
     if category:
         joins.append("JOIN paper_categories pc ON pc.paper_id = p.id JOIN categories c ON c.id = pc.category_id")
         clauses.append("c.slug = ?")
@@ -163,12 +184,13 @@ def classify_paper(paper_id: int) -> dict:
 
 @router.put("/{paper_id}/categories")
 def override_categories(paper_id: int, body: CategoryOverrideIn) -> dict:
+    category_ids = list(dict.fromkeys(body.category_ids))
     with get_conn() as conn:
         exists = conn.execute("SELECT id FROM papers WHERE id=?", (paper_id,)).fetchone()
         if not exists:
             raise AppError(404, "paper_not_found", "Paper not found")
         conn.execute("DELETE FROM paper_categories WHERE paper_id=?", (paper_id,))
-        for category_id in body.category_ids:
+        for category_id in category_ids:
             category = conn.execute("SELECT id FROM categories WHERE id=?", (category_id,)).fetchone()
             if not category:
                 raise AppError(422, "category_not_found", f"Category {category_id} not found")
@@ -180,4 +202,3 @@ def override_categories(paper_id: int, body: CategoryOverrideIn) -> dict:
                 (paper_id, category_id, 1.0, body.method),
             )
     return get_paper(paper_id)
-

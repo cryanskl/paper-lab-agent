@@ -1,3 +1,5 @@
+import hashlib
+import re
 from typing import Any, Optional
 
 from app.clients.crossref import CrossrefClient
@@ -8,18 +10,63 @@ from app.db import dict_from_row, get_conn
 from app.utils import json_dumps, json_loads, now_iso, today_iso
 
 
-def matches_keywords(work: dict[str, Any], keywords: list[str]) -> bool:
-    if not keywords:
+def normalize_keyword_config(keyword_config: Any) -> tuple[str, list[str]]:
+    if isinstance(keyword_config, dict):
+        mode = str(keyword_config.get("mode") or "or").lower()
+        terms = keyword_config.get("terms") or keyword_config.get("keywords") or []
+    else:
+        mode = "or"
+        terms = keyword_config or []
+    if isinstance(terms, str):
+        terms = [terms]
+    normalized_terms = [str(term).strip().lower() for term in terms if str(term).strip()]
+    return ("and" if mode == "and" else "or", normalized_terms)
+
+
+def matches_keywords(work: dict[str, Any], keywords: Any) -> bool:
+    mode, terms = normalize_keyword_config(keywords)
+    if not terms:
         return True
     haystack = f"{work.get('title') or ''}\n{work.get('abstract') or ''}".lower()
-    return any(keyword.lower() in haystack for keyword in keywords)
+    if mode == "and":
+        return all(term in haystack for term in terms)
+    return any(term in haystack for term in terms)
+
+
+def normalize_text(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+def normalize_doi(value: Any) -> Optional[str]:
+    doi = normalize_text(value)
+    if not doi:
+        return None
+    return doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/")
+
+
+def build_dedupe_key(journal: dict[str, Any], work: dict[str, Any]) -> Optional[str]:
+    doi = normalize_doi(work.get("doi"))
+    if doi:
+        return f"doi:{doi}"
+    title = normalize_text(work.get("title"))
+    if not title:
+        return None
+    date_hint = normalize_text(work.get("published_date") or work.get("published_year"))
+    landing_url = normalize_text(work.get("landing_url"))
+    if not date_hint and not landing_url:
+        return None
+    fingerprint = "|".join([str(journal["id"]), title, date_hint, landing_url])
+    return f"no-doi:{hashlib.sha256(fingerprint.encode('utf-8')).hexdigest()}"
 
 
 def upsert_paper(conn, journal: dict[str, Any], work: dict[str, Any], oa: dict[str, Any]) -> bool:
-    doi = work.get("doi")
+    doi = normalize_doi(work.get("doi"))
+    dedupe_key = build_dedupe_key(journal, work)
     existing = None
     if doi:
         existing = conn.execute("SELECT id FROM papers WHERE doi = ?", (doi,)).fetchone()
+    elif dedupe_key:
+        existing = conn.execute("SELECT id FROM papers WHERE dedupe_key = ?", (dedupe_key,)).fetchone()
     payload = (
         doi,
         work.get("title") or "Untitled",
@@ -33,6 +80,7 @@ def upsert_paper(conn, journal: dict[str, Any], work: dict[str, Any], oa: dict[s
         oa.get("oa_status") or "unknown",
         oa.get("oa_pdf_url"),
         work.get("source_api"),
+        dedupe_key,
         json_dumps(work.get("raw_metadata") or {}),
         now_iso(),
     )
@@ -42,23 +90,31 @@ def upsert_paper(conn, journal: dict[str, Any], work: dict[str, Any], oa: dict[s
             UPDATE papers
             SET title=?, abstract=?, authors=?, journal_id=?, journal_name=?, published_date=?,
                 published_year=?, landing_url=?, oa_status=?, oa_pdf_url=?, source_api=?,
-                raw_metadata=?, updated_at=?
-            WHERE doi=?
+                dedupe_key=?, raw_metadata=?, updated_at=?
+            WHERE id=?
             """,
-            payload[1:] + (doi,),
+            payload[1:] + (existing["id"],),
         )
         return False
     conn.execute(
         """
         INSERT INTO papers (
             doi, title, abstract, authors, journal_id, journal_name, published_date,
-            published_year, landing_url, oa_status, oa_pdf_url, source_api, raw_metadata,
+            published_year, landing_url, oa_status, oa_pdf_url, source_api, dedupe_key, raw_metadata,
             updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         payload,
     )
     return True
+
+
+def academic_client_options(settings) -> dict[str, Any]:
+    return {
+        "max_retries": settings.academic_api_max_retries,
+        "retry_backoff_seconds": settings.academic_api_retry_backoff_seconds,
+        "timeout": settings.academic_api_timeout_seconds,
+    }
 
 
 async def run_crawl_job(job_id: int, journal_id: int, date_from: str, date_to: str) -> None:
@@ -81,19 +137,25 @@ async def run_crawl_job(job_id: int, journal_id: int, date_from: str, date_to: s
         issn = journal.get("issn_electronic") or journal.get("issn_print")
         if not issn:
             raise RuntimeError("journal has no ISSN")
-        works = await OpenAlexClient(settings.openalex_mailto).works_by_issn(issn, date_from, date_to)
+        client_options = academic_client_options(settings)
+        works = await OpenAlexClient(settings.openalex_mailto, **client_options).works_by_issn(
+            issn, date_from, date_to, max_pages=settings.academic_api_max_pages
+        )
         if not works:
-            works = await CrossrefClient(settings.openalex_mailto).works_by_issn(issn, date_from, date_to)
+            works = await CrossrefClient(settings.openalex_mailto, **client_options).works_by_issn(
+                issn, date_from, date_to, max_pages=settings.academic_api_max_pages
+            )
 
         keywords = json_loads(journal.get("keywords"), [])
-        found = 0
+        found = len(works)
+        filtered = 0
         new_count = 0
         unpaywall = UnpaywallClient(settings.unpaywall_email)
         with get_conn() as conn:
             for work in works:
                 if not matches_keywords(work, keywords):
+                    filtered += 1
                     continue
-                found += 1
                 oa = {"oa_status": "unknown", "oa_pdf_url": None}
                 if work.get("doi"):
                     try:
@@ -105,10 +167,10 @@ async def run_crawl_job(job_id: int, journal_id: int, date_from: str, date_to: s
             conn.execute(
                 """
                 UPDATE crawl_jobs
-                SET status='success', papers_found=?, papers_new=?, finished_at=?
+                SET status='success', papers_found=?, papers_filtered=?, papers_new=?, finished_at=?
                 WHERE id=?
                 """,
-                (found, new_count, now_iso(), job_id),
+                (found, filtered, new_count, now_iso(), job_id),
             )
     except Exception as exc:
         with get_conn() as conn:
@@ -151,4 +213,3 @@ def create_jobs(journal_ids: Optional[list[int]], period: str, date_from: Option
             )
             jobs.append({"job_id": cursor.lastrowid, "journal_id": journal["id"], "date_from": start, "date_to": date_to})
         return jobs
-

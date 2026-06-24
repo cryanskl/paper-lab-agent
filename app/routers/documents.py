@@ -1,7 +1,8 @@
+from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, UploadFile
-from pydantic import BaseModel
+from fastapi import APIRouter, BackgroundTasks, File, Form, Query, UploadFile
+from pydantic import BaseModel, field_validator
 
 from app.db import dict_from_row, get_conn
 from app.errors import AppError, page
@@ -16,6 +17,23 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 class TranslateIn(BaseModel):
     target_lang: str = "zh"
 
+    @field_validator("target_lang")
+    @classmethod
+    def target_lang_must_not_be_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("target_lang must not be blank")
+        return normalized
+
+
+async def ensure_pdf_upload(file: UploadFile) -> None:
+    suffix = Path(file.filename or "").suffix.lower()
+    header = await file.read(5)
+    await file.seek(0)
+    if (suffix == ".pdf" or file.content_type == "application/pdf") and header.startswith(b"%PDF-"):
+        return
+    raise AppError(415, "unsupported_document_type", "Only PDF uploads are supported")
+
 
 def get_document_or_404(document_id: int) -> dict:
     with get_conn() as conn:
@@ -27,14 +45,28 @@ def get_document_or_404(document_id: int) -> dict:
 
 @router.post("", status_code=201)
 async def upload_document(file: UploadFile = File(...), paper_id: Optional[int] = Form(None)) -> dict:
+    await ensure_pdf_upload(file)
+    if paper_id is not None:
+        with get_conn() as conn:
+            paper = conn.execute("SELECT id FROM papers WHERE id=?", (paper_id,)).fetchone()
+        if paper is None:
+            raise AppError(404, "paper_not_found", "Paper not found")
     doc, created = await save_upload(file, paper_id)
     if not created:
-        raise AppError(409, "document_duplicate", f"Document already exists with id {doc['id']}")
+        raise AppError(
+            409,
+            "document_duplicate",
+            f"Document already exists with id {doc['id']}",
+            {"document": doc},
+        )
     return doc
 
 
 @router.get("")
-def list_documents(page_num: int = 1, page_size: int = 20) -> dict:
+def list_documents(
+    page_num: int = Query(1, alias="page", ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> dict:
     offset = (page_num - 1) * page_size
     with get_conn() as conn:
         total = conn.execute("SELECT COUNT(*) AS n FROM documents").fetchone()["n"]
@@ -55,11 +87,53 @@ def parse(document_id: int, background_tasks: BackgroundTasks) -> dict:
 
 
 @router.get("/{document_id}/sections")
-def list_sections(document_id: int) -> dict:
+def list_sections(
+    document_id: int,
+    page_num: int = Query(1, alias="page", ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> dict:
     get_document_or_404(document_id)
+    offset = (page_num - 1) * page_size
     with get_conn() as conn:
-        rows = conn.execute("SELECT * FROM sections WHERE document_id=? ORDER BY seq", (document_id,)).fetchall()
-    return {"items": [dict_from_row(row) for row in rows]}
+        total = conn.execute("SELECT COUNT(*) AS n FROM sections WHERE document_id=?", (document_id,)).fetchone()["n"]
+        rows = conn.execute(
+            "SELECT * FROM sections WHERE document_id=? ORDER BY seq LIMIT ? OFFSET ?",
+            (document_id, page_size, offset),
+        ).fetchall()
+    return page([dict_from_row(row) for row in rows], total, page_num, page_size)
+
+
+@router.get("/{document_id}/chunks")
+def list_chunks(
+    document_id: int,
+    page_num: int = Query(1, alias="page", ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> dict:
+    document = get_document_or_404(document_id)
+    offset = (page_num - 1) * page_size
+    with get_conn() as conn:
+        total = conn.execute("SELECT COUNT(*) AS n FROM chunks WHERE document_id=?", (document_id,)).fetchone()["n"]
+        rows = conn.execute(
+            """
+            SELECT ch.*, s.title AS section_title
+            FROM chunks ch
+            LEFT JOIN sections s ON s.id = ch.section_id
+            WHERE ch.document_id=?
+            ORDER BY ch.seq
+            LIMIT ? OFFSET ?
+            """,
+            (document_id, page_size, offset),
+        ).fetchall()
+    items = [dict_from_row(row) for row in rows]
+    return {
+        "items": items,
+        "total": total,
+        "page": page_num,
+        "page_size": page_size,
+        "indexed": document.get("index_status") == "indexed" and bool(items),
+        "index_status": document.get("index_status") or ("indexed" if items else "not_indexed"),
+        "index_error": document.get("index_error"),
+    }
 
 
 @router.post("/{document_id}/translate", status_code=202)
@@ -97,9 +171,17 @@ def extract_chemistry(document_id: int, background_tasks: BackgroundTasks) -> di
 
 
 @router.get("/{document_id}/reaction-sets")
-def document_reaction_sets(document_id: int) -> dict:
+def document_reaction_sets(
+    document_id: int,
+    page_num: int = Query(1, alias="page", ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> dict:
     get_document_or_404(document_id)
+    offset = (page_num - 1) * page_size
     with get_conn() as conn:
-        rows = conn.execute("SELECT * FROM reaction_sets WHERE document_id=? ORDER BY id", (document_id,)).fetchall()
-    return {"items": [dict_from_row(row) for row in rows]}
-
+        total = conn.execute("SELECT COUNT(*) AS n FROM reaction_sets WHERE document_id=?", (document_id,)).fetchone()["n"]
+        rows = conn.execute(
+            "SELECT * FROM reaction_sets WHERE document_id=? ORDER BY id LIMIT ? OFFSET ?",
+            (document_id, page_size, offset),
+        ).fetchall()
+    return page([dict_from_row(row) for row in rows], total, page_num, page_size)

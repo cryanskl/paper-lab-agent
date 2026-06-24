@@ -21,7 +21,14 @@ class Settings(BaseSettings):
     unpaywall_email: Optional[str] = Field(default=None, alias="UNPAYWALL_EMAIL")
     grobid_url: str = Field(default="http://127.0.0.1:8070", alias="GROBID_URL")
     llm_api_key: Optional[str] = Field(default=None, alias="LLM_API_KEY")
-    embedding_model: str = Field(default="local-fixture", alias="EMBEDDING_MODEL")
+    llm_base_url: str = Field(default="https://api.openai.com/v1", alias="LLM_BASE_URL")
+    llm_model: str = Field(default="gpt-4o-mini", alias="LLM_MODEL")
+    embedding_model: str = Field(default="local-hash", alias="EMBEDDING_MODEL")
+    scheduler_enabled: bool = Field(default=False, alias="PAPER_LAB_SCHEDULER_ENABLED")
+    academic_api_max_pages: int = Field(default=3, alias="ACADEMIC_API_MAX_PAGES")
+    academic_api_max_retries: int = Field(default=3, alias="ACADEMIC_API_MAX_RETRIES")
+    academic_api_retry_backoff_seconds: float = Field(default=0.25, alias="ACADEMIC_API_RETRY_BACKOFF_SECONDS")
+    academic_api_timeout_seconds: float = Field(default=20.0, alias="ACADEMIC_API_TIMEOUT_SECONDS")
 
     api_prefix: str = "/api/v1"
 

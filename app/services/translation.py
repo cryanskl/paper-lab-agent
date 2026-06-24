@@ -1,11 +1,62 @@
 import re
-from pathlib import Path
+from typing import Protocol
 
+import httpx
+
+from app.config import Settings
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
 
 
 FORMULA_RE = re.compile(r"(\$\$.*?\$\$|\$.*?\$)", re.DOTALL)
+
+
+class Translator(Protocol):
+    def translate(self, text: str, target_lang: str) -> str:
+        ...
+
+
+class LocalEchoTranslator:
+    def translate(self, text: str, target_lang: str) -> str:
+        return text
+
+
+class OpenAICompatibleTranslator:
+    def __init__(self, api_key: str, base_url: str, model: str):
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+
+    def translate(self, text: str, target_lang: str) -> str:
+        payload = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "Translate the user text faithfully. Preserve placeholders like <EQ_000> exactly. "
+                        "Do not add explanations."
+                    ),
+                },
+                {"role": "user", "content": f"Target language: {target_lang}\n\n{text}"},
+            ],
+            "temperature": 0,
+        }
+        response = httpx.post(
+            f"{self.base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json=payload,
+            timeout=60,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
+
+
+def get_translator(settings: Settings) -> Translator:
+    if settings.llm_api_key:
+        return OpenAICompatibleTranslator(settings.llm_api_key, settings.llm_base_url, settings.llm_model)
+    return LocalEchoTranslator()
 
 
 def mask_formulas(text: str) -> tuple[str, dict[str, str]]:
@@ -25,14 +76,15 @@ def unmask_formulas(text: str, formulas: dict[str, str]) -> str:
     return text
 
 
+def translate_text_preserving_formulas(text: str, translator: Translator, target_lang: str) -> str:
+    masked, formulas = mask_formulas(text)
+    translated = translator.translate(masked, target_lang)
+    return unmask_formulas(translated, formulas)
+
+
 def translate_document(document_id: int, target_lang: str) -> dict:
     settings = get_settings()
     with get_conn() as conn:
-        sections = conn.execute(
-            "SELECT * FROM sections WHERE document_id=? ORDER BY seq", (document_id,)
-        ).fetchall()
-        if not sections:
-            raise ValueError("document has no parsed sections")
         cursor = conn.execute(
             """
             INSERT INTO translations (document_id, source_lang, target_lang, status)
@@ -41,33 +93,51 @@ def translate_document(document_id: int, target_lang: str) -> dict:
             (document_id, target_lang),
         )
         translation_id = cursor.lastrowid
+        sections = conn.execute(
+            "SELECT * FROM sections WHERE document_id=? ORDER BY seq", (document_id,)
+        ).fetchall()
 
-    blocks = ["# Bilingual Translation", "", "> LLM_API_KEY is not configured; target text preserves source text honestly."]
-    for row in sections:
-        section = dict_from_row(row)
-        masked, formulas = mask_formulas(section["content"] or "")
-        target_text = unmask_formulas(masked, formulas)
-        blocks.extend(
-            [
-                "",
-                f"## {section['title'] or 'Section'}",
-                "",
-                "### Source",
-                "",
-                section["content"] or "",
-                "",
-                f"### {target_lang}",
-                "",
-                target_text,
-            ]
+    try:
+        if not sections:
+            raise ValueError("document has no parsed sections")
+        translator = get_translator(settings)
+        note = (
+            "> LLM_API_KEY is not configured; target text preserves source text honestly."
+            if not settings.llm_api_key
+            else f"> Translated with configured model `{settings.llm_model}`."
         )
-    out_path = settings.translation_dir / f"document-{document_id}-{target_lang}.md"
-    out_path.write_text("\n".join(blocks), encoding="utf-8")
-    with get_conn() as conn:
-        conn.execute(
-            "UPDATE translations SET status='done', output_path=? WHERE id=?",
-            (str(out_path), translation_id),
-        )
-        row = conn.execute("SELECT * FROM translations WHERE id=?", (translation_id,)).fetchone()
-        return dict_from_row(row)
-
+        blocks = ["# Bilingual Translation", "", note]
+        for row in sections:
+            section = dict_from_row(row)
+            target_text = translate_text_preserving_formulas(section["content"] or "", translator, target_lang)
+            blocks.extend(
+                [
+                    "",
+                    f"## {section['title'] or 'Section'}",
+                    "",
+                    "### Source",
+                    "",
+                    section["content"] or "",
+                    "",
+                    f"### {target_lang}",
+                    "",
+                    target_text,
+                ]
+            )
+        out_path = settings.translation_dir / f"document-{document_id}-{target_lang}.md"
+        out_path.write_text("\n".join(blocks), encoding="utf-8")
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE translations SET status='done', output_path=?, error=NULL WHERE id=?",
+                (str(out_path), translation_id),
+            )
+            row = conn.execute("SELECT * FROM translations WHERE id=?", (translation_id,)).fetchone()
+            return dict_from_row(row)
+    except Exception as exc:
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE translations SET status='failed', error=? WHERE id=?",
+                (str(exc), translation_id),
+            )
+            row = conn.execute("SELECT * FROM translations WHERE id=?", (translation_id,)).fetchone()
+            return dict_from_row(row)

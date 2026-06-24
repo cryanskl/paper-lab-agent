@@ -6,12 +6,21 @@ from app.config import get_settings
 from app.db import init_db
 from app.errors import install_error_handlers
 from app.routers import categories, crawl, documents, journals, papers, rag, reactions, system
+from app.scheduler import create_scheduler
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
-    yield
+    settings = get_settings()
+    scheduler = create_scheduler() if settings.scheduler_enabled else None
+    if scheduler is not None:
+        scheduler.start()
+    try:
+        yield
+    finally:
+        if scheduler is not None:
+            scheduler.shutdown(wait=False)
 
 
 def create_app() -> FastAPI:

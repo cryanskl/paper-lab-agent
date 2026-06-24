@@ -1,7 +1,8 @@
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
 
 from app.db import dict_from_row, get_conn
 from app.errors import AppError, page
@@ -10,11 +11,61 @@ from app.services.crawl import create_jobs, run_crawl_job
 router = APIRouter(prefix="/crawl", tags=["crawl"])
 
 
+ALLOWED_PERIODS = {"manual", "daily", "weekly", "monthly"}
+
+
+def serialize_job_detail(job: dict, journal: Optional[dict]) -> dict:
+    journal_summary = None
+    if journal:
+        journal_summary = {
+            "id": journal["id"],
+            "name": journal["name"],
+            "issn_print": journal.get("issn_print"),
+            "issn_electronic": journal.get("issn_electronic"),
+            "active": bool(journal.get("active")),
+        }
+    diagnostics = {
+        "journal_id": job.get("journal_id"),
+        "journal_name": journal.get("name") if journal else None,
+        "period": job.get("period"),
+        "date_from": job.get("date_from"),
+        "date_to": job.get("date_to"),
+        "status": job.get("status"),
+        "papers_found": job.get("papers_found") or 0,
+        "papers_filtered": job.get("papers_filtered") or 0,
+        "papers_new": job.get("papers_new") or 0,
+        "papers_accepted": max((job.get("papers_found") or 0) - (job.get("papers_filtered") or 0), 0),
+        "error": job.get("error"),
+    }
+    return job | {"journal": journal_summary, "diagnostics": diagnostics}
+
+
 class CrawlRunIn(BaseModel):
     journal_ids: Optional[list[int]] = None
     period: str = "manual"
     date_from: Optional[str] = None
     date_to: Optional[str] = None
+
+    @field_validator("period")
+    @classmethod
+    def period_must_be_supported(cls, value: str) -> str:
+        if value not in ALLOWED_PERIODS:
+            raise ValueError("period must be one of manual, daily, weekly, monthly")
+        return value
+
+    @field_validator("date_from", "date_to")
+    @classmethod
+    def dates_must_be_iso8601(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        date.fromisoformat(value)
+        return value
+
+    @model_validator(mode="after")
+    def date_range_must_be_ordered(self) -> "CrawlRunIn":
+        if self.date_from and self.date_to and date.fromisoformat(self.date_from) > date.fromisoformat(self.date_to):
+            raise ValueError("date_from must be before or equal to date_to")
+        return self
 
 
 @router.post("/run", status_code=202)
@@ -40,7 +91,9 @@ def list_jobs(page_num: int = Query(1, alias="page", ge=1), page_size: int = Que
 def get_job(job_id: int) -> dict:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM crawl_jobs WHERE id=?", (job_id,)).fetchone()
+        journal_row = None
+        if row and row["journal_id"] is not None:
+            journal_row = conn.execute("SELECT * FROM journals WHERE id=?", (row["journal_id"],)).fetchone()
     if not row:
         raise AppError(404, "crawl_job_not_found", "Crawl job not found")
-    return dict_from_row(row)
-
+    return serialize_job_detail(dict_from_row(row), dict_from_row(journal_row) if journal_row else None)

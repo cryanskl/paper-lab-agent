@@ -1,13 +1,29 @@
-from typing import Optional
+from typing import Any, Optional, Union
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.db import dict_from_row, get_conn
 from app.errors import AppError, page
 from app.utils import json_dumps, json_loads, to_int
 
 router = APIRouter(prefix="/journals", tags=["journals"])
+
+KeywordConfig = Union[list[str], dict[str, Any]]
+
+
+def validate_keyword_config(value: KeywordConfig) -> KeywordConfig:
+    if isinstance(value, list):
+        if not value or any(not isinstance(term, str) or not term.strip() for term in value):
+            raise ValueError("keywords must be a non-empty list of strings")
+        return [term.strip() for term in value]
+    mode = value.get("mode")
+    terms = value.get("terms")
+    if mode not in {"and", "or"}:
+        raise ValueError("keywords.mode must be 'and' or 'or'")
+    if not isinstance(terms, list) or not terms or any(not isinstance(term, str) or not term.strip() for term in terms):
+        raise ValueError("keywords.terms must be a non-empty list of strings")
+    return {"mode": mode, "terms": [term.strip() for term in terms]}
 
 
 class JournalIn(BaseModel):
@@ -17,12 +33,31 @@ class JournalIn(BaseModel):
     url: Optional[str] = None
     issn_print: Optional[str] = None
     issn_electronic: Optional[str] = None
-    keywords: list[str] = []
+    keywords: KeywordConfig = Field(default_factory=list)
     year_from: int = 1990
     year_to: Optional[int] = None
     sci_zone: Optional[str] = None
     impact_factor: Optional[float] = None
     active: bool = True
+
+    @field_validator("keywords")
+    @classmethod
+    def keywords_must_match_contract(cls, value: KeywordConfig) -> KeywordConfig:
+        return validate_keyword_config(value)
+
+    @field_validator("name")
+    @classmethod
+    def name_must_not_be_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("name must not be blank")
+        return normalized
+
+    @model_validator(mode="after")
+    def year_range_must_be_ordered(self) -> "JournalIn":
+        if self.year_to is not None and self.year_from > self.year_to:
+            raise ValueError("year_from must be less than or equal to year_to")
+        return self
 
 
 class JournalUpdate(BaseModel):
@@ -32,12 +67,35 @@ class JournalUpdate(BaseModel):
     url: Optional[str] = None
     issn_print: Optional[str] = None
     issn_electronic: Optional[str] = None
-    keywords: Optional[list[str]] = None
+    keywords: Optional[KeywordConfig] = None
     year_from: Optional[int] = None
     year_to: Optional[int] = None
     sci_zone: Optional[str] = None
     impact_factor: Optional[float] = None
     active: Optional[bool] = None
+
+    @field_validator("keywords")
+    @classmethod
+    def keywords_must_match_contract(cls, value: Optional[KeywordConfig]) -> Optional[KeywordConfig]:
+        if value is None:
+            return None
+        return validate_keyword_config(value)
+
+    @field_validator("name")
+    @classmethod
+    def name_must_not_be_blank(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("name must not be blank")
+        return normalized
+
+    @model_validator(mode="after")
+    def year_range_must_be_ordered(self) -> "JournalUpdate":
+        if self.year_from is not None and self.year_to is not None and self.year_from > self.year_to:
+            raise ValueError("year_from must be less than or equal to year_to")
+        return self
 
 
 def serialize(row: dict) -> dict:
@@ -117,6 +175,13 @@ def update_journal(journal_id: int, body: JournalUpdate) -> dict:
     if data:
         assignments = ", ".join(f"{key}=?" for key in data.keys())
         with get_conn() as conn:
+            current = conn.execute("SELECT year_from, year_to FROM journals WHERE id=?", (journal_id,)).fetchone()
+            if not current:
+                raise AppError(404, "journal_not_found", "Journal not found")
+            year_from = data.get("year_from", current["year_from"])
+            year_to = data.get("year_to", current["year_to"])
+            if year_to is not None and year_from > year_to:
+                raise AppError(422, "validation_error", "year_from must be less than or equal to year_to")
             conn.execute(f"UPDATE journals SET {assignments}, updated_at=datetime('now') WHERE id=?", list(data.values()) + [journal_id])
     return get_journal(journal_id)
 
@@ -128,4 +193,3 @@ def delete_journal(journal_id: int) -> dict:
         if result.rowcount == 0:
             raise AppError(404, "journal_not_found", "Journal not found")
     return get_journal(journal_id)
-
