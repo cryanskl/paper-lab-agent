@@ -360,6 +360,7 @@ def test_crawl_job_detail_includes_journal_and_diagnostics(tmp_path):
         "papers_filtered": 5,
         "papers_new": 3,
         "papers_accepted": 7,
+        "papers_existing": 4,
         "error": "OpenAlex timeout",
     }
 
@@ -397,6 +398,7 @@ def test_crawl_job_list_includes_journal_and_diagnostics(tmp_path):
         "papers_filtered": 2,
         "papers_new": 4,
         "papers_accepted": 6,
+        "papers_existing": 2,
         "error": "Crossref fallback",
     }
 

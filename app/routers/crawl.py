@@ -24,6 +24,8 @@ def serialize_job_detail(job: dict, journal: Optional[dict]) -> dict:
             "issn_electronic": journal.get("issn_electronic"),
             "active": bool(journal.get("active")),
         }
+    papers_accepted = max((job.get("papers_found") or 0) - (job.get("papers_filtered") or 0), 0)
+    papers_new = job.get("papers_new") or 0
     diagnostics = {
         "journal_id": job.get("journal_id"),
         "journal_name": journal.get("name") if journal else None,
@@ -33,8 +35,9 @@ def serialize_job_detail(job: dict, journal: Optional[dict]) -> dict:
         "status": job.get("status"),
         "papers_found": job.get("papers_found") or 0,
         "papers_filtered": job.get("papers_filtered") or 0,
-        "papers_new": job.get("papers_new") or 0,
-        "papers_accepted": max((job.get("papers_found") or 0) - (job.get("papers_filtered") or 0), 0),
+        "papers_new": papers_new,
+        "papers_accepted": papers_accepted,
+        "papers_existing": max(papers_accepted - papers_new, 0),
         "error": job.get("error"),
     }
     return job | {"journal": journal_summary, "diagnostics": diagnostics}
