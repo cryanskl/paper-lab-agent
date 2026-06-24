@@ -4829,6 +4829,25 @@ def test_streamlit_sidebar_exposes_external_capability_status():
         assert required in sidebar_section
 
 
+def test_streamlit_sidebar_can_check_grobid_live_status():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+
+    for required in [
+        "检查 GROBID",
+        'api_get("/system/status", check_external=True)',
+        "grobid = external_capabilities.get(\"grobid\") or {}",
+        "GROBID live",
+        "status_code",
+        "error",
+        "未检查",
+        "可用",
+        "不可用",
+    ]:
+        assert required in sidebar_section
+
+
 def test_streamlit_crawl_jobs_table_flattens_diagnostics():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

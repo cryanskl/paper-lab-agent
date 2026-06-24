@@ -69,6 +69,8 @@ search_tab, config_tab, documents_tab, rag_tab, chemistry_tab = st.tabs(["检索
 with st.sidebar:
     st.subheader("系统")
     status = api_get("/system/status")
+    if st.button("检查 GROBID"):
+        status = api_get("/system/status", check_external=True)
     st.metric("期刊", status["counts"]["journals"])
     st.metric("论文", status["counts"]["papers"])
     st.metric("文档", status["counts"]["documents"])
@@ -83,6 +85,19 @@ with st.sidebar:
     st.caption(f"GROBID URL: {external_capabilities.get('grobid_url') or '-'}")
     st.caption(f"LLM key: {'已配置' if external_capabilities.get('llm_api_key') else '未配置'}")
     st.caption(f"Embedding: {external_capabilities.get('embedding_model') or '-'}")
+    grobid = external_capabilities.get("grobid") or {}
+    grobid_available = grobid.get("available")
+    if grobid_available is True:
+        grobid_live = "可用"
+    elif grobid_available is False:
+        grobid_live = "不可用"
+    else:
+        grobid_live = "未检查"
+    st.caption(f"GROBID live: {grobid_live}")
+    if grobid.get("status_code") is not None:
+        st.caption(f"GROBID status_code: {grobid.get('status_code')}")
+    if grobid.get("error"):
+        st.warning(f"GROBID error: {grobid.get('error')}")
 
 with search_tab:
     st.caption("可先运行 `python scripts/import_fixtures.py` 导入离线样例。")
