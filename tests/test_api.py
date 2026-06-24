@@ -6823,6 +6823,130 @@ def test_health_check_compact_outputs_single_line_json(monkeypatch, capsys):
     assert "\n  " not in captured.out
 
 
+def test_health_check_can_include_streamlit_frontend_probe(monkeypatch, capsys):
+    import importlib.util
+    import json
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_frontend", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+    seen_frontend_urls = []
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "embedding_model": "local-hash",
+            },
+            "counts": health_check_counts(),
+        }
+
+    def fake_fetch_status(url: str, timeout: float) -> int:
+        seen_frontend_urls.append(url)
+        return 200
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(health_check, "fetch_status", fake_fetch_status, raising=False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "health_check.py",
+            "--base-url",
+            "http://api.test",
+            "--check-frontend",
+            "--frontend-url",
+            "http://ui.test",
+            "--compact",
+        ],
+    )
+
+    assert health_check.main() == 0
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert seen_frontend_urls == ["http://ui.test/_stcore/health"]
+    assert payload["frontend"] == {"url": "http://ui.test/_stcore/health", "status_code": 200}
+
+
+def test_health_check_check_frontend_fails_when_streamlit_is_unhealthy(monkeypatch, capsys):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_frontend_unhealthy", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "embedding_model": "local-hash",
+            },
+            "counts": health_check_counts(),
+        }
+
+    def fake_fetch_status(url: str, timeout: float) -> int:
+        return 503
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(health_check, "fetch_status", fake_fetch_status, raising=False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["health_check.py", "--base-url", "http://api.test", "--check-frontend", "--frontend-url", "http://ui.test"],
+    )
+
+    assert health_check.main() == 1
+    captured = capsys.readouterr()
+    assert "Streamlit frontend is unavailable" in captured.err
+    assert "status_code=503" in captured.err
+
+
 def test_health_check_require_grobid_fails_when_external_grobid_is_unavailable(monkeypatch, capsys):
     import importlib.util
     import sys

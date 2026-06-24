@@ -4,7 +4,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 
@@ -90,9 +90,32 @@ def default_base_url() -> str:
     return f"http://{host}:{port}"
 
 
+def default_frontend_url() -> str:
+    if os.getenv("FRONTEND_URL"):
+        return os.environ["FRONTEND_URL"].rstrip("/")
+    host = os.getenv("STREAMLIT_HOST", "127.0.0.1")
+    port = os.getenv("STREAMLIT_PORT", "8501")
+    return f"http://{host}:{port}"
+
+
+def streamlit_health_url(frontend_url: str) -> str:
+    value = frontend_url.rstrip("/")
+    if value.endswith("/_stcore/health"):
+        return value
+    return f"{value}/_stcore/health"
+
+
 def fetch_json(url: str, timeout: float) -> dict:
     with urlopen(url, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def fetch_status(url: str, timeout: float) -> int:
+    try:
+        with urlopen(url, timeout=timeout) as response:
+            return response.status
+    except HTTPError as exc:
+        return exc.code
 
 
 def validate_system_status(status: dict) -> list[str]:
@@ -265,6 +288,8 @@ def main() -> int:
     load_env_file()
     parser = argparse.ArgumentParser(description="Check paper-lab-agent API health.")
     parser.add_argument("--base-url", default=default_base_url(), help="FastAPI base URL without /api/v1")
+    parser.add_argument("--check-frontend", action="store_true", help="Also check Streamlit frontend health")
+    parser.add_argument("--frontend-url", default=default_frontend_url(), help="Streamlit base URL")
     parser.add_argument("--check-external", action="store_true", help="Also check configured external services")
     parser.add_argument("--require-grobid", action="store_true", help="Fail when GROBID is unavailable")
     parser.add_argument("--compact", action="store_true", help="Print health JSON on one line")
@@ -277,12 +302,18 @@ def main() -> int:
     try:
         health = fetch_json(f"{base_url}{HEALTH_PATH}", args.timeout)
         status = fetch_json(status_url, args.timeout)
+        frontend = None
+        if args.check_frontend:
+            frontend_url = streamlit_health_url(args.frontend_url)
+            frontend = {"url": frontend_url, "status_code": fetch_status(frontend_url, args.timeout)}
     except (OSError, URLError, json.JSONDecodeError) as exc:
         print(f"health_check failed: {exc}", file=sys.stderr)
         return 1
 
     config_warnings = status.get("config_warnings", []) if isinstance(status, dict) else []
     output = {"health": health, "status": status, "config_warnings": config_warnings}
+    if frontend is not None:
+        output["frontend"] = frontend
     print(json.dumps(output, ensure_ascii=False, indent=None if args.compact else 2))
     if not isinstance(health, dict):
         print("health_check failed: health response must be an object", file=sys.stderr)
@@ -306,6 +337,12 @@ def main() -> int:
             detail = grobid.get("error") or f"status_code={grobid.get('status_code')}"
             print(f"health_check failed: GROBID is required but unavailable ({detail})", file=sys.stderr)
             return 1
+    if args.check_frontend and frontend["status_code"] != 200:
+        print(
+            f"health_check failed: Streamlit frontend is unavailable (status_code={frontend['status_code']})",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
