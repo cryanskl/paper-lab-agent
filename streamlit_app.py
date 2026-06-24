@@ -124,6 +124,29 @@ with search_tab:
                     st.success(", ".join(classified_paper.get("categories") or []) or "无分类")
                 else:
                     st.warning(classified_paper)
+            category_options_by_slug = {category["slug"]: category for category in categories}
+            current_category_slugs = set(paper.get("categories") or [])
+            default_categories = [
+                category_options_by_slug[slug] for slug in current_category_slugs if slug in category_options_by_slug
+            ]
+            with st.expander("人工覆盖分类"):
+                selected_categories = st.multiselect(
+                    "人工覆盖分类",
+                    categories,
+                    default=default_categories,
+                    format_func=lambda category: f"{category['slug']} · {category['name']}",
+                    key=f"manual-categories-{paper['id']}",
+                )
+                if st.button("保存人工分类", key=f"save-manual-categories-{paper['id']}"):
+                    selected_category_ids = [category["id"] for category in selected_categories]
+                    status_code, updated_paper = api_put(
+                        f"/papers/{paper['id']}/categories",
+                        json={"category_ids": selected_category_ids, "method": "manual"},
+                    )
+                    if status_code < 400:
+                        st.success(", ".join(updated_paper.get("categories") or []) or "无分类")
+                    else:
+                        st.warning(updated_paper)
             links = []
             if paper.get("oa_pdf_url"):
                 links.append(f"[OA PDF]({paper['oa_pdf_url']})")

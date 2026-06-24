@@ -4584,6 +4584,24 @@ def test_streamlit_search_results_can_trigger_classification():
         assert required in search_section
 
 
+def test_streamlit_search_results_can_override_categories_manually():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    for required in [
+        "人工覆盖分类",
+        "保存人工分类",
+        "selected_category_ids",
+        "api_put(",
+        'f"/papers/{paper[\'id\']}/categories"',
+        '"method": "manual"',
+        'key=f"manual-categories-{paper[\'id\']}"',
+        'key=f"save-manual-categories-{paper[\'id\']}"',
+    ]:
+        assert required in search_section
+
+
 def test_streamlit_search_tab_exposes_year_filters():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
