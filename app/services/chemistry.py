@@ -16,6 +16,29 @@ def split_species(side: str) -> list[str]:
     return [part.strip() for part in re.split(r"\s+\+\s+", side) if part.strip()]
 
 
+def normalize_species(value: str, position: str) -> str:
+    tokens = value.strip(" .,:;").split()
+    if not tokens:
+        return ""
+    if position == "leading":
+        return tokens[-1].strip(" .,:;")
+    return tokens[0].strip(" .,:;")
+
+
+def normalize_reaction(reaction: str) -> tuple[str, list[str], list[str]]:
+    arrow = "=>" if "=>" in reaction else "->"
+    left, right = reaction.split(arrow, 1)
+    reactants = split_species(left)
+    products = split_species(right)
+    if reactants:
+        reactants[0] = normalize_species(reactants[0], "leading")
+    products = [normalize_species(product, "trailing") for product in products]
+    reactants = [reactant for reactant in reactants if reactant]
+    products = [product for product in products if product]
+    normalized = f"{' + '.join(reactants)} -> {' + '.join(products)}"
+    return normalized, reactants, products
+
+
 def source_excerpt(text: str, start: int, end: int, window: int = 80) -> str:
     left = max(0, start - window)
     right = min(len(text), end + window)
@@ -74,8 +97,7 @@ def extract_reactions(document_id: int) -> dict:
             cross_section_url = detect_cross_section_url(text)
             for match in REACTION_RE.finditer(text):
                 reaction = " ".join(match.group(1).split())
-                arrow = "=>" if "=>" in reaction else "->"
-                left, right = reaction.split(arrow, 1)
+                normalized_reaction, reactants, products = normalize_reaction(reaction)
                 conn.execute(
                     """
                     INSERT INTO reactions (
@@ -86,10 +108,10 @@ def extract_reactions(document_id: int) -> dict:
                     """,
                     (
                         reaction_set_id,
-                        reaction.replace("=>", "->"),
+                        normalized_reaction,
                         "unknown",
-                        json.dumps(split_species(left), ensure_ascii=False),
-                        json.dumps(split_species(right), ensure_ascii=False),
+                        json.dumps(reactants, ensure_ascii=False),
+                        json.dumps(products, ensure_ascii=False),
                         "unknown",
                         None,
                         None,
