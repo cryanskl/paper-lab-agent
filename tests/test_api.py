@@ -3516,6 +3516,70 @@ def test_rag_failed_reindex_removes_stale_vectors_for_document(tmp_path, monkeyp
     assert all(record["document_id"] != document_id for record in vector_index.values())
 
 
+def test_rag_index_failure_discards_partial_chunks(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import rag as rag_service
+    from app.services.rag import index_document
+
+    class FailingSecondEmbedding:
+        model_name = "local-hash"
+
+        def __init__(self):
+            self.calls = 0
+
+        def embed(self, text: str) -> list[float]:
+            self.calls += 1
+            if self.calls == 2:
+                raise RuntimeError("embedding backend interrupted")
+            return rag_service.local_hash_embedding(text)
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            ("/tmp/partial-index.txt", "partial-index-hash", "partial-index.txt"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'First', 'argon plasma evidence', 'body')
+            """,
+            (document_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 2, 'Second', 'oxygen plasma evidence', 'body')
+            """,
+            (document_id,),
+        )
+
+    monkeypatch.setattr(rag_service, "get_embedding_adapter", lambda _model_name: FailingSecondEmbedding())
+
+    failed = index_document(document_id)
+
+    assert failed["status"] == "failed"
+    assert failed["chunks"] == 0
+    assert "embedding backend interrupted" in failed["error"]
+    with get_conn() as conn:
+        chunk_count = conn.execute("SELECT COUNT(*) AS n FROM chunks WHERE document_id=?", (document_id,)).fetchone()["n"]
+        document = conn.execute("SELECT index_status, index_error FROM documents WHERE id=?", (document_id,)).fetchone()
+    assert chunk_count == 0
+    assert document["index_status"] == "failed"
+    assert "embedding backend interrupted" in document["index_error"]
+
+    import json
+
+    vector_path = tmp_path / "vector-index.json"
+    vector_index = json.loads(vector_path.read_text(encoding="utf-8")) if vector_path.exists() else {}
+    assert all(record["document_id"] != document_id for record in vector_index.values())
+
+
 def test_reparse_document_clears_stale_downstream_artifacts(tmp_path):
     client = make_client(tmp_path)
 

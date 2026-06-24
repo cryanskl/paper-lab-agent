@@ -172,11 +172,13 @@ def index_document(document_id: int) -> dict:
             )
             return {"document_id": document_id, "chunks": count, "embedded": 1, "status": "indexed"}
         except Exception as exc:
+            conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+            vector_store.delete_document(document_id)
             conn.execute(
                 "UPDATE documents SET index_status='failed', index_error=? WHERE id=?",
                 (str(exc), document_id),
             )
-            return {"document_id": document_id, "chunks": count, "embedded": 0, "status": "failed", "error": str(exc)}
+            return {"document_id": document_id, "chunks": 0, "embedded": 0, "status": "failed", "error": str(exc)}
 
 
 def query(question: str, document_ids: list[int], top_k: int) -> dict:
