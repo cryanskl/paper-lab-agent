@@ -64,6 +64,29 @@ def source_excerpt(text: str, max_chars: int = SOURCE_EXCERPT_MAX_CHARS) -> str:
     return f"{normalized[:max_chars].rstrip()}..."
 
 
+def source_citation(item: dict) -> str:
+    paper_id = item.get("_paper_id") if "_paper_id" in item else item.get("paper_id")
+    paper_title = item.get("_paper_title") or item.get("paper_title")
+    section_title = item.get("_section_title") or item.get("section_title")
+    chunk_id = item.get("_chunk_id") or item.get("id") or item.get("chunk_id")
+    parts = []
+    if paper_id is not None:
+        parts.append(f"paper_id={paper_id}")
+    else:
+        parts.append(f"document_id={item.get('document_id')}")
+    if paper_title:
+        parts.append(f"title={paper_title}")
+    if section_title:
+        parts.append(f"section={section_title}")
+    if chunk_id is not None:
+        parts.append(f"chunk_id={chunk_id}")
+    return "Source: " + "; ".join(parts)
+
+
+def answer_with_citation(text: str, source: dict) -> str:
+    return f"{source_excerpt(text, 600)}\n\n{source_citation(source)}"
+
+
 def cosine_similarity(left: list[float], right: list[float]) -> float:
     if not left or not right or len(left) != len(right):
         return 0.0
@@ -271,7 +294,7 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
         vector_hits = validated_hits
     if vector_hits:
         return {
-            "answer": (vector_hits[0].get("_text") or vector_hits[0]["text"])[:600],
+            "answer": answer_with_citation(vector_hits[0].get("_text") or vector_hits[0]["text"], vector_hits[0]),
             "sources": [
                 {
                     "document_id": item["document_id"],
@@ -320,7 +343,7 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
     selected = scored[:top_k]
     if not selected:
         return {"answer": "证据不足：当前索引中没有检索到足够相关的段落。", "sources": []}
-    answer = selected[0]["text"][:600]
+    answer = answer_with_citation(selected[0]["text"], selected[0])
     return {
         "answer": answer,
         "sources": [

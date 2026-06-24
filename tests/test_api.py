@@ -4478,6 +4478,8 @@ def test_rag_sources_include_linked_paper_identity(tmp_path):
     assert rag["sources"][0]["paper_id"] == paper_id
     assert rag["sources"][0]["paper_title"] == "Traceable argon plasma paper"
     assert "electron impact chemistry evidence" in rag["sources"][0]["source_excerpt"]
+    assert f"paper_id={paper_id}" in rag["answer"]
+    assert "Traceable argon plasma paper" in rag["answer"]
 
 
 def test_rag_query_treats_local_hash_collision_as_insufficient_evidence(tmp_path):
