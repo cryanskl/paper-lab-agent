@@ -5329,6 +5329,15 @@ def test_streamlit_sidebar_exposes_external_capability_status():
         assert required in sidebar_section
 
 
+def test_streamlit_sidebar_surfaces_config_warnings():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+
+    for required in ["config_warnings", "capability", "message"]:
+        assert required in sidebar_section
+
+
 def test_streamlit_sidebar_can_check_grobid_live_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

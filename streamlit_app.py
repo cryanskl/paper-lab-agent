@@ -105,6 +105,13 @@ with st.sidebar:
         st.caption(f"GROBID status_code: {grobid.get('status_code')}")
     if grobid.get("error"):
         st.warning(f"GROBID error: {grobid.get('error')}")
+    config_warnings = status.get("config_warnings") or []
+    if config_warnings:
+        st.subheader("配置提示")
+        for warning in config_warnings:
+            capability = warning.get("capability") or "unknown"
+            message = warning.get("message") or warning.get("code") or "configuration warning"
+            st.warning(f"{capability}: {message}")
 
 with search_tab:
     st.caption("可先运行 `python scripts/import_fixtures.py` 导入离线样例。")
