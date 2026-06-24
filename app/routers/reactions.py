@@ -39,6 +39,13 @@ class VerifyIn(BaseModel):
             raise ValueError("verified_by must not be blank")
         return normalized
 
+    @field_validator("threshold_ev")
+    @classmethod
+    def threshold_ev_must_not_be_negative(cls, value: Optional[float]) -> Optional[float]:
+        if value is not None and value < 0:
+            raise ValueError("threshold_ev must be non-negative")
+        return value
+
     @model_validator(mode="after")
     def reviewer_required_for_verified_reaction(self) -> "VerifyIn":
         if self.verified and self.verified_by is None:
