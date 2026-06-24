@@ -61,6 +61,27 @@ def test_env_example_validator_reports_missing_settings_alias(tmp_path):
     assert missing == ["LLM_BASE_URL"]
 
 
+def test_env_example_keeps_secret_like_values_blank():
+    validate_env_example = load_validate_env_example()
+    env_path = Path(__file__).resolve().parent.parent / ".env.example"
+
+    filled = validate_env_example.non_empty_secret_like_keys(env_path)
+
+    assert filled == []
+
+
+def test_env_example_validator_reports_filled_secret_like_values(tmp_path):
+    validate_env_example = load_validate_env_example()
+    repo = Path(__file__).resolve().parent.parent
+    env_path = tmp_path / ".env.example"
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_path.write_text(env_text.replace("LLM_API_KEY=\n", "LLM_API_KEY=sk-test\n"), encoding="utf-8")
+
+    filled = validate_env_example.non_empty_secret_like_keys(env_path)
+
+    assert filled == ["LLM_API_KEY"]
+
+
 def test_gitignore_contains_required_release_hygiene_patterns():
     validate_release_hygiene = load_validate_release_hygiene()
     gitignore_path = Path(__file__).resolve().parent.parent / ".gitignore"

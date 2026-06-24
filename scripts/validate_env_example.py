@@ -21,6 +21,11 @@ REQUIRED_ENV_KEYS = [
     "VECTOR_DB_PATH",
     "DATABASE_PATH",
 ]
+SECRET_LIKE_ENV_KEYS = [
+    "OPENALEX_MAILTO",
+    "UNPAYWALL_EMAIL",
+    "LLM_API_KEY",
+]
 
 
 def settings_env_aliases(path: Path = SETTINGS_CONFIG_PATH) -> list[str]:
@@ -52,6 +57,13 @@ def required_env_keys(config_path: Path = SETTINGS_CONFIG_PATH) -> list[str]:
 
 def parse_env_keys(path: Path) -> set[str]:
     keys: set[str] = set()
+    for key, _value in parse_env_values(path).items():
+        keys.add(key)
+    return keys
+
+
+def parse_env_values(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
@@ -60,13 +72,18 @@ def parse_env_keys(path: Path) -> set[str]:
             line = line.removeprefix("export ").strip()
         key, separator, _value = line.partition("=")
         if separator:
-            keys.add(key.strip())
-    return keys
+            values[key.strip()] = _value.strip().strip('"').strip("'")
+    return values
 
 
 def missing_required_keys(path: Path) -> list[str]:
     keys = parse_env_keys(path)
     return [key for key in required_env_keys() if key not in keys]
+
+
+def non_empty_secret_like_keys(path: Path) -> list[str]:
+    values = parse_env_values(path)
+    return [key for key in SECRET_LIKE_ENV_KEYS if values.get(key)]
 
 
 def main() -> int:
@@ -82,6 +99,10 @@ def main() -> int:
     missing = missing_required_keys(path)
     if missing:
         print(f"env example missing keys: {', '.join(missing)}", file=sys.stderr)
+        return 1
+    filled_secret_like_keys = non_empty_secret_like_keys(path)
+    if filled_secret_like_keys:
+        print(f"env example secret-like keys must be blank: {', '.join(filled_secret_like_keys)}", file=sys.stderr)
         return 1
     return 0
 
