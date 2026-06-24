@@ -80,6 +80,29 @@ def test_release_hygiene_validator_reports_missing_gitignore_pattern(tmp_path):
     assert ".next/" in missing
 
 
+def test_release_hygiene_validator_requires_ci_release_gate():
+    validate_release_hygiene = load_validate_release_hygiene()
+    repo = Path(__file__).resolve().parent.parent
+
+    missing = validate_release_hygiene.missing_required_ci_release_gate(repo)
+
+    assert missing == []
+
+
+def test_release_hygiene_validator_reports_missing_ci_release_gate(tmp_path):
+    validate_release_hygiene = load_validate_release_hygiene()
+    workflow_dir = tmp_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "ci.yml").write_text(
+        "name: ci\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: pytest\n",
+        encoding="utf-8",
+    )
+
+    missing = validate_release_hygiene.missing_required_ci_release_gate(tmp_path)
+
+    assert "ci_runs_release_check" in missing
+
+
 def test_agents_truth_source_references_point_to_existing_files():
     repo = Path(__file__).resolve().parent.parent
     agents_path = repo / "AGENTS.md"
