@@ -5558,6 +5558,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "scripts/import_fixtures.py",
         "scripts/smoke_check.py",
         "scripts/validate_api_contract.py",
+        "scripts/validate_docs_links.py",
         "scripts/validate_env_example.py",
         "scripts/validate_release_hygiene.py",
         "scripts/validate_requirements.py",
@@ -5567,6 +5568,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         assert compiled_script in release_text
     assert "scripts/health_check.py --help" in release_text
     assert "scripts/validate_api_contract.py" in release_text
+    assert "scripts/validate_docs_links.py" in release_text
     assert "scripts/validate_env_example.py" in release_text
     assert "scripts/validate_release_hygiene.py" in release_text
     assert "scripts/validate_requirements.py" in release_text

@@ -67,6 +67,19 @@ def load_validate_requirements():
     return validate_requirements
 
 
+def load_validate_docs_links():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_docs_links.py"
+    spec = importlib.util.spec_from_file_location("validate_docs_links_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_docs_links = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_docs_links)
+    return validate_docs_links
+
+
 def test_env_example_contains_required_external_dependency_keys():
     validate_env_example = load_validate_env_example()
     env_path = Path(__file__).resolve().parent.parent / ".env.example"
@@ -395,6 +408,54 @@ def test_requirements_validator_runs_as_release_script():
 
     result = subprocess.run(
         [sys.executable, "scripts/validate_requirements.py"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_docs_links_validator_accepts_current_docs():
+    validate_docs_links = load_validate_docs_links()
+    repo = Path(__file__).resolve().parent.parent
+
+    issues = validate_docs_links.broken_doc_links(repo)
+
+    assert issues == []
+
+
+def test_docs_links_validator_reports_missing_markdown_link(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (tmp_path / "README.md").write_text("[Missing](docs/missing.md)\n", encoding="utf-8")
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["README.md: missing link target docs/missing.md"]
+
+
+def test_docs_links_validator_reports_missing_backtick_reference(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "guide.md").write_text("See `missing.sql` before release.\n", encoding="utf-8")
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["docs/guide.md: missing reference target missing.sql"]
+
+
+def test_docs_links_validator_runs_as_release_script():
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+
+    result = subprocess.run(
+        [sys.executable, "scripts/validate_docs_links.py"],
         cwd=repo,
         check=False,
         capture_output=True,
