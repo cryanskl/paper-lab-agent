@@ -147,10 +147,8 @@ def test_release_hygiene_validator_reports_missing_ci_pull_request_trigger(tmp_p
     assert "ci_pull_request_trigger" in missing
 
 
-def test_agents_truth_source_references_point_to_existing_files():
+def test_agent_guides_truth_source_references_point_to_existing_files():
     repo = Path(__file__).resolve().parent.parent
-    agents_path = repo / "AGENTS.md"
-    agents_text = agents_path.read_text(encoding="utf-8")
     truth_source_names = {
         "PRD_等离子体文献系统.md",
         "schema.sql",
@@ -158,12 +156,19 @@ def test_agents_truth_source_references_point_to_existing_files():
         "任务拆分_开发路线.md",
     }
 
-    references = [
-        reference
-        for reference in re.findall(r"`([^`]+)`", agents_text)
-        if Path(reference).name in truth_source_names
-    ]
-    missing = [reference for reference in references if not (repo / reference).exists()]
+    references = []
+    missing = []
+    for guide_name in ["AGENTS.md", "CLAUDE.md"]:
+        guide_text = (repo / guide_name).read_text(encoding="utf-8")
+        guide_references = [
+            reference
+            for reference in re.findall(r"`([^`]+)`", guide_text)
+            if Path(reference).name in truth_source_names
+        ]
+        references.extend((guide_name, reference) for reference in guide_references)
+        missing.extend(
+            (guide_name, reference) for reference in guide_references if not (repo / reference).exists()
+        )
 
     assert references
     assert missing == []
