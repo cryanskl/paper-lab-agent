@@ -43,6 +43,8 @@ class CrossrefClient:
             for _ in range(max_pages):
                 payload = await self._get_json(client, f"{self.base_url}/journals/{issn}/works", params)
                 message = payload.get("message") or {}
+                if not isinstance(message, dict):
+                    message = {}
                 items = message.get("items") or []
                 if isinstance(items, list):
                     results.extend(self.normalize(item) for item in items if isinstance(item, dict))

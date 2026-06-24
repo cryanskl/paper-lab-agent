@@ -225,6 +225,18 @@ async def test_crossref_skips_malformed_result_items():
 
 
 @pytest.mark.asyncio
+async def test_crossref_tolerates_malformed_message_payload():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response({"message": "not-a-message-object"})
+
+    client = CrossrefClient(transport=httpx.MockTransport(handler))
+
+    works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert works == []
+
+
+@pytest.mark.asyncio
 async def test_crossref_includes_mailto_in_request_params_and_user_agent():
     captured = {}
 
