@@ -317,8 +317,12 @@ with documents_tab:
             try:
                 translation_preview = api_get(f"/documents/{selected['id']}/translation")
                 st.caption(translation_preview.get("status"))
-                output_path = Path(translation_preview["output_path"])
-                if output_path.exists():
+                if translation_preview.get("status") == "failed":
+                    translation_error = translation_preview.get("error") or "unknown error"
+                    st.warning(f"translation failed: {translation_error}")
+                    st.json(translation_preview)
+                elif translation_preview.get("output_path") and Path(translation_preview.get("output_path")).exists():
+                    output_path = Path(translation_preview.get("output_path"))
                     st.markdown(output_path.read_text(encoding="utf-8")[:4000])
                 else:
                     st.json(translation_preview)
