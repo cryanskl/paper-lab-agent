@@ -46,6 +46,17 @@ class CrawlRunIn(BaseModel):
     date_from: Optional[str] = None
     date_to: Optional[str] = None
 
+    @field_validator("journal_ids")
+    @classmethod
+    def journal_ids_must_be_non_empty_positive_ids(cls, value: Optional[list[int]]) -> Optional[list[int]]:
+        if value is None:
+            return None
+        if not value:
+            raise ValueError("journal_ids must not be empty")
+        if any(item <= 0 for item in value):
+            raise ValueError("journal_ids must be positive integers")
+        return value
+
     @field_validator("period")
     @classmethod
     def period_must_be_supported(cls, value: str) -> str:

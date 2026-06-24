@@ -2099,6 +2099,24 @@ def test_crawl_run_rejects_invalid_period_and_reversed_dates(tmp_path):
     assert reversed_dates.json()["error"]["code"] == "validation_error"
 
 
+def test_crawl_run_rejects_empty_and_non_positive_journal_ids(tmp_path):
+    client = make_client(tmp_path)
+
+    empty_journal_ids = client.post(
+        "/api/v1/crawl/run",
+        json={"journal_ids": [], "period": "manual", "date_from": "2026-01-01", "date_to": "2026-01-31"},
+    )
+    non_positive_journal_ids = client.post(
+        "/api/v1/crawl/run",
+        json={"journal_ids": [2, 0, -1], "period": "manual", "date_from": "2026-01-01", "date_to": "2026-01-31"},
+    )
+
+    assert empty_journal_ids.status_code == 422
+    assert empty_journal_ids.json()["error"]["code"] == "validation_error"
+    assert non_positive_journal_ids.status_code == 422
+    assert non_positive_journal_ids.json()["error"]["code"] == "validation_error"
+
+
 def test_keyword_matching_supports_or_and_and_modes():
     from app.services.crawl import matches_keywords
 
