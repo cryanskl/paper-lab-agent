@@ -835,6 +835,19 @@ def test_rag_query_rejects_empty_question_and_invalid_top_k(tmp_path):
     assert invalid_document_ids.json()["error"]["code"] == "validation_error"
 
 
+def test_rag_query_rejects_unknown_document_id(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [999], "top_k": 3},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "document_not_found"
+    assert "999" in response.json()["error"]["message"]
+
+
 def test_fixture_loader_supports_walking_skeleton(tmp_path):
     client = make_client(tmp_path)
 
