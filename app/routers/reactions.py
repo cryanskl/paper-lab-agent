@@ -94,6 +94,11 @@ def get_reaction_set(reaction_set_id: int) -> dict:
 @router.put("/reactions/{reaction_id}/verify")
 def verify(reaction_id: int, body: VerifyIn) -> dict:
     try:
+        clear_fields = {
+            field_name
+            for field_name in {"rate_value", "threshold_ev", "cross_section_url"}
+            if field_name in body.model_fields_set and getattr(body, field_name) is None
+        }
         return verify_reaction(
             reaction_id,
             body.verified,
@@ -103,6 +108,7 @@ def verify(reaction_id: int, body: VerifyIn) -> dict:
             rate_type=body.rate_type,
             threshold_ev=body.threshold_ev,
             cross_section_url=body.cross_section_url,
+            clear_fields=clear_fields,
         )
     except ValueError:
         raise AppError(404, "reaction_not_found", "Reaction not found")

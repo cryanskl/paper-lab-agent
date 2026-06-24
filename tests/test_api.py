@@ -3068,6 +3068,49 @@ def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
     assert audit["changes"]["reaction_type"] == "ionization"
 
 
+def test_reaction_verify_can_clear_optional_review_fields(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("clear-review-fields.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+    reaction_id = detail["reactions"][0]["id"]
+
+    client.put(
+        f"/api/v1/reactions/{reaction_id}/verify",
+        json={
+            "verified": True,
+            "rate_value": "LXCat table",
+            "threshold_ev": 15.76,
+            "cross_section_url": "https://nl.lxcat.net/data/set/example",
+            "verified_by": "chemist-a",
+        },
+    )
+    cleared = client.put(
+        f"/api/v1/reactions/{reaction_id}/verify",
+        json={
+            "verified": True,
+            "rate_value": None,
+            "threshold_ev": None,
+            "cross_section_url": None,
+            "verified_by": "chemist-a",
+        },
+    ).json()
+
+    reaction = cleared["reactions"][0]
+    assert reaction["rate_value"] is None
+    assert reaction["threshold_ev"] is None
+    assert reaction["cross_section_url"] is None
+    assert reaction["audit_log"][0]["changes"]["rate_value"] is None
+    assert reaction["audit_log"][0]["changes"]["threshold_ev"] is None
+    assert reaction["audit_log"][0]["changes"]["cross_section_url"] is None
+
+
 def test_reaction_unverify_returns_reaction_set_to_pending(tmp_path):
     client = make_client(tmp_path)
     response = client.post(

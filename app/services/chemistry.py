@@ -197,12 +197,14 @@ def verify_reaction(
     rate_type: Optional[str] = None,
     threshold_ev: Optional[float] = None,
     cross_section_url: Optional[str] = None,
+    clear_fields: Optional[set[str]] = None,
 ) -> dict:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM reactions WHERE id=?", (reaction_id,)).fetchone()
         if not row:
             raise ValueError("reaction not found")
         updates = {"verified": 1 if verified else 0}
+        clear_fields = clear_fields or set()
         optional_updates = {
             "reaction_type": reaction_type,
             "rate_type": rate_type,
@@ -213,6 +215,8 @@ def verify_reaction(
         for key, value in optional_updates.items():
             if value is not None:
                 updates[key] = value
+            elif key in clear_fields:
+                updates[key] = None
         assignments = ", ".join(f"{key}=?" for key in updates)
         conn.execute(
             f"UPDATE reactions SET {assignments} WHERE id=?",
@@ -220,7 +224,9 @@ def verify_reaction(
         )
         audit_changes = dict(optional_updates)
         audit_changes["verified"] = verified
-        audit_changes = {key: value for key, value in audit_changes.items() if value is not None}
+        audit_changes = {
+            key: value for key, value in audit_changes.items() if value is not None or key in clear_fields
+        }
         conn.execute(
             """
             INSERT INTO reaction_audits (reaction_id, action, changes, verified_by)
