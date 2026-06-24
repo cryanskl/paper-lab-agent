@@ -424,6 +424,15 @@ with chemistry_tab:
                 st.error(payload)
             else:
                 st.success(payload["output_path"])
+                export_path = Path(payload["output_path"])
+                if export_path.exists():
+                    export_text = export_path.read_text(encoding="utf-8")
+                    st.download_button(
+                        "下载导出文件",
+                        data=export_text,
+                        file_name=export_path.name,
+                        mime=payload.get("mime_type") or "text/plain",
+                    )
                 st.json(payload)
         display_reactions = unverified_reactions if show_only_unverified else reactions
         for reaction in display_reactions:

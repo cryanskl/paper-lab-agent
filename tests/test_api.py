@@ -4180,6 +4180,22 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         assert required in chemistry_section
 
 
+def test_streamlit_chemistry_export_offers_download():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    for required in [
+        "export_path = Path(payload[\"output_path\"])",
+        "export_text",
+        "st.download_button",
+        "下载导出文件",
+        'mime=payload.get("mime_type")',
+        "file_name=export_path.name",
+    ]:
+        assert required in chemistry_section
+
+
 def test_document_chunks_endpoint_reports_index_status(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
