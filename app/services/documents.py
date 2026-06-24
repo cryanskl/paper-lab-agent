@@ -102,7 +102,8 @@ def sections_from_tei(tei: str) -> list[dict]:
         return node.tag.rsplit("}", 1)[-1]
 
     for abstract in findall(root, ".//tei:text//tei:front//tei:abstract"):
-        append_section("Abstract", " ".join(abstract.itertext()), "abstract")
+        head = find(abstract, "tei:head")
+        append_section("Abstract", content_without_children(abstract, [head]) if head is not None else " ".join(abstract.itertext()), "abstract")
 
     for div in findall(root, ".//tei:text//tei:body//tei:div"):
         head = find(div, "tei:head")

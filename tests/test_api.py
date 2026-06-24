@@ -3359,6 +3359,34 @@ def test_sections_from_tei_extracts_structured_sections():
     assert "Reference paper" in sections[4]["content"]
 
 
+def test_sections_from_tei_abstract_omits_head_from_content():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <front>
+          <abstract>
+            <head>Abstract</head>
+            <p>Plasma chemistry summary.</p>
+          </abstract>
+        </front>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Abstract",
+            "content": "Plasma chemistry summary.",
+            "section_type": "abstract",
+        }
+    ]
+
+
 def test_sections_from_tei_handles_tei_without_namespace():
     from app.services.documents import sections_from_tei
 
