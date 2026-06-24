@@ -7,10 +7,10 @@ from app.db import dict_from_row, get_conn
 from app.utils import now_iso
 
 
-REACTION_SPECIES_CHARS = r"A-Za-z0-9+()\-\s\u2070-\u209f\u2212"
+REACTION_SPECIES_CHARS = r"A-Za-z0-9+()\-\s\u0370-\u03ff\u2070-\u209f\u2212"
 REACTION_ARROWS = ("<->", "=>", "->", "→", "⇌", "↔")
 REACTION_RE = re.compile(rf"([{REACTION_SPECIES_CHARS}]+(?:{'|'.join(map(re.escape, REACTION_ARROWS))})[{REACTION_SPECIES_CHARS}]+)")
-SPECIES_SEPARATOR_RE = re.compile(r"\s*\+\s*(?=[A-Za-z0-9(\u2070-\u209f\u2212])")
+SPECIES_SEPARATOR_RE = re.compile(r"\s*\+\s*(?=[A-Za-z0-9(\u0370-\u03ff\u2070-\u209f\u2212])")
 URL_RE = re.compile(r"https?://[^\s),;]+")
 LXCAT_DB_RE = re.compile(r"LXCat\s+([A-Za-z0-9_.-]+)", re.IGNORECASE)
 GAS_MIXTURE_RE = re.compile(r"\b([A-Z][a-z]?\d?(?:/[A-Z][a-z]?\d?)+)\b")
