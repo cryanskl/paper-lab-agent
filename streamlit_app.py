@@ -437,6 +437,8 @@ with documents_tab:
         chunks = api_get(f"/documents/{selected['id']}/chunks")
         index_status = "indexed" if chunks["indexed"] else "not indexed"
         st.caption(f"index_status: {index_status} · chunks: {chunks['total']}")
+        if chunks.get("index_error"):
+            st.warning(f"index_error: {chunks['index_error']}")
         section_tab, translation_tab, chunks_tab = st.tabs(["章节", "翻译预览", "索引"])
         with section_tab:
             if sections:

@@ -7884,6 +7884,7 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
         "/chunks",
         "translation_preview",
         "index_status",
+        "index_error",
         "section_preview",
         "parse_error",
         "vector_id",
