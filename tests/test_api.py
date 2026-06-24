@@ -3249,15 +3249,21 @@ def test_parse_document_records_grobid_fallback_reason(tmp_path, monkeypatch):
 
     from app.services import documents as document_service
 
-    async def fake_health(self):
-        return False
+    async def fake_health_detail(self):
+        return {
+            "available": False,
+            "url": "http://grobid.test",
+            "status_code": None,
+            "error": "connection refused",
+        }
 
-    monkeypatch.setattr(document_service.GrobidClient, "health", fake_health)
+    monkeypatch.setattr(document_service.GrobidClient, "health_detail", fake_health_detail)
 
     assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
     document = client.get(f"/api/v1/documents/{document_id}").json()
     assert document["parse_status"] == "parsed"
     assert "GROBID is unavailable" in document["parse_error"]
+    assert "connection refused" in document["parse_error"]
 
 
 def test_parse_document_fallback_writes_valid_tei_xml(tmp_path, monkeypatch):
@@ -3272,10 +3278,15 @@ def test_parse_document_fallback_writes_valid_tei_xml(tmp_path, monkeypatch):
 
     from app.services import documents as document_service
 
-    async def fake_health(self):
-        return False
+    async def fake_health_detail(self):
+        return {
+            "available": False,
+            "url": "http://grobid.test",
+            "status_code": None,
+            "error": "connection refused",
+        }
 
-    monkeypatch.setattr(document_service.GrobidClient, "health", fake_health)
+    monkeypatch.setattr(document_service.GrobidClient, "health_detail", fake_health_detail)
 
     assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
     document = client.get(f"/api/v1/documents/{document_id}").json()
@@ -3298,8 +3309,13 @@ def test_parse_document_records_failed_status_when_artifact_cleanup_fails(tmp_pa
     from app.db import get_conn
     from app.services import documents as document_service
 
-    async def fake_health(self):
-        return False
+    async def fake_health_detail(self):
+        return {
+            "available": False,
+            "url": "http://grobid.test",
+            "status_code": None,
+            "error": "connection refused",
+        }
 
     class FailingVectorStore:
         def __init__(self, path):
@@ -3308,7 +3324,7 @@ def test_parse_document_records_failed_status_when_artifact_cleanup_fails(tmp_pa
         def delete_document(self, document_id):
             raise RuntimeError("vector cleanup failed")
 
-    monkeypatch.setattr(document_service.GrobidClient, "health", fake_health)
+    monkeypatch.setattr(document_service.GrobidClient, "health_detail", fake_health_detail)
     monkeypatch.setattr(document_service, "JsonVectorStore", FailingVectorStore)
 
     result = asyncio.run(document_service.parse_document(document_id))

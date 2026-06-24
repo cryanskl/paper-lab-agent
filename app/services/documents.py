@@ -227,13 +227,20 @@ async def parse_document(document_id: int) -> dict:
     grobid = GrobidClient(settings.grobid_url)
     parse_error = None
     try:
-        if await grobid.health():
+        grobid_health = await grobid.health_detail()
+        if grobid_health.get("available"):
             tei_text = await grobid.process_fulltext(doc["file_path"])
             sections = sections_from_tei(tei_text or "")
             if not sections:
                 parse_error = "GROBID returned no body sections; used local text fallback"
         else:
-            parse_error = "GROBID is unavailable; used local text fallback"
+            reason_parts = [
+                str(grobid_health.get("error") or "unavailable"),
+                f"url={grobid_health.get('url')}",
+            ]
+            if grobid_health.get("status_code") is not None:
+                reason_parts.append(f"status_code={grobid_health.get('status_code')}")
+            parse_error = f"GROBID is unavailable ({'; '.join(reason_parts)}); used local text fallback"
     except Exception as exc:
         parse_error = f"GROBID parse failed: {exc}; used local text fallback"
         tei_text = None
