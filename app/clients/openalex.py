@@ -124,6 +124,11 @@ class OpenAlexClient:
                 authors.append({"name": name, "affiliation": None})
         return authors
 
+    def normalize_title(self, value: Any) -> str:
+        if isinstance(value, str) and value.strip():
+            return value
+        return "Untitled"
+
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         doi = self.normalize_doi(item.get("doi"))
         primary_location = item.get("primary_location") or {}
@@ -136,7 +141,7 @@ class OpenAlexClient:
         abstract = self.abstract_text(item)
         return {
             "doi": doi,
-            "title": item.get("title") or "Untitled",
+            "title": self.normalize_title(item.get("title")),
             "abstract": abstract,
             "authors": authors,
             "journal_name": source.get("display_name"),

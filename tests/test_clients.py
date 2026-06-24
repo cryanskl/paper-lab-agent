@@ -79,6 +79,16 @@ def test_openalex_normalizes_url_doi_to_bare_identifier():
     assert work["doi"] == "10.5555/abc.def"
 
 
+def test_openalex_tolerates_malformed_title_fields():
+    client = OpenAlexClient()
+
+    list_title = client.normalize({"id": "https://openalex.org/W-title-list", "title": ["List title"]})
+    object_title = client.normalize({"id": "https://openalex.org/W-title-object", "title": {"value": "Object title"}})
+
+    assert list_title["title"] == "Untitled"
+    assert object_title["title"] == "Untitled"
+
+
 def test_openalex_skips_malformed_authorship_items():
     client = OpenAlexClient()
 
