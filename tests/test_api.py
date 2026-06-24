@@ -6965,6 +6965,44 @@ def test_extract_chemistry_failure_marks_document_failed_and_discards_partial_se
     assert reaction_sets == []
 
 
+def test_extract_chemistry_fails_when_sections_have_no_text(tmp_path):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import chemistry as chemistry_service
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            ("/tmp/empty-chemistry.txt", "empty-chemistry", "empty-chemistry.txt"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Empty chemistry', '   ', 'body')
+            """,
+            (document_id,),
+        )
+
+    result = chemistry_service.extract_reactions(document_id)
+
+    assert result["status"] == "failed"
+    assert "document has no extractable section text" in result["error"]
+    with get_conn() as conn:
+        document = conn.execute(
+            "SELECT chemistry_status, chemistry_error FROM documents WHERE id=?",
+            (document_id,),
+        ).fetchone()
+        reaction_sets = conn.execute("SELECT * FROM reaction_sets WHERE document_id=?", (document_id,)).fetchall()
+    assert document["chemistry_status"] == "failed"
+    assert "document has no extractable section text" in document["chemistry_error"]
+    assert reaction_sets == []
+
+
 def test_extract_reactions_detects_lxcat_database_and_url(tmp_path):
     client = make_client(tmp_path)
     content = pdf_bytes(

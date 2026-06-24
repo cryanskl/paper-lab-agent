@@ -102,6 +102,12 @@ def extract_reactions(document_id: int) -> dict:
                 ("document has no parsed sections", document_id),
             )
             return {"document_id": document_id, "status": "failed", "error": "document has no parsed sections"}
+        if not any((section["content"] or "").strip() for section in sections):
+            conn.execute(
+                "UPDATE documents SET chemistry_status='failed', chemistry_error=? WHERE id=?",
+                ("document has no extractable section text", document_id),
+            )
+            return {"document_id": document_id, "status": "failed", "error": "document has no extractable section text"}
 
     try:
         with get_conn() as conn:
