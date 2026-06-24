@@ -5058,19 +5058,36 @@ def test_streamlit_api_put_preserves_json_errors_for_callers():
 def test_streamlit_config_tab_exposes_journal_and_category_management():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    helper_section = streamlit[: streamlit.index("def flatten_crawl_job_rows")]
     assert "配置" in streamlit
     config_section = streamlit[streamlit.index("with config_tab:") :]
+    assert "def api_delete(path: str):" in helper_section
     for required in [
         "/journals",
         "/categories",
         "新增期刊",
         "更新期刊",
+        "停用期刊",
         "新增分类",
         "keywords_mode",
         "keywords_terms",
         "active",
         "api_post(\"/journals\"",
         "f\"/journals/{selected_journal['id']}\"",
+        "api_delete(f\"/journals/{selected_journal['id']}\")",
         "api_post(\"/categories\"",
+    ]:
+        assert required in config_section
+
+
+def test_streamlit_config_tab_normalizes_journal_keywords_for_dataframe():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+
+    for required in [
+        "journals_table",
+        'json.dumps(journal.get("keywords"), ensure_ascii=False)',
+        "st.dataframe(journals_table, use_container_width=True)",
     ]:
         assert required in config_section

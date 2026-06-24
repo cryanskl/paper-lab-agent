@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -23,6 +24,11 @@ def api_post(path: str, json=None, files=None, data=None):
 
 def api_put(path: str, json=None):
     response = requests.put(f"{API_BASE}{path}", json=json, timeout=20)
+    return response.status_code, response.json()
+
+
+def api_delete(path: str):
+    response = requests.delete(f"{API_BASE}{path}", timeout=20)
     return response.status_code, response.json()
 
 
@@ -247,7 +253,16 @@ with config_tab:
     categories_all = categories_response["items"]
 
     st.subheader("期刊白名单")
-    st.dataframe(journals_all, use_container_width=True)
+    journals_table = [
+        {
+            **journal,
+            "keywords": json.dumps(journal.get("keywords"), ensure_ascii=False)
+            if isinstance(journal.get("keywords"), (dict, list))
+            else journal.get("keywords"),
+        }
+        for journal in journals_all
+    ]
+    st.dataframe(journals_table, use_container_width=True)
 
     with st.form("create-journal-form"):
         st.markdown("新增期刊")
@@ -310,6 +325,12 @@ with config_tab:
                 f"/journals/{selected_journal['id']}",
                 json={"active": active, "keywords": {"mode": edit_keywords_mode, "terms": terms}},
             )
+            if status_code < 400:
+                st.rerun()
+            else:
+                st.warning(result)
+        if st.button("停用期刊", key=f"delete-journal-{selected_journal['id']}"):
+            status_code, result = api_delete(f"/journals/{selected_journal['id']}")
             if status_code < 400:
                 st.rerun()
             else:
