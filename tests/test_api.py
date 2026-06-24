@@ -1719,6 +1719,65 @@ def test_crawl_job_passes_api_retry_and_page_settings(tmp_path, monkeypatch):
     ]
 
 
+def test_crawl_job_falls_back_to_crossref_when_openalex_fails(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import crawl as crawl_service
+
+    class FailingOpenAlexClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def works_by_issn(self, *args, **kwargs):
+            raise RuntimeError("OpenAlex temporary outage")
+
+    class FakeCrossrefClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def works_by_issn(self, *args, **kwargs):
+            return [
+                {
+                    "doi": "10.4/crossref-fallback",
+                    "title": "Crossref fallback plasma chemistry paper",
+                    "abstract": "argon plasma chemistry",
+                    "authors": [],
+                    "published_date": "2026-01-03",
+                    "published_year": 2026,
+                    "landing_url": "https://example.test/crossref-fallback",
+                    "source_api": "crossref",
+                    "raw_metadata": {},
+                }
+            ]
+
+    class FakeUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            return {"oa_status": "unknown", "oa_pdf_url": None}
+
+    monkeypatch.setattr(crawl_service, "OpenAlexClient", FailingOpenAlexClient)
+    monkeypatch.setattr(crawl_service, "CrossrefClient", FakeCrossrefClient)
+    monkeypatch.setattr(crawl_service, "UnpaywallClient", FakeUnpaywallClient)
+
+    job = crawl_service.create_jobs([2], "manual", "2026-01-01", "2026-01-31")[0]
+    import asyncio
+
+    asyncio.run(crawl_service.run_crawl_job(job["job_id"], 2, "2026-01-01", "2026-01-31"))
+
+    with get_conn() as conn:
+        stored_job = conn.execute("SELECT * FROM crawl_jobs WHERE id=?", (job["job_id"],)).fetchone()
+        paper = conn.execute("SELECT doi, source_api FROM papers WHERE doi=?", ("10.4/crossref-fallback",)).fetchone()
+
+    assert stored_job["status"] == "success"
+    assert stored_job["papers_found"] == 1
+    assert stored_job["papers_new"] == 1
+    assert "OpenAlex failed; used Crossref fallback" in stored_job["error"]
+    assert paper["source_api"] == "crossref"
+
+
 def test_crawl_job_records_found_filtered_and_new_counts(tmp_path, monkeypatch):
     make_client(tmp_path)
 

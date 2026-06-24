@@ -117,6 +117,26 @@ def academic_client_options(settings) -> dict[str, Any]:
     }
 
 
+async def fetch_metadata_works(settings, issn: str, date_from: str, date_to: str) -> tuple[list[dict[str, Any]], Optional[str]]:
+    client_options = academic_client_options(settings)
+    openalex_error = None
+    try:
+        works = await OpenAlexClient(settings.openalex_mailto, **client_options).works_by_issn(
+            issn, date_from, date_to, max_pages=settings.academic_api_max_pages
+        )
+        if works:
+            return works, None
+    except Exception as exc:
+        openalex_error = str(exc)
+
+    works = await CrossrefClient(settings.openalex_mailto, **client_options).works_by_issn(
+        issn, date_from, date_to, max_pages=settings.academic_api_max_pages
+    )
+    if openalex_error:
+        return works, f"OpenAlex failed; used Crossref fallback: {openalex_error}"
+    return works, None
+
+
 async def run_crawl_job(job_id: int, journal_id: int, date_from: str, date_to: str) -> None:
     settings = get_settings()
     with get_conn() as conn:
@@ -137,14 +157,7 @@ async def run_crawl_job(job_id: int, journal_id: int, date_from: str, date_to: s
         issn = journal.get("issn_electronic") or journal.get("issn_print")
         if not issn:
             raise RuntimeError("journal has no ISSN")
-        client_options = academic_client_options(settings)
-        works = await OpenAlexClient(settings.openalex_mailto, **client_options).works_by_issn(
-            issn, date_from, date_to, max_pages=settings.academic_api_max_pages
-        )
-        if not works:
-            works = await CrossrefClient(settings.openalex_mailto, **client_options).works_by_issn(
-                issn, date_from, date_to, max_pages=settings.academic_api_max_pages
-            )
+        works, source_warning = await fetch_metadata_works(settings, issn, date_from, date_to)
 
         keywords = json_loads(journal.get("keywords"), [])
         found = len(works)
@@ -167,10 +180,10 @@ async def run_crawl_job(job_id: int, journal_id: int, date_from: str, date_to: s
             conn.execute(
                 """
                 UPDATE crawl_jobs
-                SET status='success', papers_found=?, papers_filtered=?, papers_new=?, finished_at=?
+                SET status='success', papers_found=?, papers_filtered=?, papers_new=?, error=?, finished_at=?
                 WHERE id=?
                 """,
-                (found, filtered, new_count, now_iso(), job_id),
+                (found, filtered, new_count, source_warning, now_iso(), job_id),
             )
     except Exception as exc:
         with get_conn() as conn:
