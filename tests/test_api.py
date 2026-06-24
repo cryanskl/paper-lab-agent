@@ -2335,6 +2335,7 @@ def test_upsert_paper_deduplicates_no_doi_by_conservative_key(tmp_path):
         assert payload["source_api"] == "openalex"
         assert payload["dedupe_key"] == papers[0]["dedupe_key"]
         assert payload["has_doi"] is False
+        assert payload["dedupe_strategy"] == "no_doi_fingerprint"
 
 
 def test_document_rag_chemistry_export_gate(tmp_path):

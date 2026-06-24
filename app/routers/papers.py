@@ -49,6 +49,14 @@ def fts_query(value: str) -> str:
     return f'"{value.replace(chr(34), chr(34) + chr(34))}"'
 
 
+def dedupe_strategy(row: dict) -> str:
+    if row.get("doi"):
+        return "doi"
+    if str(row.get("dedupe_key") or "").startswith("no-doi:"):
+        return "no_doi_fingerprint"
+    return "none"
+
+
 def serialize_paper(row: dict, categories: list[str]) -> dict:
     return {
         "id": row["id"],
@@ -66,6 +74,7 @@ def serialize_paper(row: dict, categories: list[str]) -> dict:
         "source_api": row.get("source_api"),
         "dedupe_key": row.get("dedupe_key"),
         "has_doi": bool(row.get("doi")),
+        "dedupe_strategy": dedupe_strategy(row),
         "categories": categories,
     }
 
