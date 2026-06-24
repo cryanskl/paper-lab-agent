@@ -80,6 +80,19 @@ def load_validate_docs_links():
     return validate_docs_links
 
 
+def load_validate_readme_commands():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_readme_commands.py"
+    spec = importlib.util.spec_from_file_location("validate_readme_commands_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_readme_commands = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_readme_commands)
+    return validate_readme_commands
+
+
 def test_env_example_contains_required_external_dependency_keys():
     validate_env_example = load_validate_env_example()
     env_path = Path(__file__).resolve().parent.parent / ".env.example"
@@ -443,7 +456,7 @@ def test_requirements_validator_ignores_standard_library_imports(tmp_path):
     validate_requirements = load_validate_requirements()
     source_dir = tmp_path / "scripts"
     source_dir.mkdir()
-    (source_dir / "uses_stdlib.py").write_text("import fnmatch\nimport subprocess\n", encoding="utf-8")
+    (source_dir / "uses_stdlib.py").write_text("import fnmatch\nimport shlex\nimport subprocess\n", encoding="utf-8")
     requirements_path = tmp_path / "requirements.txt"
     requirements_path.write_text("", encoding="utf-8")
 
@@ -508,6 +521,56 @@ def test_docs_links_validator_runs_as_release_script():
 
     result = subprocess.run(
         [sys.executable, "scripts/validate_docs_links.py"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_readme_commands_validator_accepts_current_readme():
+    validate_readme_commands = load_validate_readme_commands()
+    repo = Path(__file__).resolve().parent.parent
+
+    issues = validate_readme_commands.missing_command_targets(repo)
+
+    assert issues == []
+
+
+def test_readme_commands_validator_reports_missing_script_target(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    (tmp_path / "README.md").write_text(
+        "```bash\npython scripts/missing.py\nbash scripts/missing.sh\n```\n",
+        encoding="utf-8",
+    )
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == [
+        "README.md: command target missing: scripts/missing.py",
+        "README.md: command target missing: scripts/missing.sh",
+    ]
+
+
+def test_readme_commands_validator_reports_missing_scripts_module(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    (tmp_path / "README.md").write_text("```bash\npython -m scripts.missing_check\n```\n", encoding="utf-8")
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == ["README.md: command target missing: scripts/missing_check.py"]
+
+
+def test_readme_commands_validator_runs_as_release_script():
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+
+    result = subprocess.run(
+        [sys.executable, "scripts/validate_readme_commands.py"],
         cwd=repo,
         check=False,
         capture_output=True,

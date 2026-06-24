@@ -45,6 +45,7 @@ FALLBACK_STDLIB_MODULES = {
     "os",
     "pathlib",
     "re",
+    "shlex",
     "sqlite3",
     "subprocess",
     "sys",

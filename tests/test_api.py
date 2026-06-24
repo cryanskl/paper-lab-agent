@@ -5560,6 +5560,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "scripts/validate_api_contract.py",
         "scripts/validate_docs_links.py",
         "scripts/validate_env_example.py",
+        "scripts/validate_readme_commands.py",
         "scripts/validate_release_hygiene.py",
         "scripts/validate_requirements.py",
         "scripts/validate_schema.py",
@@ -5570,6 +5571,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "scripts/validate_api_contract.py" in release_text
     assert "scripts/validate_docs_links.py" in release_text
     assert "scripts/validate_env_example.py" in release_text
+    assert "scripts/validate_readme_commands.py" in release_text
     assert "scripts/validate_release_hygiene.py" in release_text
     assert "scripts/validate_requirements.py" in release_text
     assert "scripts/validate_schema.py" in release_text
