@@ -89,6 +89,14 @@ class CrossrefClient:
         decoded = html.unescape(without_tags)
         return re.sub(r"\s+", " ", decoded).strip()
 
+    def normalize_doi(self, value: Any) -> Optional[str]:
+        if not isinstance(value, str):
+            return None
+        doi = value.strip().lower()
+        if not doi:
+            return None
+        return doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/")
+
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         published = item.get("published-print") or item.get("published-online") or item.get("issued") or {}
         parts = (published.get("date-parts") or [[None]])[0]
@@ -99,7 +107,7 @@ class CrossrefClient:
             for a in item.get("author", [])
         ]
         return {
-            "doi": item.get("DOI"),
+            "doi": self.normalize_doi(item.get("DOI")),
             "title": (item.get("title") or ["Untitled"])[0],
             "abstract": self.clean_abstract(item.get("abstract")),
             "authors": authors,
