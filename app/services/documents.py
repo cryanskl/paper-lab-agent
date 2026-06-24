@@ -140,7 +140,7 @@ def sections_from_tei(tei: str) -> list[dict]:
         rows = table_rows(table)
         append_section(
             clean_text(" ".join(head.itertext())) if head is not None else f"Table {len(sections) + 1}",
-            "\n".join(rows) or " ".join(table.itertext()),
+            "\n".join(rows) or content_without_head(table, head),
             "table",
         )
 
