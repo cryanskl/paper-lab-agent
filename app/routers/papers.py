@@ -61,6 +61,9 @@ def serialize_paper(row: dict, categories: list[str]) -> dict:
         "oa_status": row["oa_status"],
         "oa_pdf_url": row["oa_pdf_url"],
         "landing_url": row["landing_url"],
+        "source_api": row.get("source_api"),
+        "dedupe_key": row.get("dedupe_key"),
+        "has_doi": bool(row.get("doi")),
         "categories": categories,
     }
 

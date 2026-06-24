@@ -1886,7 +1886,7 @@ def test_keyword_matching_supports_or_and_and_modes():
 
 
 def test_upsert_paper_deduplicates_no_doi_by_conservative_key(tmp_path):
-    make_client(tmp_path)
+    client = make_client(tmp_path)
 
     from app.db import get_conn
     from app.services.crawl import upsert_paper
@@ -1909,11 +1909,18 @@ def test_upsert_paper_deduplicates_no_doi_by_conservative_key(tmp_path):
         updated = dict(work)
         updated["abstract"] = "updated abstract"
         assert upsert_paper(conn, journal, updated, {"oa_status": "unknown"}) is False
-        papers = conn.execute("SELECT title, abstract, dedupe_key FROM papers").fetchall()
+        papers = conn.execute("SELECT id, title, abstract, dedupe_key FROM papers").fetchall()
 
     assert len(papers) == 1
     assert papers[0]["abstract"] == "updated abstract"
     assert papers[0]["dedupe_key"].startswith("no-doi:")
+
+    listed = client.get("/api/v1/papers", params={"q": "updated", "page_size": 1}).json()["items"][0]
+    detail = client.get(f"/api/v1/papers/{papers[0]['id']}").json()
+    for payload in [listed, detail]:
+        assert payload["source_api"] == "openalex"
+        assert payload["dedupe_key"] == papers[0]["dedupe_key"]
+        assert payload["has_doi"] is False
 
 
 def test_document_rag_chemistry_export_gate(tmp_path):
