@@ -3039,6 +3039,42 @@ def test_parse_document_fallback_writes_valid_tei_xml(tmp_path, monkeypatch):
     assert "Ar &amp; O2 &lt;plasma&gt; chemistry" in tei_text
 
 
+def test_parse_document_records_failed_status_when_artifact_cleanup_fails(tmp_path, monkeypatch):
+    import asyncio
+
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("cleanup-fail.pdf", pdf_bytes(b"local plasma cleanup text"), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    from app.db import get_conn
+    from app.services import documents as document_service
+
+    async def fake_health(self):
+        return False
+
+    class FailingVectorStore:
+        def __init__(self, path):
+            self.path = path
+
+        def delete_document(self, document_id):
+            raise RuntimeError("vector cleanup failed")
+
+    monkeypatch.setattr(document_service.GrobidClient, "health", fake_health)
+    monkeypatch.setattr(document_service, "JsonVectorStore", FailingVectorStore)
+
+    result = asyncio.run(document_service.parse_document(document_id))
+
+    assert result["parse_status"] == "failed"
+    assert "vector cleanup failed" in result["parse_error"]
+    with get_conn() as conn:
+        document = conn.execute("SELECT parse_status, parse_error FROM documents WHERE id=?", (document_id,)).fetchone()
+    assert document["parse_status"] == "failed"
+    assert "vector cleanup failed" in document["parse_error"]
+
+
 def test_sections_from_tei_extracts_structured_sections():
     from app.services.documents import sections_from_tei
 

@@ -188,35 +188,44 @@ async def parse_document(document_id: int) -> dict:
                 row = conn.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
                 return dict_from_row(row)
 
-    tei_path = settings.tei_dir / f"document-{document_id}.tei.xml"
-    tei_path.write_text(tei_text or "", encoding="utf-8")
-    JsonVectorStore(settings.vector_db_path).delete_document(document_id)
-    with get_conn() as conn:
-        conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
-        conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))
-        conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
-        conn.execute("DELETE FROM sections WHERE document_id=?", (document_id,))
-        for item in sections:
+    try:
+        tei_path = settings.tei_dir / f"document-{document_id}.tei.xml"
+        tei_path.write_text(tei_text or "", encoding="utf-8")
+        JsonVectorStore(settings.vector_db_path).delete_document(document_id)
+        with get_conn() as conn:
+            conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM sections WHERE document_id=?", (document_id,))
+            for item in sections:
+                conn.execute(
+                    """
+                    INSERT INTO sections (document_id, parent_id, seq, title, content, section_type)
+                    VALUES (?, NULL, ?, ?, ?, ?)
+                    """,
+                    (document_id, item["seq"], item["title"], item["content"], item["section_type"]),
+                )
             conn.execute(
                 """
-                INSERT INTO sections (document_id, parent_id, seq, title, content, section_type)
-                VALUES (?, NULL, ?, ?, ?, ?)
+                UPDATE documents
+                SET parse_status='parsed',
+                    tei_path=?,
+                    parse_error=?,
+                    index_status='not_indexed',
+                    index_error=NULL,
+                    chemistry_status='not_extracted',
+                    chemistry_error=NULL
+                WHERE id=?
                 """,
-                (document_id, item["seq"], item["title"], item["content"], item["section_type"]),
+                (str(tei_path), parse_error, document_id),
             )
-        conn.execute(
-            """
-            UPDATE documents
-            SET parse_status='parsed',
-                tei_path=?,
-                parse_error=?,
-                index_status='not_indexed',
-                index_error=NULL,
-                chemistry_status='not_extracted',
-                chemistry_error=NULL
-            WHERE id=?
-            """,
-            (str(tei_path), parse_error, document_id),
-        )
-        row = conn.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
-        return dict_from_row(row)
+            row = conn.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
+            return dict_from_row(row)
+    except Exception as exc:
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE documents SET parse_status='failed', parse_error=? WHERE id=?",
+                (f"Parse finalization failed: {exc}", document_id),
+            )
+            row = conn.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
+            return dict_from_row(row)
