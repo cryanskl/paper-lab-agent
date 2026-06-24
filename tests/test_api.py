@@ -3391,6 +3391,92 @@ def test_parse_document_records_failed_status_when_artifact_cleanup_fails(tmp_pa
     assert "vector cleanup failed" in document["parse_error"]
 
 
+def test_parse_document_fallback_failure_clears_stale_artifacts(tmp_path, monkeypatch):
+    import asyncio
+    import json
+
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("fallback-read-fail.pdf", pdf_bytes(b"stale local text"), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    from app.db import get_conn
+    from app.services import documents as document_service
+    from app.services.rag import JsonVectorStore, local_hash_embedding
+
+    async def fake_health_detail(self):
+        return {
+            "available": False,
+            "url": "http://grobid.test",
+            "status_code": None,
+            "error": "connection refused",
+        }
+
+    def failing_read_document_text(file_path):
+        raise RuntimeError("local text read failed")
+
+    with get_conn() as conn:
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Stale', 'metastable stale evidence', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'metastable stale evidence', 3, 'stale-vector-id', 1)
+            """,
+            (document_id, section_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO translations (document_id, source_lang, target_lang, status, output_path)
+            VALUES (?, 'en', 'zh', 'done', ?)
+            """,
+            (document_id, str(tmp_path / "translations" / "stale.md")),
+        )
+        conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, source_note, status)
+            VALUES (?, 'Stale reaction set', 'Old extraction', 'pending')
+            """,
+            (document_id,),
+        )
+
+    JsonVectorStore(tmp_path / "vector-index.json").upsert_many(
+        {
+            "stale-vector-id": {
+                "chunk_id": 1,
+                "document_id": document_id,
+                "section_id": section_id,
+                "text": "metastable stale evidence",
+                "embedding": local_hash_embedding("metastable stale evidence"),
+                "embedding_model": "local-hash",
+                "dimensions": 64,
+            }
+        }
+    )
+    monkeypatch.setattr(document_service.GrobidClient, "health_detail", fake_health_detail)
+    monkeypatch.setattr(document_service, "read_document_text", failing_read_document_text)
+
+    result = asyncio.run(document_service.parse_document(document_id))
+
+    assert result["parse_status"] == "failed"
+    assert "Local text fallback failed: local text read failed" in result["parse_error"]
+    with get_conn() as conn:
+        counts = {
+            table: conn.execute(f"SELECT COUNT(*) AS n FROM {table} WHERE document_id=?", (document_id,)).fetchone()["n"]
+            for table in ["sections", "chunks", "translations", "reaction_sets"]
+        }
+    assert counts == {"sections": 0, "chunks": 0, "translations": 0, "reaction_sets": 0}
+    vector_index = json.loads((tmp_path / "vector-index.json").read_text(encoding="utf-8"))
+    assert all(record["document_id"] != document_id for record in vector_index.values())
+
+
 def test_sections_from_tei_extracts_structured_sections():
     from app.services.documents import sections_from_tei
 

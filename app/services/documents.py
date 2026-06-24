@@ -256,10 +256,19 @@ async def parse_document(document_id: int) -> dict:
                 f"<p>{escape(text)}</p></div></body></text></TEI>"
             )
         except Exception as exc:
+            parse_error = f"Local text fallback failed: {exc}"
+            try:
+                JsonVectorStore(settings.vector_db_path).delete_document(document_id)
+            except Exception as cleanup_exc:
+                parse_error = f"{parse_error}; vector cleanup failed: {cleanup_exc}"
             with get_conn() as conn:
+                conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+                conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))
+                conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
+                conn.execute("DELETE FROM sections WHERE document_id=?", (document_id,))
                 conn.execute(
                     "UPDATE documents SET parse_status='failed', parse_error=? WHERE id=?",
-                    (f"Local text fallback failed: {exc}", document_id),
+                    (parse_error, document_id),
                 )
                 row = conn.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
                 return dict_from_row(row)
