@@ -3177,6 +3177,7 @@ def test_reaction_export_rejects_empty_reaction_set(tmp_path):
 def test_release_runbook_artifacts_exist_and_document_commands():
     repo = Path(__file__).resolve().parent.parent
     health_check = repo / "scripts" / "health_check.py"
+    env_script = repo / "scripts" / "env.sh"
     dev_script = repo / "scripts" / "dev.sh"
     release_check = repo / "scripts" / "release_check.sh"
     smoke_check = repo / "scripts" / "smoke_check.py"
@@ -3187,9 +3188,13 @@ def test_release_runbook_artifacts_exist_and_document_commands():
 
     assert health_check.exists()
     assert "api/v1/system/status?check_external=true" in health_check.read_text(encoding="utf-8")
+    assert env_script.exists()
+    env_text = env_script.read_text(encoding="utf-8")
+    assert "load_env_file_if_unset" in env_text
     assert dev_script.exists()
     dev_text = dev_script.read_text(encoding="utf-8")
-    assert 'source ".env"' in dev_text
+    assert 'source "scripts/env.sh"' in dev_text
+    assert 'load_env_file_if_unset ".env"' in dev_text
     assert "-m uvicorn app.main:app" in dev_text
     assert "DEV_READY_TIMEOUT" in dev_text
     assert "/api/v1/health" in dev_text
@@ -3206,6 +3211,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert release_check.exists()
     release_text = release_check.read_text(encoding="utf-8")
     assert "set -euo pipefail" in release_text
+    assert "bash -n scripts/env.sh" in release_text
     assert "bash -n scripts/dev.sh" in release_text
     assert (
         "-m py_compile scripts/health_check.py scripts/import_fixtures.py scripts/smoke_check.py streamlit_app.py"
@@ -3260,6 +3266,88 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert 'alias="UNPAYWALL_API_MAX_RETRIES"' in config_text
     assert 'alias="UNPAYWALL_API_RETRY_BACKOFF_SECONDS"' in config_text
     assert 'alias="UNPAYWALL_API_TIMEOUT_SECONDS"' in config_text
+
+
+def test_env_loader_preserves_existing_environment_values(tmp_path):
+    import subprocess
+
+    repo = Path(__file__).resolve().parent.parent
+    env_script = repo / "scripts" / "env.sh"
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            [
+                "API_PORT=8000",
+                "STREAMLIT_PORT=8501",
+                'API_BASE_URL="http://127.0.0.1:8000/api/v1"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                "set -euo pipefail; "
+                f"source {env_script}; "
+                "export API_PORT=9000; "
+                "load_env_file_if_unset .env; "
+                'printf "%s|%s|%s" "$API_PORT" "$STREAMLIT_PORT" "$API_BASE_URL"'
+            ),
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "9000|8501|http://127.0.0.1:8000/api/v1"
+
+
+def test_dev_api_base_url_tracks_runtime_port_override(tmp_path):
+    import subprocess
+
+    repo = Path(__file__).resolve().parent.parent
+    env_script = repo / "scripts" / "env.sh"
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            [
+                "API_HOST=127.0.0.1",
+                "API_PORT=8000",
+                "API_BASE_URL=http://127.0.0.1:8000/api/v1",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                "set -euo pipefail; "
+                f"source {env_script}; "
+                "export API_PORT=9000; "
+                'USER_API_BASE_URL="${API_BASE_URL:-}"; '
+                'USER_API_HOST_SET="${API_HOST+x}"; '
+                'USER_API_PORT_SET="${API_PORT+x}"; '
+                "load_env_file_if_unset .env; "
+                'API_HOST="${API_HOST:-127.0.0.1}"; '
+                'API_PORT="${API_PORT:-8000}"; '
+                'API_BASE_URL="$(resolve_api_base_url "$USER_API_BASE_URL" "$USER_API_HOST_SET" "$USER_API_PORT_SET")"; '
+                'printf "%s" "$API_BASE_URL"'
+            ),
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "http://127.0.0.1:9000/api/v1"
 
 
 def test_system_status_contract_documents_operational_counts():

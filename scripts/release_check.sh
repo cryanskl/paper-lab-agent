@@ -11,6 +11,7 @@ else
   PYTHON_CMD=("python")
 fi
 
+bash -n scripts/env.sh
 bash -n scripts/dev.sh
 "${PYTHON_CMD[@]}" -m py_compile scripts/health_check.py scripts/import_fixtures.py scripts/smoke_check.py streamlit_app.py
 "${PYTHON_CMD[@]}" -m scripts.smoke_check

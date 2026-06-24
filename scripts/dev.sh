@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ -f ".env" ]]; then
-  set -a
-  source ".env"
-  set +a
-fi
+source "scripts/env.sh"
+
+USER_API_BASE_URL="${API_BASE_URL:-}"
+USER_API_HOST_SET="${API_HOST+x}"
+USER_API_PORT_SET="${API_PORT+x}"
+
+load_env_file_if_unset ".env"
 
 API_HOST="${API_HOST:-127.0.0.1}"
 API_PORT="${API_PORT:-8000}"
 STREAMLIT_HOST="${STREAMLIT_HOST:-127.0.0.1}"
 STREAMLIT_PORT="${STREAMLIT_PORT:-8501}"
-API_BASE_URL="${API_BASE_URL:-http://${API_HOST}:${API_PORT}/api/v1}"
+API_BASE_URL="$(resolve_api_base_url "${USER_API_BASE_URL}" "${USER_API_HOST_SET}" "${USER_API_PORT_SET}")"
 DEV_READY_TIMEOUT="${DEV_READY_TIMEOUT:-30}"
 PYTHON="${PYTHON:-}"
 
