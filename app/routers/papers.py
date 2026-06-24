@@ -27,6 +27,8 @@ class CategoryOverrideIn(BaseModel):
         normalized = value.strip()
         if not normalized:
             raise ValueError("method must not be blank")
+        if normalized != "manual":
+            raise ValueError("method must be manual")
         return normalized
 
 

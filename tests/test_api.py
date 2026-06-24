@@ -165,6 +165,35 @@ def test_paper_category_override_rejects_blank_method(tmp_path):
     assert response.json()["error"]["code"] == "validation_error"
 
 
+def test_paper_category_override_rejects_non_manual_method(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO papers (title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, '[]', 'fixture', '{}')
+            """,
+            ("Non-manual method category override", "argon plasma",),
+        )
+        paper_id = conn.execute(
+            "SELECT id FROM papers WHERE title=?", ("Non-manual method category override",)
+        ).fetchone()["id"]
+
+    response = client.put(
+        f"/api/v1/papers/{paper_id}/categories",
+        json={"category_ids": [2], "method": "auto"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM paper_categories WHERE paper_id=?", (paper_id,)).fetchall()
+    assert rows == []
+
+
 def test_classify_paper_records_classifier_confidence(tmp_path, monkeypatch):
     client = make_client(tmp_path)
 
