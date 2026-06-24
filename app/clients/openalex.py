@@ -120,7 +120,11 @@ class OpenAlexClient:
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         doi = self.normalize_doi(item.get("doi"))
         primary_location = item.get("primary_location") or {}
+        if not isinstance(primary_location, dict):
+            primary_location = {}
         source = primary_location.get("source") or {}
+        if not isinstance(source, dict):
+            source = {}
         authors = self.normalize_authors(item.get("authorships"))
         abstract = self.abstract_text(item)
         return {

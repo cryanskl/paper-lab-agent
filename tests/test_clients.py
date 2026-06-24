@@ -84,6 +84,32 @@ def test_openalex_skips_malformed_authorship_items():
     ]
 
 
+def test_openalex_tolerates_malformed_primary_location_fields():
+    client = OpenAlexClient()
+
+    malformed_location = client.normalize(
+        {
+            "id": "https://openalex.org/W123",
+            "doi": "10.5555/location",
+            "title": "Malformed location",
+            "primary_location": "not-a-location-object",
+        }
+    )
+    malformed_source = client.normalize(
+        {
+            "id": "https://openalex.org/W124",
+            "doi": "10.5555/source",
+            "title": "Malformed source",
+            "primary_location": {"source": "not-a-source-object"},
+        }
+    )
+
+    assert malformed_location["landing_url"] == "https://openalex.org/W123"
+    assert malformed_location["journal_name"] is None
+    assert malformed_source["landing_url"] == "https://openalex.org/W124"
+    assert malformed_source["journal_name"] is None
+
+
 @pytest.mark.asyncio
 async def test_openalex_waits_between_paginated_requests():
     sleep_calls = []
