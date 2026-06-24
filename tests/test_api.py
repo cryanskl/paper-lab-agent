@@ -5631,6 +5631,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "API_PORT",
         "STREAMLIT_HOST",
         "STREAMLIT_PORT",
+        "FRONTEND_URL",
         "DEV_READY_TIMEOUT",
         "ACADEMIC_API_MAX_PAGES",
         "ACADEMIC_API_MAX_RETRIES",

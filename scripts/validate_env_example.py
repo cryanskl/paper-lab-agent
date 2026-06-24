@@ -21,6 +21,15 @@ REQUIRED_ENV_KEYS = [
     "VECTOR_DB_PATH",
     "DATABASE_PATH",
 ]
+SCRIPT_RUNTIME_ENV_KEYS = [
+    "API_HOST",
+    "API_PORT",
+    "API_BASE_URL",
+    "STREAMLIT_HOST",
+    "STREAMLIT_PORT",
+    "FRONTEND_URL",
+    "DEV_READY_TIMEOUT",
+]
 SECRET_LIKE_ENV_KEYS = [
     "OPENALEX_MAILTO",
     "UNPAYWALL_EMAIL",
@@ -49,7 +58,7 @@ def settings_env_aliases(path: Path = SETTINGS_CONFIG_PATH) -> list[str]:
 
 def required_env_keys(config_path: Path = SETTINGS_CONFIG_PATH) -> list[str]:
     keys: list[str] = []
-    for key in [*REQUIRED_ENV_KEYS, *settings_env_aliases(config_path)]:
+    for key in [*REQUIRED_ENV_KEYS, *settings_env_aliases(config_path), *SCRIPT_RUNTIME_ENV_KEYS]:
         if key not in keys:
             keys.append(key)
     return keys

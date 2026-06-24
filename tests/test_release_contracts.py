@@ -61,6 +61,18 @@ def test_env_example_validator_reports_missing_settings_alias(tmp_path):
     assert missing == ["LLM_BASE_URL"]
 
 
+def test_env_example_validator_reports_missing_script_runtime_key(tmp_path):
+    validate_env_example = load_validate_env_example()
+    repo = Path(__file__).resolve().parent.parent
+    env_path = tmp_path / ".env.example"
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_path.write_text(env_text.replace("FRONTEND_URL=http://127.0.0.1:8501\n", ""), encoding="utf-8")
+
+    missing = validate_env_example.missing_required_keys(env_path)
+
+    assert missing == ["FRONTEND_URL"]
+
+
 def test_env_example_keeps_secret_like_values_blank():
     validate_env_example = load_validate_env_example()
     env_path = Path(__file__).resolve().parent.parent / ".env.example"
