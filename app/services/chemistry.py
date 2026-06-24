@@ -324,6 +324,10 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
             lines.append(f"# gas_mixture: {detail['gas_mixture']}")
         if detail.get("lxcat_db"):
             lines.append(f"# lxcat_db: {detail['lxcat_db']}")
+        if detail.get("verified_by"):
+            lines.append(f"# VERIFIED_BY: {detail['verified_by']}")
+        if detail.get("verified_at"):
+            lines.append(f"# VERIFIED_AT: {detail['verified_at']}")
         for index, reaction in enumerate(detail["reactions"], start=1):
             lines.extend(
                 [
@@ -357,6 +361,10 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
         mime_type = "text/plain"
     else:
         lines = [f"# {detail.get('name') or 'Reaction set'}"]
+        if detail.get("verified_by"):
+            lines.append(f"verified_by: {detail['verified_by']}")
+        if detail.get("verified_at"):
+            lines.append(f"verified_at: {detail['verified_at']}")
         for reaction in detail["reactions"]:
             lines.append(reaction["reaction"])
             if reaction.get("rate_value"):

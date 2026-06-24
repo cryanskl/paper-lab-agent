@@ -5431,6 +5431,8 @@ def test_reaction_export_bolsig_text_and_rejects_unknown_format(tmp_path):
     assert f"SOURCE_SECTION_TITLE: {reaction['source_section_title']}" in text
     assert f"SOURCE_SECTION_TYPE: {reaction['source_section_type']}" in text
     assert f"SOURCE_SECTION_SEQ: {reaction['source_section_seq']}" in text
+    assert "VERIFIED_BY: chemist-a" in text
+    assert "VERIFIED_AT:" in text
 
     exported_txt = client.post(f"/api/v1/reaction-sets/{reaction_set['id']}/export?format=txt").json()
     assert exported_txt["output_path"] != exported["output_path"]
@@ -5438,6 +5440,8 @@ def test_reaction_export_bolsig_text_and_rejects_unknown_format(tmp_path):
     assert f"source_section_title: {reaction['source_section_title']}" in txt
     assert f"source_section_type: {reaction['source_section_type']}" in txt
     assert f"source_section_seq: {reaction['source_section_seq']}" in txt
+    assert "verified_by: chemist-a" in txt
+    assert "verified_at:" in txt
     assert "BOLSIG+" in Path(exported["output_path"]).read_text(encoding="utf-8")
 
     invalid = client.post(f"/api/v1/reaction-sets/{reaction_set['id']}/export?format=docx")
