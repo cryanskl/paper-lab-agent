@@ -117,7 +117,7 @@ class CrossrefClient:
         for item in value:
             if not isinstance(item, dict):
                 continue
-            name = " ".join(v for v in [item.get("given"), item.get("family")] if v)
+            name = " ".join(v for v in [item.get("given"), item.get("family")] if isinstance(v, str) and v)
             if name:
                 authors.append({"name": name, "affiliation": None})
         return authors

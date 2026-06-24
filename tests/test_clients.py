@@ -54,6 +54,26 @@ def test_crossref_skips_malformed_author_items():
     ]
 
 
+def test_crossref_tolerates_malformed_author_name_parts():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/author-name-parts",
+            "title": ["Author name parts"],
+            "author": [
+                {"given": {"value": "Jane"}, "family": "Doe"},
+                {"given": "Solo", "family": ["Malformed"]},
+            ],
+        }
+    )
+
+    assert work["authors"] == [
+        {"name": "Doe", "affiliation": None},
+        {"name": "Solo", "affiliation": None},
+    ]
+
+
 def test_crossref_tolerates_malformed_published_date_fields():
     client = CrossrefClient()
 
