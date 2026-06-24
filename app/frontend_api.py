@@ -70,7 +70,10 @@ def request_json_status(
         )
     except requests.RequestException as exc:
         return 0, {"error": {"code": "request_failed", "message": str(exc) or exc.__class__.__name__}}
-    return response.status_code, response_payload(response)
+    payload = response_payload(response)
+    if 200 <= response.status_code < 300 and "error" in payload:
+        return 599, payload
+    return response.status_code, payload
 
 
 def request_json(

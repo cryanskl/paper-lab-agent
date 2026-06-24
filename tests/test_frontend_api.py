@@ -114,3 +114,26 @@ def test_frontend_api_non_json_error_message_is_bounded():
     assert len(message) <= 560
     assert message.startswith("HTTP 502: ")
     assert message.endswith("...")
+
+
+def test_frontend_api_status_request_promotes_invalid_success_payload(monkeypatch):
+    from app import frontend_api
+
+    class FakeResponse:
+        status_code = 200
+        text = "[1, 2, 3]"
+
+        def json(self):
+            return [1, 2, 3]
+
+    monkeypatch.setattr(frontend_api.requests, "request", lambda *args, **kwargs: FakeResponse())
+
+    status_code, payload = frontend_api.request_json_status(
+        "POST",
+        "http://api.test/api/v1",
+        "/crawl/run",
+    )
+
+    assert status_code == 599
+    assert payload["error"]["code"] == "invalid_response"
+    assert "HTTP 200" in payload["error"]["message"]
