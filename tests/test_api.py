@@ -2352,7 +2352,13 @@ def test_document_rag_chemistry_export_gate(tmp_path):
     sections = client.get(f"/api/v1/documents/{document_id}/sections").json()["items"]
     assert sections
 
-    assert client.post(f"/api/v1/documents/{document_id}/translate", json={"target_lang": "zh"}).status_code == 202
+    translate_response = client.post(f"/api/v1/documents/{document_id}/translate", json={"target_lang": "zh"})
+    assert translate_response.status_code == 202
+    translate_payload = translate_response.json()
+    assert translate_payload["status"] == "pending"
+    assert translate_payload["document_id"] == document_id
+    assert translate_payload["target_lang"] == "zh"
+    assert isinstance(translate_payload["job_id"], int)
     translation = client.get(f"/api/v1/documents/{document_id}/translation").json()
     assert translation["status"] == "done"
     assert Path(translation["output_path"]).exists()

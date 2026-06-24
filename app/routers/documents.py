@@ -142,7 +142,12 @@ def translate(document_id: int, body: TranslateIn, background_tasks: BackgroundT
     get_document_or_404(document_id)
     translation = create_translation_job(document_id, body.target_lang)
     background_tasks.add_task(translate_document, document_id, body.target_lang, translation["id"])
-    return {"job_id": translation["id"], "status": "pending"}
+    return {
+        "job_id": translation["id"],
+        "document_id": document_id,
+        "target_lang": body.target_lang,
+        "status": "pending",
+    }
 
 
 @router.get("/{document_id}/translation")
