@@ -54,6 +54,23 @@ def test_crossref_skips_malformed_author_items():
     ]
 
 
+def test_crossref_tolerates_malformed_published_date_fields():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/malformed-date",
+            "title": ["Malformed date"],
+            "published-print": "not-a-date-object",
+        }
+    )
+
+    assert work["doi"] == "10.5555/malformed-date"
+    assert work["title"] == "Malformed date"
+    assert work["published_date"] is None
+    assert work["published_year"] is None
+
+
 def test_openalex_normalizes_url_doi_to_bare_identifier():
     client = OpenAlexClient()
 

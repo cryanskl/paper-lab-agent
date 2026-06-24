@@ -124,7 +124,10 @@ class CrossrefClient:
 
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         published = item.get("published-print") or item.get("published-online") or item.get("issued") or {}
-        parts = (published.get("date-parts") or [[None]])[0]
+        if not isinstance(published, dict):
+            published = {}
+        date_parts = published.get("date-parts")
+        parts = date_parts[0] if isinstance(date_parts, list) and date_parts and isinstance(date_parts[0], list) else []
         year = parts[0] if parts else None
         published_date = "-".join(str(p).zfill(2) for p in parts if p is not None) if parts else None
         authors = self.normalize_authors(item.get("author"))
