@@ -102,9 +102,18 @@ with search_tab:
     if year_from and year_to and year_from > year_to:
         st.warning("year_from must be less than or equal to year_to")
         papers = {"items": [], "total": 0, "page": 1, "page_size": 20}
+        search_error = None
     else:
-        papers = api_get("/papers", **{k: v for k, v in params.items() if v is not None})
+        try:
+            papers = api_get("/papers", **{k: v for k, v in params.items() if v is not None})
+            search_error = None
+        except Exception as exc:
+            papers = {"items": [], "total": 0, "page": 1, "page_size": 20}
+            search_error = exc
+            st.warning(f"检索失败: {exc}")
     st.metric("结果", papers["total"])
+    if not search_error and papers["total"] == 0:
+        st.info("没有检索结果。")
     for paper in papers["items"]:
         with st.container(border=True):
             st.subheader(paper["title"])

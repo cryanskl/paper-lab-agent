@@ -4617,6 +4617,22 @@ def test_streamlit_search_results_can_resolve_oa_manually():
         assert required in search_section
 
 
+def test_streamlit_search_tab_handles_empty_results_and_api_errors():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    for required in [
+        "search_error",
+        "检索失败",
+        "没有检索结果",
+        "try:",
+        'papers = {"items": [], "total": 0, "page": 1, "page_size": 20}',
+        'if not search_error and papers["total"] == 0:',
+    ]:
+        assert required in search_section
+
+
 def test_streamlit_search_tab_exposes_year_filters():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
