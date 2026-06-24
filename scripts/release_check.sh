@@ -82,5 +82,11 @@ if not payload.get("verified_export_path"):
 if payload.get("crawl_job_found", 0) < 1:
     print(f"release_check failed: smoke crawl_job_found={payload.get('crawl_job_found')!r}, expected >= 1", file=sys.stderr)
     raise SystemExit(1)
+if payload.get("crawl_job_new", 0) < 1:
+    print(f"release_check failed: smoke crawl_job_new={payload.get('crawl_job_new')!r}, expected >= 1", file=sys.stderr)
+    raise SystemExit(1)
+if payload.get("crawled_papers", 0) < 1:
+    print(f"release_check failed: smoke crawled_papers={payload.get('crawled_papers')!r}, expected >= 1", file=sys.stderr)
+    raise SystemExit(1)
 PY
 "${PYTHON_CMD[@]}" -m pytest -q

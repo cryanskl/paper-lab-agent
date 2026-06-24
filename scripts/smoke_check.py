@@ -37,11 +37,10 @@ def run_smoke() -> dict:
         configure_runtime(base_dir)
 
         from app.config import get_settings
-        from app.db import get_conn, init_db
+        from app.db import init_db
         from app.fixture_loader import load_fixture_papers
         from app.main import app
-        from app.routers import crawl as crawl_router
-        from app.utils import now_iso
+        from app.services import crawl as crawl_service
         from fastapi.testclient import TestClient
 
         get_settings.cache_clear()
@@ -54,26 +53,50 @@ def run_smoke() -> dict:
         papers = assert_status(client.get("/api/v1/papers?q=plasma"), 200, "paper search")
         assert_ok(papers["total"] >= 2, f"expected fixture papers to be searchable, got {papers['total']}")
 
-        original_crawl_runner = crawl_router.run_crawl_job
+        original_openalex_client = crawl_service.OpenAlexClient
+        original_unpaywall_client = crawl_service.UnpaywallClient
 
-        async def offline_crawl_runner(job_id: int, journal_id: int, date_from: str, date_to: str) -> None:
-            with get_conn() as conn:
-                conn.execute(
-                    """
-                    UPDATE crawl_jobs
-                    SET status='success',
-                        started_at=?,
-                        finished_at=?,
-                        papers_found=2,
-                        papers_filtered=1,
-                        papers_new=0,
-                        error=NULL
-                    WHERE id=?
-                    """,
-                    (now_iso(), now_iso(), job_id),
-                )
+        class OfflineOpenAlexClient:
+            def __init__(self, *args, **kwargs):
+                pass
 
-        crawl_router.run_crawl_job = offline_crawl_runner
+            async def works_by_issn(self, issn: str, date_from: str, date_to: str, max_pages: int = 3) -> list[dict]:
+                return [
+                    {
+                        "doi": "10.999/smoke-crawl",
+                        "title": "Smoke crawl argon plasma chemistry paper",
+                        "abstract": "offline crawl verifies searchable plasma metadata",
+                        "authors": [{"name": "Smoke Check", "affiliation": None}],
+                        "journal_name": "Plasma Sources Science and Technology",
+                        "published_date": "2026-01-15",
+                        "published_year": 2026,
+                        "landing_url": "https://example.test/smoke-crawl",
+                        "source_api": "openalex",
+                        "raw_metadata": {"source": "smoke"},
+                    },
+                    {
+                        "doi": "10.999/smoke-filtered",
+                        "title": "Unrelated article",
+                        "abstract": "no configured keywords here",
+                        "authors": [],
+                        "journal_name": "Plasma Sources Science and Technology",
+                        "published_date": "2026-01-16",
+                        "published_year": 2026,
+                        "landing_url": "https://example.test/smoke-filtered",
+                        "source_api": "openalex",
+                        "raw_metadata": {"source": "smoke"},
+                    },
+                ]
+
+        class OfflineUnpaywallClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def resolve(self, doi: str) -> dict:
+                return {"oa_status": "green", "oa_pdf_url": f"https://example.test/{doi.replace('/', '-')}.pdf"}
+
+        crawl_service.OpenAlexClient = OfflineOpenAlexClient
+        crawl_service.UnpaywallClient = OfflineUnpaywallClient
         try:
             crawl_run = assert_status(
                 client.post(
@@ -89,7 +112,8 @@ def run_smoke() -> dict:
                 "crawl run",
             )
         finally:
-            crawl_router.run_crawl_job = original_crawl_runner
+            crawl_service.OpenAlexClient = original_openalex_client
+            crawl_service.UnpaywallClient = original_unpaywall_client
         assert_ok(crawl_run["jobs"], "expected crawl run to create a job")
         crawl_job_id = crawl_run["jobs"][0]["job_id"]
         crawl_job = assert_status(client.get(f"/api/v1/crawl/jobs/{crawl_job_id}"), 200, "crawl job detail")
@@ -97,6 +121,9 @@ def run_smoke() -> dict:
         assert_ok(crawl_diagnostics["status"] == "success", f"expected crawl job success, got {crawl_diagnostics}")
         assert_ok(crawl_diagnostics["papers_found"] == 2, f"expected crawl papers_found=2, got {crawl_diagnostics}")
         assert_ok(crawl_diagnostics["papers_filtered"] == 1, f"expected crawl papers_filtered=1, got {crawl_diagnostics}")
+        assert_ok(crawl_diagnostics["papers_new"] == 1, f"expected crawl papers_new=1, got {crawl_diagnostics}")
+        crawled_search = assert_status(client.get("/api/v1/papers?q=smoke crawl"), 200, "crawled paper search")
+        assert_ok(crawled_search["total"] >= 1, f"expected crawled paper to be searchable, got {crawled_search}")
 
         upload = assert_status(
             client.post(
@@ -219,6 +246,7 @@ def run_smoke() -> dict:
             "crawl_job_found": crawl_diagnostics["papers_found"],
             "crawl_job_filtered": crawl_diagnostics["papers_filtered"],
             "crawl_job_new": crawl_diagnostics["papers_new"],
+            "crawled_papers": crawled_search["total"],
             "document_id": document_id,
             "sections": counts["sections"],
             "chunks": counts["chunks"],
