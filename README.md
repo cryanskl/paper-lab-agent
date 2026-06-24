@@ -2,6 +2,8 @@
 
 低温等离子体文献检索与理解系统。V1 采用 local-first 架构：FastAPI + SQLite + APScheduler + GROBID + Chroma/FAISS 兼容的本地索引约定，前端使用 Streamlit。
 
+当前版本：`0.1.0`
+
 ## Quick Start
 
 ```bash

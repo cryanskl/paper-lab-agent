@@ -100,3 +100,12 @@ def test_agents_truth_source_references_point_to_existing_files():
 
     assert references
     assert missing == []
+
+
+def test_readme_documents_current_runtime_version():
+    repo = Path(__file__).resolve().parent.parent
+    namespace: dict[str, str] = {}
+    exec((repo / "app" / "__init__.py").read_text(encoding="utf-8"), namespace)
+    readme = (repo / "README.md").read_text(encoding="utf-8")
+
+    assert f"当前版本：`{namespace['__version__']}`" in readme
