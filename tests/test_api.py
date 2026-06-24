@@ -2544,6 +2544,41 @@ def test_translation_adapter_preserves_formula_masks():
     assert "<EQ_" not in translated
 
 
+def test_openai_translation_adapter_uses_compatible_chat_completions_payload():
+    import json
+
+    import httpx
+
+    from app.services.translation import OpenAICompatibleTranslator
+
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        payload = json.loads(request.content)
+        assert request.url == "http://llm.test/v1/chat/completions"
+        assert payload["model"] == "translate-model"
+        assert payload["temperature"] == 0
+        assert "Preserve placeholders like <EQ_000> exactly" in payload["messages"][0]["content"]
+        assert payload["messages"][1]["content"] == "Target language: zh\n\nThe rate is <EQ_000>."
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "速率为 <EQ_000>。"}}]},
+        )
+
+    translator = OpenAICompatibleTranslator(
+        "test-key",
+        "http://llm.test/v1",
+        "translate-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = translator.translate("The rate is <EQ_000>.", "zh")
+
+    assert result == "速率为 <EQ_000>。"
+    assert requests[0].headers["authorization"] == "Bearer test-key"
+
+
 def test_openai_classifier_keeps_only_registered_taxonomy_slugs():
     import json
 

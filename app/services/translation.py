@@ -23,10 +23,11 @@ class LocalEchoTranslator:
 
 
 class OpenAICompatibleTranslator:
-    def __init__(self, api_key: str, base_url: str, model: str):
+    def __init__(self, api_key: str, base_url: str, model: str, transport: Optional[httpx.BaseTransport] = None):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.transport = transport
 
     def translate(self, text: str, target_lang: str) -> str:
         payload = {
@@ -43,12 +44,12 @@ class OpenAICompatibleTranslator:
             ],
             "temperature": 0,
         }
-        response = httpx.post(
-            f"{self.base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            json=payload,
-            timeout=60,
-        )
+        with httpx.Client(transport=self.transport, timeout=60) as client:
+            response = client.post(
+                f"{self.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                json=payload,
+            )
         response.raise_for_status()
         data = response.json()
         return data["choices"][0]["message"]["content"]
