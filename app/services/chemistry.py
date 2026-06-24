@@ -211,6 +211,7 @@ def reaction_set_detail(reaction_set: dict, conn=None) -> dict:
         for audit in audits:
             item = dict_from_row(audit)
             item["changes"] = json.loads(item.get("changes") or "{}")
+            item["field_changes"] = item["changes"].pop("_field_changes", {})
             item["verified_at"] = item.get("created_at")
             reaction["audit_log"].append(item)
     return reaction_set
@@ -231,6 +232,7 @@ def verify_reaction(
         row = conn.execute("SELECT * FROM reactions WHERE id=?", (reaction_id,)).fetchone()
         if not row:
             raise ValueError("reaction not found")
+        before = dict_from_row(row)
         updates = {"verified": 1 if verified else 0}
         clear_fields = clear_fields or set()
         optional_updates = {
@@ -254,6 +256,10 @@ def verify_reaction(
         audit_changes["verified"] = verified
         audit_changes = {
             key: value for key, value in audit_changes.items() if value is not None or key in clear_fields
+        }
+        audit_changes["_field_changes"] = {
+            key: {"before": bool(before[key]) if key == "verified" else before[key], "after": value}
+            for key, value in audit_changes.items()
         }
         conn.execute(
             """

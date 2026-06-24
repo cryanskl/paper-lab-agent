@@ -5098,6 +5098,9 @@ def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
     assert audit["verified_at"] == audit["created_at"]
     assert audit["action"] == "verify"
     assert audit["changes"]["reaction_type"] == "ionization"
+    assert audit["field_changes"]["reaction_type"] == {"before": "unknown", "after": "ionization"}
+    assert audit["field_changes"]["rate_value"] == {"before": None, "after": "LXCat original table"}
+    assert audit["field_changes"]["verified"] == {"before": False, "after": True}
 
 
 def test_reaction_verify_can_clear_optional_review_fields(tmp_path):
