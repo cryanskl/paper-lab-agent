@@ -3705,6 +3705,9 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         "cross_section_url",
         "verified_by",
         "audit_log",
+        "unverified_reactions",
+        "show_only_unverified",
+        "未复核",
         "bolsig",
         "format={export_format}",
     ]:

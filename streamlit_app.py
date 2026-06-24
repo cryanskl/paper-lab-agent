@@ -308,7 +308,10 @@ with chemistry_tab:
 
     detail = st.session_state.get("reaction_set_detail")
     if detail:
-        st.caption(f"status: {detail.get('status')} · reactions: {len(detail.get('reactions', []))}")
+        reactions = detail.get("reactions", [])
+        unverified_reactions = [reaction for reaction in reactions if not reaction.get("verified")]
+        st.caption(f"status: {detail.get('status')} · reactions: {len(reactions)} · 未复核: {len(unverified_reactions)}")
+        show_only_unverified = st.checkbox("只显示未复核", value=False, key="show_only_unverified")
         export_format = st.selectbox("导出格式", ["json", "txt", "bolsig"], key="reaction_export_format")
         if st.button("导出反应集", key="export-reaction-set"):
             status, payload = api_post(f"/reaction-sets/{rs_id}/export?format={export_format}", json=None)
@@ -319,7 +322,8 @@ with chemistry_tab:
             else:
                 st.success(payload["output_path"])
                 st.json(payload)
-        for reaction in detail.get("reactions", []):
+        display_reactions = unverified_reactions if show_only_unverified else reactions
+        for reaction in display_reactions:
             with st.container(border=True):
                 st.write(reaction["reaction"])
                 c1, c2, c3 = st.columns(3)
