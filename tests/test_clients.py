@@ -18,6 +18,21 @@ def test_crossref_normalizes_url_doi_to_bare_identifier():
     assert work["doi"] == "10.5555/abc.def"
 
 
+def test_crossref_normalizes_scalar_title_fields():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/scalar-title",
+            "title": "Scalar title",
+            "container-title": "Scalar journal",
+        }
+    )
+
+    assert work["title"] == "Scalar title"
+    assert work["journal_name"] == "Scalar journal"
+
+
 def test_openalex_normalizes_url_doi_to_bare_identifier():
     client = OpenAlexClient()
 

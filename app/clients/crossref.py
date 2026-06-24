@@ -97,6 +97,13 @@ class CrossrefClient:
             return None
         return doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/")
 
+    def first_text(self, value: Any, default: Optional[str] = None) -> Optional[str]:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list) and value:
+            return str(value[0])
+        return default
+
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         published = item.get("published-print") or item.get("published-online") or item.get("issued") or {}
         parts = (published.get("date-parts") or [[None]])[0]
@@ -108,10 +115,10 @@ class CrossrefClient:
         ]
         return {
             "doi": self.normalize_doi(item.get("DOI")),
-            "title": (item.get("title") or ["Untitled"])[0],
+            "title": self.first_text(item.get("title"), "Untitled"),
             "abstract": self.clean_abstract(item.get("abstract")),
             "authors": authors,
-            "journal_name": (item.get("container-title") or [None])[0],
+            "journal_name": self.first_text(item.get("container-title")),
             "published_date": published_date,
             "published_year": year,
             "landing_url": item.get("URL"),
