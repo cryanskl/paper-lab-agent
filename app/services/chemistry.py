@@ -79,6 +79,16 @@ def mark_chemistry_queued(document_id: int) -> None:
         )
 
 
+def fail_chemistry_extraction(document_id: int, error: str) -> dict:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
+        conn.execute(
+            "UPDATE documents SET chemistry_status='failed', chemistry_error=? WHERE id=?",
+            (error, document_id),
+        )
+    return {"document_id": document_id, "status": "failed", "error": error}
+
+
 def extract_reactions(document_id: int) -> dict:
     with get_conn() as conn:
         conn.execute(
@@ -92,68 +102,73 @@ def extract_reactions(document_id: int) -> dict:
                 ("document has no parsed sections", document_id),
             )
             return {"document_id": document_id, "status": "failed", "error": "document has no parsed sections"}
-        conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
-        cursor = conn.execute(
-            """
-            INSERT INTO reaction_sets (document_id, name, gas_mixture, lxcat_db, source_note, status)
-            VALUES (?, ?, ?, ?, ?, 'pending')
-            """,
-            (document_id, "Extracted reaction set", None, None, "Extracted from parsed sections"),
-        )
-        reaction_set_id = cursor.lastrowid
-        found = 0
-        detected_gas_mixture = None
-        detected_lxcat_db = None
-        for section in sections:
-            text = section["content"] or ""
-            detected_gas_mixture = detected_gas_mixture or detect_gas_mixture(text)
-            detected_lxcat_db = detected_lxcat_db or detect_lxcat_db(text)
-            cross_section_url = detect_cross_section_url(text)
-            for match in REACTION_RE.finditer(text):
-                reaction = " ".join(match.group(1).split())
-                normalized_reaction, reactants, products = normalize_reaction(reaction)
+
+    try:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
+            cursor = conn.execute(
+                """
+                INSERT INTO reaction_sets (document_id, name, gas_mixture, lxcat_db, source_note, status)
+                VALUES (?, ?, ?, ?, ?, 'pending')
+                """,
+                (document_id, "Extracted reaction set", None, None, "Extracted from parsed sections"),
+            )
+            reaction_set_id = cursor.lastrowid
+            found = 0
+            detected_gas_mixture = None
+            detected_lxcat_db = None
+            for section in sections:
+                text = section["content"] or ""
+                detected_gas_mixture = detected_gas_mixture or detect_gas_mixture(text)
+                detected_lxcat_db = detected_lxcat_db or detect_lxcat_db(text)
+                cross_section_url = detect_cross_section_url(text)
+                for match in REACTION_RE.finditer(text):
+                    reaction = " ".join(match.group(1).split())
+                    normalized_reaction, reactants, products = normalize_reaction(reaction)
+                    conn.execute(
+                        """
+                        INSERT INTO reactions (
+                            reaction_set_id, reaction, reaction_type, reactants, products,
+                            rate_type, rate_value, threshold_ev, reference, cross_section_url,
+                            source_section_id, source_excerpt, confidence, verified
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                        """,
+                        (
+                            reaction_set_id,
+                            normalized_reaction,
+                            "unknown",
+                            json.dumps(reactants, ensure_ascii=False),
+                            json.dumps(products, ensure_ascii=False),
+                            "unknown",
+                            None,
+                            None,
+                            section["title"],
+                            cross_section_url,
+                            section["id"],
+                            source_excerpt(text, match.start(), match.end()),
+                            0.5,
+                        ),
+                    )
+                    found += 1
+            if detected_gas_mixture:
+                conn.execute("UPDATE reaction_sets SET gas_mixture=? WHERE id=?", (detected_gas_mixture, reaction_set_id))
+            if detected_lxcat_db:
+                conn.execute("UPDATE reaction_sets SET lxcat_db=? WHERE id=?", (detected_lxcat_db, reaction_set_id))
+            if found == 0:
+                conn.execute("UPDATE reaction_sets SET status='rejected', source_note=? WHERE id=?", ("No reaction expressions found", reaction_set_id))
                 conn.execute(
-                    """
-                    INSERT INTO reactions (
-                        reaction_set_id, reaction, reaction_type, reactants, products,
-                        rate_type, rate_value, threshold_ev, reference, cross_section_url,
-                        source_section_id, source_excerpt, confidence, verified
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-                    """,
-                    (
-                        reaction_set_id,
-                        normalized_reaction,
-                        "unknown",
-                        json.dumps(reactants, ensure_ascii=False),
-                        json.dumps(products, ensure_ascii=False),
-                        "unknown",
-                        None,
-                        None,
-                        section["title"],
-                        cross_section_url,
-                        section["id"],
-                        source_excerpt(text, match.start(), match.end()),
-                        0.5,
-                    ),
+                    "UPDATE documents SET chemistry_status='rejected', chemistry_error=? WHERE id=?",
+                    ("No reaction expressions found", document_id),
                 )
-                found += 1
-        if detected_gas_mixture:
-            conn.execute("UPDATE reaction_sets SET gas_mixture=? WHERE id=?", (detected_gas_mixture, reaction_set_id))
-        if detected_lxcat_db:
-            conn.execute("UPDATE reaction_sets SET lxcat_db=? WHERE id=?", (detected_lxcat_db, reaction_set_id))
-        if found == 0:
-            conn.execute("UPDATE reaction_sets SET status='rejected', source_note=? WHERE id=?", ("No reaction expressions found", reaction_set_id))
-            conn.execute(
-                "UPDATE documents SET chemistry_status='rejected', chemistry_error=? WHERE id=?",
-                ("No reaction expressions found", document_id),
-            )
-        else:
-            conn.execute(
-                "UPDATE documents SET chemistry_status='extracted', chemistry_error=NULL WHERE id=?",
-                (document_id,),
-            )
-        row = conn.execute("SELECT * FROM reaction_sets WHERE id=?", (reaction_set_id,)).fetchone()
-        return reaction_set_detail(dict_from_row(row), conn)
+            else:
+                conn.execute(
+                    "UPDATE documents SET chemistry_status='extracted', chemistry_error=NULL WHERE id=?",
+                    (document_id,),
+                )
+            row = conn.execute("SELECT * FROM reaction_sets WHERE id=?", (reaction_set_id,)).fetchone()
+            return reaction_set_detail(dict_from_row(row), conn)
+    except Exception as exc:
+        return fail_chemistry_extraction(document_id, str(exc))
 
 
 def reaction_set_detail(reaction_set: dict, conn=None) -> dict:

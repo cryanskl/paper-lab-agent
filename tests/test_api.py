@@ -5815,6 +5815,39 @@ def test_extract_chemistry_rerun_replaces_previous_reaction_set(tmp_path):
     assert detail["reactions"][0]["reaction"] == "e + Ar -> e + e + Ar+"
 
 
+def test_extract_chemistry_failure_marks_document_failed_and_discards_partial_sets(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+    content = pdf_bytes(b"Ar/O2 chemistry. e + Ar -> e + e + Ar+ .")
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("extract-failure.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+
+    from app.db import get_conn
+    from app.services import chemistry as chemistry_service
+
+    def broken_normalize_reaction(reaction):
+        raise RuntimeError("chemistry parser interrupted")
+
+    monkeypatch.setattr(chemistry_service, "normalize_reaction", broken_normalize_reaction)
+
+    result = chemistry_service.extract_reactions(document_id)
+
+    assert result["status"] == "failed"
+    assert "chemistry parser interrupted" in result["error"]
+    with get_conn() as conn:
+        document = conn.execute(
+            "SELECT chemistry_status, chemistry_error FROM documents WHERE id=?",
+            (document_id,),
+        ).fetchone()
+        reaction_sets = conn.execute("SELECT * FROM reaction_sets WHERE document_id=?", (document_id,)).fetchall()
+    assert document["chemistry_status"] == "failed"
+    assert "chemistry parser interrupted" in document["chemistry_error"]
+    assert reaction_sets == []
+
+
 def test_extract_reactions_detects_lxcat_database_and_url(tmp_path):
     client = make_client(tmp_path)
     content = pdf_bytes(
