@@ -510,6 +510,7 @@ with rag_tab:
                         "paper_id": source.get("paper_id"),
                         "paper_title": source.get("paper_title"),
                         "section_title": source.get("section_title"),
+                        "source_excerpt": source.get("source_excerpt"),
                         "chunk_id": source.get("chunk_id"),
                         "vector_id": source.get("vector_id"),
                         "score": source.get("score"),

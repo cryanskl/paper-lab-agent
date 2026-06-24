@@ -47,6 +47,7 @@ class LocalHashEmbeddingAdapter:
 
 
 SUPPORTED_EMBEDDING_MODELS = {"local-hash"}
+SOURCE_EXCERPT_MAX_CHARS = 360
 
 
 def get_embedding_adapter(model_name: str) -> EmbeddingAdapter:
@@ -54,6 +55,13 @@ def get_embedding_adapter(model_name: str) -> EmbeddingAdapter:
     if normalized == "local-hash":
         return LocalHashEmbeddingAdapter()
     raise ValueError(f"unsupported embedding model: {model_name}")
+
+
+def source_excerpt(text: str, max_chars: int = SOURCE_EXCERPT_MAX_CHARS) -> str:
+    normalized = " ".join((text or "").split())
+    if len(normalized) <= max_chars:
+        return normalized
+    return f"{normalized[:max_chars].rstrip()}..."
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:
@@ -273,6 +281,7 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
                     "chunk_id": item.get("_chunk_id"),
                     "vector_id": item["vector_id"],
                     "score": round(item["_score"], 3),
+                    "source_excerpt": source_excerpt(item.get("_text") or item.get("text") or ""),
                 }
                 for item in vector_hits
             ],
@@ -323,6 +332,7 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
                 "chunk_id": item["id"],
                 "vector_id": item.get("vector_id"),
                 "score": round(item["_score"], 3),
+                "source_excerpt": source_excerpt(item.get("text") or ""),
             }
             for item in selected
         ],

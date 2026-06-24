@@ -4425,6 +4425,7 @@ def test_rag_index_uses_local_vector_store(tmp_path):
     assert rag["sources"][0]["score"] > 0
     assert rag["sources"][0]["vector_id"]
     assert isinstance(rag["sources"][0]["chunk_id"], int)
+    assert "electron impact reactions" in rag["sources"][0]["source_excerpt"]
 
 
 def test_rag_sources_include_linked_paper_identity(tmp_path):
@@ -4476,6 +4477,7 @@ def test_rag_sources_include_linked_paper_identity(tmp_path):
     assert rag["sources"]
     assert rag["sources"][0]["paper_id"] == paper_id
     assert rag["sources"][0]["paper_title"] == "Traceable argon plasma paper"
+    assert "electron impact chemistry evidence" in rag["sources"][0]["source_excerpt"]
 
 
 def test_rag_query_treats_local_hash_collision_as_insufficient_evidence(tmp_path):
@@ -8013,6 +8015,7 @@ def test_streamlit_rag_tab_separates_answer_and_sources():
         "st.dataframe(sources",
         "paper_id",
         "paper_title",
+        "source_excerpt",
         "chunk_id",
         "section_title",
     ]:
