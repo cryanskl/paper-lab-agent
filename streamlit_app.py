@@ -124,6 +124,14 @@ with search_tab:
                     st.success(", ".join(classified_paper.get("categories") or []) or "无分类")
                 else:
                     st.warning(classified_paper)
+            if st.button("重新解析 OA", key=f"resolve-oa-{paper['id']}"):
+                status_code, resolved_paper = api_post(f"/papers/{paper['id']}/resolve-oa")
+                if status_code < 400:
+                    resolved_oa_status = resolved_paper.get("oa_status") or "unknown"
+                    resolved_oa_pdf_url = resolved_paper.get("oa_pdf_url") or "-"
+                    st.success(f"oa_status={resolved_oa_status} · oa_pdf_url={resolved_oa_pdf_url}")
+                else:
+                    st.warning(resolved_paper)
             category_options_by_slug = {category["slug"]: category for category in categories}
             current_category_slugs = set(paper.get("categories") or [])
             default_categories = [
