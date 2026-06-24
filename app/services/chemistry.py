@@ -170,6 +170,7 @@ def reaction_set_detail(reaction_set: dict, conn=None) -> dict:
         for audit in audits:
             item = dict_from_row(audit)
             item["changes"] = json.loads(item.get("changes") or "{}")
+            item["verified_at"] = item.get("created_at")
             reaction["audit_log"].append(item)
     return reaction_set
 

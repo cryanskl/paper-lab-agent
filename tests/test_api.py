@@ -2884,6 +2884,8 @@ def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
     assert reaction["audit_log"]
     audit = reaction["audit_log"][0]
     assert audit["verified_by"] == "chemist-a"
+    assert audit["verified_at"]
+    assert audit["verified_at"] == audit["created_at"]
     assert audit["action"] == "verify"
     assert audit["changes"]["reaction_type"] == "ionization"
 
