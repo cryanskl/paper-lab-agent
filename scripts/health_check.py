@@ -167,6 +167,7 @@ def main() -> int:
     parser.add_argument("--base-url", default=default_base_url(), help="FastAPI base URL without /api/v1")
     parser.add_argument("--check-external", action="store_true", help="Also check configured external services")
     parser.add_argument("--require-grobid", action="store_true", help="Fail when GROBID is unavailable")
+    parser.add_argument("--compact", action="store_true", help="Print health JSON on one line")
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args()
 
@@ -180,7 +181,8 @@ def main() -> int:
         print(f"health_check failed: {exc}", file=sys.stderr)
         return 1
 
-    print(json.dumps({"health": health, "status": status}, ensure_ascii=False, indent=2))
+    output = {"health": health, "status": status}
+    print(json.dumps(output, ensure_ascii=False, indent=None if args.compact else 2))
     if not isinstance(health, dict):
         print("health_check failed: health response must be an object", file=sys.stderr)
         return 1

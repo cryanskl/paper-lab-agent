@@ -3642,6 +3642,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     for required in [
         "bash scripts/dev.sh",
         "python scripts/health_check.py",
+        "python scripts/health_check.py --compact",
         "API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py",
         "docker run --rm -p 8070:8070 lfoppiano/grobid",
         "`--check-external` 会主动检查 GROBID",
@@ -4360,6 +4361,56 @@ def test_health_check_accepts_valid_system_status(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["health_check.py", "--base-url", "http://api.test"])
 
     assert health_check.main() == 0
+
+
+def test_health_check_compact_outputs_single_line_json(monkeypatch, capsys):
+    import importlib.util
+    import json
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_compact", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "embedding_model": "local-hash",
+            },
+            "counts": health_check_counts(),
+        }
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(sys, "argv", ["health_check.py", "--base-url", "http://api.test", "--compact"])
+
+    assert health_check.main() == 0
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["health"]["service"] == "paper-lab-agent"
+    assert payload["status"]["runtime"]["api_prefix"] == "/api/v1"
+    assert captured.out.count("\n") == 1
+    assert "\n  " not in captured.out
 
 
 def test_health_check_require_grobid_fails_when_external_grobid_is_unavailable(monkeypatch, capsys):
