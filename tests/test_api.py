@@ -3396,6 +3396,33 @@ def test_sections_from_tei_handles_tei_without_namespace():
     assert "Reference paper" in sections[4]["content"]
 
 
+def test_sections_from_tei_does_not_duplicate_nested_div_paragraphs():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <div>
+            <head>Methods</head>
+            <p>Parent method overview.</p>
+            <div>
+              <head>Plasma conditions</head>
+              <p>Nested discharge pressure details.</p>
+            </div>
+          </div>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert [section["title"] for section in sections] == ["Methods", "Plasma conditions"]
+    assert sections[0]["content"] == "Parent method overview."
+    assert sections[1]["content"] == "Nested discharge pressure details."
+
+
 def test_translation_adapter_preserves_formula_masks():
     from app.services.translation import translate_text_preserving_formulas
 
