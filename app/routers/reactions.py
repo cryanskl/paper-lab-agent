@@ -11,6 +11,9 @@ from app.services.chemistry import export_reaction_set, reaction_set_detail, ver
 router = APIRouter(tags=["reactions"])
 
 
+ALLOWED_RATE_TYPES = {"cross_section", "arrhenius", "constant"}
+
+
 class VerifyIn(BaseModel):
     verified: bool
     reaction_type: Optional[str] = None
@@ -45,6 +48,13 @@ class VerifyIn(BaseModel):
     def threshold_ev_must_not_be_negative(cls, value: Optional[float]) -> Optional[float]:
         if value is not None and value < 0:
             raise ValueError("threshold_ev must be non-negative")
+        return value
+
+    @field_validator("rate_type")
+    @classmethod
+    def rate_type_must_be_known(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and value not in ALLOWED_RATE_TYPES:
+            raise ValueError("rate_type must be one of cross_section, arrhenius, constant")
         return value
 
     @field_validator("cross_section_url")
