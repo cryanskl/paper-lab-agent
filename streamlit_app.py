@@ -189,7 +189,9 @@ with search_tab:
         st.json(api_post("/crawl/run", json=body)[1])
     jobs = api_get("/crawl/jobs", page_size=10)["items"]
     st.dataframe(flatten_crawl_job_rows(jobs), use_container_width=True)
-    if jobs:
+    if not jobs:
+        st.info("暂无抓取任务。")
+    else:
         selected_job = st.selectbox(
             "任务详情",
             jobs,
