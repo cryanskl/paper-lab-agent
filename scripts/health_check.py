@@ -33,8 +33,10 @@ STORAGE_HEALTH_REQUIRED_KEYS = {
     "export_dir",
     "database_parent",
     "vector_db_parent",
+    "vector_db",
 }
 STORAGE_HEALTH_ENTRY_REQUIRED_KEYS = {"path", "exists", "writable"}
+VECTOR_DB_HEALTH_REQUIRED_KEYS = {"path", "exists", "readable", "writable", "valid_json", "error"}
 EXTERNAL_CAPABILITY_REQUIRED_KEYS = {
     "openalex_mailto",
     "unpaywall_email",
@@ -169,6 +171,26 @@ def validate_system_status(status: dict) -> list[str]:
                     invalid_storage_health.append(f"{key}.{entry_key}")
         if invalid_storage_health:
             errors.append(f"storage_health invalid values: {', '.join(invalid_storage_health)}")
+        vector_db = storage_health.get("vector_db")
+        if isinstance(vector_db, dict):
+            invalid_vector_db = []
+            missing_vector_db_keys = VECTOR_DB_HEALTH_REQUIRED_KEYS - set(vector_db)
+            invalid_vector_db.extend(f"vector_db.{key}" for key in sorted(missing_vector_db_keys))
+            if "path" in vector_db and (not isinstance(vector_db["path"], str) or not vector_db["path"]):
+                invalid_vector_db.append("vector_db.path")
+            for entry_key in ("exists", "readable", "writable"):
+                if entry_key in vector_db and not isinstance(vector_db[entry_key], bool):
+                    invalid_vector_db.append(f"vector_db.{entry_key}")
+            if "valid_json" in vector_db and vector_db["valid_json"] is not None and not isinstance(vector_db["valid_json"], bool):
+                invalid_vector_db.append("vector_db.valid_json")
+            if "error" in vector_db and vector_db["error"] is not None and not isinstance(vector_db["error"], str):
+                invalid_vector_db.append("vector_db.error")
+            if vector_db.get("exists") is True and vector_db.get("valid_json") is not True:
+                invalid_vector_db.append("vector_db.valid_json")
+                if vector_db.get("error"):
+                    invalid_vector_db.append(str(vector_db["error"]))
+            if invalid_vector_db:
+                errors.append(f"storage_health invalid values: {', '.join(invalid_vector_db)}")
     external_capabilities = status.get("external_capabilities")
     if not isinstance(external_capabilities, dict):
         errors.append("external_capabilities must be an object")
