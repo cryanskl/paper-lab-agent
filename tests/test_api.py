@@ -4343,6 +4343,26 @@ def test_streamlit_sidebar_exposes_runtime_status():
         assert required in sidebar_section
 
 
+def test_streamlit_crawl_jobs_table_flattens_diagnostics():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    flatten_helper = streamlit[streamlit.index("def flatten_crawl_job_rows") : streamlit.index("st.set_page_config")]
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+
+    for required in [
+        "diagnostics",
+        "journal",
+        "papers_found",
+        "papers_filtered",
+        "papers_accepted",
+        "papers_existing",
+        "papers_new",
+    ]:
+        assert required in flatten_helper
+    assert "flatten_crawl_job_rows(jobs)" in search_section
+    assert 'st.dataframe(flatten_crawl_job_rows(jobs), use_container_width=True)' in search_section
+
+
 def test_streamlit_api_put_preserves_json_errors_for_callers():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

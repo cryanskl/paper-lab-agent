@@ -26,6 +26,30 @@ def api_put(path: str, json=None):
     return response.status_code, response.json()
 
 
+def flatten_crawl_job_rows(jobs: list[dict]) -> list[dict]:
+    rows = []
+    for job in jobs:
+        diagnostics = job.get("diagnostics") or {}
+        journal = job.get("journal") or {}
+        rows.append(
+            {
+                "id": job.get("id") or job.get("job_id"),
+                "journal": journal.get("name") or diagnostics.get("journal_name") or job.get("journal_id"),
+                "status": diagnostics.get("status") or job.get("status"),
+                "period": diagnostics.get("period") or job.get("period"),
+                "date_from": diagnostics.get("date_from") or job.get("date_from"),
+                "date_to": diagnostics.get("date_to") or job.get("date_to"),
+                "found": diagnostics.get("papers_found", 0),
+                "filtered": diagnostics.get("papers_filtered", 0),
+                "accepted": diagnostics.get("papers_accepted", 0),
+                "existing": diagnostics.get("papers_existing", 0),
+                "new": diagnostics.get("papers_new", 0),
+                "error": diagnostics.get("error") or job.get("error"),
+            }
+        )
+    return rows
+
+
 st.set_page_config(page_title="paper-lab-agent", layout="wide")
 st.title("paper-lab-agent")
 
@@ -102,7 +126,7 @@ with search_tab:
             body["date_to"] = date_to
         st.json(api_post("/crawl/run", json=body)[1])
     jobs = api_get("/crawl/jobs", page_size=10)["items"]
-    st.dataframe(jobs, use_container_width=True)
+    st.dataframe(flatten_crawl_job_rows(jobs), use_container_width=True)
     if jobs:
         selected_job = st.selectbox(
             "任务详情",
