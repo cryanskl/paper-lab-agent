@@ -1834,6 +1834,24 @@ def test_openalex_client_reconstructs_abstract_inverted_index():
     assert work["abstract"] == "Argon plasma chemistry drives oxygen reaction plasma"
 
 
+def test_openalex_client_prefers_primary_landing_page_url():
+    from app.clients.openalex import OpenAlexClient
+
+    work = OpenAlexClient().normalize(
+        {
+            "id": "https://openalex.org/W123",
+            "doi": "https://doi.org/10.1/landing",
+            "title": "Landing page preference",
+            "primary_location": {
+                "landing_page_url": "https://publisher.example/article/10.1/landing",
+                "source": {"display_name": "Publisher Journal"},
+            },
+        }
+    )
+
+    assert work["landing_url"] == "https://publisher.example/article/10.1/landing"
+
+
 def test_crossref_client_paginates():
     import asyncio
 

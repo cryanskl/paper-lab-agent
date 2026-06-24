@@ -108,7 +108,7 @@ class OpenAlexClient:
             "journal_name": source.get("display_name"),
             "published_date": item.get("publication_date"),
             "published_year": item.get("publication_year"),
-            "landing_url": item.get("id") or primary_location.get("landing_page_url"),
+            "landing_url": primary_location.get("landing_page_url") or item.get("id"),
             "source_api": "openalex",
             "raw_metadata": item,
         }
