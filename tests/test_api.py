@@ -2193,6 +2193,31 @@ def test_parse_document_records_grobid_fallback_reason(tmp_path, monkeypatch):
     assert "GROBID is unavailable" in document["parse_error"]
 
 
+def test_parse_document_fallback_writes_valid_tei_xml(tmp_path, monkeypatch):
+    import xml.etree.ElementTree as ET
+
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("xml-fallback.pdf", pdf_bytes(b"Ar & O2 <plasma> chemistry"), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    from app.services import documents as document_service
+
+    async def fake_health(self):
+        return False
+
+    monkeypatch.setattr(document_service.GrobidClient, "health", fake_health)
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    document = client.get(f"/api/v1/documents/{document_id}").json()
+    tei_text = Path(document["tei_path"]).read_text(encoding="utf-8")
+
+    ET.fromstring(tei_text)
+    assert "Ar &amp; O2 &lt;plasma&gt; chemistry" in tei_text
+
+
 def test_sections_from_tei_extracts_structured_sections():
     from app.services.documents import sections_from_tei
 

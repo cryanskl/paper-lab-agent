@@ -3,6 +3,7 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
+from xml.sax.saxutils import escape
 
 from fastapi import UploadFile
 
@@ -128,7 +129,10 @@ async def parse_document(document_id: int) -> dict:
         try:
             text = read_document_text(doc["file_path"])
             sections = [{"seq": 1, "title": "Local extracted text", "content": text, "section_type": "body"}]
-            tei_text = f"<TEI><text><body><div><head>Local extracted text</head><p>{text}</p></div></body></text></TEI>"
+            tei_text = (
+                "<TEI><text><body><div><head>Local extracted text</head>"
+                f"<p>{escape(text)}</p></div></body></text></TEI>"
+            )
         except Exception as exc:
             with get_conn() as conn:
                 conn.execute(
