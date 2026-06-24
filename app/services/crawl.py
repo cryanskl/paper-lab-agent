@@ -64,6 +64,15 @@ def json_object(value: Any) -> dict[str, Any]:
     return {}
 
 
+def paper_raw_metadata(work: dict[str, Any], oa: dict[str, Any]) -> dict[str, Any]:
+    raw_metadata = dict(json_object(work.get("raw_metadata")))
+    if isinstance(oa.get("raw"), dict):
+        raw_metadata["unpaywall"] = oa["raw"]
+    if oa.get("error"):
+        raw_metadata["oa_resolution_error"] = str(oa["error"])
+    return raw_metadata
+
+
 def normalize_doi(value: Any) -> Optional[str]:
     doi = normalize_text(optional_text(value))
     if not doi:
@@ -108,7 +117,7 @@ def upsert_paper_record(conn, journal: dict[str, Any], work: dict[str, Any], oa:
         optional_text(oa.get("oa_pdf_url")),
         optional_text(work.get("source_api")),
         dedupe_key,
-        json_dumps(json_object(work.get("raw_metadata"))),
+        json_dumps(paper_raw_metadata(work, oa)),
         now_iso(),
     )
     if existing:

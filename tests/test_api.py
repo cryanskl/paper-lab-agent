@@ -2608,6 +2608,62 @@ def test_crawl_job_passes_unpaywall_retry_and_timeout_settings(tmp_path, monkeyp
     ]
 
 
+def test_crawl_job_records_unpaywall_failure_in_paper_metadata(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import crawl as crawl_service
+    from app.utils import json_loads
+
+    class FakeOpenAlexClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def works_by_issn(self, *args, **kwargs):
+            return [
+                {
+                    "doi": "10.5/unpaywall-failure",
+                    "title": "Plasma chemistry OA failure",
+                    "abstract": "argon plasma chemistry",
+                    "authors": [],
+                    "published_date": "2026-02-01",
+                    "published_year": 2026,
+                    "landing_url": "https://example.test/oa-failure",
+                    "source_api": "openalex",
+                    "raw_metadata": {"source_id": "W-unpaywall-failure"},
+                }
+            ]
+
+    class FailingUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            raise RuntimeError("Unpaywall temporary outage")
+
+    monkeypatch.setattr(crawl_service, "OpenAlexClient", FakeOpenAlexClient)
+    monkeypatch.setattr(crawl_service, "UnpaywallClient", FailingUnpaywallClient)
+
+    job = crawl_service.create_jobs([2], "manual", "2026-02-01", "2026-02-28")[0]
+    import asyncio
+
+    asyncio.run(crawl_service.run_crawl_job(job["job_id"], 2, "2026-02-01", "2026-02-28"))
+
+    with get_conn() as conn:
+        stored_job = conn.execute("SELECT * FROM crawl_jobs WHERE id=?", (job["job_id"],)).fetchone()
+        paper = conn.execute(
+            "SELECT oa_status, oa_pdf_url, raw_metadata FROM papers WHERE doi=?",
+            ("10.5/unpaywall-failure",),
+        ).fetchone()
+
+    raw_metadata = json_loads(paper["raw_metadata"], {})
+    assert stored_job["status"] == "success"
+    assert paper["oa_status"] == "unknown"
+    assert paper["oa_pdf_url"] is None
+    assert raw_metadata["source_id"] == "W-unpaywall-failure"
+    assert raw_metadata["oa_resolution_error"] == "Unpaywall temporary outage"
+
+
 def test_crawl_job_records_found_filtered_and_new_counts(tmp_path, monkeypatch):
     make_client(tmp_path)
 
