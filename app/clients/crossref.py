@@ -36,6 +36,8 @@ class CrossrefClient:
             "rows": 100,
             "cursor": "*",
         }
+        if self.mailto:
+            params["mailto"] = self.mailto
         results: list[dict[str, Any]] = []
         async with httpx.AsyncClient(timeout=self.timeout, headers=headers, transport=self.transport) as client:
             for _ in range(max_pages):
