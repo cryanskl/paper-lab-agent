@@ -238,10 +238,15 @@ def create_jobs(journal_ids: Optional[list[int]], period: str, date_from: Option
     date_to = date_to or today_iso()
     with get_conn() as conn:
         if journal_ids:
-            placeholders = ",".join("?" for _ in journal_ids)
+            requested_ids = list(dict.fromkeys(journal_ids))
+            placeholders = ",".join("?" for _ in requested_ids)
             journals = conn.execute(
-                f"SELECT * FROM journals WHERE active=1 AND id IN ({placeholders})", tuple(journal_ids)
+                f"SELECT * FROM journals WHERE active=1 AND id IN ({placeholders})", tuple(requested_ids)
             ).fetchall()
+            found_ids = {row["id"] for row in journals}
+            missing_ids = [journal_id for journal_id in requested_ids if journal_id not in found_ids]
+            if missing_ids:
+                raise LookupError(f"active journals not found: {', '.join(str(journal_id) for journal_id in missing_ids)}")
         else:
             journals = conn.execute("SELECT * FROM journals WHERE active=1").fetchall()
         jobs = []

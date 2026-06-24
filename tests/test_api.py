@@ -2750,6 +2750,29 @@ def test_crawl_run_rejects_empty_and_non_positive_journal_ids(tmp_path):
     assert non_positive_journal_ids.json()["error"]["code"] == "validation_error"
 
 
+def test_crawl_run_rejects_partially_unknown_journal_ids_without_creating_jobs(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import crawl as crawl_router
+
+    async def fake_run_crawl_job(job_id, journal_id, date_from, date_to):
+        return None
+
+    monkeypatch.setattr(crawl_router, "run_crawl_job", fake_run_crawl_job)
+
+    response = client.post(
+        "/api/v1/crawl/run",
+        json={"journal_ids": [2, 999], "period": "manual", "date_from": "2026-01-01", "date_to": "2026-01-31"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "journal_not_found"
+    with get_conn() as conn:
+        jobs = conn.execute("SELECT * FROM crawl_jobs").fetchall()
+    assert jobs == []
+
+
 def test_keyword_matching_supports_or_and_and_modes():
     from app.services.crawl import matches_keywords
 
