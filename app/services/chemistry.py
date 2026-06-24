@@ -7,7 +7,7 @@ from app.db import dict_from_row, get_conn
 from app.utils import now_iso
 
 
-REACTION_SPECIES_CHARS = r"A-Za-z0-9+*()\-\s\u00b0-\u00b3\u00b7\u00b9\u0370-\u03ff\u2070-\u209f\u2212"
+REACTION_SPECIES_CHARS = r"A-Za-z0-9+*()\-\s\u00b0-\u00b3\u00b7\u00b9\u0370-\u03ff\u1d00-\u1d7f\u2070-\u209f\u2212"
 REACTION_ARROWS = ("<->", "=>", "->", "→", "⇌", "↔")
 REACTION_RE = re.compile(rf"([{REACTION_SPECIES_CHARS}]+(?:{'|'.join(map(re.escape, REACTION_ARROWS))})[{REACTION_SPECIES_CHARS}]+)")
 SPECIES_SEPARATOR_RE = re.compile(r"\s*\+\s*(?=[A-Za-z0-9(\u0370-\u03ff\u2070-\u209f\u2212])")
