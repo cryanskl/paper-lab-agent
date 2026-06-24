@@ -3407,6 +3407,17 @@ def test_parse_document_records_failed_status_when_artifact_cleanup_fails(tmp_pa
             """,
             (document_id,),
         )
+        conn.execute(
+            """
+            UPDATE documents
+            SET index_status='indexed',
+                index_error='old index error',
+                chemistry_status='extracted',
+                chemistry_error='old chemistry error'
+            WHERE id=?
+            """,
+            (document_id,),
+        )
 
     monkeypatch.setattr(document_service.GrobidClient, "health_detail", fake_health_detail)
     monkeypatch.setattr(document_service, "JsonVectorStore", FailingVectorStore)
@@ -3416,13 +3427,23 @@ def test_parse_document_records_failed_status_when_artifact_cleanup_fails(tmp_pa
     assert result["parse_status"] == "failed"
     assert "vector cleanup failed" in result["parse_error"]
     with get_conn() as conn:
-        document = conn.execute("SELECT parse_status, parse_error FROM documents WHERE id=?", (document_id,)).fetchone()
+        document = conn.execute(
+            """
+            SELECT parse_status, parse_error, index_status, index_error, chemistry_status, chemistry_error
+            FROM documents WHERE id=?
+            """,
+            (document_id,),
+        ).fetchone()
         counts = {
             table: conn.execute(f"SELECT COUNT(*) AS n FROM {table} WHERE document_id=?", (document_id,)).fetchone()["n"]
             for table in ["sections", "chunks", "translations", "reaction_sets"]
         }
     assert document["parse_status"] == "failed"
     assert "vector cleanup failed" in document["parse_error"]
+    assert document["index_status"] == "not_indexed"
+    assert document["index_error"] is None
+    assert document["chemistry_status"] == "not_extracted"
+    assert document["chemistry_error"] is None
     assert counts == {"sections": 0, "chunks": 0, "translations": 0, "reaction_sets": 0}
 
 
@@ -3481,6 +3502,17 @@ def test_parse_document_fallback_failure_clears_stale_artifacts(tmp_path, monkey
             """,
             (document_id,),
         )
+        conn.execute(
+            """
+            UPDATE documents
+            SET index_status='indexed',
+                index_error='old index error',
+                chemistry_status='extracted',
+                chemistry_error='old chemistry error'
+            WHERE id=?
+            """,
+            (document_id,),
+        )
 
     JsonVectorStore(tmp_path / "vector-index.json").upsert_many(
         {
@@ -3503,10 +3535,21 @@ def test_parse_document_fallback_failure_clears_stale_artifacts(tmp_path, monkey
     assert result["parse_status"] == "failed"
     assert "Local text fallback failed: local text read failed" in result["parse_error"]
     with get_conn() as conn:
+        document = conn.execute(
+            """
+            SELECT index_status, index_error, chemistry_status, chemistry_error
+            FROM documents WHERE id=?
+            """,
+            (document_id,),
+        ).fetchone()
         counts = {
             table: conn.execute(f"SELECT COUNT(*) AS n FROM {table} WHERE document_id=?", (document_id,)).fetchone()["n"]
             for table in ["sections", "chunks", "translations", "reaction_sets"]
         }
+    assert document["index_status"] == "not_indexed"
+    assert document["index_error"] is None
+    assert document["chemistry_status"] == "not_extracted"
+    assert document["chemistry_error"] is None
     assert counts == {"sections": 0, "chunks": 0, "translations": 0, "reaction_sets": 0}
     vector_index = json.loads((tmp_path / "vector-index.json").read_text(encoding="utf-8"))
     assert all(record["document_id"] != document_id for record in vector_index.values())

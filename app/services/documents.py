@@ -267,7 +267,16 @@ async def parse_document(document_id: int) -> dict:
                 conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
                 conn.execute("DELETE FROM sections WHERE document_id=?", (document_id,))
                 conn.execute(
-                    "UPDATE documents SET parse_status='failed', parse_error=? WHERE id=?",
+                    """
+                    UPDATE documents
+                    SET parse_status='failed',
+                        parse_error=?,
+                        index_status='not_indexed',
+                        index_error=NULL,
+                        chemistry_status='not_extracted',
+                        chemistry_error=NULL
+                    WHERE id=?
+                    """,
                     (parse_error, document_id),
                 )
                 row = conn.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
@@ -313,7 +322,16 @@ async def parse_document(document_id: int) -> dict:
             conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
             conn.execute("DELETE FROM sections WHERE document_id=?", (document_id,))
             conn.execute(
-                "UPDATE documents SET parse_status='failed', parse_error=? WHERE id=?",
+                """
+                UPDATE documents
+                SET parse_status='failed',
+                    parse_error=?,
+                    index_status='not_indexed',
+                    index_error=NULL,
+                    chemistry_status='not_extracted',
+                    chemistry_error=NULL
+                WHERE id=?
+                """,
                 (f"Parse finalization failed: {exc}", document_id),
             )
             row = conn.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
