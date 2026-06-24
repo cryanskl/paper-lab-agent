@@ -4449,6 +4449,22 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
     assert 'type=["pdf", "txt"]' not in documents_section
 
 
+def test_streamlit_documents_tab_shows_linked_paper_summary():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    for required in [
+        'linked_paper = document_detail.get("paper")',
+        "关联论文",
+        'linked_paper.get("title")',
+        'linked_paper.get("doi")',
+        'linked_paper.get("journal_name")',
+        'linked_paper.get("published_date")',
+    ]:
+        assert required in documents_section
+
+
 def test_streamlit_translation_preview_shows_failed_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

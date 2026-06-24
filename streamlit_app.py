@@ -289,6 +289,15 @@ with documents_tab:
         document_detail = api_get(f"/documents/{selected['id']}")
         if document_detail.get("parse_error"):
             st.warning(f"parse_error: {document_detail['parse_error']}")
+        linked_paper = document_detail.get("paper")
+        if linked_paper:
+            st.caption(
+                "关联论文: "
+                f'{linked_paper.get("title") or "Untitled"} · '
+                f'DOI: {linked_paper.get("doi") or "-"} · '
+                f'{linked_paper.get("journal_name") or "-"} · '
+                f'{linked_paper.get("published_date") or "-"}'
+            )
         c1, c2, c3, c4 = st.columns(4)
         if c1.button("解析"):
             st.json(api_post(f"/documents/{selected['id']}/parse")[1])
