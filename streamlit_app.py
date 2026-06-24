@@ -371,7 +371,12 @@ with documents_tab:
                 st.warning(translate_payload)
             st.json(translate_payload)
         if c3.button("索引"):
-            st.json(api_post(f"/documents/{selected['id']}/index")[1])
+            status_code, index_payload = api_post(f"/documents/{selected['id']}/index")
+            if status_code < 400:
+                st.success("已创建索引任务")
+            else:
+                st.warning(index_payload)
+            st.json(index_payload)
         if c4.button("抽取"):
             st.json(api_post(f"/documents/{selected['id']}/extract-chemistry")[1])
         sections = api_get(f"/documents/{selected['id']}/sections")["items"]
