@@ -71,6 +71,7 @@ expected = {
     "verified_export_format": "json",
     "runtime_version": "0.1.0",
     "config_warning_count": 3,
+    "duplicate_upload_status": 409,
 }
 for key, value in expected.items():
     if payload.get(key) != value:
@@ -87,6 +88,9 @@ if payload.get("crawl_job_new", 0) < 1:
     raise SystemExit(1)
 if payload.get("crawled_papers", 0) < 1:
     print(f"release_check failed: smoke crawled_papers={payload.get('crawled_papers')!r}, expected >= 1", file=sys.stderr)
+    raise SystemExit(1)
+if not payload.get("duplicate_document_id"):
+    print("release_check failed: smoke duplicate_document_id is missing", file=sys.stderr)
     raise SystemExit(1)
 PY
 "${PYTHON_CMD[@]}" -m pytest -q

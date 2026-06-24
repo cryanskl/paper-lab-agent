@@ -909,6 +909,8 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["crawl_job_filtered"] >= 0
     assert result["crawl_job_new"] >= 1
     assert result["crawled_papers"] >= 1
+    assert result["duplicate_upload_status"] == 409
+    assert result["duplicate_document_id"] == result["document_id"]
     assert result["translation_status"] == "done"
     assert result["reaction_sets"] == 1
     assert result["reactions"] == 1
@@ -937,6 +939,7 @@ def test_smoke_check_script_outputs_json():
     assert payload["crawl_jobs"] >= 1
     assert payload["crawl_job_status"] == "success"
     assert payload["crawled_papers"] >= 1
+    assert payload["duplicate_upload_status"] == 409
     assert payload["translation_status"] == "done"
     assert payload["blocked_export_status"] == 409
     assert payload["verified_export_format"] == "json"
@@ -3696,6 +3699,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "config_warning_count" in release_text
     assert "crawl_job_status" in release_text
     assert "crawled_papers" in release_text
+    assert "duplicate_upload_status" in release_text
     assert "-m pytest -q" in release_text
     assert smoke_check.exists()
     assert validate_env_example.exists()
@@ -3706,6 +3710,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert '"/api/v1/crawl/run"' in smoke_text
     assert '"crawl_job_status"' in smoke_text
     assert '"crawled_papers"' in smoke_text
+    assert '"duplicate_upload_status"' in smoke_text
     assert '"/api/v1/system/status"' in smoke_text
     assert "runtime_version" in smoke_text
     assert "config_warning_count" in smoke_text

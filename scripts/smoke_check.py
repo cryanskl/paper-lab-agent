@@ -125,25 +125,33 @@ def run_smoke() -> dict:
         crawled_search = assert_status(client.get("/api/v1/papers?q=smoke crawl"), 200, "crawled paper search")
         assert_ok(crawled_search["total"] >= 1, f"expected crawled paper to be searchable, got {crawled_search}")
 
+        smoke_pdf = (
+            b"%PDF-1.4\nArgon plasma chemistry and electron impact reactions. "
+            b"The rate is $k_1$. LXCat IST-Lisbon https://nl.lxcat.net/data/set/example "
+            b"e + Ar -> e + e + Ar+ ."
+        )
         upload = assert_status(
             client.post(
                 "/api/v1/documents",
-                files={
-                    "file": (
-                        "smoke.pdf",
-                        (
-                            b"%PDF-1.4\nArgon plasma chemistry and electron impact reactions. "
-                            b"The rate is $k_1$. LXCat IST-Lisbon https://nl.lxcat.net/data/set/example "
-                            b"e + Ar -> e + e + Ar+ ."
-                        ),
-                        "application/pdf",
-                    )
-                },
+                files={"file": ("smoke.pdf", smoke_pdf, "application/pdf")},
             ),
             201,
             "document upload",
         )
         document_id = upload["id"]
+        duplicate_upload = client.post(
+            "/api/v1/documents",
+            files={"file": ("smoke-copy.pdf", smoke_pdf, "application/pdf")},
+        )
+        assert_ok(
+            duplicate_upload.status_code == 409,
+            f"duplicate document upload: expected 409, got {duplicate_upload.status_code}: {duplicate_upload.text}",
+        )
+        duplicate_document = duplicate_upload.json()["document"]
+        assert_ok(
+            duplicate_document["id"] == document_id,
+            f"expected duplicate document id {document_id}, got {duplicate_document}",
+        )
 
         assert_status(client.post(f"/api/v1/documents/{document_id}/parse"), 202, "document parse")
         sections = assert_status(client.get(f"/api/v1/documents/{document_id}/sections"), 200, "document sections")
@@ -248,6 +256,8 @@ def run_smoke() -> dict:
             "crawl_job_new": crawl_diagnostics["papers_new"],
             "crawled_papers": crawled_search["total"],
             "document_id": document_id,
+            "duplicate_upload_status": duplicate_upload.status_code,
+            "duplicate_document_id": duplicate_document["id"],
             "sections": counts["sections"],
             "chunks": counts["chunks"],
             "rag_sources": len(rag["sources"]),
