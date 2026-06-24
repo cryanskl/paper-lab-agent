@@ -463,7 +463,9 @@ with chemistry_tab:
     if document_reaction_sets:
         reaction_set_items = document_reaction_sets.get("items", [])
         st.dataframe(reaction_set_items)
-        if reaction_set_items:
+        if not reaction_set_items:
+            st.info("该文档暂无反应集。")
+        else:
             selected_reaction_set = st.selectbox(
                 "document_reaction_sets",
                 reaction_set_items,

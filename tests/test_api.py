@@ -4383,6 +4383,14 @@ def test_streamlit_chemistry_export_blocks_empty_reaction_sets():
         assert required in chemistry_section
 
 
+def test_streamlit_chemistry_document_reaction_sets_show_empty_state():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    assert "该文档暂无反应集。" in chemistry_section
+
+
 def test_document_chunks_endpoint_reports_index_status(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
