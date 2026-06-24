@@ -274,6 +274,13 @@ with documents_tab:
         status, payload = api_post("/documents", files=files, data=data)
         if status == 201:
             st.success(f"document #{payload['id']}")
+        elif status == 409 and payload.get("error", {}).get("code") == "document_duplicate":
+            duplicate_document = payload.get("document") or {}
+            st.info(
+                f"已有文档 #{duplicate_document.get('id')} · "
+                f"{duplicate_document.get('original_name') or duplicate_document.get('file_path') or 'duplicate PDF'}"
+            )
+            st.json(duplicate_document)
         else:
             st.warning(payload)
     docs = api_get("/documents", page_size=50)["items"]
