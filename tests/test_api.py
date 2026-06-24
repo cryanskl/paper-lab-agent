@@ -647,6 +647,57 @@ def test_document_related_lists_use_page_query_and_metadata(tmp_path):
     assert reaction_sets["items"][0]["name"] == "Set 1"
 
 
+def test_document_responses_include_linked_paper_summary(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        paper_id = conn.execute(
+            """
+            INSERT INTO papers (
+                doi, title, abstract, authors, journal_name,
+                published_date, published_year, source_api, raw_metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "10.1/document-link",
+                "Linked plasma document",
+                "argon plasma",
+                "[]",
+                "Plasma Sources Science and Technology",
+                "2026-06-01",
+                2026,
+                "fixture",
+                "{}",
+            ),
+        ).lastrowid
+
+    created = client.post(
+        "/api/v1/documents",
+        data={"paper_id": str(paper_id)},
+        files={"file": ("linked.pdf", pdf_bytes(b"Linked paper PDF"), "application/pdf")},
+    )
+
+    assert created.status_code == 201
+    document = created.json()
+    expected_paper = {
+        "id": paper_id,
+        "doi": "10.1/document-link",
+        "title": "Linked plasma document",
+        "journal_name": "Plasma Sources Science and Technology",
+        "published_date": "2026-06-01",
+    }
+    assert document["paper_id"] == paper_id
+    assert document["paper"] == expected_paper
+
+    detail = client.get(f"/api/v1/documents/{document['id']}").json()
+    assert detail["paper"] == expected_paper
+
+    listed = client.get("/api/v1/documents").json()["items"][0]
+    assert listed["paper"] == expected_paper
+
+
 def test_duplicate_document_upload_returns_existing_resource(tmp_path):
     client = make_client(tmp_path)
 

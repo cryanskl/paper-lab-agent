@@ -35,12 +35,32 @@ async def ensure_pdf_upload(file: UploadFile) -> None:
     raise AppError(415, "unsupported_document_type", "Only PDF uploads are supported")
 
 
+def paper_summary_for(conn, paper_id: Optional[int]) -> Optional[dict]:
+    if paper_id is None:
+        return None
+    row = conn.execute(
+        """
+        SELECT id, doi, title, journal_name, published_date
+        FROM papers
+        WHERE id=?
+        """,
+        (paper_id,),
+    ).fetchone()
+    return dict_from_row(row) if row else None
+
+
+def serialize_document(row, conn) -> dict:
+    document = dict_from_row(row)
+    document["paper"] = paper_summary_for(conn, document.get("paper_id"))
+    return document
+
+
 def get_document_or_404(document_id: int) -> dict:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
-    if not row:
-        raise AppError(404, "document_not_found", "Document not found")
-    return dict_from_row(row)
+        if not row:
+            raise AppError(404, "document_not_found", "Document not found")
+        return serialize_document(row, conn)
 
 
 @router.post("", status_code=201)
@@ -52,14 +72,15 @@ async def upload_document(file: UploadFile = File(...), paper_id: Optional[int] 
         if paper is None:
             raise AppError(404, "paper_not_found", "Paper not found")
     doc, created = await save_upload(file, paper_id)
+    document = get_document_or_404(doc["id"])
     if not created:
         raise AppError(
             409,
             "document_duplicate",
             f"Document already exists with id {doc['id']}",
-            {"document": doc},
+            {"document": document},
         )
-    return doc
+    return document
 
 
 @router.get("")
@@ -71,7 +92,8 @@ def list_documents(
     with get_conn() as conn:
         total = conn.execute("SELECT COUNT(*) AS n FROM documents").fetchone()["n"]
         rows = conn.execute("SELECT * FROM documents ORDER BY id DESC LIMIT ? OFFSET ?", (page_size, offset)).fetchall()
-    return page([dict_from_row(row) for row in rows], total, page_num, page_size)
+        items = [serialize_document(row, conn) for row in rows]
+    return page(items, total, page_num, page_size)
 
 
 @router.get("/{document_id}")
