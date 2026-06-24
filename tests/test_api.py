@@ -7156,6 +7156,34 @@ def test_document_async_routes_mark_queued_status_before_background_tasks_run(tm
     from app.db import get_conn
 
     with get_conn() as conn:
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Old section', 'old parsed text', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'old parsed text', 3, 'old-vector', 1)
+            """,
+            (document_id, section_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO translations (document_id, source_lang, target_lang, status, output_path)
+            VALUES (?, 'en', 'zh', 'done', ?)
+            """,
+            (document_id, str(tmp_path / "translations" / "old.md")),
+        )
+        conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, source_note, status)
+            VALUES (?, 'Old reaction set', 'old extraction', 'pending')
+            """,
+            (document_id,),
+        )
         conn.execute(
             """
             UPDATE documents
@@ -7178,6 +7206,10 @@ def test_document_async_routes_mark_queued_status_before_background_tasks_run(tm
     assert document["index_error"] is None
     assert document["chemistry_status"] == "not_extracted"
     assert document["chemistry_error"] is None
+    assert client.get(f"/api/v1/documents/{document_id}/sections").json()["total"] == 0
+    assert client.get(f"/api/v1/documents/{document_id}/chunks").json()["total"] == 0
+    assert client.get(f"/api/v1/documents/{document_id}/translation").status_code == 404
+    assert client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["total"] == 0
 
     document_router.translate(document_id, document_router.TranslateIn(target_lang="zh"), BackgroundTasks())
     translation = client.get(f"/api/v1/documents/{document_id}/translation").json()
