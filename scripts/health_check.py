@@ -12,6 +12,7 @@ HEALTH_PATH = "/api/v1/health"
 STATUS_PATH = "/api/v1/system/status"
 EXTERNAL_STATUS_PATH = "/api/v1/system/status?check_external=true"
 EXPECTED_API_PREFIX = "/api/v1"
+EXPECTED_SERVICE = "paper-lab-agent"
 STATUS_REQUIRED_KEYS = {"database_path", "runtime", "storage", "external_capabilities", "counts"}
 RUNTIME_REQUIRED_KEYS = {"api_prefix", "scheduler_enabled"}
 STORAGE_REQUIRED_KEYS = {"data_dir", "pdf_dir", "tei_dir", "translation_dir", "export_dir", "vector_db_path"}
@@ -187,6 +188,9 @@ def main() -> int:
         return 1
     if health.get("status") != "ok":
         print("health_check failed: API status is not ok", file=sys.stderr)
+        return 1
+    if health.get("service") != EXPECTED_SERVICE:
+        print(f"health_check failed: health service must be {EXPECTED_SERVICE}", file=sys.stderr)
         return 1
     status_errors = validate_system_status(status)
     if status_errors:
