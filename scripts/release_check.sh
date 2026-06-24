@@ -11,24 +11,37 @@ else
   PYTHON_CMD=("python")
 fi
 
-FIXTURE_DIR="$(mktemp -d -t paper-lab-fixtures-XXXXXX)"
-cleanup() {
-  rm -rf "${FIXTURE_DIR}"
-}
-trap cleanup EXIT
-
 bash -n scripts/env.sh
 bash -n scripts/dev.sh
 "${PYTHON_CMD[@]}" -m py_compile scripts/health_check.py scripts/import_fixtures.py scripts/smoke_check.py streamlit_app.py
 "${PYTHON_CMD[@]}" scripts/health_check.py --help >/dev/null
-FIXTURE_JSON="$(PAPER_LAB_DATA_DIR="${FIXTURE_DIR}" "${PYTHON_CMD[@]}" scripts/import_fixtures.py)"
-printf '%s\n' "${FIXTURE_JSON}"
-FIXTURE_JSON="${FIXTURE_JSON}" "${PYTHON_CMD[@]}" - <<'PY'
+FIXTURE_JSON="$("${PYTHON_CMD[@]}" - <<'PY'
 import json
 import os
+import subprocess
 import sys
+import tempfile
 
-payload = json.loads(os.environ["FIXTURE_JSON"])
+with tempfile.TemporaryDirectory(prefix="paper-lab-fixtures-") as fixture_dir:
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = fixture_dir
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+    ]:
+        env.pop(key, None)
+    result = subprocess.run(
+        [sys.executable, "scripts/import_fixtures.py"],
+        text=True,
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+payload = json.loads(result.stdout)
 expected = {
     ("papers", "inserted"): 2,
     ("documents", "inserted"): 1,
@@ -38,7 +51,10 @@ for (section, key), value in expected.items():
     if actual != value:
         print(f"release_check failed: fixture {section}.{key}={actual!r}, expected {value!r}", file=sys.stderr)
         raise SystemExit(1)
+print(json.dumps(payload, ensure_ascii=False))
 PY
+)"
+printf '%s\n' "${FIXTURE_JSON}"
 SMOKE_JSON="$("${PYTHON_CMD[@]}" -m scripts.smoke_check)"
 printf '%s\n' "${SMOKE_JSON}"
 SMOKE_JSON="${SMOKE_JSON}" "${PYTHON_CMD[@]}" - <<'PY'

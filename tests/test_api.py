@@ -3617,6 +3617,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert release_check.exists()
     release_text = release_check.read_text(encoding="utf-8")
     assert "set -euo pipefail" in release_text
+    assert "rm -rf" not in release_text
     assert "bash -n scripts/env.sh" in release_text
     assert "bash -n scripts/dev.sh" in release_text
     assert (
@@ -3624,7 +3625,8 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         in release_text
     )
     assert "scripts/health_check.py --help" in release_text
-    assert "FIXTURE_DIR" in release_text
+    assert "PAPER_LAB_DATA_DIR" in release_text
+    assert "TemporaryDirectory" in release_text
     assert "scripts/import_fixtures.py" in release_text
     assert '"documents"' in release_text
     assert "-m scripts.smoke_check" in release_text
