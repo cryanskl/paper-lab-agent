@@ -4376,6 +4376,23 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
     assert 'type=["pdf", "txt"]' not in documents_section
 
 
+def test_streamlit_rag_tab_separates_answer_and_sources():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+
+    for required in [
+        "rag_payload",
+        'rag_payload.get("answer")',
+        'rag_payload.get("sources")',
+        "引用来源",
+        "st.dataframe(sources",
+        "chunk_id",
+        "section_title",
+    ]:
+        assert required in rag_section
+
+
 def test_streamlit_document_upload_shows_duplicate_result():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

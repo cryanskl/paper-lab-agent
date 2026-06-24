@@ -340,7 +340,30 @@ with rag_tab:
     question = st.text_input("问题", value="plasma chemistry")
     if st.button("提问"):
         ids = [int(part.strip()) for part in doc_ids.split(",") if part.strip()]
-        st.json(api_post("/rag/query", json={"question": question, "document_ids": ids, "top_k": 6})[1])
+        status, rag_payload = api_post("/rag/query", json={"question": question, "document_ids": ids, "top_k": 6})
+        if status >= 400:
+            st.warning(rag_payload)
+        else:
+            answer = rag_payload.get("answer") or ""
+            st.markdown(answer)
+            sources = rag_payload.get("sources") or []
+            st.subheader("引用来源")
+            if sources:
+                st.dataframe(sources, use_container_width=True)
+                source_preview = st.selectbox(
+                    "source chunk",
+                    sources,
+                    format_func=lambda source: (
+                        f"doc {source.get('document_id')} · "
+                        f"chunk_id={source.get('chunk_id')} · "
+                        f"{source.get('section_title') or '-'}"
+                    ),
+                )
+                st.json(source_preview)
+            else:
+                st.info("没有可定位引用来源。")
+            with st.expander("raw RAG response"):
+                st.json(rag_payload)
 
 with chemistry_tab:
     chemistry_document_id = st.number_input("chemistry_document_id", min_value=1, value=1)
