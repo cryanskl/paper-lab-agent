@@ -350,6 +350,14 @@ with chemistry_tab:
         for reaction in display_reactions:
             with st.container(border=True):
                 st.write(reaction["reaction"])
+                st.caption(
+                    f"verified: {bool(reaction.get('verified'))} · "
+                    f"confidence: {reaction.get('confidence')} · "
+                    f"source_section_id: {reaction.get('source_section_id')}"
+                )
+                source_excerpt = reaction.get("source_excerpt")
+                if source_excerpt:
+                    st.code(source_excerpt)
                 c1, c2, c3 = st.columns(3)
                 reaction_type = c1.text_input(
                     "reaction_type",
