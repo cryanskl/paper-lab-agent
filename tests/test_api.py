@@ -3507,6 +3507,31 @@ def test_sections_from_tei_preserves_body_table_document_order():
     ]
 
 
+def test_sections_from_tei_extracts_direct_body_paragraphs():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <p>Standalone body paragraph before sections.</p>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Section 1",
+            "content": "Standalone body paragraph before sections.",
+            "section_type": "body",
+        }
+    ]
+
+
 def test_sections_from_tei_figure_fallback_omits_title_from_caption():
     from app.services.documents import sections_from_tei
 

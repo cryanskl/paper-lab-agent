@@ -163,6 +163,8 @@ def sections_from_tei(tei: str) -> list[dict]:
             child_name = local_name(child)
             if child_name == "div":
                 append_body_div(child)
+            elif child_name == "p":
+                append_section(f"Section {len(sections) + 1}", " ".join(child.itertext()), "body")
             elif child_name == "figure":
                 append_figure(child)
             elif child_name == "table":
