@@ -364,7 +364,12 @@ with documents_tab:
                 st.warning(parse_payload)
             st.json(parse_payload)
         if c2.button("翻译"):
-            st.json(api_post(f"/documents/{selected['id']}/translate", json={"target_lang": "zh"})[1])
+            status_code, translate_payload = api_post(f"/documents/{selected['id']}/translate", json={"target_lang": "zh"})
+            if status_code < 400:
+                st.success("已创建翻译任务")
+            else:
+                st.warning(translate_payload)
+            st.json(translate_payload)
         if c3.button("索引"):
             st.json(api_post(f"/documents/{selected['id']}/index")[1])
         if c4.button("抽取"):
