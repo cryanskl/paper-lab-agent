@@ -77,3 +77,22 @@ def test_frontend_api_status_request_converts_network_error_to_payload(monkeypat
             "message": "timed out",
         }
     }
+
+
+def test_frontend_api_get_raises_readable_api_error_for_network_error(monkeypatch):
+    from app import frontend_api
+
+    monkeypatch.setattr(
+        frontend_api,
+        "request_json_status",
+        lambda *args, **kwargs: (0, {"error": {"code": "request_failed", "message": "timed out"}}),
+    )
+
+    try:
+        frontend_api.request_json("GET", "http://api.test/api/v1", "/system/status")
+    except frontend_api.FrontendApiError as exc:
+        assert exc.status_code == 0
+        assert str(exc) == "request_failed: timed out"
+        assert exc.payload["error"]["code"] == "request_failed"
+    else:
+        raise AssertionError("expected FrontendApiError")

@@ -84,6 +84,6 @@ def request_json(
         data=data,
         timeout=timeout,
     )
-    if status_code >= 400:
+    if status_code < 200 or status_code >= 300 or "error" in payload:
         raise FrontendApiError(status_code, payload)
     return payload
