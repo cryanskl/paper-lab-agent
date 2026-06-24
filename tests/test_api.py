@@ -961,6 +961,32 @@ def test_rag_query_rejects_unknown_document_id(tmp_path):
     assert "999" in response.json()["error"]["message"]
 
 
+def test_rag_query_backend_failure_returns_json_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    (tmp_path / "vector-index.json").write_text("{not valid json", encoding="utf-8")
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            ("/tmp/rag-query-corrupt-vector.txt", "rag-query-corrupt-vector", "rag-query-corrupt-vector.txt"),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert "vector store JSON is invalid" in payload["error"]["message"]
+
+
 def test_fixture_loader_supports_walking_skeleton(tmp_path):
     client = make_client(tmp_path)
 
