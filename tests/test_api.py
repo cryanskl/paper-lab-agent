@@ -617,11 +617,17 @@ def test_rag_query_rejects_empty_question_and_invalid_top_k(tmp_path):
 
     empty_question = client.post("/api/v1/rag/query", json={"question": "   ", "top_k": 3})
     invalid_top_k = client.post("/api/v1/rag/query", json={"question": "argon plasma", "top_k": 0})
+    invalid_document_ids = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [1, 0, -2], "top_k": 3},
+    )
 
     assert empty_question.status_code == 422
     assert empty_question.json()["error"]["code"] == "validation_error"
     assert invalid_top_k.status_code == 422
     assert invalid_top_k.json()["error"]["code"] == "validation_error"
+    assert invalid_document_ids.status_code == 422
+    assert invalid_document_ids.json()["error"]["code"] == "validation_error"
 
 
 def test_fixture_loader_supports_walking_skeleton(tmp_path):

@@ -8,7 +8,7 @@ router = APIRouter(prefix="/rag", tags=["rag"])
 
 class RagQueryIn(BaseModel):
     question: str
-    document_ids: list[int] = []
+    document_ids: list[int] = Field(default_factory=list)
     top_k: int = Field(6, ge=1, le=20)
 
     @field_validator("question")
@@ -18,6 +18,13 @@ class RagQueryIn(BaseModel):
         if not normalized:
             raise ValueError("question must not be blank")
         return normalized
+
+    @field_validator("document_ids")
+    @classmethod
+    def document_ids_must_be_positive(cls, value: list[int]) -> list[int]:
+        if any(item <= 0 for item in value):
+            raise ValueError("document_ids must be positive integers")
+        return value
 
 
 @router.post("/query")
