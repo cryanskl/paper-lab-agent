@@ -4229,7 +4229,9 @@ def test_document_async_routes_mark_queued_status_before_background_tasks_run(tm
 
     from app.routers import documents as document_router
 
-    document_router.parse(document_id, BackgroundTasks())
+    parse_payload = document_router.parse(document_id, BackgroundTasks())
+    assert parse_payload["document_id"] == document_id
+    assert parse_payload["parse_status"] == "parsing"
     document = client.get(f"/api/v1/documents/{document_id}").json()
     assert document["parse_status"] == "parsing"
     assert document["parse_error"] is None
@@ -4239,12 +4241,16 @@ def test_document_async_routes_mark_queued_status_before_background_tasks_run(tm
     assert translation["status"] == "pending"
     assert translation["target_lang"] == "zh"
 
-    document_router.index(document_id, BackgroundTasks())
+    index_payload = document_router.index(document_id, BackgroundTasks())
+    assert index_payload["document_id"] == document_id
+    assert index_payload["index_status"] == "indexing"
     chunks = client.get(f"/api/v1/documents/{document_id}/chunks").json()
     assert chunks["index_status"] == "indexing"
     assert chunks["index_error"] is None
 
-    document_router.extract_chemistry(document_id, BackgroundTasks())
+    extract_payload = document_router.extract_chemistry(document_id, BackgroundTasks())
+    assert extract_payload["document_id"] == document_id
+    assert extract_payload["chemistry_status"] == "extracting"
     document = client.get(f"/api/v1/documents/{document_id}").json()
     assert document["chemistry_status"] == "extracting"
     assert document["chemistry_error"] is None

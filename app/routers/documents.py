@@ -84,7 +84,7 @@ def parse(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
     mark_parse_queued(document_id)
     background_tasks.add_task(parse_document, document_id)
-    return {"job_id": document_id, "status": "pending"}
+    return {"job_id": document_id, "document_id": document_id, "parse_status": "parsing", "status": "pending"}
 
 
 @router.get("/{document_id}/sections")
@@ -168,7 +168,7 @@ def index(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
     mark_index_queued(document_id)
     background_tasks.add_task(index_document, document_id)
-    return {"job_id": document_id, "status": "pending"}
+    return {"job_id": document_id, "document_id": document_id, "index_status": "indexing", "status": "pending"}
 
 
 @router.post("/{document_id}/extract-chemistry", status_code=202)
@@ -176,7 +176,7 @@ def extract_chemistry(document_id: int, background_tasks: BackgroundTasks) -> di
     get_document_or_404(document_id)
     mark_chemistry_queued(document_id)
     background_tasks.add_task(extract_reactions, document_id)
-    return {"job_id": document_id, "status": "pending"}
+    return {"job_id": document_id, "document_id": document_id, "chemistry_status": "extracting", "status": "pending"}
 
 
 @router.get("/{document_id}/reaction-sets")
