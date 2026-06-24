@@ -2,34 +2,28 @@ import json
 import os
 from pathlib import Path
 
-import requests
 import streamlit as st
+
+from app.frontend_api import request_json, request_json_status
 
 
 API_BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000/api/v1").rstrip("/")
 
 
 def api_get(path: str, **params):
-    response = requests.get(f"{API_BASE}{path}", params=params, timeout=20)
-    response.raise_for_status()
-    return response.json()
+    return request_json("GET", API_BASE, path, params=params, timeout=20)
 
 
 def api_post(path: str, json=None, files=None, data=None):
-    response = requests.post(f"{API_BASE}{path}", json=json, files=files, data=data, timeout=60)
-    if response.status_code >= 400:
-        return response.status_code, response.json()
-    return response.status_code, response.json()
+    return request_json_status("POST", API_BASE, path, json=json, files=files, data=data, timeout=60)
 
 
 def api_put(path: str, json=None):
-    response = requests.put(f"{API_BASE}{path}", json=json, timeout=20)
-    return response.status_code, response.json()
+    return request_json_status("PUT", API_BASE, path, json=json, timeout=20)
 
 
 def api_delete(path: str):
-    response = requests.delete(f"{API_BASE}{path}", timeout=20)
-    return response.status_code, response.json()
+    return request_json_status("DELETE", API_BASE, path, timeout=20)
 
 
 def flatten_crawl_job_rows(jobs: list[dict]) -> list[dict]:

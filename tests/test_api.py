@@ -6048,7 +6048,8 @@ def test_streamlit_api_put_preserves_json_errors_for_callers():
     api_put_section = streamlit[streamlit.index("def api_put") : streamlit.index("st.set_page_config")]
 
     assert "response.raise_for_status()" not in api_put_section
-    assert "return response.status_code, response.json()" in api_put_section
+    assert 'return request_json_status("PUT", API_BASE, path, json=json, timeout=20)' in api_put_section
+    assert "response.json()" not in api_put_section
 
     journals_section = streamlit[streamlit.index("更新期刊") : streamlit.index("st.divider()", streamlit.index("更新期刊"))]
     assert "status_code, result = api_put(" in journals_section
