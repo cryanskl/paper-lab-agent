@@ -3483,6 +3483,30 @@ def test_sections_from_tei_body_includes_direct_list_items():
     ]
 
 
+def test_sections_from_tei_preserves_body_table_document_order():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <div><head>Before table</head><p>Initial model description.</p></div>
+          <table><head>Table 2</head><row><cell>Reaction</cell><cell>Rate</cell></row></table>
+          <div><head>After table</head><p>Post-table discussion.</p></div>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert [(section["section_type"], section["title"]) for section in sections] == [
+        ("body", "Before table"),
+        ("table", "Table 2"),
+        ("body", "After table"),
+    ]
+
+
 def test_sections_from_tei_figure_fallback_omits_title_from_caption():
     from app.services.documents import sections_from_tei
 

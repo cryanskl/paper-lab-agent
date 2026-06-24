@@ -105,7 +105,7 @@ def sections_from_tei(tei: str) -> list[dict]:
         head = find(abstract, "tei:head")
         append_section("Abstract", content_without_children(abstract, [head]) if head is not None else " ".join(abstract.itertext()), "abstract")
 
-    for div in findall(root, ".//tei:text//tei:body//tei:div"):
+    def append_body_div(div: ET.Element) -> None:
         head = find(div, "tei:head")
         paragraphs = [clean_text(" ".join(p.itertext())) for p in findall(div, "tei:p")]
         list_items = [clean_text(" ".join(item.itertext())) for item in findall(div, "tei:list/tei:item")]
@@ -114,15 +114,20 @@ def sections_from_tei(tei: str) -> list[dict]:
             "\n\n".join(item for item in paragraphs + list_items if item),
             "body",
         )
+        for child in list(div):
+            child_name = local_name(child)
+            if child_name == "div":
+                append_body_div(child)
+            elif child_name == "figure":
+                append_figure(child)
+            elif child_name == "table":
+                append_table(child)
 
-    handled_tables = set()
-    for figure in findall(root, ".//tei:text//tei:body//tei:figure"):
+    def append_figure(figure: ET.Element) -> None:
         head = find(figure, "tei:head")
         caption = find(figure, "tei:figDesc")
         if figure.get("type") == "table":
             nested_table = find(figure, ".//tei:table")
-            if nested_table is not None:
-                handled_tables.add(id(nested_table))
             content_parts = []
             if caption is not None:
                 content_parts.append(" ".join(caption.itertext()))
@@ -137,16 +142,14 @@ def sections_from_tei(tei: str) -> list[dict]:
                 "\n".join(content_parts),
                 "table",
             )
-            continue
+            return
         append_section(
             clean_text(" ".join(head.itertext())) if head is not None else f"Figure {len(sections) + 1}",
             " ".join(caption.itertext()) if caption is not None else content_without_children(figure, [head]),
             "figure_caption",
         )
 
-    for table in findall(root, ".//tei:text//tei:body//tei:table"):
-        if id(table) in handled_tables:
-            continue
+    def append_table(table: ET.Element) -> None:
         head = find(table, "tei:head")
         rows = table_rows(table)
         append_section(
@@ -154,6 +157,16 @@ def sections_from_tei(tei: str) -> list[dict]:
             "\n".join(rows) or content_without_children(table, [head]),
             "table",
         )
+
+    for body in findall(root, ".//tei:text//tei:body"):
+        for child in list(body):
+            child_name = local_name(child)
+            if child_name == "div":
+                append_body_div(child)
+            elif child_name == "figure":
+                append_figure(child)
+            elif child_name == "table":
+                append_table(child)
 
     reference_index = 1
     for list_bibl in findall(root, ".//tei:text//tei:back//tei:listBibl"):
