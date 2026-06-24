@@ -130,6 +130,19 @@ def validate_system_status(status: dict) -> list[str]:
             missing_grobid = sorted(GROBID_REQUIRED_KEYS - set(grobid))
             if missing_grobid:
                 errors.append(f"grobid missing keys: {', '.join(missing_grobid)}")
+            invalid_grobid = []
+            if "url" in grobid and (not isinstance(grobid["url"], str) or not grobid["url"]):
+                invalid_grobid.append("url")
+            if "available" in grobid and grobid["available"] is not None and not isinstance(grobid["available"], bool):
+                invalid_grobid.append("available")
+            if "status_code" in grobid and grobid["status_code"] is not None and (
+                isinstance(grobid["status_code"], bool) or not isinstance(grobid["status_code"], int)
+            ):
+                invalid_grobid.append("status_code")
+            if "error" in grobid and grobid["error"] is not None and not isinstance(grobid["error"], str):
+                invalid_grobid.append("error")
+            if invalid_grobid:
+                errors.append(f"grobid invalid values: {', '.join(invalid_grobid)}")
     counts = status.get("counts")
     if not isinstance(counts, dict):
         errors.append("counts must be an object")

@@ -3465,6 +3465,55 @@ def test_health_check_fails_when_external_capability_values_are_invalid(monkeypa
     assert "embedding_model" in captured.err
 
 
+def test_health_check_fails_when_grobid_values_are_invalid(monkeypatch, capsys):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_invalid_grobid_values", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "", "available": "yes", "status_code": "200", "error": 404},
+                "llm_api_key": False,
+                "embedding_model": "local-hash",
+            },
+            "counts": health_check_counts(),
+        }
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(sys, "argv", ["health_check.py", "--base-url", "http://api.test"])
+
+    assert health_check.main() == 1
+    captured = capsys.readouterr()
+    assert "grobid invalid values" in captured.err
+    assert "url" in captured.err
+    assert "available" in captured.err
+    assert "status_code" in captured.err
+    assert "error" in captured.err
+
+
 def test_health_check_fails_when_count_values_are_invalid(monkeypatch, capsys):
     import importlib.util
     import sys
