@@ -2800,6 +2800,59 @@ def test_upsert_paper_deduplicates_no_doi_by_conservative_key(tmp_path):
         assert payload["dedupe_strategy"] == "no_doi_fingerprint"
 
 
+def test_upsert_paper_normalizes_malformed_scalar_fields(tmp_path):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.crawl import upsert_paper
+    from app.utils import json_loads
+
+    journal = {"id": 2, "name": "Plasma Sources Science and Technology"}
+    work = {
+        "doi": None,
+        "title": ["bad title"],
+        "abstract": {"value": "bad abstract"},
+        "authors": "not-authors",
+        "journal_name": {"value": "bad journal"},
+        "published_date": ["2026-02-01"],
+        "published_year": {"value": 2026},
+        "landing_url": {"value": "bad url"},
+        "source_api": {"value": "bad source"},
+        "raw_metadata": ["not-object"],
+    }
+
+    with get_conn() as conn:
+        assert (
+            upsert_paper(
+                conn,
+                journal,
+                work,
+                {"oa_status": "unknown", "oa_pdf_url": ["bad"]},
+            )
+            is True
+        )
+        row = conn.execute(
+            """
+            SELECT title, abstract, authors, journal_name, published_date,
+                   published_year, landing_url, source_api, raw_metadata, oa_pdf_url
+            FROM papers
+            WHERE title = ?
+            """,
+            ("Untitled",),
+        ).fetchone()
+
+    assert row is not None
+    assert row["abstract"] == ""
+    assert json_loads(row["authors"], None) == []
+    assert row["journal_name"] == "Plasma Sources Science and Technology"
+    assert row["published_date"] is None
+    assert row["published_year"] is None
+    assert row["landing_url"] is None
+    assert row["source_api"] is None
+    assert json_loads(row["raw_metadata"], None) == {}
+    assert row["oa_pdf_url"] is None
+
+
 def test_document_rag_chemistry_export_gate(tmp_path):
     client = make_client(tmp_path)
     content = pdf_bytes(b"This section describes plasma chemistry. e + Ar -> e + e + Ar+ . The rate is $k_1$ .")

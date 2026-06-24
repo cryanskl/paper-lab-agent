@@ -37,8 +37,34 @@ def normalize_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
+def optional_text(value: Any, default: Optional[str] = None) -> Optional[str]:
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            return text
+    return default
+
+
+def optional_int(value: Any) -> Optional[int]:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return None
+
+
+def json_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    return []
+
+
+def json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
 def normalize_doi(value: Any) -> Optional[str]:
-    doi = normalize_text(value)
+    doi = normalize_text(optional_text(value))
     if not doi:
         return None
     return doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/")
@@ -48,11 +74,11 @@ def build_dedupe_key(journal: dict[str, Any], work: dict[str, Any]) -> Optional[
     doi = normalize_doi(work.get("doi"))
     if doi:
         return f"doi:{doi}"
-    title = normalize_text(work.get("title"))
+    title = normalize_text(optional_text(work.get("title")))
     if not title:
         return None
-    date_hint = normalize_text(work.get("published_date") or work.get("published_year"))
-    landing_url = normalize_text(work.get("landing_url"))
+    date_hint = normalize_text(optional_text(work.get("published_date")) or optional_int(work.get("published_year")))
+    landing_url = normalize_text(optional_text(work.get("landing_url")))
     if not date_hint and not landing_url:
         return None
     fingerprint = "|".join([str(journal["id"]), title, date_hint, landing_url])
@@ -69,19 +95,19 @@ def upsert_paper(conn, journal: dict[str, Any], work: dict[str, Any], oa: dict[s
         existing = conn.execute("SELECT id FROM papers WHERE dedupe_key = ?", (dedupe_key,)).fetchone()
     payload = (
         doi,
-        work.get("title") or "Untitled",
-        work.get("abstract") or "",
-        json_dumps(work.get("authors") or []),
+        optional_text(work.get("title"), "Untitled"),
+        optional_text(work.get("abstract"), ""),
+        json_dumps(json_list(work.get("authors"))),
         journal["id"],
-        work.get("journal_name") or journal["name"],
-        work.get("published_date"),
-        work.get("published_year"),
-        work.get("landing_url"),
-        oa.get("oa_status") or "unknown",
-        oa.get("oa_pdf_url"),
-        work.get("source_api"),
+        optional_text(work.get("journal_name"), journal["name"]),
+        optional_text(work.get("published_date")),
+        optional_int(work.get("published_year")),
+        optional_text(work.get("landing_url")),
+        optional_text(oa.get("oa_status"), "unknown"),
+        optional_text(oa.get("oa_pdf_url")),
+        optional_text(work.get("source_api")),
         dedupe_key,
-        json_dumps(work.get("raw_metadata") or {}),
+        json_dumps(json_object(work.get("raw_metadata"))),
         now_iso(),
     )
     if existing:
