@@ -252,6 +252,30 @@ def run_smoke() -> dict:
             and reaction.get("source_section_seq") is not None
         ]
         assert_ok(export_source_sections, f"expected source section fields in JSON export, got {exported_reactions}")
+        txt_export = assert_status(
+            client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=txt"),
+            200,
+            "verified reaction txt export",
+        )
+        bolsig_export = assert_status(
+            client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=bolsig"),
+            200,
+            "verified reaction bolsig export",
+        )
+        txt_path = Path(txt_export["output_path"])
+        bolsig_path = Path(bolsig_export["output_path"])
+        assert_ok(txt_path.exists(), "expected verified txt export file")
+        assert_ok(bolsig_path.exists(), "expected verified bolsig export file")
+        txt_content = txt_path.read_text(encoding="utf-8")
+        bolsig_content = bolsig_path.read_text(encoding="utf-8")
+        txt_contains_reaction = "e + Ar -> e + e + Ar+" in txt_content and "rate: original source value" in txt_content
+        bolsig_contains_header = (
+            "# BOLSIG+ / LXCat compatible reaction summary" in bolsig_content
+            and "PROCESS 1" in bolsig_content
+            and "REACTION: e + Ar -> e + e + Ar+" in bolsig_content
+        )
+        assert_ok(txt_contains_reaction, f"expected reaction and rate in txt export, got {txt_content!r}")
+        assert_ok(bolsig_contains_header, f"expected BOLSIG header and reaction, got {bolsig_content!r}")
 
         status = assert_status(client.get("/api/v1/system/status"), 200, "system status")
         runtime = status["runtime"]
@@ -288,10 +312,14 @@ def run_smoke() -> dict:
             "reactions": counts["reactions"],
             "blocked_export_status": blocked_export.status_code,
             "verified_export_format": verified_export["format"],
+            "verified_export_formats": [verified_export["format"], txt_export["format"], bolsig_export["format"]],
             "verified_export_path": verified_export["output_path"],
             "verified_export_reactions": len(exported_reactions),
             "verified_export_audit_entries": len(export_audit_entries),
             "verified_export_source_sections": len(export_source_sections),
+            "verified_export_text_files": len([txt_export["output_path"], bolsig_export["output_path"]]),
+            "verified_export_bolsig_contains_header": bolsig_contains_header,
+            "verified_export_txt_contains_reaction": txt_contains_reaction,
             "runtime_version": runtime["version"],
             "config_warning_count": len(config_warnings),
         }

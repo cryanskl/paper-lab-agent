@@ -916,9 +916,13 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["reactions"] == 1
     assert result["blocked_export_status"] == 409
     assert result["verified_export_format"] == "json"
+    assert result["verified_export_formats"] == ["json", "txt", "bolsig"]
     assert result["verified_export_reactions"] == 1
     assert result["verified_export_audit_entries"] >= 1
     assert result["verified_export_source_sections"] == 1
+    assert result["verified_export_text_files"] == 2
+    assert result["verified_export_bolsig_contains_header"] is True
+    assert result["verified_export_txt_contains_reaction"] is True
     assert result["translation_output_path"].endswith("document-1-zh.md")
     assert result["verified_export_path"].endswith("reaction-set-1.json")
     assert result["runtime_version"] == "0.1.0"
@@ -946,8 +950,12 @@ def test_smoke_check_script_outputs_json():
     assert payload["translation_status"] == "done"
     assert payload["blocked_export_status"] == 409
     assert payload["verified_export_format"] == "json"
+    assert payload["verified_export_formats"] == ["json", "txt", "bolsig"]
     assert payload["verified_export_reactions"] == 1
     assert payload["verified_export_audit_entries"] >= 1
+    assert payload["verified_export_text_files"] == 2
+    assert payload["verified_export_bolsig_contains_header"] is True
+    assert payload["verified_export_txt_contains_reaction"] is True
     assert payload["runtime_version"] == "0.1.0"
     assert payload["config_warning_count"] == 3
 
@@ -3687,11 +3695,13 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "scripts/import_fixtures.py",
         "scripts/smoke_check.py",
         "scripts/validate_env_example.py",
+        "scripts/validate_release_hygiene.py",
         "streamlit_app.py",
     ]:
         assert compiled_script in release_text
     assert "scripts/health_check.py --help" in release_text
     assert "scripts/validate_env_example.py" in release_text
+    assert "scripts/validate_release_hygiene.py" in release_text
     assert "PAPER_LAB_DATA_DIR" in release_text
     assert "TemporaryDirectory" in release_text
     assert "scripts/import_fixtures.py" in release_text
@@ -3707,6 +3717,10 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "duplicate_upload_status" in release_text
     assert "verified_export_reactions" in release_text
     assert "verified_export_audit_entries" in release_text
+    assert "verified_export_formats" in release_text
+    assert "verified_export_text_files" in release_text
+    assert "verified_export_bolsig_contains_header" in release_text
+    assert "verified_export_txt_contains_reaction" in release_text
     assert "-m pytest -q" in release_text
     assert smoke_check.exists()
     assert validate_env_example.exists()
@@ -3720,6 +3734,10 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert '"duplicate_upload_status"' in smoke_text
     assert '"verified_export_reactions"' in smoke_text
     assert '"verified_export_audit_entries"' in smoke_text
+    assert '"verified_export_formats"' in smoke_text
+    assert '"verified_export_text_files"' in smoke_text
+    assert '"verified_export_bolsig_contains_header"' in smoke_text
+    assert '"verified_export_txt_contains_reaction"' in smoke_text
     assert '"/api/v1/system/status"' in smoke_text
     assert "runtime_version" in smoke_text
     assert "config_warning_count" in smoke_text
