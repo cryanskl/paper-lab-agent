@@ -2435,6 +2435,32 @@ def test_rag_query_treats_local_hash_collision_as_insufficient_evidence(tmp_path
     assert "证据不足" in result["answer"]
 
 
+def test_rag_query_ignores_orphan_vector_records_without_chunks(tmp_path):
+    make_client(tmp_path)
+
+    from app.services.rag import JsonVectorStore, local_hash_embedding, query
+
+    vector_store = JsonVectorStore(tmp_path / "vector-index.json")
+    vector_store.upsert_many(
+        {
+            "orphan-vector": {
+                "chunk_id": 999,
+                "document_id": 1,
+                "section_id": 888,
+                "text": "electron impact chemistry evidence",
+                "embedding": local_hash_embedding("electron impact chemistry evidence"),
+                "embedding_model": "local-hash",
+                "dimensions": 64,
+            }
+        }
+    )
+
+    result = query("electron impact chemistry", [1], 3)
+
+    assert result["sources"] == []
+    assert "证据不足" in result["answer"]
+
+
 def test_rag_reindex_replaces_stale_vectors_for_document(tmp_path):
     make_client(tmp_path)
 

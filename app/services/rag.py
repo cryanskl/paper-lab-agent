@@ -164,30 +164,53 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
         if hit.get("embedding_model") != "local-hash" or score(question_terms, hit.get("text") or "") > 0
     ]
     if vector_hits:
-        section_ids = [hit["section_id"] for hit in vector_hits if hit.get("section_id")]
-        section_titles = {}
-        chunk_ids_by_vector = {}
-        if section_ids:
-            placeholders = ",".join("?" for _ in section_ids)
-            with get_conn() as conn:
-                rows = conn.execute(f"SELECT id, title FROM sections WHERE id IN ({placeholders})", section_ids).fetchall()
-            section_titles = {row["id"]: row["title"] for row in rows}
-        missing_chunk_vectors = [hit["vector_id"] for hit in vector_hits if not hit.get("chunk_id")]
-        if missing_chunk_vectors:
-            placeholders = ",".join("?" for _ in missing_chunk_vectors)
-            with get_conn() as conn:
+        chunk_ids = [hit["chunk_id"] for hit in vector_hits if hit.get("chunk_id")]
+        vector_ids = [hit["vector_id"] for hit in vector_hits if hit.get("vector_id")]
+        chunks_by_id = {}
+        chunks_by_vector = {}
+        with get_conn() as conn:
+            if chunk_ids:
+                placeholders = ",".join("?" for _ in chunk_ids)
                 rows = conn.execute(
-                    f"SELECT id, vector_id FROM chunks WHERE vector_id IN ({placeholders})",
-                    missing_chunk_vectors,
+                    f"""
+                    SELECT ch.id, ch.document_id, ch.vector_id, s.title AS section_title
+                    FROM chunks ch
+                    LEFT JOIN sections s ON s.id = ch.section_id
+                    WHERE ch.id IN ({placeholders})
+                    """,
+                    chunk_ids,
                 ).fetchall()
-            chunk_ids_by_vector = {row["vector_id"]: row["id"] for row in rows}
+                chunks_by_id = {row["id"]: dict_from_row(row) for row in rows}
+            if vector_ids:
+                placeholders = ",".join("?" for _ in vector_ids)
+                rows = conn.execute(
+                    f"""
+                    SELECT ch.id, ch.document_id, ch.vector_id, s.title AS section_title
+                    FROM chunks ch
+                    LEFT JOIN sections s ON s.id = ch.section_id
+                    WHERE ch.vector_id IN ({placeholders})
+                    """,
+                    vector_ids,
+                ).fetchall()
+                chunks_by_vector = {row["vector_id"]: dict_from_row(row) for row in rows}
+        validated_hits = []
+        for hit in vector_hits:
+            chunk = chunks_by_id.get(hit.get("chunk_id")) or chunks_by_vector.get(hit.get("vector_id"))
+            if not chunk or chunk["document_id"] != hit["document_id"]:
+                continue
+            item = dict(hit)
+            item["_chunk_id"] = chunk["id"]
+            item["_section_title"] = chunk["section_title"]
+            validated_hits.append(item)
+        vector_hits = validated_hits
+    if vector_hits:
         return {
             "answer": vector_hits[0]["text"][:600],
             "sources": [
                 {
                     "document_id": item["document_id"],
-                    "section_title": section_titles.get(item.get("section_id")),
-                    "chunk_id": item.get("chunk_id") or chunk_ids_by_vector.get(item["vector_id"]),
+                    "section_title": item.get("_section_title"),
+                    "chunk_id": item.get("_chunk_id"),
                     "vector_id": item["vector_id"],
                     "score": round(item["_score"], 3),
                 }
