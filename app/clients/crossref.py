@@ -43,7 +43,9 @@ class CrossrefClient:
             for _ in range(max_pages):
                 payload = await self._get_json(client, f"{self.base_url}/journals/{issn}/works", params)
                 message = payload.get("message") or {}
-                results.extend(self.normalize(item) for item in message.get("items", []))
+                items = message.get("items") or []
+                if isinstance(items, list):
+                    results.extend(self.normalize(item) for item in items if isinstance(item, dict))
                 next_cursor = message.get("next-cursor")
                 if not next_cursor or next_cursor == params["cursor"]:
                     break
