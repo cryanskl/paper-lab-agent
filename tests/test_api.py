@@ -260,6 +260,16 @@ def test_papers_reject_unknown_sort(tmp_path):
     assert response.json()["error"]["code"] == "validation_error"
 
 
+def test_papers_reject_relevance_sort_without_query(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.get("/api/v1/papers", params={"sort": "relevance"})
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+    assert "sort=relevance requires q" in response.json()["error"]["message"]
+
+
 def test_papers_reject_reversed_year_range(tmp_path):
     client = make_client(tmp_path)
 

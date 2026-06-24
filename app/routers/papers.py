@@ -93,6 +93,8 @@ def list_papers(
 ) -> dict:
     q = q.strip() if q and q.strip() else None
     category = category.strip() if category and category.strip() else None
+    if sort == "relevance" and not q:
+        raise AppError(422, "validation_error", "sort=relevance requires q")
     if year_from is not None and year_to is not None and year_from > year_to:
         raise AppError(422, "validation_error", "year_from must be less than or equal to year_to")
     params = []
