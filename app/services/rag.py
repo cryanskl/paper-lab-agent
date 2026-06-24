@@ -133,11 +133,17 @@ def index_document(document_id: int) -> dict:
         )
         sections = conn.execute("SELECT * FROM sections WHERE document_id=? ORDER BY seq", (document_id,)).fetchall()
         if not sections:
+            error = "document has no parsed sections"
+            conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+            try:
+                vector_store.delete_document(document_id)
+            except Exception as exc:
+                error = f"{error}; vector cleanup failed: {exc}"
             conn.execute(
                 "UPDATE documents SET index_status='failed', index_error=? WHERE id=?",
-                ("document has no parsed sections", document_id),
+                (error, document_id),
             )
-            return {"document_id": document_id, "chunks": 0, "embedded": 0, "status": "failed"}
+            return {"document_id": document_id, "chunks": 0, "embedded": 0, "status": "failed", "error": error}
         count = 0
         try:
             conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))

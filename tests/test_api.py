@@ -4431,6 +4431,53 @@ def test_rag_failed_reindex_removes_stale_vectors_for_document(tmp_path, monkeyp
     assert all(record["document_id"] != document_id for record in vector_index.values())
 
 
+def test_rag_index_without_sections_removes_stale_vectors(tmp_path):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import index_document, query
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            ("/tmp/no-sections-reindex.txt", "no-sections-reindex", "no-sections-reindex.txt"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Stale', 'metastable stale evidence', 'body')
+            """,
+            (document_id,),
+        )
+
+    assert index_document(document_id)["status"] == "indexed"
+    assert query("metastable", [document_id], 3)["sources"]
+
+    with get_conn() as conn:
+        conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+        conn.execute("DELETE FROM sections WHERE document_id=?", (document_id,))
+
+    failed = index_document(document_id)
+    stale = query("metastable", [document_id], 3)
+
+    assert failed["status"] == "failed"
+    assert "document has no parsed sections" in failed["error"]
+    assert stale["sources"] == []
+    with get_conn() as conn:
+        document = conn.execute("SELECT index_status, index_error FROM documents WHERE id=?", (document_id,)).fetchone()
+    assert document["index_status"] == "failed"
+    assert "document has no parsed sections" in document["index_error"]
+
+    import json
+
+    vector_index = json.loads((tmp_path / "vector-index.json").read_text(encoding="utf-8"))
+    assert all(record["document_id"] != document_id for record in vector_index.values())
+
+
 def test_rag_index_failure_discards_partial_chunks(tmp_path, monkeypatch):
     make_client(tmp_path)
 
