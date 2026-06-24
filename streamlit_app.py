@@ -406,6 +406,7 @@ with documents_tab:
 with rag_tab:
     doc_ids = st.text_input("document_ids", value="")
     question = st.text_input("问题", value="plasma chemistry")
+    top_k = st.number_input("top_k", min_value=1, max_value=20, value=6)
     if st.button("提问"):
         try:
             ids = [int(part.strip()) for part in doc_ids.split(",") if part.strip()]
@@ -416,7 +417,10 @@ with rag_tab:
         if document_id_error:
             st.warning(document_id_error)
         else:
-            status, rag_payload = api_post("/rag/query", json={"question": question, "document_ids": ids, "top_k": 6})
+            status, rag_payload = api_post(
+                "/rag/query",
+                json={"question": question, "document_ids": ids, "top_k": int(top_k)},
+            )
             if status >= 400:
                 st.warning(rag_payload)
             else:

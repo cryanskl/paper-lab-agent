@@ -4529,7 +4529,23 @@ def test_streamlit_rag_tab_validates_document_ids_before_query():
         "except ValueError",
         "if document_id_error:",
         "else:",
-        'api_post("/rag/query"',
+        "api_post(",
+        '"/rag/query"',
+    ]:
+        assert required in rag_section
+
+
+def test_streamlit_rag_tab_exposes_top_k_control():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+
+    for required in [
+        'top_k = st.number_input("top_k"',
+        "min_value=1",
+        "max_value=20",
+        "value=6",
+        '"top_k": int(top_k)',
     ]:
         assert required in rag_section
 
