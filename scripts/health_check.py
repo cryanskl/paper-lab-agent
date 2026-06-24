@@ -118,6 +118,14 @@ def fetch_status(url: str, timeout: float) -> int:
         return exc.code
 
 
+def probe_frontend(frontend_url: str, timeout: float) -> dict:
+    url = streamlit_health_url(frontend_url)
+    try:
+        return {"url": url, "status_code": fetch_status(url, timeout)}
+    except (OSError, URLError) as exc:
+        return {"url": url, "status_code": None, "error": str(exc)}
+
+
 def validate_system_status(status: dict) -> list[str]:
     errors: list[str] = []
     missing = sorted(STATUS_REQUIRED_KEYS - set(status))
@@ -302,13 +310,10 @@ def main() -> int:
     try:
         health = fetch_json(f"{base_url}{HEALTH_PATH}", args.timeout)
         status = fetch_json(status_url, args.timeout)
-        frontend = None
-        if args.check_frontend:
-            frontend_url = streamlit_health_url(args.frontend_url)
-            frontend = {"url": frontend_url, "status_code": fetch_status(frontend_url, args.timeout)}
     except (OSError, URLError, json.JSONDecodeError) as exc:
         print(f"health_check failed: {exc}", file=sys.stderr)
         return 1
+    frontend = probe_frontend(args.frontend_url, args.timeout) if args.check_frontend else None
 
     config_warnings = status.get("config_warnings", []) if isinstance(status, dict) else []
     output = {"health": health, "status": status, "config_warnings": config_warnings}
@@ -338,8 +343,9 @@ def main() -> int:
             print(f"health_check failed: GROBID is required but unavailable ({detail})", file=sys.stderr)
             return 1
     if args.check_frontend and frontend["status_code"] != 200:
+        detail = frontend.get("error") or f"status_code={frontend['status_code']}"
         print(
-            f"health_check failed: Streamlit frontend is unavailable (status_code={frontend['status_code']})",
+            f"health_check failed: Streamlit frontend is unavailable ({detail})",
             file=sys.stderr,
         )
         return 1
