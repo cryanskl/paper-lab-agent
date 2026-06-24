@@ -147,6 +147,27 @@ def test_env_example_keeps_secret_like_values_blank():
     assert filled == []
 
 
+def test_env_example_defaults_match_settings_defaults():
+    validate_env_example = load_validate_env_example()
+    repo = Path(__file__).resolve().parent.parent
+
+    mismatches = validate_env_example.documented_default_mismatches(repo / ".env.example")
+
+    assert mismatches == []
+
+
+def test_env_example_validator_reports_default_drift(tmp_path):
+    validate_env_example = load_validate_env_example()
+    repo = Path(__file__).resolve().parent.parent
+    env_path = tmp_path / ".env.example"
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_path.write_text(env_text.replace("LLM_MODEL=gpt-4o-mini\n", "LLM_MODEL=legacy-model\n"), encoding="utf-8")
+
+    mismatches = validate_env_example.documented_default_mismatches(env_path)
+
+    assert mismatches == ["LLM_MODEL expected gpt-4o-mini, got legacy-model"]
+
+
 def test_env_example_validator_reports_filled_secret_like_values(tmp_path):
     validate_env_example = load_validate_env_example()
     repo = Path(__file__).resolve().parent.parent
