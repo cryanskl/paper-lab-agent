@@ -3406,6 +3406,25 @@ def test_extract_chemistry_handles_compact_reaction_species_separators(tmp_path)
     assert detail["reactions"][0]["products"] == ["O⁻", "O"]
 
 
+def test_extract_chemistry_handles_equilibrium_reaction_arrows(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("equilibrium-reaction.pdf", pdf_bytes("e+O₂⇌O₂⁻ .".encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["status"] == "pending"
+    assert detail["reactions"][0]["reaction"] == "e + O₂ -> O₂⁻"
+    assert detail["reactions"][0]["reactants"] == ["e", "O₂"]
+    assert detail["reactions"][0]["products"] == ["O₂⁻"]
+
+
 def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
     client = make_client(tmp_path)
     response = client.post(

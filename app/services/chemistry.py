@@ -8,7 +8,8 @@ from app.utils import now_iso
 
 
 REACTION_SPECIES_CHARS = r"A-Za-z0-9+()\-\s\u2070-\u209f\u2212"
-REACTION_RE = re.compile(rf"([{REACTION_SPECIES_CHARS}]+(?:->|=>|→)[{REACTION_SPECIES_CHARS}]+)")
+REACTION_ARROWS = ("<->", "=>", "->", "→", "⇌", "↔")
+REACTION_RE = re.compile(rf"([{REACTION_SPECIES_CHARS}]+(?:{'|'.join(map(re.escape, REACTION_ARROWS))})[{REACTION_SPECIES_CHARS}]+)")
 SPECIES_SEPARATOR_RE = re.compile(r"\s*\+\s*(?=[A-Za-z0-9(\u2070-\u209f\u2212])")
 URL_RE = re.compile(r"https?://[^\s),;]+")
 LXCAT_DB_RE = re.compile(r"LXCat\s+([A-Za-z0-9_.-]+)", re.IGNORECASE)
@@ -29,7 +30,7 @@ def normalize_species(value: str, position: str) -> str:
 
 
 def normalize_reaction(reaction: str) -> tuple[str, list[str], list[str]]:
-    arrow = next(candidate for candidate in ("=>", "->", "→") if candidate in reaction)
+    arrow = next(candidate for candidate in REACTION_ARROWS if candidate in reaction)
     left, right = reaction.split(arrow, 1)
     reactants = split_species(left)
     products = split_species(right)
