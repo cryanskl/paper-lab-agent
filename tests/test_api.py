@@ -3349,6 +3349,25 @@ def test_reparse_document_clears_stale_downstream_artifacts(tmp_path):
     assert all(record["document_id"] != document_id for record in vector_index.values())
 
 
+def test_extract_chemistry_handles_unicode_reaction_arrow(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("unicode-arrow.pdf", pdf_bytes("e + Ar → e + e + Ar+ .".encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["status"] == "pending"
+    assert detail["reactions"][0]["reaction"] == "e + Ar -> e + e + Ar+"
+    assert detail["reactions"][0]["reactants"] == ["e", "Ar"]
+    assert detail["reactions"][0]["products"] == ["e", "e", "Ar+"]
+
+
 def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
     client = make_client(tmp_path)
     response = client.post(

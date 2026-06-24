@@ -7,7 +7,7 @@ from app.db import dict_from_row, get_conn
 from app.utils import now_iso
 
 
-REACTION_RE = re.compile(r"([A-Za-z0-9+()\-\s]+(?:->|=>)[A-Za-z0-9+()\-\s]+)")
+REACTION_RE = re.compile(r"([A-Za-z0-9+()\-\s]+(?:->|=>|→)[A-Za-z0-9+()\-\s]+)")
 URL_RE = re.compile(r"https?://[^\s),;]+")
 LXCAT_DB_RE = re.compile(r"LXCat\s+([A-Za-z0-9_.-]+)", re.IGNORECASE)
 GAS_MIXTURE_RE = re.compile(r"\b([A-Z][a-z]?\d?(?:/[A-Z][a-z]?\d?)+)\b")
@@ -27,7 +27,7 @@ def normalize_species(value: str, position: str) -> str:
 
 
 def normalize_reaction(reaction: str) -> tuple[str, list[str], list[str]]:
-    arrow = "=>" if "=>" in reaction else "->"
+    arrow = next(candidate for candidate in ("=>", "->", "→") if candidate in reaction)
     left, right = reaction.split(arrow, 1)
     reactants = split_species(left)
     products = split_species(right)
