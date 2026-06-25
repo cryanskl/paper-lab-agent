@@ -231,6 +231,7 @@ def reaction_set_detail(reaction_set: dict, conn=None) -> dict:
     reaction_set["reaction_count"] = len(reaction_set["reactions"])
     reaction_set["verified_count"] = sum(1 for reaction in reaction_set["reactions"] if reaction.get("verified"))
     reaction_set["unverified_count"] = reaction_set["reaction_count"] - reaction_set["verified_count"]
+    reaction_set["export_ready"] = reaction_set["reaction_count"] > 0 and reaction_set["unverified_count"] == 0
     return reaction_set
 
 

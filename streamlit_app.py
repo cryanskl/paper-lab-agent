@@ -889,6 +889,7 @@ with chemistry_tab:
                 "reaction_count": item.get("reaction_count", 0),
                 "verified_count": item.get("verified_count", 0),
                 "unverified_count": item.get("unverified_count", 0),
+                "export_ready": item.get("export_ready", False),
                 "verified_by": item.get("verified_by"),
                 "verified_at": item.get("verified_at"),
             }
@@ -903,6 +904,7 @@ with chemistry_tab:
                 reaction_set_items,
                 format_func=lambda item: (
                     f"#{item['id']} · {item.get('status') or 'unknown'} · "
+                    f"export_ready {bool(item.get('export_ready'))} · "
                     f"未复核 {item.get('unverified_count', 0)} · {item.get('name') or 'Reaction set'}"
                 ),
             )
@@ -923,11 +925,13 @@ with chemistry_tab:
         reaction_count = detail.get("reaction_count", len(reactions))
         verified_count = detail.get("verified_count", reaction_count - len(unverified_reactions))
         unverified_count = detail.get("unverified_count", len(unverified_reactions))
+        export_ready = detail.get("export_ready", reaction_count > 0 and unverified_count == 0)
         st.caption(
             f"status: {detail.get('status')} · "
             f"reactions: {reaction_count} · "
             f"verified: {verified_count} · "
             f"未复核: {unverified_count} · "
+            f"export_ready: {export_ready} · "
             f"gas_mixture: {detail.get('gas_mixture') or '-'} · "
             f"lxcat_db: {detail.get('lxcat_db') or '-'} · "
             f"verified_by: {detail.get('verified_by') or '-'} · "
@@ -939,9 +943,8 @@ with chemistry_tab:
         if unverified_reactions:
             st.subheader("未复核反应")
             st.dataframe(reaction_review_rows(reactions, only_unverified=True), use_container_width=True)
-        no_reactions = not reactions
-        export_blocked = no_reactions or bool(unverified_reactions)
-        if no_reactions:
+        export_blocked = not export_ready
+        if reaction_count == 0:
             st.info("没有可导出的反应。")
         elif export_blocked:
             st.info("未全复核不可导出：请先完成所有反应复核。")

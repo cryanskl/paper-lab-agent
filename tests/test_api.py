@@ -1195,11 +1195,11 @@ def test_document_reaction_sets_include_review_progress_counts(tmp_path):
     assert response.status_code == 200
     items = response.json()["items"]
     assert [
-        (item["name"], item["reaction_count"], item["verified_count"], item["unverified_count"])
+        (item["name"], item["reaction_count"], item["verified_count"], item["unverified_count"], item["export_ready"])
         for item in items
     ] == [
-        ("Needs review", 2, 1, 1),
-        ("Complete", 1, 1, 0),
+        ("Needs review", 2, 1, 1, False),
+        ("Complete", 1, 1, 0, True),
     ]
 
 
@@ -5942,6 +5942,7 @@ def test_reaction_set_detail_reports_review_progress_counts(tmp_path):
     assert detail["reaction_count"] == 2
     assert detail["verified_count"] == 1
     assert detail["unverified_count"] == 1
+    assert detail["export_ready"] is False
 
 
 def test_extract_chemistry_handles_unicode_species_subscripts_and_charges(tmp_path):
@@ -10161,6 +10162,7 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         "reaction_count",
         "verified_count",
         "unverified_count",
+        "export_ready",
         "unverified_reactions",
         "show_only_unverified",
         "export_blocked",
@@ -10373,9 +10375,9 @@ def test_streamlit_chemistry_export_blocks_empty_reaction_sets():
     chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
 
     for required in [
-        "no_reactions = not reactions",
-        "export_blocked = no_reactions or bool(unverified_reactions)",
-        "if no_reactions:",
+        'export_ready = detail.get("export_ready"',
+        "export_blocked = not export_ready",
+        "if reaction_count == 0:",
         "没有可导出的反应。",
         "elif export_blocked:",
         "disabled=export_blocked",

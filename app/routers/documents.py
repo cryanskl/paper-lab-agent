@@ -232,4 +232,15 @@ def document_reaction_sets(
             """,
             (document_id, page_size, offset),
         ).fetchall()
-    return page([dict_from_row(row) for row in rows], total, page_num, page_size)
+    items = []
+    for row in rows:
+        item = dict_from_row(row)
+        reaction_count = int(item.get("reaction_count") or 0)
+        verified_count = int(item.get("verified_count") or 0)
+        unverified_count = int(item.get("unverified_count") or 0)
+        item["reaction_count"] = reaction_count
+        item["verified_count"] = verified_count
+        item["unverified_count"] = unverified_count
+        item["export_ready"] = reaction_count > 0 and unverified_count == 0
+        items.append(item)
+    return page(items, total, page_num, page_size)
