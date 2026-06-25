@@ -8113,12 +8113,34 @@ def test_streamlit_chemistry_tab_can_select_document_for_reaction_sets():
     chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
 
     for required in [
-        'chemistry_documents = api_get("/documents", page_size=100)["items"]',
+        'chemistry_documents = chemistry_documents_response["items"]',
         'selected_chemistry_document = st.selectbox(',
         "chemistry_document_options",
         "selected_chemistry_document[\"id\"]",
         "暂无可选文档",
         "手动 document_id",
+    ]:
+        assert required in chemistry_section
+
+
+def test_streamlit_chemistry_tab_exposes_document_pagination_controls():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    for required in [
+        "chemistry_documents_page = chemistry_documents_page_col.number_input(",
+        '"chemistry_documents_page"',
+        "chemistry_documents_page_size = chemistry_documents_page_size_col.number_input(",
+        '"chemistry_documents_page_size"',
+        "chemistry_documents_response = api_get(",
+        '"/documents"',
+        "page=int(chemistry_documents_page)",
+        "page_size=int(chemistry_documents_page_size)",
+        'chemistry_documents = chemistry_documents_response["items"]',
+        "chemistry_documents_response['page']",
+        "chemistry_documents_response['page_size']",
+        "chemistry_documents_response['total']",
     ]:
         assert required in chemistry_section
 

@@ -680,7 +680,31 @@ with rag_tab:
                     st.json(rag_payload)
 
 with chemistry_tab:
-    chemistry_documents = api_get("/documents", page_size=100)["items"]
+    chemistry_documents_page_col, chemistry_documents_page_size_col = st.columns(2)
+    chemistry_documents_page = chemistry_documents_page_col.number_input(
+        "chemistry_documents_page",
+        min_value=1,
+        value=1,
+        key="chemistry-documents-page",
+    )
+    chemistry_documents_page_size = chemistry_documents_page_size_col.number_input(
+        "chemistry_documents_page_size",
+        min_value=1,
+        max_value=100,
+        value=100,
+        key="chemistry-documents-page-size",
+    )
+    chemistry_documents_response = api_get(
+        "/documents",
+        page=int(chemistry_documents_page),
+        page_size=int(chemistry_documents_page_size),
+    )
+    chemistry_documents = chemistry_documents_response["items"]
+    st.caption(
+        f"chemistry documents page {chemistry_documents_response['page']} · "
+        f"page_size {chemistry_documents_response['page_size']} · "
+        f"total {chemistry_documents_response['total']}"
+    )
     if chemistry_documents:
         chemistry_document_options = chemistry_documents
         selected_chemistry_document = st.selectbox(
