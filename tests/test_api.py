@@ -6696,6 +6696,8 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "`release_ready`",
         "`frontend_ok`",
         "`grobid_available`",
+        "`workflows_ok`",
+        "`config_ready`",
         "`storage_errors`",
         "python scripts/health_check.py --require-frontend",
         "python -m scripts.smoke_check",
@@ -9250,8 +9252,10 @@ def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
         "release_ready": False,
         "demo_data_ready": True,
         "demo_data_missing": [],
+        "workflows_ok": False,
         "failed_workflows": ["document_parse.failed=1"],
         "config_warning_count": 1,
+        "config_ready": False,
         "config_warning_codes": ["missing_llm_api_key"],
         "storage_writable": True,
         "storage_errors": [],
@@ -9290,7 +9294,9 @@ def test_health_check_summary_only_reports_release_ready_when_gates_are_clean():
 
     assert summary["release_ready"] is True
     assert summary["demo_data_missing"] == []
+    assert summary["workflows_ok"] is True
     assert summary["failed_workflows"] == []
+    assert summary["config_ready"] is True
     assert summary["config_warning_codes"] == []
     assert summary["storage_errors"] == []
 
@@ -9331,8 +9337,10 @@ def test_health_check_summary_prefers_api_release_readiness():
 
     assert summary["release_ready"] is False
     assert summary["demo_data_missing"] == ["documents>=1"]
+    assert summary["workflows_ok"] is False
     assert summary["failed_workflows"] == ["translations.failed=2"]
     assert summary["config_warning_count"] == 1
+    assert summary["config_ready"] is False
     assert summary["config_warning_codes"] == ["missing_llm_api_key"]
     assert summary["storage_writable"] is False
     assert summary["storage_errors"] == ["pdf_dir.writable"]
