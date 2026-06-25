@@ -23,6 +23,8 @@ STATUS_REQUIRED_KEYS = {
     "storage",
     "storage_health",
     "external_capabilities",
+    "demo_data",
+    "release_readiness",
     "status_counts",
     "counts",
 }

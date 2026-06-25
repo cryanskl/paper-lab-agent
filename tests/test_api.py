@@ -38,6 +38,45 @@ def health_check_status_counts(**overrides):
     return status_counts
 
 
+def health_check_demo_data(**overrides):
+    demo_data = {
+        "ready": True,
+        "requirements": {
+            "journals": 6,
+            "papers": 1,
+            "documents": 1,
+            "sections": 1,
+            "chunks": 1,
+            "reaction_sets": 1,
+            "reactions": 1,
+        },
+        "missing": [],
+        "counts": {
+            "journals": 6,
+            "papers": 1,
+            "documents": 1,
+            "sections": 1,
+            "chunks": 1,
+            "reaction_sets": 1,
+            "reactions": 1,
+        },
+    }
+    demo_data.update(overrides)
+    return demo_data
+
+
+def health_check_release_readiness(**overrides):
+    release_readiness = {
+        "ready": True,
+        "demo_data_missing": [],
+        "failed_workflows": [],
+        "config_warning_codes": [],
+        "storage_errors": [],
+    }
+    release_readiness.update(overrides)
+    return release_readiness
+
+
 def health_check_runtime(**overrides):
     runtime = {
         "api_prefix": "/api/v1",
@@ -7591,6 +7630,23 @@ def test_health_check_fails_when_runtime_status_is_missing(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(
+                ready=False,
+                missing=["documents>=1", "sections>=1"],
+                counts={
+                    "journals": 6,
+                    "papers": 1,
+                    "documents": 0,
+                    "sections": 0,
+                    "chunks": 1,
+                    "reaction_sets": 1,
+                    "reactions": 1,
+                },
+            ),
+            "release_readiness": health_check_release_readiness(
+                ready=False,
+                demo_data_missing=["documents>=1", "sections>=1"],
+            ),
             "status_counts": health_check_status_counts(),
         }
 
@@ -7641,6 +7697,8 @@ def test_health_check_requires_runtime_version():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
         }
     )
 
@@ -7686,6 +7744,20 @@ def test_health_check_requires_scheduler_jobs_runtime_key():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(
+                ready=False,
+                missing=["documents>=1", "sections>=1"],
+                counts={
+                    "journals": 6,
+                    "papers": 1,
+                    "documents": 0,
+                    "sections": 0,
+                    "chunks": 1,
+                    "reaction_sets": 1,
+                    "reactions": 1,
+                },
+            ),
+            "release_readiness": health_check_release_readiness(demo_data_missing=["documents>=1", "sections>=1"]),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -7738,6 +7810,8 @@ def test_health_check_rejects_invalid_scheduler_jobs_shape():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -7788,6 +7862,8 @@ def test_health_check_fails_when_database_path_is_invalid(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -7819,6 +7895,8 @@ def test_health_check_fails_when_storage_or_capability_keys_are_missing(monkeypa
             "storage": {"data_dir": "/tmp/data"},
             "external_capabilities": {"openalex_mailto": True},
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -7870,6 +7948,8 @@ def test_health_check_fails_when_storage_values_are_invalid(monkeypatch, capsys)
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -7923,6 +8003,8 @@ def test_health_check_fails_when_external_capability_values_are_invalid(monkeypa
                 "vector_db_backend": 456,
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -7975,6 +8057,8 @@ def test_health_check_requires_translation_and_vector_capability_keys():
                 "embedding_model": "local-hash",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -8022,6 +8106,8 @@ def test_health_check_fails_when_grobid_values_are_invalid(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -8082,6 +8168,8 @@ def test_health_check_fails_when_count_values_are_invalid(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(journals="6", papers=-1),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -8175,11 +8263,28 @@ def test_health_check_requires_config_warnings_key():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
 
     assert "missing keys: config_warnings" in errors
+
+
+def test_health_check_requires_release_readiness_and_demo_data_keys():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_release_gate_keys", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    assert "demo_data" in health_check.STATUS_REQUIRED_KEYS
+    assert "release_readiness" in health_check.STATUS_REQUIRED_KEYS
 
 
 def test_health_check_can_require_no_config_warnings():
@@ -8248,6 +8353,8 @@ def test_health_check_flag_fails_when_config_warnings_exist(monkeypatch, capsys)
             "vector_db_backend": "local-json",
         },
         "counts": health_check_counts(),
+        "demo_data": health_check_demo_data(),
+        "release_readiness": health_check_release_readiness(),
         "status_counts": health_check_status_counts(),
     }
 
@@ -8300,6 +8407,8 @@ def test_health_check_requires_status_counts_key():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
         }
     )
 
@@ -8342,6 +8451,23 @@ def test_health_check_requires_storage_health_key():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(
+                ready=False,
+                missing=["documents>=1", "sections>=1"],
+                counts={
+                    "journals": 6,
+                    "papers": 1,
+                    "documents": 0,
+                    "sections": 0,
+                    "chunks": 1,
+                    "reaction_sets": 1,
+                    "reactions": 1,
+                },
+            ),
+            "release_readiness": health_check_release_readiness(
+                ready=False,
+                demo_data_missing=["documents>=1", "sections>=1"],
+            ),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -8388,6 +8514,8 @@ def test_health_check_requires_database_file_health():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -8434,6 +8562,8 @@ def test_health_check_rejects_database_health_path_mismatch():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -8484,6 +8614,8 @@ def test_health_check_rejects_invalid_storage_health_shape():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -8534,6 +8666,8 @@ def test_health_check_rejects_storage_health_path_mismatch():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -8589,6 +8723,8 @@ def test_health_check_rejects_corrupt_vector_store_health():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -8645,6 +8781,8 @@ def test_health_check_rejects_vector_store_health_path_mismatch():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -8694,6 +8832,8 @@ def test_health_check_rejects_invalid_config_warning_shape():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -8741,6 +8881,8 @@ def test_health_check_fails_when_grobid_status_keys_are_missing(monkeypatch, cap
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -8795,6 +8937,8 @@ def test_health_check_fails_cleanly_when_health_response_is_not_object(monkeypat
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -8850,6 +8994,8 @@ def test_health_check_fails_when_health_service_is_unexpected(monkeypatch, capsy
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -8906,6 +9052,8 @@ def test_health_check_accepts_valid_system_status(monkeypatch):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -8957,6 +9105,8 @@ def test_health_check_require_storage_writable_fails_when_storage_is_unwritable(
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -9009,6 +9159,8 @@ def test_health_check_require_storage_writable_allows_missing_vector_store_when_
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -9062,6 +9214,23 @@ def test_health_check_require_demo_data_fails_when_walking_skeleton_counts_are_m
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(documents=0, sections=0),
+            "demo_data": health_check_demo_data(
+                ready=False,
+                missing=["documents>=1", "sections>=1"],
+                counts={
+                    "journals": 6,
+                    "papers": 1,
+                    "documents": 0,
+                    "sections": 0,
+                    "chunks": 1,
+                    "reaction_sets": 1,
+                    "reactions": 1,
+                },
+            ),
+            "release_readiness": health_check_release_readiness(
+                ready=False,
+                demo_data_missing=["documents>=1", "sections>=1"],
+            ),
             "status_counts": health_check_status_counts(),
         }
 
@@ -9152,6 +9321,10 @@ def test_health_check_require_release_ready_runs_combined_gates(monkeypatch, cap
                 "missing": [],
                 "counts": {"papers": 2},
             },
+            "release_readiness": health_check_release_readiness(
+                ready=False,
+                config_warning_codes=["missing_llm_api_key"],
+            ),
             "status_counts": health_check_status_counts(),
         }
 
@@ -9160,7 +9333,8 @@ def test_health_check_require_release_ready_runs_combined_gates(monkeypatch, cap
 
     assert health_check.main() == 1
     captured = capsys.readouterr()
-    assert "config warnings present" in captured.err
+    assert "release readiness blockers present" in captured.err
+    assert "config_warning_codes:missing_llm_api_key" in captured.err
     assert "missing_llm_api_key" in captured.err
 
 
@@ -9270,6 +9444,8 @@ def test_health_check_require_no_failed_workflows_fails_on_failed_status_counts(
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(document_parse={"failed": 2}),
         }
 
@@ -9334,6 +9510,8 @@ def test_health_check_outputs_config_warnings(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -9393,6 +9571,8 @@ def test_health_check_compact_outputs_single_line_json(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -9461,6 +9641,11 @@ def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
                 "missing": [],
                 "counts": {"papers": 2},
             },
+            "release_readiness": health_check_release_readiness(
+                ready=False,
+                failed_workflows=["document_parse.failed=1"],
+                config_warning_codes=["missing_llm_api_key"],
+            ),
             "status_counts": health_check_status_counts(document_parse={"parsed": 2, "failed": 1}),
         }
 
@@ -9673,6 +9858,16 @@ def test_health_check_summary_only_includes_storage_errors():
             },
         ),
         "counts": health_check_counts(),
+        "demo_data": health_check_demo_data(),
+        "release_readiness": health_check_release_readiness(
+            ready=False,
+            storage_errors=[
+                "pdf_dir.writable",
+                "database_parent.exists",
+                "database_parent.writable",
+                "vector_db.valid_json",
+            ],
+        ),
         "status_counts": health_check_status_counts(),
     }
 
@@ -9734,6 +9929,7 @@ def test_health_check_summary_only_includes_frontend_probe(monkeypatch, capsys):
                 "missing": [],
                 "counts": {"papers": 1},
             },
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -9808,6 +10004,8 @@ def test_health_check_require_frontend_fails_when_streamlit_is_unhealthy(monkeyp
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -9889,6 +10087,7 @@ def test_health_check_summary_only_includes_external_grobid_probe(monkeypatch, c
                 "missing": [],
                 "counts": {"papers": 1},
             },
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -9960,6 +10159,8 @@ def test_health_check_can_include_streamlit_frontend_probe(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -10030,6 +10231,8 @@ def test_health_check_check_frontend_fails_when_streamlit_is_unhealthy(monkeypat
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -10092,6 +10295,8 @@ def test_health_check_check_frontend_reports_connection_error(monkeypatch, capsy
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -10173,6 +10378,8 @@ def test_health_check_require_grobid_fails_when_external_grobid_is_unavailable(m
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -10233,6 +10440,8 @@ def test_health_check_uses_api_base_url_from_env_file(monkeypatch, tmp_path):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -10405,6 +10614,8 @@ def test_health_check_rejects_unexpected_api_prefix():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
