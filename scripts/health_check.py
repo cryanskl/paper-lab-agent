@@ -23,7 +23,8 @@ STATUS_REQUIRED_KEYS = {
     "counts",
 }
 CONFIG_WARNING_REQUIRED_KEYS = {"code", "capability", "message"}
-RUNTIME_REQUIRED_KEYS = {"api_prefix", "scheduler_enabled", "version"}
+RUNTIME_REQUIRED_KEYS = {"api_prefix", "scheduler_enabled", "scheduler_jobs", "version"}
+SCHEDULER_JOB_REQUIRED_KEYS = {"id", "period", "trigger", "schedule", "timezone"}
 STORAGE_REQUIRED_KEYS = {"data_dir", "pdf_dir", "tei_dir", "translation_dir", "export_dir", "vector_db_path"}
 STORAGE_HEALTH_REQUIRED_KEYS = {
     "data_dir",
@@ -170,6 +171,24 @@ def validate_system_status(status: dict) -> list[str]:
             errors.append(f"runtime invalid values: {', '.join(sorted(invalid_runtime))}")
         if isinstance(runtime.get("api_prefix"), str) and runtime["api_prefix"] != EXPECTED_API_PREFIX:
             errors.append(f"runtime api_prefix must be {EXPECTED_API_PREFIX}")
+        scheduler_jobs = runtime.get("scheduler_jobs")
+        if not isinstance(scheduler_jobs, list):
+            errors.append("scheduler_jobs must be a list")
+        else:
+            invalid_scheduler_jobs = []
+            for index, job in enumerate(scheduler_jobs):
+                if not isinstance(job, dict):
+                    invalid_scheduler_jobs.append(str(index))
+                    continue
+                missing_job_keys = SCHEDULER_JOB_REQUIRED_KEYS - set(job)
+                invalid_scheduler_jobs.extend(f"{index}.{key}" for key in sorted(missing_job_keys))
+                invalid_scheduler_jobs.extend(
+                    f"{index}.{key}"
+                    for key in sorted(SCHEDULER_JOB_REQUIRED_KEYS & set(job))
+                    if not isinstance(job[key], str) or not job[key].strip()
+                )
+            if invalid_scheduler_jobs:
+                errors.append(f"scheduler_jobs invalid values: {', '.join(invalid_scheduler_jobs)}")
     storage = status.get("storage")
     if not isinstance(storage, dict):
         errors.append("storage must be an object")

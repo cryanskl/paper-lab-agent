@@ -23,6 +23,33 @@ def health_check_counts(**overrides):
     return counts
 
 
+def health_check_runtime(**overrides):
+    runtime = {
+        "api_prefix": "/api/v1",
+        "scheduler_enabled": False,
+        "scheduler_jobs": [
+            {"id": "crawl-daily", "period": "daily", "trigger": "cron", "schedule": "day=*, hour=2", "timezone": "UTC"},
+            {
+                "id": "crawl-weekly",
+                "period": "weekly",
+                "trigger": "cron",
+                "schedule": "day_of_week=mon, hour=3",
+                "timezone": "UTC",
+            },
+            {
+                "id": "crawl-monthly",
+                "period": "monthly",
+                "trigger": "cron",
+                "schedule": "day=1, hour=4",
+                "timezone": "UTC",
+            },
+        ],
+        "version": "0.1.0",
+    }
+    runtime.update(overrides)
+    return runtime
+
+
 def health_check_storage_health(**overrides):
     storage_health = {
         "data_dir": {"path": "/tmp/data", "exists": True, "writable": True},
@@ -1151,6 +1178,7 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["translation_output_path"].endswith("document-1-zh.md")
     assert result["verified_export_path"].endswith("reaction-set-1.json")
     assert result["runtime_version"] == "0.1.0"
+    assert result["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert result["config_warning_count"] == 3
 
 
@@ -1187,6 +1215,7 @@ def test_smoke_check_script_outputs_json():
     assert payload["verified_export_txt_has_verification_metadata"] is True
     assert payload["verified_export_bolsig_has_verification_metadata"] is True
     assert payload["runtime_version"] == "0.1.0"
+    assert payload["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert payload["config_warning_count"] == 3
 
 
@@ -1998,6 +2027,24 @@ def test_scheduler_creates_jobs_without_running_network(tmp_path):
     assert job_ids == ["crawl-daily", "crawl-monthly", "crawl-weekly"]
     jobs = trigger_scheduled_crawl("weekly", dispatch=False)
     assert len(jobs) == 6
+
+
+def test_system_status_reports_scheduled_crawl_jobs(tmp_path):
+    client = make_client(tmp_path)
+
+    runtime = client.get("/api/v1/system/status").json()["runtime"]
+
+    assert runtime["scheduler_jobs"] == [
+        {"id": "crawl-daily", "period": "daily", "trigger": "cron", "schedule": "day=*, hour=2", "timezone": "UTC"},
+        {
+            "id": "crawl-weekly",
+            "period": "weekly",
+            "trigger": "cron",
+            "schedule": "day_of_week=mon, hour=3",
+            "timezone": "UTC",
+        },
+        {"id": "crawl-monthly", "period": "monthly", "trigger": "cron", "schedule": "day=1, hour=4", "timezone": "UTC"},
+    ]
 
 
 def test_scheduler_dispatches_created_jobs_to_crawl_runner(monkeypatch):
@@ -5619,6 +5666,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "json.loads" in release_text
     assert "verified_export_format" in release_text
     assert "runtime_version" in release_text
+    assert "scheduler_job_ids" in release_text
     assert "config_warning_count" in release_text
     assert "crawl_job_status" in release_text
     assert "crawled_papers" in release_text
@@ -5645,6 +5693,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert '"crawl_job_status"' in smoke_text
     assert '"crawled_papers"' in smoke_text
     assert '"duplicate_upload_status"' in smoke_text
+    assert '"scheduler_job_ids"' in smoke_text
     assert '"verified_export_reactions"' in smoke_text
     assert '"verified_export_audit_entries"' in smoke_text
     assert '"verified_export_formats"' in smoke_text
@@ -5896,10 +5945,12 @@ def test_health_check_requires_runtime_version():
     health_check = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(health_check)
 
+    runtime = health_check_runtime()
+    runtime.pop("version")
     errors = health_check.validate_system_status(
         {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False},
+            "runtime": runtime,
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -5925,6 +5976,100 @@ def test_health_check_requires_runtime_version():
     assert "runtime missing keys: version" in errors
 
 
+def test_health_check_requires_scheduler_jobs_runtime_key():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_scheduler_jobs", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    runtime = health_check_runtime()
+    runtime.pop("scheduler_jobs")
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": runtime,
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "embedding_model": "local-hash",
+            },
+            "counts": health_check_counts(),
+        }
+    )
+
+    assert "runtime missing keys: scheduler_jobs" in errors
+
+
+def test_health_check_rejects_invalid_scheduler_jobs_shape():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_scheduler_jobs_shape", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": {
+                "api_prefix": "/api/v1",
+                "scheduler_enabled": False,
+                "scheduler_jobs": [
+                    {"id": "crawl-daily", "period": "", "trigger": "cron", "schedule": "day=*, hour=2"},
+                    "not a job",
+                ],
+                "version": "0.1.0",
+            },
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "embedding_model": "local-hash",
+            },
+            "counts": health_check_counts(),
+        }
+    )
+
+    joined = "; ".join(errors)
+    assert "scheduler_jobs invalid values" in joined
+    assert "0.period" in joined
+    assert "0.timezone" in joined
+    assert "1" in joined
+
+
 def test_health_check_fails_when_database_path_is_invalid(monkeypatch, capsys):
     import importlib.util
     import sys
@@ -5942,7 +6087,7 @@ def test_health_check_fails_when_database_path_is_invalid(monkeypatch, capsys):
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "storage": {
                 "data_dir": "/tmp/data",
                 "pdf_dir": "/tmp/data/pdfs",
@@ -6019,7 +6164,7 @@ def test_health_check_fails_when_storage_values_are_invalid(monkeypatch, capsys)
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "storage": {
                 "data_dir": "/tmp/data",
                 "pdf_dir": "",
@@ -6067,7 +6212,7 @@ def test_health_check_fails_when_external_capability_values_are_invalid(monkeypa
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -6118,7 +6263,7 @@ def test_health_check_fails_when_grobid_values_are_invalid(monkeypatch, capsys):
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -6169,7 +6314,7 @@ def test_health_check_fails_when_count_values_are_invalid(monkeypatch, capsys):
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -6220,7 +6365,7 @@ def test_health_check_requires_operational_count_keys():
     errors = health_check.validate_system_status(
         {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "storage": {
                 "data_dir": "/tmp/data",
                 "pdf_dir": "/tmp/data/pdfs",
@@ -6261,7 +6406,7 @@ def test_health_check_requires_config_warnings_key():
     errors = health_check.validate_system_status(
         {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "storage": {
                 "data_dir": "/tmp/data",
                 "pdf_dir": "/tmp/data/pdfs",
@@ -6300,7 +6445,7 @@ def test_health_check_requires_storage_health_key():
     errors = health_check.validate_system_status(
         {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -6341,7 +6486,7 @@ def test_health_check_requires_database_file_health():
     errors = health_check.validate_system_status(
         {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -6381,7 +6526,7 @@ def test_health_check_rejects_database_health_path_mismatch():
     errors = health_check.validate_system_status(
         {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -6425,7 +6570,7 @@ def test_health_check_rejects_invalid_storage_health_shape():
     errors = health_check.validate_system_status(
         {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage_health": health_check_storage_health(
                 data_dir={"path": "", "exists": True, "writable": True},
@@ -6473,7 +6618,7 @@ def test_health_check_rejects_storage_health_path_mismatch():
     errors = health_check.validate_system_status(
         {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage_health": health_check_storage_health(
                 data_dir={"path": "/tmp/other-data", "exists": True, "writable": True},
@@ -6517,7 +6662,7 @@ def test_health_check_rejects_corrupt_vector_store_health():
     errors = health_check.validate_system_status(
         {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage_health": health_check_storage_health(
                 vector_db={
@@ -6569,7 +6714,7 @@ def test_health_check_rejects_vector_store_health_path_mismatch():
     errors = health_check.validate_system_status(
         {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage_health": health_check_storage_health(
                 vector_db={
@@ -6620,7 +6765,7 @@ def test_health_check_rejects_invalid_config_warning_shape():
     errors = health_check.validate_system_status(
         {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [
                 {"code": "missing_llm_api_key", "capability": "", "message": "LLM_API_KEY is not configured."},
                 "not an object",
@@ -6763,7 +6908,7 @@ def test_health_check_fails_when_health_service_is_unexpected(monkeypatch, capsy
             return {"status": "ok", "service": "other-service"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -6814,7 +6959,7 @@ def test_health_check_accepts_valid_system_status(monkeypatch):
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -6865,7 +7010,7 @@ def test_health_check_outputs_config_warnings(monkeypatch, capsys):
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [
                 {
                     "code": "missing_llm_api_key",
@@ -6931,7 +7076,7 @@ def test_health_check_compact_outputs_single_line_json(monkeypatch, capsys):
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -6984,7 +7129,7 @@ def test_health_check_can_include_streamlit_frontend_probe(monkeypatch, capsys):
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -7050,7 +7195,7 @@ def test_health_check_check_frontend_fails_when_streamlit_is_unhealthy(monkeypat
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -7108,7 +7253,7 @@ def test_health_check_check_frontend_reports_connection_error(monkeypatch, capsy
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -7180,7 +7325,7 @@ def test_health_check_require_grobid_fails_when_external_grobid_is_unavailable(m
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -7241,7 +7386,7 @@ def test_health_check_uses_api_base_url_from_env_file(monkeypatch, tmp_path):
             return {"status": "ok", "service": "paper-lab-agent"}
         return {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "runtime": health_check_runtime(),
             "config_warnings": [],
             "storage": {
                 "data_dir": "/tmp/data",
@@ -7287,7 +7432,7 @@ def test_health_check_rejects_unexpected_api_prefix():
     errors = health_check.validate_system_status(
         {
             "database_path": "/tmp/plasma.db",
-            "runtime": {"api_prefix": "/wrong-prefix", "scheduler_enabled": False},
+            "runtime": health_check_runtime(api_prefix="/wrong-prefix"),
             "storage": {
                 "data_dir": "/tmp/data",
                 "pdf_dir": "/tmp/data/pdfs",
@@ -8211,7 +8356,7 @@ def test_streamlit_sidebar_exposes_runtime_status():
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
 
-    for required in ["runtime", "scheduler_enabled", "api_prefix", "version"]:
+    for required in ["runtime", "scheduler_enabled", "scheduler_jobs", "api_prefix", "version"]:
         assert required in sidebar_section
 
 

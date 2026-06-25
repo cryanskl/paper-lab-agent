@@ -47,7 +47,7 @@ curl 'http://127.0.0.1:8000/api/v1/documents'
 PAPER_LAB_SCHEDULER_ENABLED=true bash scripts/dev.sh
 ```
 
-默认关闭 scheduler，避免本地离线测试和首次启动时自动访问外部 API。启用后可在 Streamlit 侧边栏或 `/api/v1/system/status` 的 `runtime.scheduler_enabled` 确认状态。
+默认关闭 scheduler，避免本地离线测试和首次启动时自动访问外部 API。启用后可在 Streamlit 侧边栏或 `/api/v1/system/status` 的 `runtime.scheduler_enabled` 确认状态；`runtime.scheduler_jobs` 会列出 daily / weekly / monthly 抓取计划和 UTC 触发时间。
 
 ## Backend Only
 

@@ -79,6 +79,7 @@ expected = {
     "verified_export_format": "json",
     "verified_export_formats": ["json", "txt", "bolsig"],
     "runtime_version": __version__,
+    "scheduler_job_ids": ["crawl-daily", "crawl-weekly", "crawl-monthly"],
     "config_warning_count": 3,
     "duplicate_upload_status": 409,
     "verified_export_reactions": 1,

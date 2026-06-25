@@ -298,6 +298,11 @@ def run_smoke() -> dict:
         runtime = status["runtime"]
         config_warnings = status["config_warnings"]
         assert_ok(runtime["version"], "expected runtime version")
+        scheduler_job_ids = [job["id"] for job in runtime.get("scheduler_jobs") or []]
+        assert_ok(
+            scheduler_job_ids == ["crawl-daily", "crawl-weekly", "crawl-monthly"],
+            f"expected scheduler crawl jobs, got {scheduler_job_ids}",
+        )
         assert_ok(isinstance(config_warnings, list), "expected config_warnings list")
         counts = status["counts"]
         assert_ok(counts["papers"] >= 2, "expected system status to include fixture papers")
@@ -343,6 +348,7 @@ def run_smoke() -> dict:
             "verified_export_txt_has_verification_metadata": txt_has_verification_metadata,
             "verified_export_bolsig_has_verification_metadata": bolsig_has_verification_metadata,
             "runtime_version": runtime["version"],
+            "scheduler_job_ids": scheduler_job_ids,
             "config_warning_count": len(config_warnings),
         }
 

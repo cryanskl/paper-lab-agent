@@ -8,6 +8,7 @@ from app import __version__
 from app.clients.grobid import GrobidClient
 from app.config import get_settings
 from app.db import fetch_one
+from app.scheduler import scheduled_crawl_jobs
 from app.services.rag import SUPPORTED_EMBEDDING_MODELS
 
 router = APIRouter(prefix="/system", tags=["system"])
@@ -124,6 +125,7 @@ async def status(check_external: bool = False) -> dict:
         "runtime": {
             "api_prefix": settings.api_prefix,
             "scheduler_enabled": settings.scheduler_enabled,
+            "scheduler_jobs": scheduled_crawl_jobs(),
             "version": __version__,
         },
         "config_warnings": config_warnings(settings),

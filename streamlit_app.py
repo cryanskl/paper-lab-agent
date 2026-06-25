@@ -78,6 +78,11 @@ with st.sidebar:
     st.caption(f"API: {runtime.get('api_prefix', '/api/v1')}")
     st.caption(f"version: {runtime.get('version') or '-'}")
     st.caption(f"scheduler_enabled: {runtime.get('scheduler_enabled', False)}")
+    scheduler_jobs = runtime.get("scheduler_jobs") or []
+    if scheduler_jobs:
+        st.caption("scheduler_jobs:")
+        for job in scheduler_jobs:
+            st.caption(f"- {job.get('period')} · {job.get('id')} · {job.get('schedule')} {job.get('timezone')}")
     st.caption(f"DB: {status['database_path']}")
     external_capabilities = status.get("external_capabilities", {})
     st.subheader("外部能力")
