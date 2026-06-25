@@ -2601,6 +2601,29 @@ def test_unpaywall_client_honors_retry_after_without_real_sleep():
     assert delays == [2.0]
 
 
+def test_unpaywall_client_sends_polite_user_agent_with_email():
+    import asyncio
+
+    import httpx
+
+    from app.clients.unpaywall import UnpaywallClient
+
+    seen_user_agents = []
+    seen_emails = []
+
+    def handler(request):
+        seen_user_agents.append(request.headers.get("user-agent"))
+        seen_emails.append(request.url.params.get("email"))
+        return httpx.Response(200, json={"oa_status": "closed"})
+
+    client = UnpaywallClient("lab@example.test", transport=httpx.MockTransport(handler))
+    result = asyncio.run(client.resolve("10.1/polite"))
+
+    assert result["oa_status"] == "closed"
+    assert seen_emails == ["lab@example.test"]
+    assert seen_user_agents == ["paper-lab-agent (mailto:lab@example.test)"]
+
+
 def test_unpaywall_client_uses_best_location_url_when_it_is_pdf():
     import asyncio
 

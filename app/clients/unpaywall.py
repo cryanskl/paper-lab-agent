@@ -32,7 +32,8 @@ class UnpaywallClient:
     async def resolve(self, doi: str) -> dict[str, Any]:
         if not self.email:
             return {"oa_status": "unknown", "oa_pdf_url": None, "error": "UNPAYWALL_EMAIL is not configured"}
-        async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as client:
+        headers = {"User-Agent": f"paper-lab-agent (mailto:{self.email})"}
+        async with httpx.AsyncClient(timeout=self.timeout, headers=headers, transport=self.transport) as client:
             payload = await self._get_json(client, f"{self.base_url}/{doi}", {"email": self.email})
         if not isinstance(payload, dict):
             return {
