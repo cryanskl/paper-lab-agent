@@ -220,6 +220,20 @@ def test_release_hygiene_validator_reports_missing_gitignore_pattern(tmp_path):
     assert "htmlcov/" in missing
     assert "build/" in missing
     assert "dist/" in missing
+    assert "node_modules/" in missing
+    assert "out/" in missing
+    assert "*.sqlite" in missing
+    assert "*.log" in missing
+    assert "tsconfig.tsbuildinfo" in missing
+    assert "npm-debug.log*" in missing
+    assert "pnpm-debug.log*" in missing
+    assert "yarn-debug.log*" in missing
+    assert "yarn-error.log*" in missing
+    assert ".turbo/" in missing
+    assert ".cache/" in missing
+    assert "coverage/" in missing
+    assert "test-results/" in missing
+    assert "playwright-report/" in missing
     assert "*.db-wal" in missing
     assert "*.db-shm" in missing
     assert "*.db-journal" in missing
@@ -238,11 +252,25 @@ def test_release_hygiene_validator_reports_tracked_generated_artifacts():
             ".env",
             ".DS_Store",
             "docs/.DS_Store",
+            ".next/app-build-manifest.json",
+            "node_modules/react/index.js",
+            "out/index.html",
             ".coverage",
             ".coverage.worker-1",
+            "app.log",
+            "logs/dev.log",
+            "tsconfig.tsbuildinfo",
+            "npm-debug.log",
+            "pnpm-debug.log",
+            "yarn-debug.log",
+            "yarn-error.log",
+            ".turbo/cache/state.json",
+            ".cache/tool/state.json",
             "htmlcov/index.html",
             "build/lib/app/main.py",
             "dist/paper_lab_agent-0.1.0.tar.gz",
+            "test-results/e2e.json",
+            "playwright-report/index.html",
             "plasma.db-wal",
             "plasma.db-shm",
             "plasma.db-journal",
@@ -259,11 +287,25 @@ def test_release_hygiene_validator_reports_tracked_generated_artifacts():
         ".env",
         ".DS_Store",
         "docs/.DS_Store",
+        ".next/app-build-manifest.json",
+        "node_modules/react/index.js",
+        "out/index.html",
         ".coverage",
         ".coverage.worker-1",
+        "app.log",
+        "logs/dev.log",
+        "tsconfig.tsbuildinfo",
+        "npm-debug.log",
+        "pnpm-debug.log",
+        "yarn-debug.log",
+        "yarn-error.log",
+        ".turbo/cache/state.json",
+        ".cache/tool/state.json",
         "htmlcov/index.html",
         "build/lib/app/main.py",
         "dist/paper_lab_agent-0.1.0.tar.gz",
+        "test-results/e2e.json",
+        "playwright-report/index.html",
         "plasma.db-wal",
         "plasma.db-shm",
         "plasma.db-journal",
