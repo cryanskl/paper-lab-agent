@@ -9161,6 +9161,8 @@ def test_streamlit_rag_tab_separates_answer_and_sources():
         "paper_id",
         "paper_title",
         "source_excerpt",
+        'source_preview.get("source_excerpt")',
+        "st.code(source_preview.get(\"source_excerpt\")",
         "chunk_id",
         "section_title",
     ]:

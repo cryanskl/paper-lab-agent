@@ -734,6 +734,8 @@ with rag_tab:
                             f"{source.get('section_title') or '-'}"
                         ),
                     )
+                    if source_preview.get("source_excerpt"):
+                        st.code(source_preview.get("source_excerpt"))
                     st.json(source_preview)
                 else:
                     st.info("没有可定位引用来源。")
