@@ -8671,6 +8671,38 @@ def test_translate_rejects_blank_target_lang(tmp_path):
     assert rejected.json()["error"]["code"] == "validation_error"
 
 
+def test_translate_normalizes_target_lang_before_creating_job(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("target-normalized.pdf", pdf_bytes(b"Translate this plasma paragraph."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+
+    accepted = client.post(f"/api/v1/documents/{document_id}/translate", json={"target_lang": " zh-CN "})
+
+    assert accepted.status_code == 202
+    assert accepted.json()["target_lang"] == "zh-CN"
+    translation = client.get(f"/api/v1/documents/{document_id}/translation").json()
+    assert translation["target_lang"] == "zh-CN"
+    assert Path(translation["output_path"]).name == f"document-{document_id}-zh-CN.md"
+
+
+def test_translate_rejects_path_like_target_lang(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("path-target.pdf", pdf_bytes(b"Reject unsafe target language."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    rejected = client.post(f"/api/v1/documents/{document_id}/translate", json={"target_lang": "zh/CN"})
+
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["code"] == "validation_error"
+
+
 def test_translate_document_uses_filesystem_safe_target_lang_slug(tmp_path):
     make_client(tmp_path)
     from app.db import get_conn
