@@ -122,8 +122,8 @@ class OpenAlexClient:
             if not isinstance(author, dict):
                 continue
             name = author.get("display_name")
-            if isinstance(name, str) and name:
-                authors.append({"name": name, "affiliation": None})
+            if isinstance(name, str) and name.strip():
+                authors.append({"name": name.strip(), "affiliation": None})
         return authors
 
     def normalize_title(self, value: Any) -> str:

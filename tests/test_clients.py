@@ -106,6 +106,20 @@ def test_crossref_tolerates_malformed_author_name_parts():
     ]
 
 
+def test_crossref_strips_author_name_parts():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/trimmed-authors",
+            "title": ["Trimmed authors"],
+            "author": [{"given": "  Jane  ", "family": "  Doe  "}],
+        }
+    )
+
+    assert work["authors"] == [{"name": "Jane Doe", "affiliation": None}]
+
+
 def test_crossref_tolerates_malformed_published_date_fields():
     client = CrossrefClient()
 
@@ -385,6 +399,20 @@ def test_openalex_skips_malformed_authorship_items():
         {"name": "Jane Doe", "affiliation": None},
         {"name": "Solo", "affiliation": None},
     ]
+
+
+def test_openalex_strips_author_display_names():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "doi": "10.5555/openalex-trimmed-authors",
+            "title": "OpenAlex trimmed authors",
+            "authorships": [{"author": {"display_name": "  Jane Doe  "}}],
+        }
+    )
+
+    assert work["authors"] == [{"name": "Jane Doe", "affiliation": None}]
 
 
 def test_openalex_tolerates_malformed_primary_location_fields():
