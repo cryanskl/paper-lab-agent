@@ -1,5 +1,6 @@
 import json
 import re
+from collections import Counter
 from typing import Optional
 
 from app.config import get_settings
@@ -68,6 +69,8 @@ def infer_reaction_type(reactants: list[str], products: list[str]) -> str:
         return "excitation"
     if reactant_electrons >= 1 and consumes_positive_ion and product_electrons == 0 and not produces_positive_ion:
         return "recombination"
+    if reactant_electrons >= 1 and Counter(reactants) == Counter(products):
+        return "elastic"
     return "unknown"
 
 

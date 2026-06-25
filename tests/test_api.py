@@ -6089,6 +6089,26 @@ def test_extract_chemistry_infers_recombination_for_positive_ion_reactant(tmp_pa
     assert reaction["products"] == ["Ar"]
 
 
+def test_extract_chemistry_infers_elastic_for_unchanged_electron_collision(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("elastic.pdf", pdf_bytes(b"e + Ar -> e + Ar ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar"
+    assert reaction["reaction_type"] == "elastic"
+    assert reaction["reactants"] == ["e", "Ar"]
+    assert reaction["products"] == ["e", "Ar"]
+
+
 def test_extract_chemistry_handles_compact_reaction_species_separators(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
@@ -6216,7 +6236,7 @@ def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
         "/api/v1/documents",
-        files={"file": ("chemistry.pdf", pdf_bytes(b"e + Ar -> e + Ar ."), "application/pdf")},
+        files={"file": ("chemistry.pdf", pdf_bytes(b"Ar + O2 -> ArO2 ."), "application/pdf")},
     )
     document_id = response.json()["id"]
     assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
