@@ -361,7 +361,24 @@ def run_smoke() -> dict:
             "document reaction sets",
         )
         assert_ok(reaction_sets["total"] == 1, f"expected one reaction set, got {reaction_sets['total']}")
-        reaction_set_id = reaction_sets["items"][0]["id"]
+        reaction_set_summary_before_verify = reaction_sets["items"][0]
+        reaction_set_id = reaction_set_summary_before_verify["id"]
+        assert_ok(
+            reaction_set_summary_before_verify["reaction_count"] == 1,
+            f"expected one reaction in document reaction-set list, got {reaction_set_summary_before_verify}",
+        )
+        assert_ok(
+            reaction_set_summary_before_verify["verified_count"] == 0,
+            f"expected zero verified reactions before review, got {reaction_set_summary_before_verify}",
+        )
+        assert_ok(
+            reaction_set_summary_before_verify["unverified_count"] == 1,
+            f"expected one unverified reaction before review, got {reaction_set_summary_before_verify}",
+        )
+        assert_ok(
+            reaction_set_summary_before_verify["export_ready"] is False,
+            f"expected export_ready=false before review, got {reaction_set_summary_before_verify}",
+        )
         reaction_detail = assert_status(
             client.get(f"/api/v1/reaction-sets/{reaction_set_id}"),
             200,
@@ -389,6 +406,18 @@ def run_smoke() -> dict:
             "reaction verify",
         )
         assert_ok(verified["status"] == "verified", f"expected verified reaction set, got {verified['status']}")
+        reaction_sets_after_verify = assert_status(
+            client.get(f"/api/v1/documents/{document_id}/reaction-sets"),
+            200,
+            "document reaction sets after verify",
+        )
+        reaction_set_summary_after_verify = reaction_sets_after_verify["items"][0]
+        assert_ok(
+            reaction_set_summary_after_verify["verified_count"] == 1
+            and reaction_set_summary_after_verify["unverified_count"] == 0
+            and reaction_set_summary_after_verify["export_ready"] is True,
+            f"expected export_ready=true after review, got {reaction_set_summary_after_verify}",
+        )
         verified_export = assert_status(
             client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=json"),
             200,
@@ -544,6 +573,12 @@ def run_smoke() -> dict:
             "reaction_sets": counts["reaction_sets"],
             "reactions": counts["reactions"],
             "reaction_audits": counts["reaction_audits"],
+            "document_reaction_set_list_total": reaction_sets["total"],
+            "document_reaction_set_reaction_count": reaction_set_summary_before_verify["reaction_count"],
+            "document_reaction_set_verified_count_before_verify": reaction_set_summary_before_verify["verified_count"],
+            "document_reaction_set_unverified_count_before_verify": reaction_set_summary_before_verify["unverified_count"],
+            "document_reaction_set_export_ready_before_verify": reaction_set_summary_before_verify["export_ready"],
+            "document_reaction_set_export_ready_after_verify": reaction_set_summary_after_verify["export_ready"],
             "blocked_export_status": blocked_export.status_code,
             "verified_export_format": verified_export["format"],
             "verified_export_formats": [verified_export["format"], txt_export["format"], bolsig_export["format"]],
