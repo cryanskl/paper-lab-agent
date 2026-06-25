@@ -98,7 +98,7 @@ class OpenAlexClient:
             if not isinstance(positions, list):
                 continue
             for position in positions:
-                if isinstance(position, int) and position >= 0:
+                if isinstance(position, int) and not isinstance(position, bool) and position >= 0:
                     positioned_words.append((position, str(word)))
         positioned_words.sort(key=lambda pair: pair[0])
         return " ".join(word for _, word in positioned_words)

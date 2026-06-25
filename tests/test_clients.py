@@ -253,6 +253,24 @@ def test_openalex_strips_text_fields():
     assert work["journal_name"] == "Trimmed journal"
 
 
+def test_openalex_ignores_boolean_abstract_positions():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-boolean-abstract-positions",
+            "title": "Boolean abstract positions",
+            "abstract_inverted_index": {
+                "bad": [True],
+                "also_bad": [False],
+                "valid": [0],
+            },
+        }
+    )
+
+    assert work["abstract"] == "valid"
+
+
 def test_openalex_tolerates_malformed_publication_fields():
     client = OpenAlexClient()
 
