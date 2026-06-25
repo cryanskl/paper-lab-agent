@@ -349,14 +349,40 @@ def run_smoke() -> dict:
             "rag query",
         )
         assert_ok(bool(rag["sources"]), "expected RAG sources")
+        first_rag_source = rag["sources"][0]
         rag_answer_has_citation = (
             "Source:" in (rag.get("answer") or "")
             and ("paper_id=" in (rag.get("answer") or "") or "document_id=" in (rag.get("answer") or ""))
             and "chunk_id=" in (rag.get("answer") or "")
         )
         rag_source_excerpts = len([source for source in rag["sources"] if source.get("source_excerpt")])
+        rag_source_has_document_id = first_rag_source.get("document_id") == document_id
+        rag_source_has_paper_id = first_rag_source.get("paper_id") == crawled_paper_id
+        rag_source_has_section_id = bool(first_rag_source.get("section_id"))
+        rag_source_has_section_title = bool(first_rag_source.get("section_title"))
+        rag_source_has_section_type = bool(first_rag_source.get("section_type"))
+        rag_source_has_chunk_id = bool(first_rag_source.get("chunk_id"))
+        rag_source_has_vector_id = bool(first_rag_source.get("vector_id"))
+        rag_source_has_score = isinstance(first_rag_source.get("score"), (int, float)) and not isinstance(
+            first_rag_source.get("score"), bool
+        )
         assert_ok(rag_answer_has_citation, f"expected RAG answer citation, got {rag.get('answer')!r}")
         assert_ok(rag_source_excerpts == len(rag["sources"]), f"expected source excerpts in RAG sources, got {rag['sources']}")
+        assert_ok(
+            all(
+                [
+                    rag_source_has_document_id,
+                    rag_source_has_paper_id,
+                    rag_source_has_section_id,
+                    rag_source_has_section_title,
+                    rag_source_has_section_type,
+                    rag_source_has_chunk_id,
+                    rag_source_has_vector_id,
+                    rag_source_has_score,
+                ]
+            ),
+            f"expected locator fields in RAG source, got {first_rag_source}",
+        )
 
         assert_status(
             client.post(f"/api/v1/documents/{document_id}/extract-chemistry"),
@@ -606,6 +632,14 @@ def run_smoke() -> dict:
             "rag_sources": len(rag["sources"]),
             "rag_answer_has_citation": rag_answer_has_citation,
             "rag_source_excerpts": rag_source_excerpts,
+            "rag_source_has_document_id": rag_source_has_document_id,
+            "rag_source_has_paper_id": rag_source_has_paper_id,
+            "rag_source_has_section_id": rag_source_has_section_id,
+            "rag_source_has_section_title": rag_source_has_section_title,
+            "rag_source_has_section_type": rag_source_has_section_type,
+            "rag_source_has_chunk_id": rag_source_has_chunk_id,
+            "rag_source_has_vector_id": rag_source_has_vector_id,
+            "rag_source_has_score": rag_source_has_score,
             "translation_status": translation["status"],
             "translation_output_path": translation["output_path"],
             "reaction_sets": counts["reaction_sets"],

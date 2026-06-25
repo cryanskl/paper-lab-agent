@@ -487,6 +487,20 @@ def test_release_check_requires_document_list_and_detail_smoke_paths():
     assert '"chunk_list_has_section_title": True' in release_text
 
 
+def test_release_check_requires_rag_source_locator_smoke_metadata():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert '"rag_source_has_document_id": True' in release_text
+    assert '"rag_source_has_paper_id": True' in release_text
+    assert '"rag_source_has_section_id": True' in release_text
+    assert '"rag_source_has_section_title": True' in release_text
+    assert '"rag_source_has_section_type": True' in release_text
+    assert '"rag_source_has_chunk_id": True' in release_text
+    assert '"rag_source_has_vector_id": True' in release_text
+    assert '"rag_source_has_score": True' in release_text
+
+
 def test_release_check_requires_manual_category_override_smoke_path():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
