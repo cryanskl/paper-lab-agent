@@ -288,6 +288,25 @@ def test_crossref_rejects_unsafe_landing_url():
     assert missing_host["landing_url"] is None
 
 
+def test_crossref_falls_back_to_resource_primary_url():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/resource-url",
+            "title": ["Resource URL"],
+            "URL": "javascript:alert(1)",
+            "resource": {
+                "primary": {
+                    "URL": "  https://publisher.example/article  ",
+                }
+            },
+        }
+    )
+
+    assert work["landing_url"] == "https://publisher.example/article"
+
+
 def test_openalex_normalizes_url_doi_to_bare_identifier():
     client = OpenAlexClient()
 

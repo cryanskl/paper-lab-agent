@@ -163,6 +163,14 @@ class CrossrefClient:
                 return text
         return None
 
+    def resource_primary_url(self, value: Any) -> Optional[str]:
+        if not isinstance(value, dict):
+            return None
+        primary = value.get("primary") or {}
+        if not isinstance(primary, dict):
+            return None
+        return self.normalize_url(primary.get("URL"))
+
     def normalize_date_parts(self, value: Any) -> tuple[Optional[str], Optional[int]]:
         if not isinstance(value, list) or not value or not isinstance(value[0], list):
             return None, None
@@ -193,7 +201,7 @@ class CrossrefClient:
             "journal_name": self.first_text(item.get("container-title")),
             "published_date": published_date,
             "published_year": year,
-            "landing_url": self.normalize_url(item.get("URL")),
+            "landing_url": self.normalize_url(item.get("URL")) or self.resource_primary_url(item.get("resource")),
             "source_api": "crossref",
             "raw_metadata": item,
         }
