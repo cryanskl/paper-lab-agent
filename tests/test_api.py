@@ -1171,6 +1171,8 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["crawl_job_filtered"] >= 0
     assert result["crawl_job_new"] >= 1
     assert result["crawled_papers"] >= 1
+    assert result["papers"] == 2
+    assert result["paper_categories"] == 1
     assert result["duplicate_upload_status"] == 409
     assert result["duplicate_document_id"] == result["document_id"]
     assert result["translation_status"] == "done"
@@ -1219,6 +1221,8 @@ def test_smoke_check_script_outputs_json():
     assert payload["crawl_jobs"] >= 1
     assert payload["crawl_job_status"] == "success"
     assert payload["crawled_papers"] >= 1
+    assert payload["papers"] == 2
+    assert payload["paper_categories"] == 1
     assert payload["duplicate_upload_status"] == 409
     assert payload["translation_status"] == "done"
     assert payload["sections"] == 1
@@ -5760,7 +5764,10 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "config_warning_count" in release_text
     assert "crawl_job_status" in release_text
     assert "crawled_papers" in release_text
-    assert "paper_categories" in release_text
+    assert '"papers": 2' in release_text
+    assert '"paper_categories": 1' in release_text
+    assert '"reaction_sets": 1' in release_text
+    assert '"reactions": 1' in release_text
     assert "status_counts" in release_text
     assert "sections" in release_text
     assert "chunks" in release_text
@@ -5789,7 +5796,10 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert '"/api/v1/crawl/run"' in smoke_text
     assert '"crawl_job_status"' in smoke_text
     assert '"crawled_papers"' in smoke_text
+    assert '"papers"' in smoke_text
     assert '"paper_categories"' in smoke_text
+    assert '"reaction_sets"' in smoke_text
+    assert '"reactions"' in smoke_text
     assert '"status_counts"' in smoke_text
     assert '"sections"' in smoke_text
     assert '"chunks"' in smoke_text
