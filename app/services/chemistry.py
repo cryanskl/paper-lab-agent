@@ -14,6 +14,10 @@ SPECIES_SEPARATOR_RE = re.compile(r"\s*\+\s*(?=[A-Za-z0-9(\u0370-\u03ff\u2070-\u
 URL_RE = re.compile(r"https?://[^\s),;]+")
 LXCAT_DB_RE = re.compile(r"LXCat\s+([A-Za-z0-9_.-]+)", re.IGNORECASE)
 GAS_MIXTURE_RE = re.compile(r"\b([A-Z][a-z]?\d?(?:/[A-Z][a-z]?\d?)+)\b")
+THRESHOLD_EV_RE = re.compile(
+    r"\bthreshold(?:\s+energy)?\s*(?:is|=|:)?\s*([0-9]+(?:\.[0-9]+)?)\s*eV\b",
+    re.IGNORECASE,
+)
 
 
 def split_species(side: str) -> list[str]:
@@ -47,6 +51,14 @@ def source_excerpt(text: str, start: int, end: int, window: int = 80) -> str:
     left = max(0, start - window)
     right = min(len(text), end + window)
     return " ".join(text[left:right].split())
+
+
+def detect_threshold_ev(text: str, start: int, end: int, window: int = 120) -> Optional[float]:
+    excerpt = source_excerpt(text, start, end, window)
+    match = THRESHOLD_EV_RE.search(excerpt)
+    if not match:
+        return None
+    return float(match.group(1))
 
 
 def source_label(section: dict) -> str:
@@ -172,6 +184,7 @@ def extract_reactions(document_id: int) -> dict:
                     cross_section_url = (
                         detect_cross_section_url(text, match.start(), match.end()) or section_cross_section_url
                     )
+                    threshold_ev = detect_threshold_ev(text, match.start(), match.end())
                     conn.execute(
                         """
                         INSERT INTO reactions (
@@ -188,7 +201,7 @@ def extract_reactions(document_id: int) -> dict:
                             json.dumps(products, ensure_ascii=False),
                             "unknown",
                             None,
-                            None,
+                            threshold_ev,
                             section["title"],
                             cross_section_url,
                             section["id"],

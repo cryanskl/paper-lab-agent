@@ -6110,6 +6110,24 @@ def test_extract_chemistry_uses_nearest_lxcat_url_per_reaction(tmp_path):
     assert urls_by_reaction["e + O2 -> O- + O"] == "https://nl.lxcat.net/data/set/oxygen-attachment"
 
 
+def test_extract_chemistry_reads_explicit_threshold_ev_near_reaction(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + e + Ar+ . The threshold energy is 15.76 eV in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("threshold-energy.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["reactions"][0]["reaction"] == "e + Ar -> e + e + Ar+"
+    assert detail["reactions"][0]["threshold_ev"] == 15.76
+
+
 def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
