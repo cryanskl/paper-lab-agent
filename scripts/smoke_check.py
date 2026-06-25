@@ -481,6 +481,9 @@ def run_smoke() -> dict:
             200,
             "verified reaction bolsig export",
         )
+        unsupported_export = client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=csv")
+        unsupported_export_payload = assert_error_response(unsupported_export, 400, "unsupported reaction export format")
+        error_responses.append(unsupported_export_payload["error"]["code"])
         txt_path = Path(txt_export["output_path"])
         bolsig_path = Path(bolsig_export["output_path"])
         assert_ok(txt_path.exists(), "expected verified txt export file")
@@ -612,6 +615,7 @@ def run_smoke() -> dict:
             "reaction_set_detail_export_ready_after_verify": reaction_detail_after_verify["export_ready"],
             "reaction_set_detail_audit_entries_after_verify": reaction_detail_audit_entries_after_verify,
             "blocked_export_status": blocked_export.status_code,
+            "unsupported_export_status": unsupported_export.status_code,
             "verified_export_format": verified_export["format"],
             "verified_export_formats": [verified_export["format"], txt_export["format"], bolsig_export["format"]],
             "verified_export_path": verified_export["output_path"],
