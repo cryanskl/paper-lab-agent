@@ -1153,6 +1153,23 @@ def test_document_upload_stores_pdf_with_pdf_extension_even_when_filename_is_mis
     assert Path(document["file_path"]).suffix == ".pdf"
 
 
+def test_document_upload_sanitizes_original_filename_for_metadata(tmp_path):
+    client = make_client(tmp_path)
+    from app.db import get_conn
+
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("..\\unsafe/secret\x1f.pdf", pdf_bytes(b"Argon plasma chemistry"), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    assert document["original_name"] == "secret.pdf"
+    with get_conn() as conn:
+        stored = conn.execute("SELECT original_name FROM documents WHERE id=?", (document["id"],)).fetchone()
+    assert stored["original_name"] == "secret.pdf"
+
+
 def test_document_upload_records_pdf_page_count(tmp_path):
     client = make_client(tmp_path)
     content = pdf_bytes(

@@ -3,6 +3,7 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
+from urllib.parse import unquote
 from xml.sax.saxutils import escape
 
 from fastapi import UploadFile
@@ -17,6 +18,13 @@ from app.utils import now_iso
 def count_pdf_pages(content: bytes) -> Optional[int]:
     matches = re.findall(rb"/Type\s*/Page\b", content)
     return len(matches) or None
+
+
+def safe_original_filename(filename: Optional[str]) -> str:
+    decoded = unquote(filename or "")
+    basename = decoded.replace("\\", "/").rsplit("/", 1)[-1]
+    cleaned = "".join(char for char in basename if ord(char) >= 32).strip()
+    return cleaned or "document.pdf"
 
 
 def mark_parse_queued(document_id: int) -> None:
@@ -55,7 +63,7 @@ async def save_upload(file: UploadFile, paper_id: Optional[int]) -> tuple[dict, 
             INSERT INTO documents (paper_id, file_path, file_hash, original_name, num_pages, parse_status)
             VALUES (?, ?, ?, ?, ?, 'uploaded')
             """,
-            (paper_id, str(stored), digest, file.filename, count_pdf_pages(content)),
+            (paper_id, str(stored), digest, safe_original_filename(file.filename), count_pdf_pages(content)),
         )
         row = conn.execute("SELECT * FROM documents WHERE id=?", (cursor.lastrowid,)).fetchone()
         return dict_from_row(row), True
