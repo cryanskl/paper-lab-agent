@@ -120,10 +120,14 @@ def normalize_base_url(url: str) -> str:
     return value
 
 
+def connect_host(host: str) -> str:
+    return "127.0.0.1" if host == "0.0.0.0" else host
+
+
 def default_base_url() -> str:
     if os.getenv("API_BASE_URL"):
         return normalize_base_url(os.environ["API_BASE_URL"])
-    host = os.getenv("API_HOST", "127.0.0.1")
+    host = connect_host(os.getenv("API_HOST", "127.0.0.1"))
     port = os.getenv("API_PORT", "8000")
     return f"http://{host}:{port}"
 
@@ -131,7 +135,7 @@ def default_base_url() -> str:
 def default_frontend_url() -> str:
     if os.getenv("FRONTEND_URL"):
         return os.environ["FRONTEND_URL"].rstrip("/")
-    host = os.getenv("STREAMLIT_HOST", "127.0.0.1")
+    host = connect_host(os.getenv("STREAMLIT_HOST", "127.0.0.1"))
     port = os.getenv("STREAMLIT_PORT", "8501")
     return f"http://{host}:{port}"
 

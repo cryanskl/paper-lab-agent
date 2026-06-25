@@ -8470,6 +8470,28 @@ def test_health_check_uses_api_base_url_from_env_file(monkeypatch, tmp_path):
     ]
 
 
+def test_health_check_uses_loopback_for_wildcard_hosts(monkeypatch):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_wildcard_hosts", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    monkeypatch.delenv("API_BASE_URL", raising=False)
+    monkeypatch.delenv("FRONTEND_URL", raising=False)
+    monkeypatch.setenv("API_HOST", "0.0.0.0")
+    monkeypatch.setenv("API_PORT", "9000")
+    monkeypatch.setenv("STREAMLIT_HOST", "0.0.0.0")
+    monkeypatch.setenv("STREAMLIT_PORT", "9501")
+
+    assert health_check.default_base_url() == "http://127.0.0.1:9000"
+    assert health_check.default_frontend_url() == "http://127.0.0.1:9501"
+
+
 def test_health_check_env_value_parser_preserves_unquoted_hashes():
     import importlib.util
 
