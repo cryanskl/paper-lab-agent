@@ -199,6 +199,7 @@ def test_reaction_review_rows_can_focus_unverified_source_metadata():
             "id": 1,
             "verified": False,
             "review_state": "unverified",
+            "export_blocker": "unverified reaction",
             "reaction": "e + Ar -> e + e + Ar+",
             "confidence": 0.5,
             "reaction_type": "ionization",
@@ -232,6 +233,20 @@ def test_reaction_review_rows_label_verified_state_and_sparse_source_location():
 
     assert rows[0]["review_state"] == "verified"
     assert rows[0]["source_location"] == "section 22 · Appendix"
+
+
+def test_reaction_review_rows_mark_export_blockers():
+    from app import frontend_api
+
+    rows = frontend_api.reaction_review_rows(
+        [
+            {"id": 1, "reaction": "e + Ar -> e + e + Ar+", "verified": 0},
+            {"id": 2, "reaction": "Ar+ + e -> Ar", "verified": 1},
+        ]
+    )
+
+    assert rows[0]["export_blocker"] == "unverified reaction"
+    assert rows[1]["export_blocker"] is None
 
 
 def test_reaction_set_rows_label_export_state_and_review_progress():

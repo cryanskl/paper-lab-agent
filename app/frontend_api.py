@@ -476,6 +476,7 @@ def reaction_review_rows(reactions: list[dict[str, Any]], *, only_unverified: bo
                 "id": reaction.get("id"),
                 "verified": verified,
                 "review_state": "verified" if verified else "unverified",
+                "export_blocker": None if verified else "unverified reaction",
                 "reaction": reaction.get("reaction"),
                 "confidence": reaction.get("confidence"),
                 "reaction_type": reaction.get("reaction_type"),
