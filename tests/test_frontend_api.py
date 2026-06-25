@@ -473,6 +473,31 @@ def test_crawl_journal_options_label_whitelist_choices_for_manual_runs():
     ]
 
 
+def test_document_option_label_surfaces_processing_states():
+    from app import frontend_api
+
+    label = frontend_api.document_option_label(
+        {
+            "id": 9,
+            "original_name": "argon-kinetics.pdf",
+            "file_path": "/tmp/uploads/argon-kinetics.pdf",
+            "parse_status": "parsed",
+            "index_status": "indexed",
+            "chemistry_status": "extracted",
+        }
+    )
+
+    assert label == "#9 · argon-kinetics.pdf · parse=parsed · index=indexed · chemistry=extracted"
+
+
+def test_document_option_label_falls_back_to_file_name_and_unknown_states():
+    from app import frontend_api
+
+    label = frontend_api.document_option_label({"id": 10, "file_path": "/tmp/uploads/no-name.pdf"})
+
+    assert label == "#10 · no-name.pdf · parse=unknown · index=unknown · chemistry=unknown"
+
+
 def test_rag_source_rows_include_citation_and_location_labels():
     from app import frontend_api
 

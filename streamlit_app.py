@@ -8,6 +8,7 @@ from app.frontend_api import (
     crawl_job_diagnostic_rows,
     crawl_job_rows,
     crawl_journal_options,
+    document_option_label,
     rag_source_rows,
     reaction_review_rows,
     reaction_set_rows,
@@ -549,7 +550,7 @@ with documents_tab:
     if not docs:
         st.info("暂无文档，请先上传 PDF。")
     else:
-        selected = st.selectbox("文档", docs, format_func=lambda d: f"#{d['id']} {d.get('original_name') or Path(d['file_path']).name} · {d['parse_status']}")
+        selected = st.selectbox("文档", docs, format_func=document_option_label)
         document_detail = api_get(f"/documents/{selected['id']}")
         if document_detail.get("parse_error"):
             st.warning(f"parse_error: {document_detail['parse_error']}")

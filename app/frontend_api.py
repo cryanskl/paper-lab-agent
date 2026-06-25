@@ -176,6 +176,18 @@ def crawl_job_diagnostic_rows(job: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"field": field, "value": value} for field, value in fields]
 
 
+def document_option_label(document: dict[str, Any]) -> str:
+    file_path = str(document.get("file_path") or "")
+    file_name = document.get("original_name") or file_path.rsplit("/", 1)[-1] or "document"
+    parse_status = document.get("parse_status") or "unknown"
+    index_status = document.get("index_status") or "unknown"
+    chemistry_status = document.get("chemistry_status") or "unknown"
+    return (
+        f"#{document.get('id')} · {file_name} · "
+        f"parse={parse_status} · index={index_status} · chemistry={chemistry_status}"
+    )
+
+
 def rag_source_rows(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for source in sources:
