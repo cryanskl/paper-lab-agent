@@ -5030,6 +5030,40 @@ def test_rag_sources_include_linked_paper_identity(tmp_path):
     assert "Traceable argon plasma paper" in rag["answer"]
 
 
+def test_rag_sources_include_section_locator_fields(tmp_path):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import index_document
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            ("/tmp/rag-locator.txt", "rag-locator", "rag-locator.txt"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 7, 'Reaction kinetics', 'argon plasma electron impact chemistry evidence', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+
+    assert index_document(document_id)["status"] == "indexed"
+
+    from app.services.rag import query
+
+    rag = query("electron impact chemistry", [document_id], 2)
+
+    assert rag["sources"]
+    assert rag["sources"][0]["section_id"] == section_id
+    assert rag["sources"][0]["section_seq"] == 7
+    assert rag["sources"][0]["section_type"] == "body"
+
+
 def test_rag_query_treats_local_hash_collision_as_insufficient_evidence(tmp_path):
     make_client(tmp_path)
 
@@ -9934,6 +9968,9 @@ def test_streamlit_rag_tab_separates_answer_and_sources():
         "st.code(source_preview.get(\"source_excerpt\")",
         "chunk_id",
         "section_title",
+        "section_id",
+        "section_seq",
+        "section_type",
     ]:
         assert required in rag_section
 

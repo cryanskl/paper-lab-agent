@@ -747,7 +747,10 @@ with rag_tab:
                         "document_id": source.get("document_id"),
                         "paper_id": source.get("paper_id"),
                         "paper_title": source.get("paper_title"),
+                        "section_id": source.get("section_id"),
+                        "section_seq": source.get("section_seq"),
                         "section_title": source.get("section_title"),
+                        "section_type": source.get("section_type"),
                         "source_excerpt": source.get("source_excerpt"),
                         "chunk_id": source.get("chunk_id"),
                         "vector_id": source.get("vector_id"),
@@ -764,6 +767,7 @@ with rag_tab:
                         format_func=lambda source: (
                             f"paper {source.get('paper_id') or '-'} · "
                             f"doc {source.get('document_id')} · "
+                            f"section {source.get('section_seq') or source.get('section_id') or '-'} · "
                             f"chunk_id={source.get('chunk_id')} · "
                             f"{source.get('section_title') or '-'}"
                         ),

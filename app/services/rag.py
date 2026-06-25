@@ -261,8 +261,10 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
                 rows = conn.execute(
                     f"""
                     SELECT
-                        ch.id, ch.document_id, ch.vector_id, ch.text,
+                        ch.id, ch.document_id, ch.section_id, ch.vector_id, ch.text,
+                        s.seq AS section_seq,
                         s.title AS section_title,
+                        s.section_type AS section_type,
                         d.paper_id AS paper_id,
                         p.title AS paper_title
                     FROM chunks ch
@@ -279,8 +281,10 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
                 rows = conn.execute(
                     f"""
                     SELECT
-                        ch.id, ch.document_id, ch.vector_id, ch.text,
+                        ch.id, ch.document_id, ch.section_id, ch.vector_id, ch.text,
+                        s.seq AS section_seq,
                         s.title AS section_title,
+                        s.section_type AS section_type,
                         d.paper_id AS paper_id,
                         p.title AS paper_title
                     FROM chunks ch
@@ -302,7 +306,10 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
                 continue
             item = dict(hit)
             item["_chunk_id"] = chunk["id"]
+            item["_section_id"] = chunk["section_id"]
+            item["_section_seq"] = chunk["section_seq"]
             item["_section_title"] = chunk["section_title"]
+            item["_section_type"] = chunk["section_type"]
             item["_paper_id"] = chunk["paper_id"]
             item["_paper_title"] = chunk["paper_title"]
             item["_text"] = chunk_text_value
@@ -316,7 +323,10 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
                     "document_id": item["document_id"],
                     "paper_id": item.get("_paper_id"),
                     "paper_title": item.get("_paper_title"),
+                    "section_id": item.get("_section_id"),
+                    "section_seq": item.get("_section_seq"),
                     "section_title": item.get("_section_title"),
+                    "section_type": item.get("_section_type"),
                     "chunk_id": item.get("_chunk_id"),
                     "vector_id": item["vector_id"],
                     "score": round(item["_score"], 3),
@@ -338,7 +348,9 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
             f"""
             SELECT
                 ch.*,
+                s.seq AS section_seq,
                 s.title AS section_title,
+                s.section_type AS section_type,
                 d.paper_id AS paper_id,
                 p.title AS paper_title
             FROM chunks ch
@@ -367,7 +379,10 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
                 "document_id": item["document_id"],
                 "paper_id": item.get("paper_id"),
                 "paper_title": item.get("paper_title"),
+                "section_id": item.get("section_id"),
+                "section_seq": item.get("section_seq"),
                 "section_title": item["section_title"],
+                "section_type": item.get("section_type"),
                 "chunk_id": item["id"],
                 "vector_id": item.get("vector_id"),
                 "score": round(item["_score"], 3),
