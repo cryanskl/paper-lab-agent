@@ -736,10 +736,7 @@ with rag_tab:
         selected_rag_documents = st.multiselect(
             "限定文档",
             rag_documents,
-            format_func=lambda document: (
-                f"#{document['id']} {document.get('original_name') or Path(document['file_path']).name} · "
-                f"{document.get('index_status') or 'not_indexed'}"
-            ),
+            format_func=document_option_label,
             key="rag-document-select",
         )
     else:

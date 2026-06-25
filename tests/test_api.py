@@ -11282,11 +11282,13 @@ def test_streamlit_rag_tab_can_select_documents_for_query_scope():
         'rag_documents = rag_documents_response["items"]',
         "selected_rag_documents = st.multiselect(",
         "限定文档",
+        "format_func=document_option_label",
         "selected_document_ids",
         "ids = list(dict.fromkeys(selected_document_ids + typed_document_ids))",
         "暂无可选文档",
     ]:
         assert required in rag_section
+    assert "format_func=lambda document" not in rag_section
 
 
 def test_streamlit_rag_tab_exposes_document_pagination_controls():
