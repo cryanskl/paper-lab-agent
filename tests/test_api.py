@@ -9217,3 +9217,20 @@ def test_streamlit_config_tab_normalizes_journal_keywords_for_dataframe():
         "st.dataframe(journals_table, use_container_width=True)",
     ]:
         assert required in config_section
+
+
+def test_streamlit_config_tab_can_update_journal_year_range():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    journals_section = streamlit[streamlit.index("更新期刊") : streamlit.index("停用期刊")]
+
+    for required in [
+        "edit_year_from",
+        "edit_year_to",
+        'selected_journal.get("year_from")',
+        'selected_journal.get("year_to")',
+        '"year_from": int(edit_year_from)',
+        '"year_to": int(edit_year_to) if edit_year_to else None',
+        "year_from must be less than or equal to year_to",
+    ]:
+        assert required in journals_section

@@ -324,6 +324,21 @@ with config_tab:
             format_func=lambda journal: f"#{journal['id']} {journal['name']} · active={journal.get('active')}",
         )
         active = st.checkbox("active", value=bool(selected_journal.get("active")), key=f"journal-active-{selected_journal['id']}")
+        jy1, jy2 = st.columns(2)
+        edit_year_from = jy1.number_input(
+            "year_from",
+            min_value=1900,
+            max_value=2100,
+            value=int(selected_journal.get("year_from") or 1990),
+            key=f"journal-year-from-{selected_journal['id']}",
+        )
+        edit_year_to = jy2.number_input(
+            "year_to",
+            min_value=0,
+            max_value=2100,
+            value=int(selected_journal.get("year_to") or 0),
+            key=f"journal-year-to-{selected_journal['id']}",
+        )
         edit_keywords_mode = st.selectbox(
             "keywords_mode",
             ["or", "and"],
@@ -340,14 +355,22 @@ with config_tab:
         )
         if st.button("更新期刊", key=f"update-journal-{selected_journal['id']}"):
             terms = [term.strip() for term in keywords_terms.replace("\n", ",").split(",") if term.strip()]
-            status_code, result = api_put(
-                f"/journals/{selected_journal['id']}",
-                json={"active": active, "keywords": {"mode": edit_keywords_mode, "terms": terms}},
-            )
-            if status_code < 400:
-                st.rerun()
+            if edit_year_to and edit_year_from > edit_year_to:
+                st.warning("year_from must be less than or equal to year_to")
             else:
-                st.warning(result)
+                status_code, result = api_put(
+                    f"/journals/{selected_journal['id']}",
+                    json={
+                        "active": active,
+                        "keywords": {"mode": edit_keywords_mode, "terms": terms},
+                        "year_from": int(edit_year_from),
+                        "year_to": int(edit_year_to) if edit_year_to else None,
+                    },
+                )
+                if status_code < 400:
+                    st.rerun()
+                else:
+                    st.warning(result)
         if st.button("停用期刊", key=f"delete-journal-{selected_journal['id']}"):
             status_code, result = api_delete(f"/journals/{selected_journal['id']}")
             if status_code < 400:
