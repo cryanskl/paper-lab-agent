@@ -17,7 +17,7 @@ def normalize_text(value: Any) -> str:
 
 def normalize_keyword_config(keyword_config: Any) -> tuple[str, list[str]]:
     if isinstance(keyword_config, dict):
-        mode = str(keyword_config.get("mode") or "or").lower()
+        mode = str(keyword_config.get("mode") or "or").strip().lower()
         terms = keyword_config.get("terms") or keyword_config.get("keywords") or []
     else:
         mode = "or"

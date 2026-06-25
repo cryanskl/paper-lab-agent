@@ -129,6 +129,21 @@ def test_crawl_keyword_matching_collapses_internal_whitespace():
     assert matches_keywords(work, {"mode": "and", "terms": ["plasma   chemistry", "argon   discharge"]}) is True
 
 
+def test_crawl_keyword_matching_strips_mode_whitespace():
+    from app.services.crawl import matches_keywords, normalize_keyword_config
+
+    work = {
+        "title": "Low temperature plasma",
+        "abstract": "argon discharge",
+    }
+
+    assert normalize_keyword_config({"mode": " and ", "terms": ["plasma", "chemistry"]}) == (
+        "and",
+        ["plasma", "chemistry"],
+    )
+    assert matches_keywords(work, {"mode": " and ", "terms": ["plasma", "chemistry"]}) is False
+
+
 def test_health_seed_and_search(tmp_path):
     client = make_client(tmp_path)
     assert client.get("/health").json()["status"] == "ok"
