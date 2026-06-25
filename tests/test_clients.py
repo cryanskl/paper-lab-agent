@@ -18,6 +18,30 @@ def test_crossref_normalizes_url_doi_to_bare_identifier():
     assert work["doi"] == "10.5555/abc.def"
 
 
+def test_crossref_normalizes_dx_doi_url_to_bare_identifier():
+    client = CrossrefClient()
+
+    work = client.normalize({"DOI": "https://dx.doi.org/10.5555/ABC.Def", "title": ["Example"]})
+
+    assert work["doi"] == "10.5555/abc.def"
+
+
+def test_crossref_normalizes_prefixed_doi_to_bare_identifier():
+    client = CrossrefClient()
+
+    work = client.normalize({"DOI": "doi:10.5555/ABC.Def", "title": ["Example"]})
+
+    assert work["doi"] == "10.5555/abc.def"
+
+
+def test_crossref_strips_space_after_doi_prefix():
+    client = CrossrefClient()
+
+    work = client.normalize({"DOI": "DOI: 10.5555/ABC.Def", "title": ["Example"]})
+
+    assert work["doi"] == "10.5555/abc.def"
+
+
 def test_crossref_normalizes_scalar_title_fields():
     client = CrossrefClient()
 
@@ -120,6 +144,36 @@ def test_crossref_strips_author_name_parts():
     assert work["authors"] == [{"name": "Jane Doe", "affiliation": None}]
 
 
+def test_crossref_preserves_author_affiliations():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/crossref-affiliations",
+            "title": ["Crossref affiliations"],
+            "author": [
+                {
+                    "given": "Jane",
+                    "family": "Doe",
+                    "affiliation": [
+                        {"name": "Princeton Plasma Physics Laboratory"},
+                        {"name": "  MIT Plasma Science  "},
+                        {"name": {"value": "Malformed"}},
+                        "malformed-affiliation",
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert work["authors"] == [
+        {
+            "name": "Jane Doe",
+            "affiliation": "Princeton Plasma Physics Laboratory; MIT Plasma Science",
+        }
+    ]
+
+
 def test_crossref_tolerates_malformed_published_date_fields():
     client = CrossrefClient()
 
@@ -182,6 +236,46 @@ def test_crossref_rejects_overlong_date_parts():
     assert work["published_year"] is None
 
 
+def test_crossref_falls_back_to_next_valid_publication_date():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/fallback-date",
+            "title": ["Fallback date"],
+            "published-print": {"date-parts": [[2026, 13, 40]]},
+            "issued": {"date-parts": [[2026, 7, 15]]},
+        }
+    )
+
+    assert work["published_date"] == "2026-07-15"
+    assert work["published_year"] == 2026
+
+
+def test_crossref_expands_partial_date_parts_to_iso_dates():
+    client = CrossrefClient()
+
+    year_only = client.normalize(
+        {
+            "DOI": "10.5555/year-only",
+            "title": ["Year only date parts"],
+            "issued": {"date-parts": [[2026]]},
+        }
+    )
+    year_month = client.normalize(
+        {
+            "DOI": "10.5555/year-month",
+            "title": ["Year and month date parts"],
+            "issued": {"date-parts": [[2026, 7]]},
+        }
+    )
+
+    assert year_only["published_date"] == "2026-01-01"
+    assert year_only["published_year"] == 2026
+    assert year_month["published_date"] == "2026-07-01"
+    assert year_month["published_year"] == 2026
+
+
 def test_crossref_tolerates_malformed_landing_url_field():
     client = CrossrefClient()
 
@@ -218,10 +312,53 @@ def test_crossref_rejects_unsafe_landing_url():
     assert missing_host["landing_url"] is None
 
 
+def test_crossref_falls_back_to_resource_primary_url():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/resource-url",
+            "title": ["Resource URL"],
+            "URL": "javascript:alert(1)",
+            "resource": {
+                "primary": {
+                    "URL": "  https://publisher.example/article  ",
+                }
+            },
+        }
+    )
+
+    assert work["landing_url"] == "https://publisher.example/article"
+
+
 def test_openalex_normalizes_url_doi_to_bare_identifier():
     client = OpenAlexClient()
 
     work = client.normalize({"doi": "https://doi.org/10.5555/ABC.Def", "title": "Example"})
+
+    assert work["doi"] == "10.5555/abc.def"
+
+
+def test_openalex_normalizes_dx_doi_url_to_bare_identifier():
+    client = OpenAlexClient()
+
+    work = client.normalize({"doi": "https://dx.doi.org/10.5555/ABC.Def", "title": "Example"})
+
+    assert work["doi"] == "10.5555/abc.def"
+
+
+def test_openalex_normalizes_prefixed_doi_to_bare_identifier():
+    client = OpenAlexClient()
+
+    work = client.normalize({"doi": "doi:10.5555/ABC.Def", "title": "Example"})
+
+    assert work["doi"] == "10.5555/abc.def"
+
+
+def test_openalex_strips_space_after_doi_prefix():
+    client = OpenAlexClient()
+
+    work = client.normalize({"doi": "DOI: 10.5555/ABC.Def", "title": "Example"})
 
     assert work["doi"] == "10.5555/abc.def"
 
@@ -383,6 +520,25 @@ def test_openalex_strips_landing_url_whitespace():
     assert work["landing_url"] == "https://publisher.example/article"
 
 
+def test_openalex_falls_back_to_locations_landing_url():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-locations-url",
+            "title": "Locations landing URL",
+            "primary_location": {"landing_page_url": "javascript:alert(1)"},
+            "locations": [
+                "malformed-location",
+                {"landing_page_url": "https:missing-host"},
+                {"landing_page_url": "  https://publisher.example/article  "},
+            ],
+        }
+    )
+
+    assert work["landing_url"] == "https://publisher.example/article"
+
+
 def test_openalex_tolerates_malformed_source_display_name():
     client = OpenAlexClient()
 
@@ -395,6 +551,25 @@ def test_openalex_tolerates_malformed_source_display_name():
     )
 
     assert work["journal_name"] is None
+
+
+def test_openalex_falls_back_to_locations_source_display_name():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-locations-source",
+            "title": "Locations source",
+            "primary_location": {"source": {"display_name": {"value": "Malformed"}}},
+            "locations": [
+                "malformed-location",
+                {"source": "malformed-source"},
+                {"source": {"display_name": "  Plasma Sources Science and Technology  "}},
+            ],
+        }
+    )
+
+    assert work["journal_name"] == "Plasma Sources Science and Technology"
 
 
 def test_openalex_skips_malformed_authorship_items():
@@ -433,6 +608,35 @@ def test_openalex_strips_author_display_names():
     )
 
     assert work["authors"] == [{"name": "Jane Doe", "affiliation": None}]
+
+
+def test_openalex_preserves_author_institution_affiliations():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "doi": "10.5555/openalex-affiliations",
+            "title": "OpenAlex affiliations",
+            "authorships": [
+                {
+                    "author": {"display_name": "Jane Doe"},
+                    "institutions": [
+                        {"display_name": "Princeton Plasma Physics Laboratory"},
+                        {"display_name": "  MIT Plasma Science  "},
+                        {"display_name": {"value": "Malformed"}},
+                        "malformed-institution",
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert work["authors"] == [
+        {
+            "name": "Jane Doe",
+            "affiliation": "Princeton Plasma Physics Laboratory; MIT Plasma Science",
+        }
+    ]
 
 
 def test_openalex_tolerates_malformed_primary_location_fields():
@@ -549,6 +753,32 @@ async def test_openalex_tolerates_malformed_top_level_payload():
 
 
 @pytest.mark.asyncio
+async def test_openalex_does_not_retry_permanent_http_errors():
+    calls = 0
+    sleep_calls = []
+
+    async def sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(400, json={"error": "bad filter"}, request=request)
+
+    client = OpenAlexClient(
+        transport=httpx.MockTransport(handler),
+        max_retries=3,
+        sleep=sleep,
+    )
+
+    with pytest.raises(RuntimeError, match="OpenAlex request failed"):
+        await client.works_by_issn("bad issn", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert calls == 1
+    assert sleep_calls == []
+
+
+@pytest.mark.asyncio
 async def test_crossref_waits_between_paginated_requests():
     sleep_calls = []
     seen_cursors = []
@@ -629,6 +859,32 @@ async def test_crossref_tolerates_malformed_top_level_payload():
 
 
 @pytest.mark.asyncio
+async def test_crossref_does_not_retry_permanent_http_errors():
+    calls = 0
+    sleep_calls = []
+
+    async def sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(404, json={"message": "unknown journal"}, request=request)
+
+    client = CrossrefClient(
+        transport=httpx.MockTransport(handler),
+        max_retries=3,
+        sleep=sleep,
+    )
+
+    with pytest.raises(RuntimeError, match="Crossref request failed"):
+        await client.works_by_issn("0000-0000", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert calls == 1
+    assert sleep_calls == []
+
+
+@pytest.mark.asyncio
 async def test_crossref_includes_mailto_in_request_params_and_user_agent():
     captured = {}
 
@@ -679,6 +935,33 @@ async def test_unpaywall_waits_after_successful_resolution():
 
 
 @pytest.mark.asyncio
+async def test_unpaywall_does_not_retry_permanent_http_errors():
+    calls = 0
+    sleep_calls = []
+
+    async def sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(404, json={"error": "unknown doi"}, request=request)
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+        max_retries=3,
+        sleep=sleep,
+    )
+
+    with pytest.raises(RuntimeError, match="Unpaywall request failed"):
+        await client.resolve("10.1/missing")
+
+    assert calls == 1
+    assert sleep_calls == []
+
+
+@pytest.mark.asyncio
 async def test_unpaywall_tolerates_malformed_best_oa_location():
     def handler(request: httpx.Request) -> httpx.Response:
         return json_response(
@@ -718,6 +1001,30 @@ async def test_unpaywall_rejects_non_web_pdf_url_scheme():
 
     assert result["oa_status"] == "green"
     assert result["oa_pdf_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_unpaywall_falls_back_to_pdf_url_when_url_for_pdf_is_invalid():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "oa_status": "green",
+                "best_oa_location": {
+                    "url_for_pdf": "javascript:alert(1)",
+                    "url": "https://repository.example/paper.pdf",
+                },
+            }
+        )
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.resolve("10.1/pdf-url-fallback")
+
+    assert result["oa_status"] == "green"
+    assert result["oa_pdf_url"] == "https://repository.example/paper.pdf"
 
 
 @pytest.mark.asyncio

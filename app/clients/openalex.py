@@ -68,6 +68,8 @@ class OpenAlexClient:
                 return response.json()
             except httpx.HTTPStatusError as exc:
                 last_error = exc
+                if not self.should_retry_response(exc.response):
+                    break
                 if attempt < self.max_retries - 1:
                     await self.sleep(self.retry_delay(attempt, exc.response))
             except (httpx.HTTPError, ValueError) as exc:
@@ -75,6 +77,9 @@ class OpenAlexClient:
                 if attempt < self.max_retries - 1:
                     await self.sleep(self.retry_delay(attempt))
         raise RuntimeError(f"OpenAlex request failed: {last_error}")
+
+    def should_retry_response(self, response: httpx.Response) -> bool:
+        return response.status_code == 429 or response.status_code >= 500
 
     def retry_delay(self, attempt: int, response: Optional[httpx.Response] = None) -> float:
         if response is not None and response.status_code == 429:
@@ -109,7 +114,13 @@ class OpenAlexClient:
         doi = value.strip().lower()
         if not doi:
             return None
-        return doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/")
+        return (
+            doi.removeprefix("https://doi.org/")
+            .removeprefix("http://doi.org/")
+            .removeprefix("https://dx.doi.org/")
+            .removeprefix("http://dx.doi.org/")
+            .removeprefix("doi:")
+        ).strip()
 
     def normalize_authors(self, value: Any) -> list[dict[str, Optional[str]]]:
         if not isinstance(value, list):
@@ -123,8 +134,21 @@ class OpenAlexClient:
                 continue
             name = author.get("display_name")
             if isinstance(name, str) and name.strip():
-                authors.append({"name": name.strip(), "affiliation": None})
+                affiliation = self.normalize_affiliations(item.get("institutions"))
+                authors.append({"name": name.strip(), "affiliation": affiliation})
         return authors
+
+    def normalize_affiliations(self, value: Any) -> Optional[str]:
+        if not isinstance(value, list):
+            return None
+        names = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("display_name")
+            if isinstance(name, str) and name.strip():
+                names.append(name.strip())
+        return "; ".join(names) if names else None
 
     def normalize_title(self, value: Any) -> str:
         if isinstance(value, str) and value.strip():
@@ -161,6 +185,31 @@ class OpenAlexClient:
             return None
         return text
 
+    def first_location_landing_url(self, value: Any) -> Optional[str]:
+        if not isinstance(value, list):
+            return None
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            url = self.normalize_url(item.get("landing_page_url"))
+            if url:
+                return url
+        return None
+
+    def first_location_source_name(self, value: Any) -> Optional[str]:
+        if not isinstance(value, list):
+            return None
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            source = item.get("source") or {}
+            if not isinstance(source, dict):
+                continue
+            name = self.normalize_optional_text(source.get("display_name"))
+            if name:
+                return name
+        return None
+
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         doi = self.normalize_doi(item.get("doi"))
         primary_location = item.get("primary_location") or {}
@@ -176,10 +225,13 @@ class OpenAlexClient:
             "title": self.normalize_title(item.get("title")),
             "abstract": abstract,
             "authors": authors,
-            "journal_name": self.normalize_optional_text(source.get("display_name")),
+            "journal_name": self.normalize_optional_text(source.get("display_name"))
+            or self.first_location_source_name(item.get("locations")),
             "published_date": self.normalize_publication_date(item.get("publication_date")),
             "published_year": self.normalize_publication_year(item.get("publication_year")),
-            "landing_url": self.normalize_url(primary_location.get("landing_page_url")) or self.normalize_url(item.get("id")),
+            "landing_url": self.normalize_url(primary_location.get("landing_page_url"))
+            or self.first_location_landing_url(item.get("locations"))
+            or self.normalize_url(item.get("id")),
             "source_api": "openalex",
             "raw_metadata": item,
         }

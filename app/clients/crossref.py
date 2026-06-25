@@ -72,6 +72,8 @@ class CrossrefClient:
                 return response.json()
             except httpx.HTTPStatusError as exc:
                 last_error = exc
+                if not self.should_retry_response(exc.response):
+                    break
                 if attempt < self.max_retries - 1:
                     await self.sleep(self.retry_delay(attempt, exc.response))
             except (httpx.HTTPError, ValueError) as exc:
@@ -79,6 +81,9 @@ class CrossrefClient:
                 if attempt < self.max_retries - 1:
                     await self.sleep(self.retry_delay(attempt))
         raise RuntimeError(f"Crossref request failed: {last_error}")
+
+    def should_retry_response(self, response: httpx.Response) -> bool:
+        return response.status_code == 429 or response.status_code >= 500
 
     def retry_delay(self, attempt: int, response: Optional[httpx.Response] = None) -> float:
         if response is not None and response.status_code == 429:
@@ -103,7 +108,13 @@ class CrossrefClient:
         doi = value.strip().lower()
         if not doi:
             return None
-        return doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/")
+        return (
+            doi.removeprefix("https://doi.org/")
+            .removeprefix("http://doi.org/")
+            .removeprefix("https://dx.doi.org/")
+            .removeprefix("http://dx.doi.org/")
+            .removeprefix("doi:")
+        ).strip()
 
     def first_text(self, value: Any, default: Optional[str] = None) -> Optional[str]:
         if isinstance(value, str) and value.strip():
@@ -128,8 +139,21 @@ class CrossrefClient:
             ]
             name = " ".join(name_parts)
             if name:
-                authors.append({"name": name, "affiliation": None})
+                affiliation = self.normalize_affiliations(item.get("affiliation"))
+                authors.append({"name": name, "affiliation": affiliation})
         return authors
+
+    def normalize_affiliations(self, value: Any) -> Optional[str]:
+        if not isinstance(value, list):
+            return None
+        names = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name")
+            if isinstance(name, str) and name.strip():
+                names.append(name.strip())
+        return "; ".join(names) if names else None
 
     def normalize_url(self, value: Any) -> Optional[str]:
         if isinstance(value, str) and value.strip():
@@ -139,24 +163,41 @@ class CrossrefClient:
                 return text
         return None
 
+    def resource_primary_url(self, value: Any) -> Optional[str]:
+        if not isinstance(value, dict):
+            return None
+        primary = value.get("primary") or {}
+        if not isinstance(primary, dict):
+            return None
+        return self.normalize_url(primary.get("URL"))
+
     def normalize_date_parts(self, value: Any) -> tuple[Optional[str], Optional[int]]:
         if not isinstance(value, list) or not value or not isinstance(value[0], list):
             return None, None
         parts = value[0]
         if not parts or len(parts) > 3 or any(isinstance(part, bool) or not isinstance(part, int) for part in parts):
             return None, None
+        year = parts[0]
+        month = parts[1] if len(parts) > 1 else 1
+        day = parts[2] if len(parts) > 2 else 1
         try:
-            date(parts[0], parts[1] if len(parts) > 1 else 1, parts[2] if len(parts) > 2 else 1)
+            parsed = date(year, month, day)
         except ValueError:
             return None, None
-        return "-".join(str(part).zfill(2) for part in parts), parts[0]
+        return parsed.isoformat(), year
+
+    def first_publication_date(self, item: dict[str, Any]) -> tuple[Optional[str], Optional[int]]:
+        for key in ["published-print", "published-online", "issued"]:
+            published = item.get(key)
+            if not isinstance(published, dict):
+                continue
+            published_date, year = self.normalize_date_parts(published.get("date-parts"))
+            if published_date is not None and year is not None:
+                return published_date, year
+        return None, None
 
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
-        published = item.get("published-print") or item.get("published-online") or item.get("issued") or {}
-        if not isinstance(published, dict):
-            published = {}
-        date_parts = published.get("date-parts")
-        published_date, year = self.normalize_date_parts(date_parts)
+        published_date, year = self.first_publication_date(item)
         authors = self.normalize_authors(item.get("author"))
         return {
             "doi": self.normalize_doi(item.get("DOI")),
@@ -166,7 +207,7 @@ class CrossrefClient:
             "journal_name": self.first_text(item.get("container-title")),
             "published_date": published_date,
             "published_year": year,
-            "landing_url": self.normalize_url(item.get("URL")),
+            "landing_url": self.normalize_url(item.get("URL")) or self.resource_primary_url(item.get("resource")),
             "source_api": "crossref",
             "raw_metadata": item,
         }
