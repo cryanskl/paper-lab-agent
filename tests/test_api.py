@@ -6223,6 +6223,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     dev_script = repo / "scripts" / "dev.sh"
     release_check = repo / "scripts" / "release_check.sh"
     smoke_check = repo / "scripts" / "smoke_check.py"
+    validate_bug_docs = repo / "scripts" / "validate_bug_docs.py"
     validate_env_example = repo / "scripts" / "validate_env_example.py"
     ci_workflow = repo / ".github" / "workflows" / "ci.yml"
     bug_readme = repo / "docs" / "bug" / "README.md"
@@ -6272,6 +6273,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "scripts/import_fixtures.py",
         "scripts/smoke_check.py",
         "scripts/validate_api_contract.py",
+        "scripts/validate_bug_docs.py",
         "scripts/validate_docs_links.py",
         "scripts/validate_env_example.py",
         "scripts/validate_readme_commands.py",
@@ -6283,6 +6285,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         assert compiled_script in release_text
     assert "scripts/health_check.py --help" in release_text
     assert "scripts/validate_api_contract.py" in release_text
+    assert "scripts/validate_bug_docs.py" in release_text
     assert "scripts/validate_docs_links.py" in release_text
     assert "scripts/validate_env_example.py" in release_text
     assert "scripts/validate_readme_commands.py" in release_text
@@ -6326,6 +6329,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "verified_export_bolsig_has_verification_metadata" in release_text
     assert "-m pytest -q" in release_text
     assert smoke_check.exists()
+    assert validate_bug_docs.exists()
     assert validate_env_example.exists()
     assert "REQUIRED_ENV_KEYS" in validate_env_example.read_text(encoding="utf-8")
     smoke_text = smoke_check.read_text(encoding="utf-8")
@@ -8938,6 +8942,32 @@ def test_readme_command_validator_checks_inline_command_targets(tmp_path):
 
     assert validator.missing_command_targets(tmp_path) == [
         "README.md: command target missing: scripts/missing.py"
+    ]
+
+
+def test_bug_docs_validator_checks_naming_and_required_sections(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_bug_docs.py"
+    spec = importlib.util.spec_from_file_location("bug_docs_validator", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+
+    bug_dir = tmp_path / "docs" / "bug"
+    bug_dir.mkdir(parents=True)
+    (bug_dir / "README.md").write_text("# Bug 记录约定\n", encoding="utf-8")
+    (bug_dir / "bad-name.md").write_text("# Bad\n\n## 现象\n", encoding="utf-8")
+    (bug_dir / "2026-06-25-good-bug.md").write_text(
+        "# Good\n\n## 现象\n\n## 原因\n\n## 修复\n\n## 验证\n",
+        encoding="utf-8",
+    )
+
+    assert validator.bug_doc_issues(tmp_path) == [
+        "docs/bug/bad-name.md: filename must match YYYY-MM-DD-short-slug.md",
+        "docs/bug/bad-name.md: missing sections: 原因, 修复, 验证",
     ]
 
 
