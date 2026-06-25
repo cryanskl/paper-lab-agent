@@ -54,11 +54,25 @@ def source_excerpt(text: str, start: int, end: int, window: int = 80) -> str:
 
 
 def detect_threshold_ev(text: str, start: int, end: int, window: int = 120) -> Optional[float]:
-    excerpt = source_excerpt(text, start, end, window)
-    match = THRESHOLD_EV_RE.search(excerpt)
-    if not match:
-        return None
-    return float(match.group(1))
+    left = max(0, start - window)
+    right = min(len(text), end + window)
+    candidates = []
+    for match in THRESHOLD_EV_RE.finditer(text[left:right]):
+        absolute_start = left + match.start()
+        absolute_end = left + match.end()
+        if absolute_start >= end:
+            direction_priority = 0
+            distance = absolute_start - end
+        elif absolute_end <= start:
+            direction_priority = 1
+            distance = start - absolute_end
+        else:
+            direction_priority = 2
+            distance = 0
+        candidates.append((direction_priority, distance, absolute_start, float(match.group(1))))
+    if candidates:
+        return min(candidates)[3]
+    return None
 
 
 def source_label(section: dict) -> str:
