@@ -113,6 +113,26 @@ if payload.get("crawled_papers", 0) < 1:
 if "paper_categories" not in payload:
     print("release_check failed: smoke paper_categories is missing", file=sys.stderr)
     raise SystemExit(1)
+status_counts = payload.get("status_counts")
+if not isinstance(status_counts, dict):
+    print("release_check failed: smoke status_counts is missing", file=sys.stderr)
+    raise SystemExit(1)
+expected_status_counts = {
+    ("crawl_jobs", "success"): 1,
+    ("document_parse", "parsed"): 1,
+    ("document_index", "indexed"): 1,
+    ("document_chemistry", "extracted"): 1,
+    ("translations", "done"): 1,
+    ("reaction_sets", "verified"): 1,
+}
+for (section, state), value in expected_status_counts.items():
+    actual = status_counts.get(section, {}).get(state)
+    if actual != value:
+        print(
+            f"release_check failed: smoke status_counts.{section}.{state}={actual!r}, expected {value!r}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 if not payload.get("duplicate_document_id"):
     print("release_check failed: smoke duplicate_document_id is missing", file=sys.stderr)
     raise SystemExit(1)

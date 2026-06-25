@@ -7,7 +7,7 @@ from fastapi import APIRouter
 from app import __version__
 from app.clients.grobid import GrobidClient
 from app.config import get_settings
-from app.db import fetch_one
+from app.db import fetch_one, get_conn
 from app.scheduler import scheduled_crawl_jobs
 from app.services.rag import SUPPORTED_EMBEDDING_MODELS, SUPPORTED_VECTOR_DB_BACKENDS
 
@@ -26,6 +26,19 @@ def normalize_grobid_status(detail: dict, fallback_url: str) -> dict:
 def table_count(table: str) -> int:
     row = fetch_one(f"SELECT COUNT(*) AS n FROM {table}") or {"n": 0}
     return row["n"]
+
+
+def status_count(table: str, column: str) -> dict:
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT COALESCE({column}, 'unknown') AS status, COUNT(*) AS n
+            FROM {table}
+            GROUP BY COALESCE({column}, 'unknown')
+            ORDER BY status
+            """
+        ).fetchall()
+    return {row["status"]: row["n"] for row in rows}
 
 
 def storage_path_health(path: Path) -> dict:
@@ -154,6 +167,14 @@ async def status(check_external: bool = False) -> dict:
             "llm_api_key": bool(settings.llm_api_key),
             "embedding_model": settings.embedding_model,
             "vector_db_backend": settings.vector_db_backend,
+        },
+        "status_counts": {
+            "crawl_jobs": status_count("crawl_jobs", "status"),
+            "document_parse": status_count("documents", "parse_status"),
+            "document_index": status_count("documents", "index_status"),
+            "document_chemistry": status_count("documents", "chemistry_status"),
+            "translations": status_count("translations", "status"),
+            "reaction_sets": status_count("reaction_sets", "status"),
         },
         "counts": {
             "journals": table_count("journals"),

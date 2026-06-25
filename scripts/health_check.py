@@ -20,6 +20,7 @@ STATUS_REQUIRED_KEYS = {
     "storage",
     "storage_health",
     "external_capabilities",
+    "status_counts",
     "counts",
 }
 CONFIG_WARNING_REQUIRED_KEYS = {"code", "capability", "message"}
@@ -63,6 +64,14 @@ COUNT_REQUIRED_KEYS = {
     "reaction_sets",
     "reactions",
     "reaction_audits",
+}
+STATUS_COUNT_REQUIRED_KEYS = {
+    "crawl_jobs",
+    "document_parse",
+    "document_index",
+    "document_chemistry",
+    "translations",
+    "reaction_sets",
 }
 
 
@@ -315,6 +324,23 @@ def validate_system_status(status: dict) -> list[str]:
         )
         if invalid_counts:
             errors.append(f"counts invalid values: {', '.join(invalid_counts)}")
+    status_counts = status.get("status_counts")
+    if not isinstance(status_counts, dict):
+        errors.append("status_counts must be an object")
+    else:
+        missing_status_counts = sorted(STATUS_COUNT_REQUIRED_KEYS - set(status_counts))
+        if missing_status_counts:
+            errors.append(f"status_counts missing keys: {', '.join(missing_status_counts)}")
+        invalid_status_counts = []
+        for section, section_counts in status_counts.items():
+            if not isinstance(section_counts, dict):
+                invalid_status_counts.append(section)
+                continue
+            for state, value in section_counts.items():
+                if not isinstance(state, str) or not state.strip() or isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                    invalid_status_counts.append(f"{section}.{state}")
+        if invalid_status_counts:
+            errors.append(f"status_counts invalid values: {', '.join(invalid_status_counts)}")
     return errors
 
 

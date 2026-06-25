@@ -25,6 +25,19 @@ def health_check_counts(**overrides):
     return counts
 
 
+def health_check_status_counts(**overrides):
+    status_counts = {
+        "crawl_jobs": {},
+        "document_parse": {},
+        "document_index": {},
+        "document_chemistry": {},
+        "translations": {},
+        "reaction_sets": {},
+    }
+    status_counts.update(overrides)
+    return status_counts
+
+
 def health_check_runtime(**overrides):
     runtime = {
         "api_prefix": "/api/v1",
@@ -5736,6 +5749,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "crawl_job_status" in release_text
     assert "crawled_papers" in release_text
     assert "paper_categories" in release_text
+    assert "status_counts" in release_text
     assert "duplicate_upload_status" in release_text
     assert "verified_export_reactions" in release_text
     assert "verified_export_audit_entries" in release_text
@@ -5761,6 +5775,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert '"crawl_job_status"' in smoke_text
     assert '"crawled_papers"' in smoke_text
     assert '"paper_categories"' in smoke_text
+    assert '"status_counts"' in smoke_text
     assert '"duplicate_upload_status"' in smoke_text
     assert '"scheduler_job_ids"' in smoke_text
     assert '"verified_export_reactions"' in smoke_text
@@ -5919,6 +5934,7 @@ def test_system_status_contract_documents_operational_counts():
         "version",
         "storage_health",
         "config_warnings",
+        "status_counts",
         "categories",
         "paper_categories",
         "crawl_jobs",
@@ -5994,6 +6010,87 @@ def test_system_status_counts_paper_categories(tmp_path):
     payload = client.get("/api/v1/system/status").json()
 
     assert payload["counts"]["paper_categories"] == 1
+
+
+def test_system_status_reports_workflow_status_counts(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        parsed_document_id = conn.execute(
+            """
+            INSERT INTO documents (
+                file_path, file_hash, original_name,
+                parse_status, index_status, chemistry_status
+            ) VALUES (?, ?, ?, 'parsed', 'indexed', 'extracted')
+            """,
+            (str(tmp_path / "parsed.pdf"), "parsed-status", "parsed.pdf"),
+        ).lastrowid
+        failed_document_id = conn.execute(
+            """
+            INSERT INTO documents (
+                file_path, file_hash, original_name,
+                parse_status, index_status, chemistry_status
+            ) VALUES (?, ?, ?, 'failed', 'failed', 'failed')
+            """,
+            (str(tmp_path / "failed.pdf"), "failed-status", "failed.pdf"),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO crawl_jobs (period, status, papers_found, papers_filtered, papers_new)
+            VALUES ('manual', 'success', 1, 0, 1)
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO crawl_jobs (period, status, error)
+            VALUES ('manual', 'failed', 'network timeout')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO translations (document_id, source_lang, target_lang, status)
+            VALUES (?, 'en', 'zh', 'done')
+            """,
+            (parsed_document_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO translations (document_id, source_lang, target_lang, status, error)
+            VALUES (?, 'en', 'zh', 'failed', 'model unavailable')
+            """,
+            (failed_document_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, status)
+            VALUES (?, 'Verified set', 'verified')
+            """,
+            (parsed_document_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, status)
+            VALUES (?, 'Pending set', 'pending')
+            """,
+            (failed_document_id,),
+        )
+
+    status_counts = client.get("/api/v1/system/status").json()["status_counts"]
+
+    assert status_counts["crawl_jobs"]["success"] == 1
+    assert status_counts["crawl_jobs"]["failed"] == 1
+    assert status_counts["document_parse"]["parsed"] == 1
+    assert status_counts["document_parse"]["failed"] == 1
+    assert status_counts["document_index"]["indexed"] == 1
+    assert status_counts["document_index"]["failed"] == 1
+    assert status_counts["document_chemistry"]["extracted"] == 1
+    assert status_counts["document_chemistry"]["failed"] == 1
+    assert status_counts["translations"]["done"] == 1
+    assert status_counts["translations"]["failed"] == 1
+    assert status_counts["reaction_sets"]["verified"] == 1
+    assert status_counts["reaction_sets"]["pending"] == 1
 
 
 def test_reaction_verify_contract_documents_clearable_review_fields():
@@ -6072,6 +6169,7 @@ def test_health_check_fails_when_runtime_status_is_missing(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
 
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
@@ -6162,6 +6260,7 @@ def test_health_check_requires_scheduler_jobs_runtime_key():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
     )
 
@@ -6211,6 +6310,7 @@ def test_health_check_rejects_invalid_scheduler_jobs_shape():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
     )
 
@@ -6258,6 +6358,7 @@ def test_health_check_fails_when_database_path_is_invalid(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
 
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
@@ -6288,6 +6389,7 @@ def test_health_check_fails_when_storage_or_capability_keys_are_missing(monkeypa
             "storage": {"data_dir": "/tmp/data"},
             "external_capabilities": {"openalex_mailto": True},
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
 
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
@@ -6336,6 +6438,7 @@ def test_health_check_fails_when_storage_values_are_invalid(monkeypatch, capsys)
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
 
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
@@ -6386,6 +6489,7 @@ def test_health_check_fails_when_external_capability_values_are_invalid(monkeypa
                 "vector_db_backend": 456,
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
 
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
@@ -6435,6 +6539,7 @@ def test_health_check_requires_vector_db_backend_capability_key():
                 "embedding_model": "local-hash",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
     )
 
@@ -6479,6 +6584,7 @@ def test_health_check_fails_when_grobid_values_are_invalid(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
 
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
@@ -6536,6 +6642,7 @@ def test_health_check_fails_when_count_values_are_invalid(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(journals="6", papers=-1),
+            "status_counts": health_check_status_counts(),
         }
 
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
@@ -6624,10 +6731,52 @@ def test_health_check_requires_config_warnings_key():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
     )
 
     assert "missing keys: config_warnings" in errors
+
+
+def test_health_check_requires_status_counts_key():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_status_counts_key", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+        }
+    )
+
+    assert "missing keys: status_counts" in errors
 
 
 def test_health_check_requires_storage_health_key():
@@ -6664,6 +6813,7 @@ def test_health_check_requires_storage_health_key():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
     )
 
@@ -6707,6 +6857,7 @@ def test_health_check_requires_database_file_health():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
     )
 
@@ -6750,6 +6901,7 @@ def test_health_check_rejects_database_health_path_mismatch():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
     )
 
@@ -6797,6 +6949,7 @@ def test_health_check_rejects_invalid_storage_health_shape():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
     )
 
@@ -6844,6 +6997,7 @@ def test_health_check_rejects_storage_health_path_mismatch():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
     )
 
@@ -6896,6 +7050,7 @@ def test_health_check_rejects_corrupt_vector_store_health():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
     )
 
@@ -6949,6 +7104,7 @@ def test_health_check_rejects_vector_store_health_path_mismatch():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
     )
 
@@ -6995,6 +7151,7 @@ def test_health_check_rejects_invalid_config_warning_shape():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
     )
 
@@ -7039,6 +7196,7 @@ def test_health_check_fails_when_grobid_status_keys_are_missing(monkeypatch, cap
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
 
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
@@ -7090,6 +7248,7 @@ def test_health_check_fails_cleanly_when_health_response_is_not_object(monkeypat
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
 
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
@@ -7142,6 +7301,7 @@ def test_health_check_fails_when_health_service_is_unexpected(monkeypatch, capsy
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
 
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
@@ -7195,6 +7355,7 @@ def test_health_check_accepts_valid_system_status(monkeypatch):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
 
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
@@ -7253,6 +7414,7 @@ def test_health_check_outputs_config_warnings(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
 
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
@@ -7309,6 +7471,7 @@ def test_health_check_compact_outputs_single_line_json(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
 
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
@@ -7363,6 +7526,7 @@ def test_health_check_can_include_streamlit_frontend_probe(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
 
     def fake_fetch_status(url: str, timeout: float) -> int:
@@ -7430,6 +7594,7 @@ def test_health_check_check_frontend_fails_when_streamlit_is_unhealthy(monkeypat
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
 
     def fake_fetch_status(url: str, timeout: float) -> int:
@@ -7489,6 +7654,7 @@ def test_health_check_check_frontend_reports_connection_error(monkeypatch, capsy
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
 
     def fake_fetch_status(url: str, timeout: float) -> int:
@@ -7567,6 +7733,7 @@ def test_health_check_require_grobid_fails_when_external_grobid_is_unavailable(m
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
 
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
@@ -7624,6 +7791,7 @@ def test_health_check_uses_api_base_url_from_env_file(monkeypatch, tmp_path):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
 
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
@@ -7670,6 +7838,7 @@ def test_health_check_rejects_unexpected_api_prefix():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
         }
     )
 
