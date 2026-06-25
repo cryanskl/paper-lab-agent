@@ -593,6 +593,7 @@ def run_smoke() -> dict:
         status = assert_status(client.get("/api/v1/system/status"), 200, "system status")
         runtime = status["runtime"]
         config_warnings = status["config_warnings"]
+        external_capabilities = status["external_capabilities"]
         assert_ok(runtime["version"], "expected runtime version")
         scheduler_job_ids = [job["id"] for job in runtime.get("scheduler_jobs") or []]
         assert_ok(
@@ -600,6 +601,22 @@ def run_smoke() -> dict:
             f"expected scheduler crawl jobs, got {scheduler_job_ids}",
         )
         assert_ok(isinstance(config_warnings, list), "expected config_warnings list")
+        assert_ok(
+            external_capabilities["translation_adapter"] == "local-echo",
+            f"expected local translation adapter, got {external_capabilities}",
+        )
+        assert_ok(
+            external_capabilities["embedding_model"] == "local-hash",
+            f"expected local embedding model, got {external_capabilities}",
+        )
+        assert_ok(
+            external_capabilities["vector_db_backend"] == "local-json",
+            f"expected local vector DB backend, got {external_capabilities}",
+        )
+        assert_ok(
+            external_capabilities["grobid_url"] == "http://127.0.0.1:8070",
+            f"expected default GROBID URL, got {external_capabilities}",
+        )
         counts = status["counts"]
         status_counts = status["status_counts"]
         release_readiness = status["release_readiness"]
@@ -629,6 +646,10 @@ def run_smoke() -> dict:
             "paper_categories": counts["paper_categories"],
             "status_counts": status_counts,
             "release_readiness": release_readiness,
+            "system_translation_adapter": external_capabilities["translation_adapter"],
+            "system_embedding_model": external_capabilities["embedding_model"],
+            "system_vector_db_backend": external_capabilities["vector_db_backend"],
+            "system_grobid_url": external_capabilities["grobid_url"],
             "crawl_jobs": counts["crawl_jobs"],
             "crawl_job_status": crawl_diagnostics["status"],
             "crawl_job_found": crawl_diagnostics["papers_found"],
