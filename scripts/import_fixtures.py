@@ -19,6 +19,7 @@ def configure_storage_defaults() -> None:
     os.environ.setdefault("PAPER_LAB_TRANSLATION_DIR", str(base / "translations"))
     os.environ.setdefault("PAPER_LAB_EXPORT_DIR", str(base / "exports"))
     os.environ.setdefault("VECTOR_DB_PATH", str(base / "vector-index.json"))
+    os.environ.setdefault("VECTOR_DB_BACKEND", "local-json")
 
 
 configure_storage_defaults()

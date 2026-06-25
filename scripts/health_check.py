@@ -47,6 +47,7 @@ EXTERNAL_CAPABILITY_REQUIRED_KEYS = {
     "grobid",
     "llm_api_key",
     "embedding_model",
+    "vector_db_backend",
 }
 GROBID_REQUIRED_KEYS = {"url", "available", "status_code", "error"}
 COUNT_REQUIRED_KEYS = {
@@ -273,7 +274,7 @@ def validate_system_status(status: dict) -> list[str]:
         for key in ("openalex_mailto", "unpaywall_email", "llm_api_key"):
             if key in external_capabilities and not isinstance(external_capabilities[key], bool):
                 invalid_capabilities.append(key)
-        for key in ("grobid_url", "embedding_model"):
+        for key in ("grobid_url", "embedding_model", "vector_db_backend"):
             if key in external_capabilities and (
                 not isinstance(external_capabilities[key], str) or not external_capabilities[key]
             ):

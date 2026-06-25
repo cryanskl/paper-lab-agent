@@ -91,6 +91,7 @@ with st.sidebar:
     st.caption(f"GROBID URL: {external_capabilities.get('grobid_url') or '-'}")
     st.caption(f"LLM key: {'已配置' if external_capabilities.get('llm_api_key') else '未配置'}")
     st.caption(f"Embedding: {external_capabilities.get('embedding_model') or '-'}")
+    st.caption(f"Vector DB: {external_capabilities.get('vector_db_backend') or '-'}")
     grobid = external_capabilities.get("grobid") or {}
     grobid_available = grobid.get("available")
     if grobid_available is True:

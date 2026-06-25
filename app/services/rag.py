@@ -47,6 +47,7 @@ class LocalHashEmbeddingAdapter:
 
 
 SUPPORTED_EMBEDDING_MODELS = {"local-hash"}
+SUPPORTED_VECTOR_DB_BACKENDS = {"local-json"}
 SOURCE_EXCERPT_MAX_CHARS = 360
 
 
@@ -199,6 +200,7 @@ def index_document(document_id: int) -> dict:
                         "text": chunk,
                         "embedding": embedding,
                         "embedding_model": embedding_adapter.model_name,
+                        "vector_db_backend": settings.vector_db_backend,
                         "dimensions": len(embedding),
                     }
                     count += 1

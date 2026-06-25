@@ -18,6 +18,7 @@ def configure_runtime(base_dir: Path) -> None:
     os.environ["PAPER_LAB_TRANSLATION_DIR"] = str(base_dir / "translations")
     os.environ["PAPER_LAB_EXPORT_DIR"] = str(base_dir / "exports")
     os.environ["VECTOR_DB_PATH"] = str(base_dir / "vector-index.json")
+    os.environ["VECTOR_DB_BACKEND"] = "local-json"
     os.environ["PAPER_LAB_SCHEDULER_ENABLED"] = "false"
 
 

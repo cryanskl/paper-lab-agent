@@ -3346,6 +3346,14 @@ def test_system_status_reports_corrupt_vector_store_health(tmp_path):
     assert "Expecting property name enclosed in double quotes" in vector_db["error"]
 
 
+def test_system_status_reports_vector_db_backend(tmp_path):
+    client = make_client(tmp_path)
+
+    status = client.get("/api/v1/system/status").json()
+
+    assert status["external_capabilities"]["vector_db_backend"] == "local-json"
+
+
 def test_parse_document_records_grobid_fallback_reason(tmp_path, monkeypatch):
     client = make_client(tmp_path)
     response = client.post(
@@ -3630,6 +3638,7 @@ def test_parse_document_fallback_failure_clears_stale_artifacts(tmp_path, monkey
                 "text": "metastable stale evidence",
                 "embedding": local_hash_embedding("metastable stale evidence"),
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
                 "dimensions": 64,
             }
         }
@@ -4482,6 +4491,7 @@ def test_rag_index_uses_local_vector_store(tmp_path):
     assert vector_index
     first_record = next(iter(vector_index.values()))
     assert first_record["embedding_model"] == "local-hash"
+    assert first_record["vector_db_backend"] == "local-json"
     assert first_record["embedding"]
     assert first_record["dimensions"] == len(first_record["embedding"])
 
@@ -4596,6 +4606,7 @@ def test_rag_query_ignores_orphan_vector_records_without_chunks(tmp_path):
                 "text": "electron impact chemistry evidence",
                 "embedding": local_hash_embedding("electron impact chemistry evidence"),
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
                 "dimensions": 64,
             }
         }
@@ -4646,6 +4657,7 @@ def test_rag_query_ignores_stale_vector_text_that_no_longer_matches_chunk(tmp_pa
                 "text": "metastable stale evidence",
                 "embedding": local_hash_embedding("metastable stale evidence"),
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
                 "dimensions": 64,
             }
         }
@@ -5658,6 +5670,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "scripts/validate_requirements.py" in release_text
     assert "scripts/validate_schema.py" in release_text
     assert "PAPER_LAB_DATA_DIR" in release_text
+    assert "VECTOR_DB_BACKEND" in release_text
     assert "TemporaryDirectory" in release_text
     assert "scripts/import_fixtures.py" in release_text
     assert '"documents"' in release_text
@@ -5687,6 +5700,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert validate_env_example.exists()
     assert "REQUIRED_ENV_KEYS" in validate_env_example.read_text(encoding="utf-8")
     smoke_text = smoke_check.read_text(encoding="utf-8")
+    assert '"VECTOR_DB_BACKEND"] = "local-json"' in smoke_text
     assert "load_fixture_papers" in smoke_text
     assert '"/api/v1/papers?q=plasma"' in smoke_text
     assert '"/api/v1/crawl/run"' in smoke_text
@@ -5922,6 +5936,7 @@ def test_health_check_fails_when_runtime_status_is_missing(monkeypatch, capsys):
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -5968,6 +5983,7 @@ def test_health_check_requires_runtime_version():
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6010,6 +6026,7 @@ def test_health_check_requires_scheduler_jobs_runtime_key():
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6058,6 +6075,7 @@ def test_health_check_rejects_invalid_scheduler_jobs_shape():
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6104,6 +6122,7 @@ def test_health_check_fails_when_database_path_is_invalid(monkeypatch, capsys):
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6181,6 +6200,7 @@ def test_health_check_fails_when_storage_values_are_invalid(monkeypatch, capsys)
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6230,6 +6250,7 @@ def test_health_check_fails_when_external_capability_values_are_invalid(monkeypa
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": "false",
                 "embedding_model": 123,
+                "vector_db_backend": 456,
             },
             "counts": health_check_counts(),
         }
@@ -6244,6 +6265,47 @@ def test_health_check_fails_when_external_capability_values_are_invalid(monkeypa
     assert "grobid_url" in captured.err
     assert "llm_api_key" in captured.err
     assert "embedding_model" in captured.err
+    assert "vector_db_backend" in captured.err
+
+
+def test_health_check_requires_vector_db_backend_capability_key():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_vector_backend_key", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "embedding_model": "local-hash",
+            },
+            "counts": health_check_counts(),
+        }
+    )
+
+    assert "external_capabilities missing keys: vector_db_backend" in errors
 
 
 def test_health_check_fails_when_grobid_values_are_invalid(monkeypatch, capsys):
@@ -6281,6 +6343,7 @@ def test_health_check_fails_when_grobid_values_are_invalid(monkeypatch, capsys):
                 "grobid": {"url": "", "available": "yes", "status_code": "200", "error": 404},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6337,6 +6400,7 @@ def test_health_check_fails_when_count_values_are_invalid(monkeypatch, capsys):
                 },
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(journals="6", papers=-1),
         }
@@ -6382,6 +6446,7 @@ def test_health_check_requires_operational_count_keys():
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": {"journals": 6, "papers": 1, "documents": 0},
         }
@@ -6423,6 +6488,7 @@ def test_health_check_requires_config_warnings_key():
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6462,6 +6528,7 @@ def test_health_check_requires_storage_health_key():
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6504,6 +6571,7 @@ def test_health_check_requires_database_file_health():
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6546,6 +6614,7 @@ def test_health_check_rejects_database_health_path_mismatch():
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6592,6 +6661,7 @@ def test_health_check_rejects_invalid_storage_health_shape():
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6638,6 +6708,7 @@ def test_health_check_rejects_storage_health_path_mismatch():
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6689,6 +6760,7 @@ def test_health_check_rejects_corrupt_vector_store_health():
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6741,6 +6813,7 @@ def test_health_check_rejects_vector_store_health_path_mismatch():
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6786,6 +6859,7 @@ def test_health_check_rejects_invalid_config_warning_shape():
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6829,6 +6903,7 @@ def test_health_check_fails_when_grobid_status_keys_are_missing(monkeypatch, cap
                 "grobid": {"url": "http://127.0.0.1:8070", "available": False, "error": "connection refused"},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6879,6 +6954,7 @@ def test_health_check_fails_cleanly_when_health_response_is_not_object(monkeypat
                 },
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6930,6 +7006,7 @@ def test_health_check_fails_when_health_service_is_unexpected(monkeypatch, capsy
                 },
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -6982,6 +7059,7 @@ def test_health_check_accepts_valid_system_status(monkeypatch):
                 },
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -7039,6 +7117,7 @@ def test_health_check_outputs_config_warnings(monkeypatch, capsys):
                 },
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -7094,6 +7173,7 @@ def test_health_check_compact_outputs_single_line_json(monkeypatch, capsys):
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -7147,6 +7227,7 @@ def test_health_check_can_include_streamlit_frontend_probe(monkeypatch, capsys):
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -7213,6 +7294,7 @@ def test_health_check_check_frontend_fails_when_streamlit_is_unhealthy(monkeypat
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -7271,6 +7353,7 @@ def test_health_check_check_frontend_reports_connection_error(monkeypatch, capsy
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -7348,6 +7431,7 @@ def test_health_check_require_grobid_fails_when_external_grobid_is_unavailable(m
                 },
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -7404,6 +7488,7 @@ def test_health_check_uses_api_base_url_from_env_file(monkeypatch, tmp_path):
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -7449,6 +7534,7 @@ def test_health_check_rejects_unexpected_api_prefix():
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
                 "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
         }
@@ -8373,6 +8459,7 @@ def test_streamlit_sidebar_exposes_external_capability_status():
         "grobid_url",
         "llm_api_key",
         "embedding_model",
+        "vector_db_backend",
     ]:
         assert required in sidebar_section
 

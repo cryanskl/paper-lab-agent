@@ -39,6 +39,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-fixtures-") as fixture_dir:
         "PAPER_LAB_TRANSLATION_DIR",
         "PAPER_LAB_EXPORT_DIR",
         "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
     ]:
         env.pop(key, None)
     result = subprocess.run(

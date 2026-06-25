@@ -9,7 +9,7 @@ from app.clients.grobid import GrobidClient
 from app.config import get_settings
 from app.db import fetch_one
 from app.scheduler import scheduled_crawl_jobs
-from app.services.rag import SUPPORTED_EMBEDDING_MODELS
+from app.services.rag import SUPPORTED_EMBEDDING_MODELS, SUPPORTED_VECTOR_DB_BACKENDS
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -111,6 +111,14 @@ def config_warnings(settings) -> list[dict]:
                 "message": f"EMBEDDING_MODEL={settings.embedding_model} is not supported by the local adapter registry.",
             }
         )
+    if (settings.vector_db_backend or "").strip().lower() not in SUPPORTED_VECTOR_DB_BACKENDS:
+        warnings.append(
+            {
+                "code": "unsupported_vector_db_backend",
+                "capability": "rag_indexing",
+                "message": f"VECTOR_DB_BACKEND={settings.vector_db_backend} is not supported by the current vector store registry.",
+            }
+        )
     return warnings
 
 
@@ -145,6 +153,7 @@ async def status(check_external: bool = False) -> dict:
             "grobid": grobid,
             "llm_api_key": bool(settings.llm_api_key),
             "embedding_model": settings.embedding_model,
+            "vector_db_backend": settings.vector_db_backend,
         },
         "counts": {
             "journals": table_count("journals"),
