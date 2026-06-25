@@ -6225,12 +6225,17 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     smoke_check = repo / "scripts" / "smoke_check.py"
     validate_env_example = repo / "scripts" / "validate_env_example.py"
     ci_workflow = repo / ".github" / "workflows" / "ci.yml"
+    bug_readme = repo / "docs" / "bug" / "README.md"
     readme = (repo / "README.md").read_text(encoding="utf-8")
     env_example = (repo / ".env.example").read_text(encoding="utf-8")
     config_text = (repo / "app" / "config.py").read_text(encoding="utf-8")
 
     assert health_check.exists()
     assert "api/v1/system/status?check_external=true" in health_check.read_text(encoding="utf-8")
+    assert bug_readme.exists()
+    bug_readme_text = bug_readme.read_text(encoding="utf-8")
+    for required in ["每个已确认 bug 一个文件", "现象", "原因", "修复", "验证"]:
+        assert required in bug_readme_text
     assert env_script.exists()
     env_text = env_script.read_text(encoding="utf-8")
     assert "load_env_file_if_unset" in env_text
