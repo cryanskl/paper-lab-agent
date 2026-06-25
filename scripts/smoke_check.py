@@ -321,12 +321,17 @@ def run_smoke() -> dict:
         assert_ok(isinstance(config_warnings, list), "expected config_warnings list")
         counts = status["counts"]
         status_counts = status["status_counts"]
+        release_readiness = status["release_readiness"]
         assert_ok(status_counts["crawl_jobs"]["success"] == 1, "expected successful crawl job count")
         assert_ok(status_counts["document_parse"]["parsed"] == 1, "expected parsed document count")
         assert_ok(status_counts["document_index"]["indexed"] == 1, "expected indexed document count")
         assert_ok(status_counts["document_chemistry"]["extracted"] == 1, "expected extracted chemistry count")
         assert_ok(status_counts["translations"]["done"] == 1, "expected done translation count")
         assert_ok(status_counts["reaction_sets"]["verified"] == 1, "expected verified reaction set count")
+        assert_ok(release_readiness["ready"] is False, "expected smoke release readiness to be blocked by config warnings")
+        assert_ok(release_readiness["demo_data_missing"] == [], "expected smoke demo data to satisfy readiness")
+        assert_ok(release_readiness["failed_workflows"] == [], "expected smoke readiness to have no failed workflows")
+        assert_ok(release_readiness["storage_errors"] == [], "expected smoke readiness to have writable storage")
         assert_ok(counts["papers"] >= 2, "expected system status to include fixture papers")
         assert_ok("paper_categories" in counts, "expected paper category count")
         assert_ok(counts["documents"] == 1, "expected one smoke document")
@@ -342,6 +347,7 @@ def run_smoke() -> dict:
             "papers": papers["total"],
             "paper_categories": counts["paper_categories"],
             "status_counts": status_counts,
+            "release_readiness": release_readiness,
             "crawl_jobs": counts["crawl_jobs"],
             "crawl_job_status": crawl_diagnostics["status"],
             "crawl_job_found": crawl_diagnostics["papers_found"],

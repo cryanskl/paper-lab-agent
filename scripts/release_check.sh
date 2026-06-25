@@ -233,6 +233,24 @@ if payload.get("crawled_papers", 0) < 1:
 if "paper_categories" not in payload:
     print("release_check failed: smoke paper_categories is missing", file=sys.stderr)
     raise SystemExit(1)
+release_readiness = payload.get("release_readiness")
+if not isinstance(release_readiness, dict):
+    print("release_check failed: smoke release_readiness is missing", file=sys.stderr)
+    raise SystemExit(1)
+expected_readiness = {
+    "ready": False,
+    "demo_data_missing": [],
+    "failed_workflows": [],
+    "config_warning_codes": ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"],
+    "storage_errors": [],
+}
+for key, value in expected_readiness.items():
+    if release_readiness.get(key) != value:
+        print(
+            f"release_check failed: smoke release_readiness.{key}={release_readiness.get(key)!r}, expected {value!r}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 status_counts = payload.get("status_counts")
 if not isinstance(status_counts, dict):
     print("release_check failed: smoke status_counts is missing", file=sys.stderr)

@@ -1496,6 +1496,15 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["runtime_version"] == "0.1.0"
     assert result["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert result["config_warning_count"] == 3
+    assert result["release_readiness"]["ready"] is False
+    assert result["release_readiness"]["demo_data_missing"] == []
+    assert result["release_readiness"]["failed_workflows"] == []
+    assert result["release_readiness"]["config_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
+    assert result["release_readiness"]["storage_errors"] == []
 
 
 def test_smoke_check_script_outputs_json():
@@ -1540,6 +1549,12 @@ def test_smoke_check_script_outputs_json():
     assert payload["runtime_version"] == "0.1.0"
     assert payload["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert payload["config_warning_count"] == 3
+    assert payload["release_readiness"]["ready"] is False
+    assert payload["release_readiness"]["config_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
 
 
 def test_migrations_add_lxcat_db_to_legacy_reaction_sets():
@@ -6417,6 +6432,9 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "runtime_version" in release_text
     assert "scheduler_job_ids" in release_text
     assert "config_warning_count" in release_text
+    assert "release_readiness" in release_text
+    assert "config_warning_codes" in release_text
+    assert "missing_openalex_mailto" in release_text
     assert "crawl_job_status" in release_text
     assert "crawled_papers" in release_text
     assert '"papers": 2' in release_text
@@ -6458,6 +6476,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert '"reaction_sets"' in smoke_text
     assert '"reactions"' in smoke_text
     assert '"status_counts"' in smoke_text
+    assert '"release_readiness"' in smoke_text
     assert '"sections"' in smoke_text
     assert '"chunks"' in smoke_text
     assert '"rag_sources"' in smoke_text
