@@ -734,7 +734,7 @@ def test_journal_keyword_terms_collapse_internal_whitespace(tmp_path):
         json={
             "name": "Keyword Whitespace Journal",
             "issn_print": "1111-2222",
-            "keywords": {"mode": "and", "terms": [" low   temperature plasma ", "argon\n discharge"]},
+            "keywords": {"mode": " AND ", "terms": [" low   temperature plasma ", "argon\n discharge"]},
         },
     )
 
@@ -746,11 +746,11 @@ def test_journal_keyword_terms_collapse_internal_whitespace(tmp_path):
 
     updated = client.put(
         f"/api/v1/journals/{created.json()['id']}",
-        json={"keywords": [" plasma   chemistry ", "surface\nkinetics"]},
+        json={"keywords": {"mode": " Or ", "terms": [" plasma   chemistry ", "surface\nkinetics"]}},
     )
 
     assert updated.status_code == 200
-    assert updated.json()["keywords"] == ["plasma chemistry", "surface kinetics"]
+    assert updated.json()["keywords"] == {"mode": "or", "terms": ["plasma chemistry", "surface kinetics"]}
 
 
 def test_journal_normalizes_issn_fields_for_crawl_lookup(tmp_path):
