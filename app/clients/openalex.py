@@ -141,7 +141,7 @@ class OpenAlexClient:
         return None
 
     def normalize_publication_year(self, value: Any) -> Optional[int]:
-        if isinstance(value, int) and not isinstance(value, bool):
+        if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 9999:
             return value
         return None
 

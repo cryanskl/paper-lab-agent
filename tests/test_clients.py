@@ -217,6 +217,28 @@ def test_openalex_rejects_invalid_publication_date_string():
     assert work["published_year"] == 2026
 
 
+def test_openalex_rejects_out_of_range_publication_year():
+    client = OpenAlexClient()
+
+    zero_year = client.normalize(
+        {
+            "id": "https://openalex.org/W-zero-year",
+            "title": "Zero publication year",
+            "publication_year": 0,
+        }
+    )
+    too_large_year = client.normalize(
+        {
+            "id": "https://openalex.org/W-too-large-year",
+            "title": "Too large publication year",
+            "publication_year": 10000,
+        }
+    )
+
+    assert zero_year["published_year"] is None
+    assert too_large_year["published_year"] is None
+
+
 def test_openalex_tolerates_malformed_landing_url_fields():
     client = OpenAlexClient()
 
