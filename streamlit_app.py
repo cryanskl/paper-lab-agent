@@ -873,9 +873,13 @@ with chemistry_tab:
             f"status: {detail.get('status')} · "
             f"reactions: {len(reactions)} · "
             f"未复核: {len(unverified_reactions)} · "
+            f"gas_mixture: {detail.get('gas_mixture') or '-'} · "
+            f"lxcat_db: {detail.get('lxcat_db') or '-'} · "
             f"verified_by: {detail.get('verified_by') or '-'} · "
             f"verified_at: {detail.get('verified_at') or '-'}"
         )
+        if detail.get("source_note"):
+            st.caption(f"source_note: {detail.get('source_note')}")
         show_only_unverified = st.checkbox("只显示未复核", value=False, key="show_only_unverified")
         if unverified_reactions:
             st.subheader("未复核反应")
