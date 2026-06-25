@@ -42,6 +42,8 @@ class CrossrefClient:
         async with httpx.AsyncClient(timeout=self.timeout, headers=headers, transport=self.transport) as client:
             for _ in range(max_pages):
                 payload = await self._get_json(client, f"{self.base_url}/journals/{issn}/works", params)
+                if not isinstance(payload, dict):
+                    break
                 message = payload.get("message") or {}
                 if not isinstance(message, dict):
                     message = {}
@@ -102,10 +104,12 @@ class CrossrefClient:
         return doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/")
 
     def first_text(self, value: Any, default: Optional[str] = None) -> Optional[str]:
-        if isinstance(value, str):
+        if isinstance(value, str) and value:
             return value
-        if isinstance(value, list) and value:
-            return str(value[0])
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, str) and item:
+                    return item
         return default
 
     def normalize_authors(self, value: Any) -> list[dict[str, Optional[str]]]:
@@ -115,14 +119,22 @@ class CrossrefClient:
         for item in value:
             if not isinstance(item, dict):
                 continue
-            name = " ".join(v for v in [item.get("given"), item.get("family")] if v)
+            name = " ".join(v for v in [item.get("given"), item.get("family")] if isinstance(v, str) and v)
             if name:
                 authors.append({"name": name, "affiliation": None})
         return authors
 
+    def normalize_url(self, value: Any) -> Optional[str]:
+        if isinstance(value, str) and value.strip():
+            return value
+        return None
+
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         published = item.get("published-print") or item.get("published-online") or item.get("issued") or {}
-        parts = (published.get("date-parts") or [[None]])[0]
+        if not isinstance(published, dict):
+            published = {}
+        date_parts = published.get("date-parts")
+        parts = date_parts[0] if isinstance(date_parts, list) and date_parts and isinstance(date_parts[0], list) else []
         year = parts[0] if parts else None
         published_date = "-".join(str(p).zfill(2) for p in parts if p is not None) if parts else None
         authors = self.normalize_authors(item.get("author"))
@@ -134,7 +146,7 @@ class CrossrefClient:
             "journal_name": self.first_text(item.get("container-title")),
             "published_date": published_date,
             "published_year": year,
-            "landing_url": item.get("URL"),
+            "landing_url": self.normalize_url(item.get("URL")),
             "source_api": "crossref",
             "raw_metadata": item,
         }

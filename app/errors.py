@@ -1,8 +1,13 @@
 from typing import Optional
 
+import logging
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+
+
+logger = logging.getLogger(__name__)
 
 
 def error_response(code: str, message: str) -> dict:
@@ -31,6 +36,11 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
         return JSONResponse(status_code=422, content=error_response("validation_error", str(exc)))
+
+    @app.exception_handler(Exception)
+    async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("Unhandled API error on %s %s", request.method, request.url.path, exc_info=exc)
+        return JSONResponse(status_code=500, content=error_response("internal_server_error", "Internal server error"))
 
 
 def page(items: list[dict], total: int, page_num: int, page_size: int) -> dict:

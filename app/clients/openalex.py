@@ -38,6 +38,8 @@ class OpenAlexClient:
         async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as client:
             for _ in range(max_pages):
                 payload = await self._get_json(client, f"{self.base_url}/works", params)
+                if not isinstance(payload, dict):
+                    break
                 page_results = payload.get("results") or []
                 if isinstance(page_results, list):
                     results.extend(self.normalize(item) for item in page_results if isinstance(item, dict))
@@ -118,9 +120,29 @@ class OpenAlexClient:
             if not isinstance(author, dict):
                 continue
             name = author.get("display_name")
-            if name:
+            if isinstance(name, str) and name:
                 authors.append({"name": name, "affiliation": None})
         return authors
+
+    def normalize_title(self, value: Any) -> str:
+        if isinstance(value, str) and value.strip():
+            return value
+        return "Untitled"
+
+    def normalize_publication_date(self, value: Any) -> Optional[str]:
+        if isinstance(value, str) and value.strip():
+            return value
+        return None
+
+    def normalize_publication_year(self, value: Any) -> Optional[int]:
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        return None
+
+    def normalize_optional_text(self, value: Any) -> Optional[str]:
+        if isinstance(value, str) and value.strip():
+            return value
+        return None
 
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         doi = self.normalize_doi(item.get("doi"))
@@ -134,13 +156,14 @@ class OpenAlexClient:
         abstract = self.abstract_text(item)
         return {
             "doi": doi,
-            "title": item.get("title") or "Untitled",
+            "title": self.normalize_title(item.get("title")),
             "abstract": abstract,
             "authors": authors,
-            "journal_name": source.get("display_name"),
-            "published_date": item.get("publication_date"),
-            "published_year": item.get("publication_year"),
-            "landing_url": primary_location.get("landing_page_url") or item.get("id"),
+            "journal_name": self.normalize_optional_text(source.get("display_name")),
+            "published_date": self.normalize_publication_date(item.get("publication_date")),
+            "published_year": self.normalize_publication_year(item.get("publication_year")),
+            "landing_url": self.normalize_optional_text(primary_location.get("landing_page_url"))
+            or self.normalize_optional_text(item.get("id")),
             "source_api": "openalex",
             "raw_metadata": item,
         }

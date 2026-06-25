@@ -2,6 +2,8 @@
 
 低温等离子体文献检索与理解系统。V1 采用 local-first 架构：FastAPI + SQLite + APScheduler + GROBID + Chroma/FAISS 兼容的本地索引约定，前端使用 Streamlit。
 
+当前版本：`0.1.0`
+
 ## Quick Start
 
 ```bash
@@ -24,6 +26,8 @@ curl http://127.0.0.1:8000/api/v1/system/status
 curl 'http://127.0.0.1:8000/api/v1/journals?active=true'
 python scripts/health_check.py
 python scripts/health_check.py --compact
+python scripts/health_check.py --check-frontend
+python scripts/health_check.py --check-frontend --frontend-url http://127.0.0.1:8501
 API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
 ```
 
@@ -83,6 +87,8 @@ bash scripts/release_check.sh
 ```
 
 这条命令会执行与 CI 相同的离线发布检查：校验启动脚本语法、编译关键脚本、运行全量测试。
+
+`python scripts/health_check.py --check-frontend` 会额外探测 Streamlit `/_stcore/health`，用于确认 `scripts/dev.sh` 启动后的后端和前端都可访问。
 
 如需只跑离线 walking skeleton smoke：
 

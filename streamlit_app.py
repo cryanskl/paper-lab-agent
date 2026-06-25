@@ -2,34 +2,28 @@ import json
 import os
 from pathlib import Path
 
-import requests
 import streamlit as st
+
+from app.frontend_api import request_json, request_json_status
 
 
 API_BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000/api/v1").rstrip("/")
 
 
 def api_get(path: str, **params):
-    response = requests.get(f"{API_BASE}{path}", params=params, timeout=20)
-    response.raise_for_status()
-    return response.json()
+    return request_json("GET", API_BASE, path, params=params, timeout=20)
 
 
 def api_post(path: str, json=None, files=None, data=None):
-    response = requests.post(f"{API_BASE}{path}", json=json, files=files, data=data, timeout=60)
-    if response.status_code >= 400:
-        return response.status_code, response.json()
-    return response.status_code, response.json()
+    return request_json_status("POST", API_BASE, path, json=json, files=files, data=data, timeout=60)
 
 
 def api_put(path: str, json=None):
-    response = requests.put(f"{API_BASE}{path}", json=json, timeout=20)
-    return response.status_code, response.json()
+    return request_json_status("PUT", API_BASE, path, json=json, timeout=20)
 
 
 def api_delete(path: str):
-    response = requests.delete(f"{API_BASE}{path}", timeout=20)
-    return response.status_code, response.json()
+    return request_json_status("DELETE", API_BASE, path, timeout=20)
 
 
 def flatten_crawl_job_rows(jobs: list[dict]) -> list[dict]:
@@ -401,6 +395,9 @@ with documents_tab:
         document_detail = api_get(f"/documents/{selected['id']}")
         if document_detail.get("parse_error"):
             st.warning(f"parse_error: {document_detail['parse_error']}")
+        st.caption(f"chemistry_status: {document_detail.get('chemistry_status') or 'unknown'}")
+        if document_detail.get("chemistry_error"):
+            st.warning(f"chemistry_error: {document_detail['chemistry_error']}")
         linked_paper = document_detail.get("paper")
         if linked_paper:
             st.caption(
@@ -443,6 +440,8 @@ with documents_tab:
         chunks = api_get(f"/documents/{selected['id']}/chunks")
         index_status = "indexed" if chunks["indexed"] else "not indexed"
         st.caption(f"index_status: {index_status} · chunks: {chunks['total']}")
+        if chunks.get("index_error"):
+            st.warning(f"index_error: {chunks['index_error']}")
         section_tab, translation_tab, chunks_tab = st.tabs(["章节", "翻译预览", "索引"])
         with section_tab:
             if sections:
@@ -510,7 +509,19 @@ with rag_tab:
             else:
                 answer = rag_payload.get("answer") or ""
                 st.markdown(answer)
-                sources = rag_payload.get("sources") or []
+                sources = [
+                    {
+                        "document_id": source.get("document_id"),
+                        "paper_id": source.get("paper_id"),
+                        "paper_title": source.get("paper_title"),
+                        "section_title": source.get("section_title"),
+                        "source_excerpt": source.get("source_excerpt"),
+                        "chunk_id": source.get("chunk_id"),
+                        "vector_id": source.get("vector_id"),
+                        "score": source.get("score"),
+                    }
+                    for source in rag_payload.get("sources") or []
+                ]
                 st.subheader("引用来源")
                 if sources:
                     st.dataframe(sources, use_container_width=True)
@@ -518,6 +529,7 @@ with rag_tab:
                         "source chunk",
                         sources,
                         format_func=lambda source: (
+                            f"paper {source.get('paper_id') or '-'} · "
                             f"doc {source.get('document_id')} · "
                             f"chunk_id={source.get('chunk_id')} · "
                             f"{source.get('section_title') or '-'}"
@@ -565,7 +577,13 @@ with chemistry_tab:
     if detail:
         reactions = detail.get("reactions", [])
         unverified_reactions = [reaction for reaction in reactions if not reaction.get("verified")]
-        st.caption(f"status: {detail.get('status')} · reactions: {len(reactions)} · 未复核: {len(unverified_reactions)}")
+        st.caption(
+            f"status: {detail.get('status')} · "
+            f"reactions: {len(reactions)} · "
+            f"未复核: {len(unverified_reactions)} · "
+            f"verified_by: {detail.get('verified_by') or '-'} · "
+            f"verified_at: {detail.get('verified_at') or '-'}"
+        )
         show_only_unverified = st.checkbox("只显示未复核", value=False, key="show_only_unverified")
         no_reactions = not reactions
         export_blocked = no_reactions or bool(unverified_reactions)
@@ -661,6 +679,20 @@ with chemistry_tab:
                 verified = st.checkbox("verified", value=bool(reaction.get("verified")), key=f"verified-{reaction['id']}")
                 if reaction.get("audit_log"):
                     with st.expander("audit_log"):
+                        field_change_rows = []
+                        for audit in reaction["audit_log"]:
+                            for field, change in (audit.get("field_changes") or {}).items():
+                                field_change_rows.append(
+                                    {
+                                        "field": field,
+                                        "before": change.get("before"),
+                                        "after": change.get("after"),
+                                        "verified_by": audit.get("verified_by"),
+                                        "verified_at": audit.get("verified_at"),
+                                    }
+                                )
+                        if field_change_rows:
+                            st.dataframe(field_change_rows, use_container_width=True)
                         st.json(reaction["audit_log"])
                 if st.button("保存复核", key=f"verify-{reaction['id']}"):
                     payload = {

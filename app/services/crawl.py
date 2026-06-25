@@ -7,6 +7,7 @@ from app.clients.openalex import OpenAlexClient
 from app.clients.unpaywall import UnpaywallClient
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
+from app.services.classification import get_classifier
 from app.utils import json_dumps, json_loads, now_iso, today_iso
 
 
@@ -37,8 +38,43 @@ def normalize_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
+def optional_text(value: Any, default: Optional[str] = None) -> Optional[str]:
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            return text
+    return default
+
+
+def optional_int(value: Any) -> Optional[int]:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return None
+
+
+def json_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    return []
+
+
+def json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
+def paper_raw_metadata(work: dict[str, Any], oa: dict[str, Any]) -> dict[str, Any]:
+    raw_metadata = dict(json_object(work.get("raw_metadata")))
+    if isinstance(oa.get("raw"), dict):
+        raw_metadata["unpaywall"] = oa["raw"]
+    if oa.get("error"):
+        raw_metadata["oa_resolution_error"] = str(oa["error"])
+    return raw_metadata
+
+
 def normalize_doi(value: Any) -> Optional[str]:
-    doi = normalize_text(value)
+    doi = normalize_text(optional_text(value))
     if not doi:
         return None
     return doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/")
@@ -48,18 +84,18 @@ def build_dedupe_key(journal: dict[str, Any], work: dict[str, Any]) -> Optional[
     doi = normalize_doi(work.get("doi"))
     if doi:
         return f"doi:{doi}"
-    title = normalize_text(work.get("title"))
+    title = normalize_text(optional_text(work.get("title")))
     if not title:
         return None
-    date_hint = normalize_text(work.get("published_date") or work.get("published_year"))
-    landing_url = normalize_text(work.get("landing_url"))
+    date_hint = normalize_text(optional_text(work.get("published_date")) or optional_int(work.get("published_year")))
+    landing_url = normalize_text(optional_text(work.get("landing_url")))
     if not date_hint and not landing_url:
         return None
     fingerprint = "|".join([str(journal["id"]), title, date_hint, landing_url])
     return f"no-doi:{hashlib.sha256(fingerprint.encode('utf-8')).hexdigest()}"
 
 
-def upsert_paper(conn, journal: dict[str, Any], work: dict[str, Any], oa: dict[str, Any]) -> bool:
+def upsert_paper_record(conn, journal: dict[str, Any], work: dict[str, Any], oa: dict[str, Any]) -> tuple[bool, int]:
     doi = normalize_doi(work.get("doi"))
     dedupe_key = build_dedupe_key(journal, work)
     existing = None
@@ -69,19 +105,19 @@ def upsert_paper(conn, journal: dict[str, Any], work: dict[str, Any], oa: dict[s
         existing = conn.execute("SELECT id FROM papers WHERE dedupe_key = ?", (dedupe_key,)).fetchone()
     payload = (
         doi,
-        work.get("title") or "Untitled",
-        work.get("abstract") or "",
-        json_dumps(work.get("authors") or []),
+        optional_text(work.get("title"), "Untitled"),
+        optional_text(work.get("abstract"), ""),
+        json_dumps(json_list(work.get("authors"))),
         journal["id"],
-        work.get("journal_name") or journal["name"],
-        work.get("published_date"),
-        work.get("published_year"),
-        work.get("landing_url"),
-        oa.get("oa_status") or "unknown",
-        oa.get("oa_pdf_url"),
-        work.get("source_api"),
+        optional_text(work.get("journal_name"), journal["name"]),
+        optional_text(work.get("published_date")),
+        optional_int(work.get("published_year")),
+        optional_text(work.get("landing_url")),
+        optional_text(oa.get("oa_status"), "unknown"),
+        optional_text(oa.get("oa_pdf_url")),
+        optional_text(work.get("source_api")),
         dedupe_key,
-        json_dumps(work.get("raw_metadata") or {}),
+        json_dumps(paper_raw_metadata(work, oa)),
         now_iso(),
     )
     if existing:
@@ -95,8 +131,8 @@ def upsert_paper(conn, journal: dict[str, Any], work: dict[str, Any], oa: dict[s
             """,
             payload[1:] + (existing["id"],),
         )
-        return False
-    conn.execute(
+        return False, existing["id"]
+    cursor = conn.execute(
         """
         INSERT INTO papers (
             doi, title, abstract, authors, journal_id, journal_name, published_date,
@@ -106,7 +142,30 @@ def upsert_paper(conn, journal: dict[str, Any], work: dict[str, Any], oa: dict[s
         """,
         payload,
     )
-    return True
+    return True, cursor.lastrowid
+
+
+def upsert_paper(conn, journal: dict[str, Any], work: dict[str, Any], oa: dict[str, Any]) -> bool:
+    created, _paper_id = upsert_paper_record(conn, journal, work, oa)
+    return created
+
+
+def classify_paper(conn, settings, paper_id: int) -> None:
+    row = conn.execute("SELECT title, abstract FROM papers WHERE id=?", (paper_id,)).fetchone()
+    if not row:
+        return
+    categories = [dict_from_row(category_row) for category_row in conn.execute("SELECT * FROM categories").fetchall()]
+    text = f"{row['title']} {row['abstract'] or ''}"
+    classified = get_classifier(settings).classify(text, categories)
+    conn.execute("DELETE FROM paper_categories WHERE paper_id=? AND method='auto'", (paper_id,))
+    for item in classified:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO paper_categories (paper_id, category_id, confidence, method)
+            VALUES (?, ?, ?, 'auto')
+            """,
+            (paper_id, item["category_id"], item["confidence"]),
+        )
 
 
 def academic_client_options(settings) -> dict[str, Any]:
@@ -177,6 +236,7 @@ async def run_crawl_job(job_id: int, journal_id: int, date_from: str, date_to: s
         found = len(works)
         filtered = 0
         new_count = 0
+        classification_errors = []
         unpaywall = UnpaywallClient(settings.unpaywall_email, **unpaywall_client_options(settings))
         with get_conn() as conn:
             for work in works:
@@ -190,15 +250,26 @@ async def run_crawl_job(job_id: int, journal_id: int, date_from: str, date_to: s
                         oa = await unpaywall.resolve(normalized_doi)
                     except Exception as exc:
                         oa = {"oa_status": "unknown", "oa_pdf_url": None, "error": str(exc)}
-                if upsert_paper(conn, journal, work, oa):
+                created, paper_id = upsert_paper_record(conn, journal, work, oa)
+                if created:
                     new_count += 1
+                try:
+                    classify_paper(conn, settings, paper_id)
+                except Exception as exc:
+                    classification_errors.append(f"paper {paper_id}: {exc}")
+            job_error = source_warning
+            if classification_errors:
+                message = f"classification failed for {len(classification_errors)} paper(s): " + "; ".join(
+                    classification_errors[:3]
+                )
+                job_error = f"{job_error}; {message}" if job_error else message
             conn.execute(
                 """
                 UPDATE crawl_jobs
                 SET status='success', papers_found=?, papers_filtered=?, papers_new=?, error=?, finished_at=?
                 WHERE id=?
                 """,
-                (found, filtered, new_count, source_warning, now_iso(), job_id),
+                (found, filtered, new_count, job_error, now_iso(), job_id),
             )
     except Exception as exc:
         with get_conn() as conn:
@@ -212,10 +283,15 @@ def create_jobs(journal_ids: Optional[list[int]], period: str, date_from: Option
     date_to = date_to or today_iso()
     with get_conn() as conn:
         if journal_ids:
-            placeholders = ",".join("?" for _ in journal_ids)
+            requested_ids = list(dict.fromkeys(journal_ids))
+            placeholders = ",".join("?" for _ in requested_ids)
             journals = conn.execute(
-                f"SELECT * FROM journals WHERE active=1 AND id IN ({placeholders})", tuple(journal_ids)
+                f"SELECT * FROM journals WHERE active=1 AND id IN ({placeholders})", tuple(requested_ids)
             ).fetchall()
+            found_ids = {row["id"] for row in journals}
+            missing_ids = [journal_id for journal_id in requested_ids if journal_id not in found_ids]
+            if missing_ids:
+                raise LookupError(f"active journals not found: {', '.join(str(journal_id) for journal_id in missing_ids)}")
         else:
             journals = conn.execute("SELECT * FROM journals WHERE active=1").fetchall()
         jobs = []

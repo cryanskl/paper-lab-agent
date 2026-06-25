@@ -10,6 +10,7 @@ from app.db import dict_from_row, get_conn
 
 FORMULA_RE = re.compile(r"(\$\$.*?\$\$|\$.*?\$)", re.DOTALL)
 PRESERVE_SECTION_TYPES = {"table", "reference"}
+MAX_TARGET_LANG_SLUG_LENGTH = 80
 
 
 class Translator(Protocol):
@@ -91,6 +92,24 @@ def translate_section_text(section: dict, translator: Translator, target_lang: s
     return translate_text_preserving_formulas(text, translator, target_lang)
 
 
+def preserved_section_note(section: dict) -> Optional[str]:
+    section_type = (section.get("section_type") or "").strip().lower()
+    if section_type not in PRESERVE_SECTION_TYPES:
+        return None
+    return f"> Section type `{section_type}` is preserved without machine translation."
+
+
+def has_translatable_text(section: dict) -> bool:
+    section_type = (section.get("section_type") or "").strip().lower()
+    return section_type not in PRESERVE_SECTION_TYPES and bool((section.get("content") or "").strip())
+
+
+def safe_target_lang_slug(target_lang: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", (target_lang or "").strip())
+    slug = slug.strip(".-")
+    return (slug or "target")[:MAX_TARGET_LANG_SLUG_LENGTH]
+
+
 def create_translation_job(document_id: int, target_lang: str) -> dict:
     with get_conn() as conn:
         cursor = conn.execute(
@@ -117,6 +136,8 @@ def translate_document(document_id: int, target_lang: str, translation_id: Optio
     try:
         if not sections:
             raise ValueError("document has no parsed sections")
+        if not any(has_translatable_text(dict_from_row(row)) for row in sections):
+            raise ValueError("document has no translatable section text")
         translator = get_translator(settings)
         note = (
             "> LLM_API_KEY is not configured; target text preserves source text honestly."
@@ -127,6 +148,11 @@ def translate_document(document_id: int, target_lang: str, translation_id: Optio
         for row in sections:
             section = dict_from_row(row)
             target_text = translate_section_text(section, translator, target_lang)
+            target_blocks = [f"### {target_lang}", ""]
+            preserved_note = preserved_section_note(section)
+            if preserved_note:
+                target_blocks.extend([preserved_note, ""])
+            target_blocks.append(target_text)
             blocks.extend(
                 [
                     "",
@@ -136,12 +162,10 @@ def translate_document(document_id: int, target_lang: str, translation_id: Optio
                     "",
                     section["content"] or "",
                     "",
-                    f"### {target_lang}",
-                    "",
-                    target_text,
+                    *target_blocks,
                 ]
             )
-        out_path = settings.translation_dir / f"document-{document_id}-{target_lang}.md"
+        out_path = settings.translation_dir / f"document-{document_id}-{safe_target_lang_slug(target_lang)}.md"
         out_path.write_text("\n".join(blocks), encoding="utf-8")
         with get_conn() as conn:
             conn.execute(
@@ -153,7 +177,7 @@ def translate_document(document_id: int, target_lang: str, translation_id: Optio
     except Exception as exc:
         with get_conn() as conn:
             conn.execute(
-                "UPDATE translations SET status='failed', error=? WHERE id=?",
+                "UPDATE translations SET status='failed', output_path=NULL, error=? WHERE id=?",
                 (str(exc), translation_id),
             )
             row = conn.execute("SELECT * FROM translations WHERE id=?", (translation_id,)).fetchone()

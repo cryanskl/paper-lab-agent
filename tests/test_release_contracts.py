@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -27,6 +28,71 @@ def load_validate_release_hygiene():
     return validate_release_hygiene
 
 
+def load_validate_api_contract():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_api_contract.py"
+    spec = importlib.util.spec_from_file_location("validate_api_contract_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_api_contract = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_api_contract)
+    return validate_api_contract
+
+
+def load_validate_schema():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_schema.py"
+    spec = importlib.util.spec_from_file_location("validate_schema_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_schema = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_schema)
+    return validate_schema
+
+
+def load_validate_requirements():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_requirements.py"
+    spec = importlib.util.spec_from_file_location("validate_requirements_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_requirements = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_requirements)
+    return validate_requirements
+
+
+def load_validate_docs_links():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_docs_links.py"
+    spec = importlib.util.spec_from_file_location("validate_docs_links_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_docs_links = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_docs_links)
+    return validate_docs_links
+
+
+def load_validate_readme_commands():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_readme_commands.py"
+    spec = importlib.util.spec_from_file_location("validate_readme_commands_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_readme_commands = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_readme_commands)
+    return validate_readme_commands
+
+
 def test_env_example_contains_required_external_dependency_keys():
     validate_env_example = load_validate_env_example()
     env_path = Path(__file__).resolve().parent.parent / ".env.example"
@@ -38,24 +104,80 @@ def test_env_example_contains_required_external_dependency_keys():
 
 def test_env_example_validator_reports_missing_required_key(tmp_path):
     validate_env_example = load_validate_env_example()
+    repo = Path(__file__).resolve().parent.parent
     env_path = tmp_path / ".env.example"
-    env_path.write_text(
-        "\n".join(
-            [
-                "OPENALEX_MAILTO=",
-                "UNPAYWALL_EMAIL=",
-                "GROBID_URL=http://127.0.0.1:8070",
-                "LLM_API_KEY=",
-                "EMBEDDING_MODEL=local-hash",
-                "DATABASE_PATH=./data/plasma.db",
-            ]
-        ),
-        encoding="utf-8",
-    )
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_path.write_text(env_text.replace("VECTOR_DB_PATH=./data/vector-index.json\n", ""), encoding="utf-8")
 
     missing = validate_env_example.missing_required_keys(env_path)
 
     assert missing == ["VECTOR_DB_PATH"]
+
+
+def test_env_example_validator_reports_missing_settings_alias(tmp_path):
+    validate_env_example = load_validate_env_example()
+    repo = Path(__file__).resolve().parent.parent
+    env_path = tmp_path / ".env.example"
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_path.write_text(env_text.replace("LLM_BASE_URL=https://api.openai.com/v1\n", ""), encoding="utf-8")
+
+    missing = validate_env_example.missing_required_keys(env_path)
+
+    assert missing == ["LLM_BASE_URL"]
+
+
+def test_env_example_validator_reports_missing_script_runtime_key(tmp_path):
+    validate_env_example = load_validate_env_example()
+    repo = Path(__file__).resolve().parent.parent
+    env_path = tmp_path / ".env.example"
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_path.write_text(env_text.replace("FRONTEND_URL=http://127.0.0.1:8501\n", ""), encoding="utf-8")
+
+    missing = validate_env_example.missing_required_keys(env_path)
+
+    assert missing == ["FRONTEND_URL"]
+
+
+def test_env_example_keeps_secret_like_values_blank():
+    validate_env_example = load_validate_env_example()
+    env_path = Path(__file__).resolve().parent.parent / ".env.example"
+
+    filled = validate_env_example.non_empty_secret_like_keys(env_path)
+
+    assert filled == []
+
+
+def test_env_example_defaults_match_settings_defaults():
+    validate_env_example = load_validate_env_example()
+    repo = Path(__file__).resolve().parent.parent
+
+    mismatches = validate_env_example.documented_default_mismatches(repo / ".env.example")
+
+    assert mismatches == []
+
+
+def test_env_example_validator_reports_default_drift(tmp_path):
+    validate_env_example = load_validate_env_example()
+    repo = Path(__file__).resolve().parent.parent
+    env_path = tmp_path / ".env.example"
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_path.write_text(env_text.replace("LLM_MODEL=gpt-4o-mini\n", "LLM_MODEL=legacy-model\n"), encoding="utf-8")
+
+    mismatches = validate_env_example.documented_default_mismatches(env_path)
+
+    assert mismatches == ["LLM_MODEL expected gpt-4o-mini, got legacy-model"]
+
+
+def test_env_example_validator_reports_filled_secret_like_values(tmp_path):
+    validate_env_example = load_validate_env_example()
+    repo = Path(__file__).resolve().parent.parent
+    env_path = tmp_path / ".env.example"
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_path.write_text(env_text.replace("LLM_API_KEY=\n", "LLM_API_KEY=sk-test\n"), encoding="utf-8")
+
+    filled = validate_env_example.non_empty_secret_like_keys(env_path)
+
+    assert filled == ["LLM_API_KEY"]
 
 
 def test_gitignore_contains_required_release_hygiene_patterns():
@@ -67,6 +189,24 @@ def test_gitignore_contains_required_release_hygiene_patterns():
     assert missing == []
 
 
+def test_release_hygiene_validator_accepts_current_tracked_files():
+    import subprocess
+
+    validate_release_hygiene = load_validate_release_hygiene()
+    repo = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        ["git", "ls-files"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    forbidden = validate_release_hygiene.forbidden_tracked_paths(result.stdout.splitlines())
+
+    assert forbidden == []
+
+
 def test_release_hygiene_validator_reports_missing_gitignore_pattern(tmp_path):
     validate_release_hygiene = load_validate_release_hygiene()
     gitignore_path = tmp_path / ".gitignore"
@@ -75,3 +215,387 @@ def test_release_hygiene_validator_reports_missing_gitignore_pattern(tmp_path):
     missing = validate_release_hygiene.missing_required_gitignore_patterns(gitignore_path)
 
     assert ".next/" in missing
+
+
+def test_release_hygiene_validator_reports_tracked_generated_artifacts():
+    validate_release_hygiene = load_validate_release_hygiene()
+
+    forbidden = validate_release_hygiene.forbidden_tracked_paths(
+        [
+            "README.md",
+            ".env",
+            "data/plasma.db",
+            "scripts/__pycache__/smoke_check.cpython-313.pyc",
+            "coverage/index.html",
+        ]
+    )
+
+    assert forbidden == [
+        ".env",
+        "data/plasma.db",
+        "scripts/__pycache__/smoke_check.cpython-313.pyc",
+        "coverage/index.html",
+    ]
+
+
+def test_release_hygiene_validator_requires_ci_release_gate():
+    validate_release_hygiene = load_validate_release_hygiene()
+    repo = Path(__file__).resolve().parent.parent
+
+    missing = validate_release_hygiene.missing_required_ci_release_gate(repo)
+
+    assert missing == []
+
+
+def test_release_hygiene_validator_reports_missing_ci_release_gate(tmp_path):
+    validate_release_hygiene = load_validate_release_hygiene()
+    workflow_dir = tmp_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "ci.yml").write_text(
+        "name: ci\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: pytest\n",
+        encoding="utf-8",
+    )
+
+    missing = validate_release_hygiene.missing_required_ci_release_gate(tmp_path)
+
+    assert "ci_runs_release_check" in missing
+
+
+def test_release_hygiene_validator_requires_ci_push_and_pull_request_triggers():
+    validate_release_hygiene = load_validate_release_hygiene()
+    repo = Path(__file__).resolve().parent.parent
+
+    missing = validate_release_hygiene.missing_required_ci_release_gate(repo)
+
+    assert missing == []
+
+
+def test_release_hygiene_validator_reports_missing_ci_pull_request_trigger(tmp_path):
+    validate_release_hygiene = load_validate_release_hygiene()
+    workflow_dir = tmp_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "ci.yml").write_text(
+        "name: ci\n\non:\n  push:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: bash scripts/release_check.sh\n",
+        encoding="utf-8",
+    )
+
+    missing = validate_release_hygiene.missing_required_ci_release_gate(tmp_path)
+
+    assert "ci_pull_request_trigger" in missing
+
+
+def test_agent_guides_truth_source_references_point_to_existing_files():
+    repo = Path(__file__).resolve().parent.parent
+    truth_source_names = {
+        "PRD_等离子体文献系统.md",
+        "schema.sql",
+        "接口设计文档.md",
+        "任务拆分_开发路线.md",
+    }
+
+    references = []
+    missing = []
+    for guide_name in ["AGENTS.md", "CLAUDE.md"]:
+        guide_text = (repo / guide_name).read_text(encoding="utf-8")
+        guide_references = [
+            reference
+            for reference in re.findall(r"`([^`]+)`", guide_text)
+            if Path(reference).name in truth_source_names
+        ]
+        references.extend((guide_name, reference) for reference in guide_references)
+        missing.extend(
+            (guide_name, reference) for reference in guide_references if not (repo / reference).exists()
+        )
+
+    assert references
+    assert missing == []
+
+
+def test_readme_documents_current_runtime_version():
+    repo = Path(__file__).resolve().parent.parent
+    namespace: dict[str, str] = {}
+    exec((repo / "app" / "__init__.py").read_text(encoding="utf-8"), namespace)
+    readme = (repo / "README.md").read_text(encoding="utf-8")
+
+    assert f"当前版本：`{namespace['__version__']}`" in readme
+
+
+def test_release_check_derives_expected_runtime_version_from_app_version():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert "from app import __version__" in release_text
+    assert '"runtime_version": __version__' in release_text
+    assert '"runtime_version": "0.1.0"' not in release_text
+
+
+def test_api_contract_documented_endpoints_exist_in_app():
+    validate_api_contract = load_validate_api_contract()
+    repo = Path(__file__).resolve().parent.parent
+
+    missing = validate_api_contract.missing_documented_routes(repo / "docs" / "接口设计文档.md")
+
+    assert missing == []
+
+
+def test_api_contract_app_routes_are_documented():
+    validate_api_contract = load_validate_api_contract()
+    repo = Path(__file__).resolve().parent.parent
+
+    undocumented = validate_api_contract.undocumented_app_routes(repo / "docs" / "接口设计文档.md")
+
+    assert undocumented == []
+
+
+def test_api_contract_validator_runs_as_release_script():
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+
+    result = subprocess.run(
+        [sys.executable, "scripts/validate_api_contract.py"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_api_contract_validator_reports_documented_route_missing_from_app(tmp_path):
+    validate_api_contract = load_validate_api_contract()
+    repo = Path(__file__).resolve().parent.parent
+    contract_path = tmp_path / "接口设计文档.md"
+    contract_text = (repo / "docs" / "接口设计文档.md").read_text(encoding="utf-8")
+    contract_path.write_text(
+        contract_text + "\n| GET | `/nonexistent-release-contract-route` | should fail |\n",
+        encoding="utf-8",
+    )
+
+    missing = validate_api_contract.missing_documented_routes(contract_path)
+
+    assert missing == ["GET /api/v1/nonexistent-release-contract-route"]
+
+
+def test_schema_validator_accepts_schema_truth_source():
+    validate_schema = load_validate_schema()
+    repo = Path(__file__).resolve().parent.parent
+
+    issues = validate_schema.validate_schema(repo / "docs" / "schema.sql")
+
+    assert issues == []
+
+
+def test_schema_validator_reports_missing_required_table(tmp_path):
+    validate_schema = load_validate_schema()
+    schema_path = tmp_path / "schema.sql"
+    schema_path.write_text("PRAGMA foreign_keys = ON;\nCREATE TABLE journals (id INTEGER PRIMARY KEY);\n", encoding="utf-8")
+
+    issues = validate_schema.validate_schema(schema_path)
+
+    assert "missing table: papers" in issues
+    assert "missing table: documents" in issues
+
+
+def test_schema_validator_runs_as_release_script():
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+
+    result = subprocess.run(
+        [sys.executable, "scripts/validate_schema.py"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_requirements_validator_accepts_declared_direct_dependencies():
+    validate_requirements = load_validate_requirements()
+    repo = Path(__file__).resolve().parent.parent
+
+    missing = validate_requirements.missing_required_packages(repo / "requirements.txt")
+
+    assert missing == []
+
+
+def test_requirements_validator_reports_missing_direct_dependency(tmp_path):
+    validate_requirements = load_validate_requirements()
+    repo = Path(__file__).resolve().parent.parent
+    requirements_path = tmp_path / "requirements.txt"
+    requirements_text = (repo / "requirements.txt").read_text(encoding="utf-8")
+    requirements_path.write_text(
+        requirements_text.replace("requests==2.32.3\n", ""),
+        encoding="utf-8",
+    )
+
+    missing = validate_requirements.missing_required_packages(requirements_path)
+
+    assert missing == ["requests"]
+
+
+def test_requirements_validator_rejects_unpinned_packages(tmp_path):
+    validate_requirements = load_validate_requirements()
+    requirements_path = tmp_path / "requirements.txt"
+    requirements_path.write_text("fastapi==0.115.6\nrequests>=2.32\nstreamlit\n", encoding="utf-8")
+
+    unpinned = validate_requirements.unpinned_packages(requirements_path)
+
+    assert unpinned == ["requests", "streamlit"]
+
+
+def test_requirements_validator_rejects_duplicate_packages(tmp_path):
+    validate_requirements = load_validate_requirements()
+    requirements_path = tmp_path / "requirements.txt"
+    requirements_path.write_text("requests==2.32.3\nRequests==2.32.3\nhttpx==0.28.1\n", encoding="utf-8")
+
+    duplicates = validate_requirements.duplicate_packages(requirements_path)
+
+    assert duplicates == ["requests"]
+
+
+def test_requirements_validator_reports_imported_package_missing_from_requirements(tmp_path):
+    validate_requirements = load_validate_requirements()
+    source_dir = tmp_path / "app"
+    source_dir.mkdir()
+    (source_dir / "uses_bs4.py").write_text("import bs4\nfrom pathlib import Path\n", encoding="utf-8")
+    requirements_path = tmp_path / "requirements.txt"
+    requirements_path.write_text("requests==2.32.3\n", encoding="utf-8")
+
+    missing = validate_requirements.missing_imported_packages(requirements_path, [source_dir])
+
+    assert missing == ["beautifulsoup4"]
+
+
+def test_requirements_validator_ignores_standard_library_imports(tmp_path):
+    validate_requirements = load_validate_requirements()
+    source_dir = tmp_path / "scripts"
+    source_dir.mkdir()
+    (source_dir / "uses_stdlib.py").write_text("import fnmatch\nimport shlex\nimport subprocess\n", encoding="utf-8")
+    requirements_path = tmp_path / "requirements.txt"
+    requirements_path.write_text("", encoding="utf-8")
+
+    missing = validate_requirements.missing_imported_packages(requirements_path, [source_dir])
+
+    assert missing == []
+
+
+def test_requirements_validator_runs_as_release_script():
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+
+    result = subprocess.run(
+        [sys.executable, "scripts/validate_requirements.py"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_docs_links_validator_accepts_current_docs():
+    validate_docs_links = load_validate_docs_links()
+    repo = Path(__file__).resolve().parent.parent
+
+    issues = validate_docs_links.broken_doc_links(repo)
+
+    assert issues == []
+
+
+def test_docs_links_validator_reports_missing_markdown_link(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (tmp_path / "README.md").write_text("[Missing](docs/missing.md)\n", encoding="utf-8")
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["README.md: missing link target docs/missing.md"]
+
+
+def test_docs_links_validator_reports_missing_backtick_reference(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "guide.md").write_text("See `missing.sql` before release.\n", encoding="utf-8")
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["docs/guide.md: missing reference target missing.sql"]
+
+
+def test_docs_links_validator_runs_as_release_script():
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+
+    result = subprocess.run(
+        [sys.executable, "scripts/validate_docs_links.py"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_readme_commands_validator_accepts_current_readme():
+    validate_readme_commands = load_validate_readme_commands()
+    repo = Path(__file__).resolve().parent.parent
+
+    issues = validate_readme_commands.missing_command_targets(repo)
+
+    assert issues == []
+
+
+def test_readme_commands_validator_reports_missing_script_target(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    (tmp_path / "README.md").write_text(
+        "```bash\npython scripts/missing.py\nbash scripts/missing.sh\n```\n",
+        encoding="utf-8",
+    )
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == [
+        "README.md: command target missing: scripts/missing.py",
+        "README.md: command target missing: scripts/missing.sh",
+    ]
+
+
+def test_readme_commands_validator_reports_missing_scripts_module(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    (tmp_path / "README.md").write_text("```bash\npython -m scripts.missing_check\n```\n", encoding="utf-8")
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == ["README.md: command target missing: scripts/missing_check.py"]
+
+
+def test_readme_commands_validator_runs_as_release_script():
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+
+    result = subprocess.run(
+        [sys.executable, "scripts/validate_readme_commands.py"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr

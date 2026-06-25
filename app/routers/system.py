@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -35,6 +36,32 @@ def storage_path_health(path: Path) -> dict:
     }
 
 
+def vector_store_health(path: Path) -> dict:
+    exists = path.exists()
+    readable = bool(exists and os.access(path, os.R_OK))
+    health = {
+        "path": str(path),
+        "exists": exists,
+        "readable": readable,
+        "writable": bool(exists and os.access(path, os.W_OK)),
+        "valid_json": None,
+        "error": None,
+    }
+    if not exists:
+        return health
+    if not readable:
+        health["valid_json"] = False
+        health["error"] = "vector store is not readable"
+        return health
+    try:
+        json.loads(path.read_text(encoding="utf-8"))
+        health["valid_json"] = True
+    except Exception as exc:
+        health["valid_json"] = False
+        health["error"] = str(exc)
+    return health
+
+
 def storage_health(settings) -> dict:
     return {
         "data_dir": storage_path_health(settings.data_dir),
@@ -44,6 +71,7 @@ def storage_health(settings) -> dict:
         "export_dir": storage_path_health(settings.export_dir),
         "database_parent": storage_path_health(settings.database_path.parent),
         "vector_db_parent": storage_path_health(settings.vector_db_path.parent),
+        "vector_db": vector_store_health(settings.vector_db_path),
     }
 
 

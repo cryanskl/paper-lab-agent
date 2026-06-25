@@ -21,8 +21,21 @@ def count_pdf_pages(content: bytes) -> Optional[int]:
 
 def mark_parse_queued(document_id: int) -> None:
     with get_conn() as conn:
+        conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+        conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))
+        conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
+        conn.execute("DELETE FROM sections WHERE document_id=?", (document_id,))
         conn.execute(
-            "UPDATE documents SET parse_status='parsing', parse_error=NULL WHERE id=?",
+            """
+            UPDATE documents
+            SET parse_status='parsing',
+                parse_error=NULL,
+                index_status='not_indexed',
+                index_error=NULL,
+                chemistry_status='not_extracted',
+                chemistry_error=NULL
+            WHERE id=?
+            """,
             (document_id,),
         )
 
@@ -91,58 +104,125 @@ def sections_from_tei(tei: str) -> list[dict]:
                 rows.append(" ".join(cell for cell in cells if cell))
         return rows
 
+    def content_without_children(node: ET.Element, excluded: list[Optional[ET.Element]]) -> str:
+        excluded_children = [excluded_child for excluded_child in excluded if excluded_child is not None]
+        parts = [node.text or ""]
+        for child in list(node):
+            if all(child is not excluded_child for excluded_child in excluded_children):
+                parts.append(" ".join(child.itertext()))
+            parts.append(child.tail or "")
+        return " ".join(parts)
+
+    def local_name(node: ET.Element) -> str:
+        return node.tag.rsplit("}", 1)[-1]
+
     for abstract in findall(root, ".//tei:text//tei:front//tei:abstract"):
-        append_section("Abstract", " ".join(abstract.itertext()), "abstract")
+        head = find(abstract, "tei:head")
+        append_section("Abstract", content_without_children(abstract, [head]) if head is not None else " ".join(abstract.itertext()), "abstract")
 
-    for div in findall(root, ".//tei:text//tei:body//tei:div"):
+    def append_body_div(div: ET.Element) -> None:
         head = find(div, "tei:head")
-        paragraphs = [clean_text(" ".join(p.itertext())) for p in findall(div, ".//tei:p")]
-        append_section(
-            clean_text(" ".join(head.itertext())) if head is not None else f"Section {len(sections) + 1}",
-            "\n\n".join(p for p in paragraphs if p),
-            "body",
-        )
+        explicit_title = clean_text(" ".join(head.itertext())) if head is not None else None
+        content_parts = []
 
-    handled_tables = set()
-    for figure in findall(root, ".//tei:text//tei:body//tei:figure"):
+        def flush_body_content() -> None:
+            nonlocal content_parts
+            title = explicit_title or f"Section {len(sections) + 1}"
+            append_section(title, "\n\n".join(item for item in content_parts if item), "body")
+            content_parts = []
+
+        for child in list(div):
+            child_name = local_name(child)
+            if child_name == "head":
+                continue
+            if child_name == "p":
+                content_parts.append(clean_text(" ".join(child.itertext())))
+            elif child_name == "list":
+                content_parts.extend(clean_text(" ".join(item.itertext())) for item in findall(child, "tei:item"))
+            elif child_name == "div":
+                flush_body_content()
+                append_body_div(child)
+            elif child_name == "figure":
+                flush_body_content()
+                append_figure(child)
+            elif child_name == "table":
+                flush_body_content()
+                append_table(child)
+        flush_body_content()
+
+    def append_figure(figure: ET.Element) -> None:
         head = find(figure, "tei:head")
         caption = find(figure, "tei:figDesc")
         if figure.get("type") == "table":
             nested_table = find(figure, ".//tei:table")
-            if nested_table is not None:
-                handled_tables.add(id(nested_table))
             content_parts = []
             if caption is not None:
                 content_parts.append(" ".join(caption.itertext()))
             if nested_table is not None:
                 content_parts.extend(table_rows(nested_table))
             else:
-                content_parts.append(" ".join(figure.itertext()))
+                fallback_content = content_without_children(figure, [head, caption])
+                if fallback_content:
+                    content_parts.append(fallback_content)
             append_section(
                 clean_text(" ".join(head.itertext())) if head is not None else f"Table {len(sections) + 1}",
                 "\n".join(content_parts),
                 "table",
             )
-            continue
+            return
         append_section(
             clean_text(" ".join(head.itertext())) if head is not None else f"Figure {len(sections) + 1}",
-            " ".join(caption.itertext()) if caption is not None else " ".join(figure.itertext()),
+            " ".join(caption.itertext()) if caption is not None else content_without_children(figure, [head]),
             "figure_caption",
         )
 
-    for table in findall(root, ".//tei:text//tei:body//tei:table"):
-        if id(table) in handled_tables:
-            continue
+    def append_table(table: ET.Element) -> None:
         head = find(table, "tei:head")
         rows = table_rows(table)
         append_section(
             clean_text(" ".join(head.itertext())) if head is not None else f"Table {len(sections) + 1}",
-            "\n".join(rows) or " ".join(table.itertext()),
+            "\n".join(rows) or content_without_children(table, [head]),
             "table",
         )
 
-    for idx, bibl in enumerate(findall(root, ".//tei:text//tei:back//tei:listBibl//tei:biblStruct"), start=1):
-        append_section(f"Reference {idx}", " ".join(bibl.itertext()), "reference")
+    for body in findall(root, ".//tei:text//tei:body"):
+        pending_body_head = None
+        content_parts = []
+
+        def flush_body_content() -> None:
+            nonlocal content_parts, pending_body_head
+            title = pending_body_head or f"Section {len(sections) + 1}"
+            append_section(title, "\n\n".join(item for item in content_parts if item), "body")
+            content_parts = []
+            pending_body_head = None
+
+        for child in list(body):
+            child_name = local_name(child)
+            if child_name == "head":
+                flush_body_content()
+                pending_body_head = clean_text(" ".join(child.itertext()))
+            elif child_name == "div":
+                flush_body_content()
+                append_body_div(child)
+            elif child_name == "p":
+                content_parts.append(clean_text(" ".join(child.itertext())))
+            elif child_name == "list":
+                content_parts.extend(clean_text(" ".join(item.itertext())) for item in findall(child, "tei:item"))
+            elif child_name == "figure":
+                flush_body_content()
+                append_figure(child)
+            elif child_name == "table":
+                flush_body_content()
+                append_table(child)
+        flush_body_content()
+
+    reference_index = 1
+    for list_bibl in findall(root, ".//tei:text//tei:back//tei:listBibl"):
+        for bibl in list(list_bibl):
+            if local_name(bibl) not in {"biblStruct", "biblFull", "bibl"}:
+                continue
+            append_section(f"Reference {reference_index}", " ".join(bibl.itertext()), "reference")
+            reference_index += 1
     return sections
 
 
@@ -153,20 +233,45 @@ async def parse_document(document_id: int) -> dict:
         if not row:
             raise ValueError("document not found")
         doc = dict_from_row(row)
-        conn.execute("UPDATE documents SET parse_status='parsing', parse_error=NULL WHERE id=?", (document_id,))
+        conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+        conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))
+        conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
+        conn.execute("DELETE FROM sections WHERE document_id=?", (document_id,))
+        conn.execute(
+            """
+            UPDATE documents
+            SET parse_status='parsing',
+                parse_error=NULL,
+                index_status='not_indexed',
+                index_error=NULL,
+                chemistry_status='not_extracted',
+                chemistry_error=NULL
+            WHERE id=?
+            """,
+            (document_id,),
+        )
 
     tei_text = None
     sections: list[dict] = []
     grobid = GrobidClient(settings.grobid_url)
     parse_error = None
     try:
-        if await grobid.health():
+        grobid_health = await grobid.health_detail()
+        if grobid_health.get("available"):
             tei_text = await grobid.process_fulltext(doc["file_path"])
             sections = sections_from_tei(tei_text or "")
-            if not sections:
+            has_body_content = any(item.get("section_type") != "reference" for item in sections)
+            if not has_body_content:
+                sections = []
                 parse_error = "GROBID returned no body sections; used local text fallback"
         else:
-            parse_error = "GROBID is unavailable; used local text fallback"
+            reason_parts = [
+                str(grobid_health.get("error") or "unavailable"),
+                f"url={grobid_health.get('url')}",
+            ]
+            if grobid_health.get("status_code") is not None:
+                reason_parts.append(f"status_code={grobid_health.get('status_code')}")
+            parse_error = f"GROBID is unavailable ({'; '.join(reason_parts)}); used local text fallback"
     except Exception as exc:
         parse_error = f"GROBID parse failed: {exc}; used local text fallback"
         tei_text = None
@@ -180,43 +285,83 @@ async def parse_document(document_id: int) -> dict:
                 f"<p>{escape(text)}</p></div></body></text></TEI>"
             )
         except Exception as exc:
+            parse_error = f"Local text fallback failed: {exc}"
+            try:
+                JsonVectorStore(settings.vector_db_path).delete_document(document_id)
+            except Exception as cleanup_exc:
+                parse_error = f"{parse_error}; vector cleanup failed: {cleanup_exc}"
             with get_conn() as conn:
+                conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+                conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))
+                conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
+                conn.execute("DELETE FROM sections WHERE document_id=?", (document_id,))
                 conn.execute(
-                    "UPDATE documents SET parse_status='failed', parse_error=? WHERE id=?",
-                    (f"Local text fallback failed: {exc}", document_id),
+                    """
+                    UPDATE documents
+                    SET parse_status='failed',
+                        parse_error=?,
+                        index_status='not_indexed',
+                        index_error=NULL,
+                        chemistry_status='not_extracted',
+                        chemistry_error=NULL
+                    WHERE id=?
+                    """,
+                    (parse_error, document_id),
                 )
                 row = conn.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
                 return dict_from_row(row)
 
-    tei_path = settings.tei_dir / f"document-{document_id}.tei.xml"
-    tei_path.write_text(tei_text or "", encoding="utf-8")
-    JsonVectorStore(settings.vector_db_path).delete_document(document_id)
-    with get_conn() as conn:
-        conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
-        conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))
-        conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
-        conn.execute("DELETE FROM sections WHERE document_id=?", (document_id,))
-        for item in sections:
+    try:
+        tei_path = settings.tei_dir / f"document-{document_id}.tei.xml"
+        tei_path.write_text(tei_text or "", encoding="utf-8")
+        JsonVectorStore(settings.vector_db_path).delete_document(document_id)
+        with get_conn() as conn:
+            conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM sections WHERE document_id=?", (document_id,))
+            for item in sections:
+                conn.execute(
+                    """
+                    INSERT INTO sections (document_id, parent_id, seq, title, content, section_type)
+                    VALUES (?, NULL, ?, ?, ?, ?)
+                    """,
+                    (document_id, item["seq"], item["title"], item["content"], item["section_type"]),
+                )
             conn.execute(
                 """
-                INSERT INTO sections (document_id, parent_id, seq, title, content, section_type)
-                VALUES (?, NULL, ?, ?, ?, ?)
+                UPDATE documents
+                SET parse_status='parsed',
+                    tei_path=?,
+                    parse_error=?,
+                    index_status='not_indexed',
+                    index_error=NULL,
+                    chemistry_status='not_extracted',
+                    chemistry_error=NULL
+                WHERE id=?
                 """,
-                (document_id, item["seq"], item["title"], item["content"], item["section_type"]),
+                (str(tei_path), parse_error, document_id),
             )
-        conn.execute(
-            """
-            UPDATE documents
-            SET parse_status='parsed',
-                tei_path=?,
-                parse_error=?,
-                index_status='not_indexed',
-                index_error=NULL,
-                chemistry_status='not_extracted',
-                chemistry_error=NULL
-            WHERE id=?
-            """,
-            (str(tei_path), parse_error, document_id),
-        )
-        row = conn.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
-        return dict_from_row(row)
+            row = conn.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
+            return dict_from_row(row)
+    except Exception as exc:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM sections WHERE document_id=?", (document_id,))
+            conn.execute(
+                """
+                UPDATE documents
+                SET parse_status='failed',
+                    parse_error=?,
+                    index_status='not_indexed',
+                    index_error=NULL,
+                    chemistry_status='not_extracted',
+                    chemistry_error=NULL
+                WHERE id=?
+                """,
+                (f"Parse finalization failed: {exc}", document_id),
+            )
+            row = conn.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
+            return dict_from_row(row)

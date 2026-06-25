@@ -142,18 +142,19 @@ def list_chunks(
             FROM chunks ch
             LEFT JOIN sections s ON s.id = ch.section_id
             WHERE ch.document_id=?
-            ORDER BY ch.seq
+            ORDER BY s.seq, ch.seq, ch.id
             LIMIT ? OFFSET ?
             """,
             (document_id, page_size, offset),
         ).fetchall()
     items = [dict_from_row(row) for row in rows]
+    indexed = document.get("index_status") == "indexed" and total > 0
     return {
         "items": items,
         "total": total,
         "page": page_num,
         "page_size": page_size,
-        "indexed": document.get("index_status") == "indexed" and bool(items),
+        "indexed": indexed,
         "index_status": document.get("index_status") or ("indexed" if items else "not_indexed"),
         "index_error": document.get("index_error"),
     }

@@ -33,6 +33,23 @@ def test_crossref_normalizes_scalar_title_fields():
     assert work["journal_name"] == "Scalar journal"
 
 
+def test_crossref_skips_malformed_text_list_items():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/malformed-text-list",
+            "title": [{"value": "Malformed"}, "Usable title"],
+            "container-title": [{"value": "Malformed journal"}, "Usable journal"],
+        }
+    )
+    untitled = client.normalize({"DOI": "10.5555/no-usable-title", "title": [{"value": "Malformed"}]})
+
+    assert work["title"] == "Usable title"
+    assert work["journal_name"] == "Usable journal"
+    assert untitled["title"] == "Untitled"
+
+
 def test_crossref_skips_malformed_author_items():
     client = CrossrefClient()
 
@@ -54,12 +71,125 @@ def test_crossref_skips_malformed_author_items():
     ]
 
 
+def test_crossref_tolerates_malformed_author_name_parts():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/author-name-parts",
+            "title": ["Author name parts"],
+            "author": [
+                {"given": {"value": "Jane"}, "family": "Doe"},
+                {"given": "Solo", "family": ["Malformed"]},
+            ],
+        }
+    )
+
+    assert work["authors"] == [
+        {"name": "Doe", "affiliation": None},
+        {"name": "Solo", "affiliation": None},
+    ]
+
+
+def test_crossref_tolerates_malformed_published_date_fields():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/malformed-date",
+            "title": ["Malformed date"],
+            "published-print": "not-a-date-object",
+        }
+    )
+
+    assert work["doi"] == "10.5555/malformed-date"
+    assert work["title"] == "Malformed date"
+    assert work["published_date"] is None
+    assert work["published_year"] is None
+
+
+def test_crossref_tolerates_malformed_landing_url_field():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/malformed-url",
+            "title": ["Malformed URL"],
+            "URL": {"value": "https://publisher.example/article"},
+        }
+    )
+
+    assert work["landing_url"] is None
+
+
 def test_openalex_normalizes_url_doi_to_bare_identifier():
     client = OpenAlexClient()
 
     work = client.normalize({"doi": "https://doi.org/10.5555/ABC.Def", "title": "Example"})
 
     assert work["doi"] == "10.5555/abc.def"
+
+
+def test_openalex_tolerates_malformed_title_fields():
+    client = OpenAlexClient()
+
+    list_title = client.normalize({"id": "https://openalex.org/W-title-list", "title": ["List title"]})
+    object_title = client.normalize({"id": "https://openalex.org/W-title-object", "title": {"value": "Object title"}})
+
+    assert list_title["title"] == "Untitled"
+    assert object_title["title"] == "Untitled"
+
+
+def test_openalex_tolerates_malformed_publication_fields():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-publication-fields",
+            "title": "Malformed publication fields",
+            "publication_date": ["2026-01-01"],
+            "publication_year": {"value": 2026},
+        }
+    )
+
+    assert work["published_date"] is None
+    assert work["published_year"] is None
+
+
+def test_openalex_tolerates_malformed_landing_url_fields():
+    client = OpenAlexClient()
+
+    malformed_primary_url = client.normalize(
+        {
+            "id": "https://openalex.org/W-safe-fallback",
+            "title": "Malformed primary URL",
+            "primary_location": {"landing_page_url": ["https://publisher.example/article"]},
+        }
+    )
+    malformed_primary_and_id = client.normalize(
+        {
+            "id": {"value": "https://openalex.org/W-malformed-id"},
+            "title": "Malformed primary URL and id",
+            "primary_location": {"landing_page_url": {"value": "https://publisher.example/article"}},
+        }
+    )
+
+    assert malformed_primary_url["landing_url"] == "https://openalex.org/W-safe-fallback"
+    assert malformed_primary_and_id["landing_url"] is None
+
+
+def test_openalex_tolerates_malformed_source_display_name():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-source-display-name",
+            "title": "Malformed source display name",
+            "primary_location": {"source": {"display_name": {"value": "Journal"}}},
+        }
+    )
+
+    assert work["journal_name"] is None
 
 
 def test_openalex_skips_malformed_authorship_items():
@@ -73,6 +203,8 @@ def test_openalex_skips_malformed_authorship_items():
                 {"author": {"display_name": "Jane Doe"}},
                 "malformed-authorship",
                 {"author": "malformed-author"},
+                {"author": {"display_name": {"value": "Malformed"}}},
+                {"author": {"display_name": ["Malformed"]}},
                 {"author": {"display_name": "Solo"}},
             ],
         }
@@ -186,6 +318,18 @@ async def test_openalex_tolerates_malformed_meta_payload():
 
 
 @pytest.mark.asyncio
+async def test_openalex_tolerates_malformed_top_level_payload():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(["not-a-response-object"])
+
+    client = OpenAlexClient(transport=httpx.MockTransport(handler))
+
+    works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert works == []
+
+
+@pytest.mark.asyncio
 async def test_crossref_waits_between_paginated_requests():
     sleep_calls = []
     seen_cursors = []
@@ -245,6 +389,18 @@ async def test_crossref_skips_malformed_result_items():
 async def test_crossref_tolerates_malformed_message_payload():
     def handler(request: httpx.Request) -> httpx.Response:
         return json_response({"message": "not-a-message-object"})
+
+    client = CrossrefClient(transport=httpx.MockTransport(handler))
+
+    works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert works == []
+
+
+@pytest.mark.asyncio
+async def test_crossref_tolerates_malformed_top_level_payload():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(["not-a-response-object"])
 
     client = CrossrefClient(transport=httpx.MockTransport(handler))
 

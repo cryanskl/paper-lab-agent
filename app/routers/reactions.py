@@ -112,6 +112,8 @@ def verify(reaction_id: int, body: VerifyIn) -> dict:
         )
     except ValueError:
         raise AppError(404, "reaction_not_found", "Reaction not found")
+    except Exception as exc:
+        raise AppError(500, "reaction_verify_failed", str(exc))
 
 
 @router.post("/reaction-sets/{reaction_set_id}/export")
@@ -124,3 +126,5 @@ def export(reaction_set_id: int, format: str = Query("json")) -> dict:
         if str(exc).startswith("unsupported export format"):
             raise AppError(400, "unsupported_export_format", str(exc))
         raise AppError(404, "reaction_set_not_found", "Reaction set not found")
+    except OSError as exc:
+        raise AppError(500, "reaction_export_failed", str(exc))

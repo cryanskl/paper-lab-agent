@@ -13,10 +13,15 @@ fi
 
 bash -n scripts/env.sh
 bash -n scripts/dev.sh
-"${PYTHON_CMD[@]}" -m py_compile scripts/health_check.py scripts/import_fixtures.py scripts/smoke_check.py scripts/validate_env_example.py scripts/validate_release_hygiene.py streamlit_app.py
+"${PYTHON_CMD[@]}" -m py_compile scripts/health_check.py scripts/import_fixtures.py scripts/smoke_check.py scripts/validate_api_contract.py scripts/validate_docs_links.py scripts/validate_env_example.py scripts/validate_readme_commands.py scripts/validate_release_hygiene.py scripts/validate_requirements.py scripts/validate_schema.py streamlit_app.py
 "${PYTHON_CMD[@]}" scripts/health_check.py --help >/dev/null
+"${PYTHON_CMD[@]}" scripts/validate_api_contract.py
+"${PYTHON_CMD[@]}" scripts/validate_docs_links.py
 "${PYTHON_CMD[@]}" scripts/validate_env_example.py
+"${PYTHON_CMD[@]}" scripts/validate_readme_commands.py
 "${PYTHON_CMD[@]}" scripts/validate_release_hygiene.py
+"${PYTHON_CMD[@]}" scripts/validate_requirements.py
+"${PYTHON_CMD[@]}" scripts/validate_schema.py
 FIXTURE_JSON="$("${PYTHON_CMD[@]}" - <<'PY'
 import json
 import os
@@ -64,6 +69,8 @@ import json
 import os
 import sys
 
+from app import __version__
+
 payload = json.loads(os.environ["SMOKE_JSON"])
 expected = {
     "crawl_job_status": "success",
@@ -71,7 +78,7 @@ expected = {
     "blocked_export_status": 409,
     "verified_export_format": "json",
     "verified_export_formats": ["json", "txt", "bolsig"],
-    "runtime_version": "0.1.0",
+    "runtime_version": __version__,
     "config_warning_count": 3,
     "duplicate_upload_status": 409,
     "verified_export_reactions": 1,
@@ -79,6 +86,11 @@ expected = {
     "verified_export_text_files": 2,
     "verified_export_bolsig_contains_header": True,
     "verified_export_txt_contains_reaction": True,
+    "verified_export_txt_has_source_excerpt": True,
+    "rag_answer_has_citation": True,
+    "rag_source_excerpts": 1,
+    "verified_export_txt_has_verification_metadata": True,
+    "verified_export_bolsig_has_verification_metadata": True,
 }
 for key, value in expected.items():
     if payload.get(key) != value:

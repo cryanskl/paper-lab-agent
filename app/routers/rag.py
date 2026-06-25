@@ -32,7 +32,10 @@ class RagQueryIn(BaseModel):
 @router.post("/query")
 def rag_query(body: RagQueryIn) -> dict:
     _ensure_documents_exist(body.document_ids)
-    return query(body.question, body.document_ids, body.top_k)
+    try:
+        return query(body.question, body.document_ids, body.top_k)
+    except Exception as exc:
+        raise AppError(500, "rag_query_failed", str(exc))
 
 
 def _ensure_documents_exist(document_ids: list[int]) -> None:

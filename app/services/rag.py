@@ -47,6 +47,7 @@ class LocalHashEmbeddingAdapter:
 
 
 SUPPORTED_EMBEDDING_MODELS = {"local-hash"}
+SOURCE_EXCERPT_MAX_CHARS = 360
 
 
 def get_embedding_adapter(model_name: str) -> EmbeddingAdapter:
@@ -54,6 +55,36 @@ def get_embedding_adapter(model_name: str) -> EmbeddingAdapter:
     if normalized == "local-hash":
         return LocalHashEmbeddingAdapter()
     raise ValueError(f"unsupported embedding model: {model_name}")
+
+
+def source_excerpt(text: str, max_chars: int = SOURCE_EXCERPT_MAX_CHARS) -> str:
+    normalized = " ".join((text or "").split())
+    if len(normalized) <= max_chars:
+        return normalized
+    return f"{normalized[:max_chars].rstrip()}..."
+
+
+def source_citation(item: dict) -> str:
+    paper_id = item.get("_paper_id") if "_paper_id" in item else item.get("paper_id")
+    paper_title = item.get("_paper_title") or item.get("paper_title")
+    section_title = item.get("_section_title") or item.get("section_title")
+    chunk_id = item.get("_chunk_id") or item.get("id") or item.get("chunk_id")
+    parts = []
+    if paper_id is not None:
+        parts.append(f"paper_id={paper_id}")
+    else:
+        parts.append(f"document_id={item.get('document_id')}")
+    if paper_title:
+        parts.append(f"title={paper_title}")
+    if section_title:
+        parts.append(f"section={section_title}")
+    if chunk_id is not None:
+        parts.append(f"chunk_id={chunk_id}")
+    return "Source: " + "; ".join(parts)
+
+
+def answer_with_citation(text: str, source: dict) -> str:
+    return f"{source_excerpt(text, 600)}\n\n{source_citation(source)}"
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:
@@ -71,8 +102,8 @@ class JsonVectorStore:
             return {}
         try:
             return json.loads(self.path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return {}
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"vector store JSON is invalid: {exc}") from exc
 
     def upsert_many(self, records: dict[str, dict]) -> None:
         existing = self.load()
@@ -116,6 +147,7 @@ def chunk_text(text: str, max_words: int = 220) -> Iterable[str]:
 
 def mark_index_queued(document_id: int) -> None:
     with get_conn() as conn:
+        conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
         conn.execute(
             "UPDATE documents SET index_status='indexing', index_error=NULL WHERE id=?",
             (document_id,),
@@ -133,15 +165,21 @@ def index_document(document_id: int) -> dict:
         )
         sections = conn.execute("SELECT * FROM sections WHERE document_id=? ORDER BY seq", (document_id,)).fetchall()
         if not sections:
+            error = "document has no parsed sections"
+            conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+            try:
+                vector_store.delete_document(document_id)
+            except Exception as exc:
+                error = f"{error}; vector cleanup failed: {exc}"
             conn.execute(
                 "UPDATE documents SET index_status='failed', index_error=? WHERE id=?",
-                ("document has no parsed sections", document_id),
+                (error, document_id),
             )
-            return {"document_id": document_id, "chunks": 0, "embedded": 0, "status": "failed"}
-        conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
-        vector_store.delete_document(document_id)
+            return {"document_id": document_id, "chunks": 0, "embedded": 0, "status": "failed", "error": error}
         count = 0
         try:
+            conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+            vector_store.delete_document(document_id)
             embedding_adapter = get_embedding_adapter(settings.embedding_model)
             for section in sections:
                 for seq, chunk in enumerate(chunk_text(section["content"] or ""), start=1):
@@ -164,6 +202,8 @@ def index_document(document_id: int) -> dict:
                         "dimensions": len(embedding),
                     }
                     count += 1
+            if count == 0:
+                raise ValueError("document has no indexable section text")
             vector_store.delete_document(document_id)
             vector_store.upsert_many(vector_index)
             conn.execute(
@@ -172,11 +212,16 @@ def index_document(document_id: int) -> dict:
             )
             return {"document_id": document_id, "chunks": count, "embedded": 1, "status": "indexed"}
         except Exception as exc:
+            conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+            try:
+                vector_store.delete_document(document_id)
+            except Exception:
+                pass
             conn.execute(
                 "UPDATE documents SET index_status='failed', index_error=? WHERE id=?",
                 (str(exc), document_id),
             )
-            return {"document_id": document_id, "chunks": count, "embedded": 0, "status": "failed", "error": str(exc)}
+            return {"document_id": document_id, "chunks": 0, "embedded": 0, "status": "failed", "error": str(exc)}
 
 
 def query(question: str, document_ids: list[int], top_k: int) -> dict:
@@ -208,7 +253,7 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
                     LEFT JOIN sections s ON s.id = ch.section_id
                     LEFT JOIN documents d ON d.id = ch.document_id
                     LEFT JOIN papers p ON p.id = d.paper_id
-                    WHERE ch.id IN ({placeholders})
+                    WHERE ch.embedded=1 AND ch.id IN ({placeholders})
                     """,
                     chunk_ids,
                 ).fetchall()
@@ -226,7 +271,7 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
                     LEFT JOIN sections s ON s.id = ch.section_id
                     LEFT JOIN documents d ON d.id = ch.document_id
                     LEFT JOIN papers p ON p.id = d.paper_id
-                    WHERE ch.vector_id IN ({placeholders})
+                    WHERE ch.embedded=1 AND ch.vector_id IN ({placeholders})
                     """,
                     vector_ids,
                 ).fetchall()
@@ -249,7 +294,7 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
         vector_hits = validated_hits
     if vector_hits:
         return {
-            "answer": (vector_hits[0].get("_text") or vector_hits[0]["text"])[:600],
+            "answer": answer_with_citation(vector_hits[0].get("_text") or vector_hits[0]["text"], vector_hits[0]),
             "sources": [
                 {
                     "document_id": item["document_id"],
@@ -259,17 +304,19 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
                     "chunk_id": item.get("_chunk_id"),
                     "vector_id": item["vector_id"],
                     "score": round(item["_score"], 3),
+                    "source_excerpt": source_excerpt(item.get("_text") or item.get("text") or ""),
                 }
                 for item in vector_hits
             ],
         }
 
     params = []
-    where = ""
+    conditions = ["ch.embedded=1"]
     if document_ids:
         placeholders = ",".join("?" for _ in document_ids)
-        where = f"WHERE ch.document_id IN ({placeholders})"
+        conditions.append(f"ch.document_id IN ({placeholders})")
         params.extend(document_ids)
+    where = f"WHERE {' AND '.join(conditions)}"
     with get_conn() as conn:
         rows = conn.execute(
             f"""
@@ -296,7 +343,7 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
     selected = scored[:top_k]
     if not selected:
         return {"answer": "证据不足：当前索引中没有检索到足够相关的段落。", "sources": []}
-    answer = selected[0]["text"][:600]
+    answer = answer_with_citation(selected[0]["text"], selected[0])
     return {
         "answer": answer,
         "sources": [
@@ -308,6 +355,7 @@ def query(question: str, document_ids: list[int], top_k: int) -> dict:
                 "chunk_id": item["id"],
                 "vector_id": item.get("vector_id"),
                 "score": round(item["_score"], 3),
+                "source_excerpt": source_excerpt(item.get("text") or ""),
             }
             for item in selected
         ],
