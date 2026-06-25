@@ -134,8 +134,21 @@ class OpenAlexClient:
                 continue
             name = author.get("display_name")
             if isinstance(name, str) and name.strip():
-                authors.append({"name": name.strip(), "affiliation": None})
+                affiliation = self.normalize_affiliations(item.get("institutions"))
+                authors.append({"name": name.strip(), "affiliation": affiliation})
         return authors
+
+    def normalize_affiliations(self, value: Any) -> Optional[str]:
+        if not isinstance(value, list):
+            return None
+        names = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("display_name")
+            if isinstance(name, str) and name.strip():
+                names.append(name.strip())
+        return "; ".join(names) if names else None
 
     def normalize_title(self, value: Any) -> str:
         if isinstance(value, str) and value.strip():
