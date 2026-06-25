@@ -32,6 +32,15 @@ def assert_status(response, expected: int, label: str) -> dict:
     return response.json()
 
 
+def assert_error_response(response, expected: int, label: str) -> dict:
+    payload = assert_status(response, expected, label)
+    error = payload.get("error") if isinstance(payload, dict) else None
+    assert_ok(isinstance(error, dict), f"{label}: expected error object, got {payload}")
+    assert_ok(isinstance(error.get("code"), str) and error["code"], f"{label}: expected error.code, got {payload}")
+    assert_ok(isinstance(error.get("message"), str) and error["message"], f"{label}: expected error.message, got {payload}")
+    return payload
+
+
 def run_smoke() -> dict:
     with tempfile.TemporaryDirectory(prefix="paper-lab-smoke-") as temp:
         base_dir = Path(temp)
@@ -49,6 +58,7 @@ def run_smoke() -> dict:
         fixture_result = load_fixture_papers()
 
         client = TestClient(app)
+        error_responses = []
         assert_status(client.get("/api/v1/health"), 200, "health")
 
         papers = assert_status(client.get("/api/v1/papers?q=plasma"), 200, "paper search")
@@ -144,11 +154,9 @@ def run_smoke() -> dict:
             "/api/v1/documents",
             files={"file": ("smoke-copy.pdf", smoke_pdf, "application/pdf")},
         )
-        assert_ok(
-            duplicate_upload.status_code == 409,
-            f"duplicate document upload: expected 409, got {duplicate_upload.status_code}: {duplicate_upload.text}",
-        )
-        duplicate_document = duplicate_upload.json()["document"]
+        duplicate_payload = assert_error_response(duplicate_upload, 409, "duplicate document upload")
+        error_responses.append(duplicate_payload["error"]["code"])
+        duplicate_document = duplicate_payload["document"]
         assert_ok(
             duplicate_document["id"] == document_id,
             f"expected duplicate document id {document_id}, got {duplicate_document}",
@@ -213,10 +221,8 @@ def run_smoke() -> dict:
         assert_ok(len(reaction_detail["reactions"]) == 1, "expected one extracted reaction")
         reaction_id = reaction_detail["reactions"][0]["id"]
         blocked_export = client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=json")
-        assert_ok(
-            blocked_export.status_code == 409,
-            f"expected unverified export gate, got {blocked_export.status_code}: {blocked_export.text}",
-        )
+        blocked_payload = assert_error_response(blocked_export, 409, "unverified reaction export")
+        error_responses.append(blocked_payload["error"]["code"])
         verified = assert_status(
             client.put(
                 f"/api/v1/reactions/{reaction_id}/verify",
@@ -345,6 +351,8 @@ def run_smoke() -> dict:
             "document_id": document_id,
             "duplicate_upload_status": duplicate_upload.status_code,
             "duplicate_document_id": duplicate_document["id"],
+            "error_response_count": len(error_responses),
+            "error_response_codes": error_responses,
             "sections": counts["sections"],
             "chunks": counts["chunks"],
             "rag_sources": len(rag["sources"]),

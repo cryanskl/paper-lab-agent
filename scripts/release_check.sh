@@ -83,6 +83,7 @@ expected = {
     "scheduler_job_ids": ["crawl-daily", "crawl-weekly", "crawl-monthly"],
     "config_warning_count": 3,
     "duplicate_upload_status": 409,
+    "error_response_count": 2,
     "papers": 2,
     "paper_categories": 1,
     "sections": 1,

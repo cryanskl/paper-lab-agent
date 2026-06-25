@@ -93,6 +93,19 @@ def load_validate_readme_commands():
     return validate_readme_commands
 
 
+def load_smoke_check():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "smoke_check.py"
+    spec = importlib.util.spec_from_file_location("smoke_check_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    smoke_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(smoke_check)
+    return smoke_check
+
+
 def test_env_example_contains_required_external_dependency_keys():
     validate_env_example = load_validate_env_example()
     env_path = Path(__file__).resolve().parent.parent / ".env.example"
@@ -431,6 +444,31 @@ def test_release_check_rejects_failed_smoke_status_counts():
 
     assert "failed_statuses" in release_text
     assert "smoke failed statuses present" in release_text
+
+
+def test_smoke_check_requires_error_response_shape_for_negative_paths():
+    smoke_check = load_smoke_check()
+
+    class Response:
+        status_code = 409
+        text = '{"document":{"id":1}}'
+
+        def json(self):
+            return {"document": {"id": 1}}
+
+    try:
+        smoke_check.assert_error_response(Response(), 409, "duplicate upload")
+    except AssertionError as exc:
+        assert "duplicate upload: expected error object" in str(exc)
+    else:
+        raise AssertionError("expected malformed error response to fail smoke validation")
+
+
+def test_release_check_requires_smoke_error_response_coverage():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert '"error_response_count": 2' in release_text
 
 
 def test_api_contract_documented_endpoints_exist_in_app():
