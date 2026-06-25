@@ -9498,12 +9498,18 @@ def test_health_check_summary_only_includes_frontend_probe(monkeypatch, capsys):
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
-            "counts": health_check_counts(),
+            "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+            "demo_data": {
+                "ready": True,
+                "requirements": {"papers": 1},
+                "missing": [],
+                "counts": {"papers": 1},
+            },
             "status_counts": health_check_status_counts(),
         }
 
     def fake_fetch_status(url: str, timeout: float) -> int:
-        return 200
+        return 503
 
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
     monkeypatch.setattr(health_check, "fetch_status", fake_fetch_status, raising=False)
@@ -9522,12 +9528,14 @@ def test_health_check_summary_only_includes_frontend_probe(monkeypatch, capsys):
         ],
     )
 
-    assert health_check.main() == 0
+    assert health_check.main() == 1
     captured = capsys.readouterr()
     summary = json.loads(captured.out)
     assert summary["frontend_url"] == "http://ui.test/_stcore/health"
-    assert summary["frontend_status_code"] == 200
-    assert summary["frontend_ok"] is True
+    assert summary["frontend_status_code"] == 503
+    assert summary["frontend_ok"] is False
+    assert summary["release_ready"] is False
+    assert summary["release_blockers"] == ["frontend:status_code=503"]
     assert "frontend" not in summary
 
 
@@ -9645,7 +9653,13 @@ def test_health_check_summary_only_includes_external_grobid_probe(monkeypatch, c
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
-            "counts": health_check_counts(),
+            "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+            "demo_data": {
+                "ready": True,
+                "requirements": {"papers": 1},
+                "missing": [],
+                "counts": {"papers": 1},
+            },
             "status_counts": health_check_status_counts(),
         }
 
@@ -9670,6 +9684,8 @@ def test_health_check_summary_only_includes_external_grobid_probe(monkeypatch, c
     assert summary["grobid_available"] is False
     assert summary["grobid_status_code"] == 503
     assert summary["grobid_error"] == "unexpected health response"
+    assert summary["release_ready"] is False
+    assert summary["release_blockers"] == ["grobid:unexpected health response"]
     assert "status" not in summary
 
 

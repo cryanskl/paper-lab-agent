@@ -104,7 +104,7 @@ bash scripts/release_check.sh
 这条命令会执行与 CI 相同的离线发布检查：校验启动脚本语法、编译关键脚本、运行全量测试。
 
 `python scripts/health_check.py --check-frontend` 会额外探测 Streamlit `/_stcore/health`，用于确认 `scripts/dev.sh` 启动后的后端和前端都可访问。
-`python scripts/health_check.py --summary-only --compact` 会输出短摘要，包含 `release_ready`、`release_blockers`、`api_status`、`demo_data_ready`、`failed_workflows`、`workflows_ok`、`config_warning_count`、`config_ready`、`config_warning_codes`、`storage_writable` 和 `storage_errors`，适合发布或演示前快速确认 live 环境；搭配 `--check-frontend` 时还会返回 `frontend_ok`、`frontend_status_code` 和 `frontend_url`，搭配 `--check-external` 时还会返回 `grobid_available`、`grobid_status_code`、`grobid_url` 和 `grobid_error`。
+`python scripts/health_check.py --summary-only --compact` 会输出短摘要，包含 `release_ready`、`release_blockers`、`api_status`、`demo_data_ready`、`failed_workflows`、`workflows_ok`、`config_warning_count`、`config_ready`、`config_warning_codes`、`storage_writable` 和 `storage_errors`，适合发布或演示前快速确认 live 环境；搭配 `--check-frontend` 时还会返回 `frontend_ok`、`frontend_status_code` 和 `frontend_url`，搭配 `--check-external` 时还会返回 `grobid_available`、`grobid_status_code`、`grobid_url` 和 `grobid_error`。如果这些显式探测失败，`release_blockers` 也会追加 `frontend:*` 或 `grobid:*` 阻断项。
 `python scripts/health_check.py --require-frontend` 会主动探测 Streamlit，并在前端健康探针不是 200 时返回非零，适合 `scripts/dev.sh` 启动后做发布或演示前门禁。
 `python scripts/health_check.py --require-storage-writable` 会在数据目录、PDF/TEI/翻译/导出目录、数据库父目录或向量索引父目录不可写，或已存在的本地向量索引 JSON 损坏时返回非零，适合发布前预检本机运行环境。
 `python scripts/health_check.py --require-no-failed-workflows` 会在抓取、解析、索引、翻译、化学抽取或反应集复核状态统计中存在 failed 项时返回非零，适合部署前确认没有已知失败积压。
