@@ -785,6 +785,33 @@ async def test_openalex_waits_between_paginated_requests():
 
 
 @pytest.mark.asyncio
+async def test_openalex_does_not_wait_after_max_pages_limit():
+    sleep_calls = []
+
+    async def sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "results": [{"id": "https://openalex.org/W1", "title": "First page"}],
+                "meta": {"next_cursor": "cursor-for-unfetched-page"},
+            }
+        )
+
+    client = OpenAlexClient(
+        transport=httpx.MockTransport(handler),
+        request_interval_seconds=0.75,
+        sleep=sleep,
+    )
+
+    works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert [work["title"] for work in works] == ["First page"]
+    assert sleep_calls == []
+
+
+@pytest.mark.asyncio
 async def test_openalex_skips_malformed_result_items():
     def handler(request: httpx.Request) -> httpx.Response:
         return json_response(
@@ -923,6 +950,35 @@ async def test_crossref_waits_between_paginated_requests():
     assert [work["title"] for work in works] == ["First", "Second"]
     assert seen_cursors == ["*", "next-page"]
     assert sleep_calls == [0.5]
+
+
+@pytest.mark.asyncio
+async def test_crossref_does_not_wait_after_max_pages_limit():
+    sleep_calls = []
+
+    async def sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "message": {
+                    "items": [{"DOI": "10.2/first", "title": ["First page"]}],
+                    "next-cursor": "cursor-for-unfetched-page",
+                }
+            }
+        )
+
+    client = CrossrefClient(
+        transport=httpx.MockTransport(handler),
+        request_interval_seconds=0.5,
+        sleep=sleep,
+    )
+
+    works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert [work["title"] for work in works] == ["First page"]
+    assert sleep_calls == []
 
 
 @pytest.mark.asyncio

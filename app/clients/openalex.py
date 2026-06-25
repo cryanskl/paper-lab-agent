@@ -38,7 +38,7 @@ class OpenAlexClient:
             params["mailto"] = self.mailto
         results: list[dict[str, Any]] = []
         async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as client:
-            for _ in range(max_pages):
+            for page_index in range(max_pages):
                 payload = await self._get_json(client, f"{self.base_url}/works", params)
                 if not isinstance(payload, dict):
                     break
@@ -50,6 +50,8 @@ class OpenAlexClient:
                     meta = {}
                 next_cursor = meta.get("next_cursor")
                 if not isinstance(next_cursor, str) or not next_cursor or next_cursor == params["cursor"]:
+                    break
+                if page_index >= max_pages - 1:
                     break
                 await self.wait_between_requests()
                 params["cursor"] = next_cursor
