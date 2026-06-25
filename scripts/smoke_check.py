@@ -198,6 +198,15 @@ def run_smoke() -> dict:
             manual_resolve_oa.get("oa_pdf_url", "").startswith("https://example.test/manual-resolve-"),
             f"expected manual resolve oa_pdf_url, got {manual_resolve_oa}",
         )
+        oa_only_search = assert_status(
+            client.get("/api/v1/papers?q=smoke crawl&oa_only=true"),
+            200,
+            "oa-only paper search",
+        )
+        assert_ok(
+            oa_only_search["total"] == 1,
+            f"expected oa-only search to return one paper, got {oa_only_search}",
+        )
 
         smoke_pdf = (
             b"%PDF-1.4\nArgon plasma chemistry and electron impact reactions. "
@@ -422,6 +431,7 @@ def run_smoke() -> dict:
             "manual_category_search_hits": manual_category_search["total"],
             "manual_resolve_oa_status": manual_resolve_oa["oa_status"],
             "manual_resolve_oa_pdf_url": manual_resolve_oa["oa_pdf_url"],
+            "oa_only_search_hits": oa_only_search["total"],
             "document_id": document_id,
             "duplicate_upload_status": duplicate_upload.status_code,
             "duplicate_document_id": duplicate_document["id"],

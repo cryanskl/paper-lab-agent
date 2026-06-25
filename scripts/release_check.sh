@@ -195,6 +195,7 @@ expected = {
     "manual_category_search_hits": 1,
     "manual_resolve_oa_status": "green",
     "manual_resolve_oa_pdf_url": "https://example.test/manual-resolve-10.999-smoke-crawl.pdf",
+    "oa_only_search_hits": 1,
     "papers": 2,
     "paper_categories": 1,
     "sections": 1,

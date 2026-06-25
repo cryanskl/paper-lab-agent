@@ -454,6 +454,7 @@ def test_release_check_requires_manual_resolve_oa_smoke_path():
 
     assert '"manual_resolve_oa_status": "green"' in release_text
     assert '"manual_resolve_oa_pdf_url"' in release_text
+    assert '"oa_only_search_hits": 1' in release_text
 
 
 def test_release_check_requires_manual_category_override_smoke_path():
