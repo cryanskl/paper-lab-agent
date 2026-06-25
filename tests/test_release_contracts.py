@@ -526,6 +526,19 @@ def test_release_checklist_documents_publish_gates():
         assert required in checklist
 
 
+def test_release_checklist_documents_git_safety_checks():
+    repo = Path(__file__).resolve().parent.parent
+    checklist = (repo / "docs" / "release-checklist.md").read_text(encoding="utf-8")
+
+    for required in [
+        "git branch --show-current",
+        "git rev-parse --show-toplevel",
+        "git status --short",
+        "git diff --check",
+    ]:
+        assert required in checklist
+
+
 def test_release_check_derives_expected_runtime_version_from_app_version():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
