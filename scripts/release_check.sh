@@ -102,6 +102,8 @@ expected = {
     "rag_source_excerpts": 1,
     "verified_export_txt_has_verification_metadata": True,
     "verified_export_bolsig_has_verification_metadata": True,
+    "verified_export_txt_has_confidence": True,
+    "verified_export_bolsig_has_confidence": True,
 }
 for key, value in expected.items():
     if payload.get(key) != value:

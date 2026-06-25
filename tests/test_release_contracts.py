@@ -367,6 +367,14 @@ def test_release_check_derives_expected_runtime_version_from_app_version():
     assert '"runtime_version": "0.1.0"' not in release_text
 
 
+def test_release_check_requires_export_confidence_smoke_metadata():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert '"verified_export_txt_has_confidence": True' in release_text
+    assert '"verified_export_bolsig_has_confidence": True' in release_text
+
+
 def test_api_contract_documented_endpoints_exist_in_app():
     validate_api_contract = load_validate_api_contract()
     repo = Path(__file__).resolve().parent.parent
