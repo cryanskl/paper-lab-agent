@@ -53,6 +53,15 @@ def normalize_reaction(reaction: str) -> tuple[str, list[str], list[str]]:
     return normalized, reactants, products
 
 
+def infer_reaction_type(reactants: list[str], products: list[str]) -> str:
+    reactant_electrons = sum(1 for species in reactants if species == "e")
+    product_electrons = sum(1 for species in products if species == "e")
+    produces_positive_ion = any(species.endswith("+") for species in products)
+    if reactant_electrons >= 1 and product_electrons > reactant_electrons and produces_positive_ion:
+        return "ionization"
+    return "unknown"
+
+
 def source_excerpt(text: str, start: int, end: int, window: int = 80) -> str:
     left = max(0, start - window)
     right = min(len(text), end + window)
@@ -245,7 +254,7 @@ def extract_reactions(document_id: int) -> dict:
                         (
                             reaction_set_id,
                             normalized_reaction,
-                            "unknown",
+                            infer_reaction_type(reactants, products),
                             json.dumps(reactants, ensure_ascii=False),
                             json.dumps(products, ensure_ascii=False),
                             rate_type,

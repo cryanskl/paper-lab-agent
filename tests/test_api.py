@@ -6174,7 +6174,7 @@ def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
         "/api/v1/documents",
-        files={"file": ("chemistry.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
+        files={"file": ("chemistry.pdf", pdf_bytes(b"e + Ar -> e + Ar ."), "application/pdf")},
     )
     document_id = response.json()["id"]
     assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
@@ -6187,7 +6187,7 @@ def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
         f"/api/v1/reactions/{reaction_id}/verify",
         json={
             "verified": True,
-            "reaction_type": "ionization",
+            "reaction_type": "elastic",
             "rate_type": "cross_section",
             "rate_value": "LXCat original table",
             "threshold_ev": 15.76,
@@ -6198,7 +6198,7 @@ def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
 
     reaction = verified["reactions"][0]
     assert verified["status"] == "verified"
-    assert reaction["reaction_type"] == "ionization"
+    assert reaction["reaction_type"] == "elastic"
     assert reaction["rate_type"] == "cross_section"
     assert reaction["threshold_ev"] == 15.76
     assert reaction["cross_section_url"] == "https://nl.lxcat.net/data/set/example"
@@ -6208,8 +6208,8 @@ def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
     assert audit["verified_at"]
     assert audit["verified_at"] == audit["created_at"]
     assert audit["action"] == "verify"
-    assert audit["changes"]["reaction_type"] == "ionization"
-    assert audit["field_changes"]["reaction_type"] == {"before": "unknown", "after": "ionization"}
+    assert audit["changes"]["reaction_type"] == "elastic"
+    assert audit["field_changes"]["reaction_type"] == {"before": "unknown", "after": "elastic"}
     assert audit["field_changes"]["rate_value"] == {"before": None, "after": "LXCat original table"}
     assert audit["field_changes"]["verified"] == {"before": False, "after": True}
 
@@ -11036,6 +11036,7 @@ def test_extract_reactions_detects_lxcat_database_and_url(tmp_path):
 
     assert detail["lxcat_db"] == "Biagi"
     assert reaction["reaction"] == "e + Ar -> e + e + Ar+"
+    assert reaction["reaction_type"] == "ionization"
     assert reaction["reactants"] == ["e", "Ar"]
     assert reaction["products"] == ["e", "e", "Ar+"]
     assert reaction["rate_type"] == "cross_section"
