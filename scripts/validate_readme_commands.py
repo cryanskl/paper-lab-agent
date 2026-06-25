@@ -17,6 +17,48 @@ INLINE_CODE_RE = re.compile(r"`([^`]+)`")
 LOCAL_COMMANDS = {"bash", "curl", "python", "python3", "pip", "source"}
 LOCAL_CURL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 HTTP_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH"}
+UVICORN_OPTIONS_WITH_VALUES = {
+    "--app-dir",
+    "--backlog",
+    "--date-header",
+    "--env-file",
+    "--factory",
+    "--fd",
+    "--forwarded-allow-ips",
+    "--h11-max-incomplete-event-size",
+    "--header",
+    "--host",
+    "--lifespan",
+    "--limit-concurrency",
+    "--limit-max-requests",
+    "--log-config",
+    "--log-level",
+    "--loop",
+    "--port",
+    "--proxy-headers",
+    "--reload-delay",
+    "--reload-dir",
+    "--reload-exclude",
+    "--reload-include",
+    "--root-path",
+    "--server-header",
+    "--ssl-ca-certs",
+    "--ssl-cert-reqs",
+    "--ssl-certfile",
+    "--ssl-ciphers",
+    "--ssl-keyfile",
+    "--timeout-graceful-shutdown",
+    "--timeout-keep-alive",
+    "--uds",
+    "--use-colors",
+    "--workers",
+    "--ws",
+    "--ws-max-queue",
+    "--ws-max-size",
+    "--ws-ping-interval",
+    "--ws-ping-timeout",
+    "--ws-per-message-deflate",
+}
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -188,12 +230,19 @@ def uvicorn_app_refs(readme_path: Path) -> list[str]:
             option_tokens = tokens[3:]
         else:
             continue
+        skip_next = False
         for token in option_tokens:
+            if skip_next:
+                skip_next = False
+                continue
             if token.startswith("-"):
+                option_name = token.split("=", 1)[0]
+                if option_name in UVICORN_OPTIONS_WITH_VALUES and "=" not in token:
+                    skip_next = True
                 continue
             if ":" in token:
                 refs.append(token)
-            break
+                break
     return refs
 
 
