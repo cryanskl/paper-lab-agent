@@ -40,7 +40,7 @@ class UnpaywallClient:
         best = payload.get("best_oa_location") or {}
         return {
             "oa_status": payload.get("oa_status") or "unknown",
-            "oa_pdf_url": best_pdf_url(best),
+            "oa_pdf_url": payload_pdf_url(payload),
             "raw": payload,
         }
 
@@ -81,6 +81,20 @@ class UnpaywallClient:
                 except ValueError:
                     pass
         return self.retry_backoff_seconds * (attempt + 1)
+
+
+def payload_pdf_url(payload: dict[str, Any]) -> Optional[str]:
+    pdf_url = best_pdf_url(payload.get("best_oa_location"))
+    if pdf_url:
+        return pdf_url
+    locations = payload.get("oa_locations")
+    if not isinstance(locations, list):
+        return None
+    for location in locations:
+        pdf_url = best_pdf_url(location)
+        if pdf_url:
+            return pdf_url
+    return None
 
 
 def best_pdf_url(location: Any) -> Optional[str]:
