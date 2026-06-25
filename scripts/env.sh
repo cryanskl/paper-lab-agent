@@ -7,6 +7,30 @@ trim_env_value() {
   printf "%s" "${value}"
 }
 
+strip_env_inline_comment() {
+  local value="$1"
+  local result="" char previous=""
+  local in_single=0 in_double=0
+  local i
+
+  for ((i = 0; i < ${#value}; i++)); do
+    char="${value:i:1}"
+    if [[ "${char}" == "'" && "${in_double}" -eq 0 ]]; then
+      if [[ "${in_single}" -eq 0 ]]; then in_single=1; else in_single=0; fi
+    elif [[ "${char}" == '"' && "${in_single}" -eq 0 ]]; then
+      if [[ "${in_double}" -eq 0 ]]; then in_double=1; else in_double=0; fi
+    elif [[ "${char}" == "#" && "${in_single}" -eq 0 && "${in_double}" -eq 0 ]]; then
+      if [[ -z "${result}" || "${previous}" =~ [[:space:]] ]]; then
+        break
+      fi
+    fi
+    result+="${char}"
+    previous="${char}"
+  done
+
+  trim_env_value "${result}"
+}
+
 load_env_file_if_unset() {
   local env_file="${1:-.env}"
   [[ -f "${env_file}" ]] || return 0
@@ -18,6 +42,7 @@ load_env_file_if_unset() {
 
     key="$(trim_env_value "${line%%=*}")"
     value="$(trim_env_value "${line#*=}")"
+    value="$(strip_env_inline_comment "${value}")"
     [[ "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
     [[ -z "${!key+x}" ]] || continue
 

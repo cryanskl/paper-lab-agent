@@ -637,3 +637,36 @@ def test_readme_commands_validator_runs_as_release_script():
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_env_loader_strips_inline_comments_without_touching_quoted_hashes(tmp_path):
+    import subprocess
+
+    repo = Path(__file__).resolve().parent.parent
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "API_PORT=8001 # local override",
+                'LLM_API_KEY="sk-test#not-comment" # inline comment',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            'source scripts/env.sh; load_env_file_if_unset "$1"; printf "%s\\n%s\\n" "$API_PORT" "$LLM_API_KEY"',
+            "bash",
+            str(env_file),
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ["8001", "sk-test#not-comment"]
