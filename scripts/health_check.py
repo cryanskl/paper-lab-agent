@@ -31,6 +31,7 @@ STORAGE_HEALTH_REQUIRED_KEYS = {
     "tei_dir",
     "translation_dir",
     "export_dir",
+    "database",
     "database_parent",
     "vector_db_parent",
     "vector_db",
@@ -199,13 +200,16 @@ def validate_system_status(status: dict) -> list[str]:
             if "path" in value and (not isinstance(value["path"], str) or not value["path"]):
                 invalid_storage_health.append(f"{key}.path")
             expected_path = storage.get(key) if isinstance(storage, dict) and key in STORAGE_HEALTH_PATH_KEYS else None
+            if key == "database":
+                expected_path = status.get("database_path")
             if (
                 isinstance(expected_path, str)
                 and expected_path
                 and isinstance(value.get("path"), str)
                 and value["path"] != expected_path
             ):
-                invalid_storage_health.append(f"{key}.path must match storage.{key}")
+                source = "database_path" if key == "database" else f"storage.{key}"
+                invalid_storage_health.append(f"{key}.path must match {source}")
             for entry_key in ("exists", "writable"):
                 if entry_key in value and not isinstance(value[entry_key], bool):
                     invalid_storage_health.append(f"{key}.{entry_key}")

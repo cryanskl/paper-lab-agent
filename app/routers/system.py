@@ -69,6 +69,7 @@ def storage_health(settings) -> dict:
         "tei_dir": storage_path_health(settings.tei_dir),
         "translation_dir": storage_path_health(settings.translation_dir),
         "export_dir": storage_path_health(settings.export_dir),
+        "database": storage_path_health(settings.database_path),
         "database_parent": storage_path_health(settings.database_path.parent),
         "vector_db_parent": storage_path_health(settings.vector_db_path.parent),
         "vector_db": vector_store_health(settings.vector_db_path),

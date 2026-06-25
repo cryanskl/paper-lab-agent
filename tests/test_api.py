@@ -30,6 +30,7 @@ def health_check_storage_health(**overrides):
         "tei_dir": {"path": "/tmp/data/tei", "exists": True, "writable": True},
         "translation_dir": {"path": "/tmp/data/translations", "exists": True, "writable": True},
         "export_dir": {"path": "/tmp/data/exports", "exists": True, "writable": True},
+        "database": {"path": "/tmp/plasma.db", "exists": True, "writable": True},
         "database_parent": {"path": "/tmp", "exists": True, "writable": True},
         "vector_db_parent": {"path": "/tmp/data", "exists": True, "writable": True},
         "vector_db": {
@@ -78,9 +79,19 @@ def test_health_seed_and_search(tmp_path):
     assert system["runtime"]["scheduler_enabled"] is False
     assert system["runtime"]["version"] == "0.1.0"
     storage_health = system["storage_health"]
-    for required in ["data_dir", "pdf_dir", "tei_dir", "translation_dir", "export_dir", "database_parent", "vector_db_parent"]:
+    for required in [
+        "data_dir",
+        "pdf_dir",
+        "tei_dir",
+        "translation_dir",
+        "export_dir",
+        "database",
+        "database_parent",
+        "vector_db_parent",
+    ]:
         assert storage_health[required]["exists"] is True
         assert isinstance(storage_health[required]["writable"], bool)
+    assert storage_health["database"]["path"] == system["database_path"]
 
     from app.db import get_conn
 
@@ -6312,6 +6323,92 @@ def test_health_check_requires_storage_health_key():
     )
 
     assert "missing keys: storage_health" in errors
+
+
+def test_health_check_requires_database_file_health():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_database_health", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    storage_health = health_check_storage_health()
+    storage_health.pop("database", None)
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": storage_health,
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "embedding_model": "local-hash",
+            },
+            "counts": health_check_counts(),
+        }
+    )
+
+    assert "storage_health missing keys: database" in errors
+
+
+def test_health_check_rejects_database_health_path_mismatch():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_database_health_path", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": {"api_prefix": "/api/v1", "scheduler_enabled": False, "version": "0.1.0"},
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(
+                database={"path": "/tmp/other.db", "exists": True, "writable": True},
+            ),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "embedding_model": "local-hash",
+            },
+            "counts": health_check_counts(),
+        }
+    )
+
+    joined = "; ".join(errors)
+    assert "storage_health invalid values" in joined
+    assert "database.path must match database_path" in joined
 
 
 def test_health_check_rejects_invalid_storage_health_shape():
