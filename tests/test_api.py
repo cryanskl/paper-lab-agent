@@ -8107,6 +8107,22 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         assert required in chemistry_section
 
 
+def test_streamlit_chemistry_tab_can_select_document_for_reaction_sets():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    for required in [
+        'chemistry_documents = api_get("/documents", page_size=100)["items"]',
+        'selected_chemistry_document = st.selectbox(',
+        "chemistry_document_options",
+        "selected_chemistry_document[\"id\"]",
+        "暂无可选文档",
+        "手动 document_id",
+    ]:
+        assert required in chemistry_section
+
+
 def test_streamlit_chemistry_audit_log_surfaces_field_changes():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

@@ -611,7 +611,23 @@ with rag_tab:
                     st.json(rag_payload)
 
 with chemistry_tab:
-    chemistry_document_id = st.number_input("chemistry_document_id", min_value=1, value=1)
+    chemistry_documents = api_get("/documents", page_size=100)["items"]
+    if chemistry_documents:
+        chemistry_document_options = chemistry_documents
+        selected_chemistry_document = st.selectbox(
+            "化学库文档",
+            chemistry_document_options,
+            format_func=lambda document: (
+                f"#{document['id']} {document.get('original_name') or Path(document['file_path']).name} · "
+                f"{document.get('chemistry_status') or 'not_extracted'}"
+            ),
+            key="chemistry-document-select",
+        )
+        chemistry_document_id = int(selected_chemistry_document["id"])
+        st.caption(f"chemistry_document_id: {chemistry_document_id}")
+    else:
+        st.info("暂无可选文档，请先上传并抽取化学库。")
+        chemistry_document_id = st.number_input("手动 document_id", min_value=1, value=1)
     if st.button("加载文档反应集"):
         try:
             st.session_state["document_reaction_sets"] = api_get(f"/documents/{chemistry_document_id}/reaction-sets")
