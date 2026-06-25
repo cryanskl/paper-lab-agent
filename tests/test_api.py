@@ -9177,6 +9177,27 @@ def test_streamlit_sidebar_surfaces_config_warnings():
         assert required in sidebar_section
 
 
+def test_streamlit_sidebar_surfaces_storage_health():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+
+    for required in [
+        "存储健康",
+        "storage_health",
+        "data_dir",
+        "pdf_dir",
+        "tei_dir",
+        "translation_dir",
+        "export_dir",
+        "database",
+        "vector_db",
+        "writable",
+        "valid_json",
+    ]:
+        assert required in sidebar_section
+
+
 def test_streamlit_sidebar_can_check_grobid_live_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

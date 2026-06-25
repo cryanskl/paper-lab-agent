@@ -117,6 +117,20 @@ with st.sidebar:
         st.caption(f"GROBID status_code: {grobid.get('status_code')}")
     if grobid.get("error"):
         st.warning(f"GROBID error: {grobid.get('error')}")
+    storage_health = status.get("storage_health", {})
+    if storage_health:
+        st.subheader("存储健康")
+        for key in ["data_dir", "pdf_dir", "tei_dir", "translation_dir", "export_dir", "database", "vector_db"]:
+            health_entry = storage_health.get(key) or {}
+            exists_label = "exists" if health_entry.get("exists") else "missing"
+            writable_label = "writable" if health_entry.get("writable") else "not writable"
+            st.caption(f"{key}: {exists_label} · {writable_label} · {health_entry.get('path') or '-'}")
+            if key == "vector_db":
+                valid_json = health_entry.get("valid_json")
+                valid_json_label = "unchecked" if valid_json is None else ("valid_json" if valid_json else "invalid_json")
+                st.caption(f"vector_db valid_json: {valid_json_label}")
+            if health_entry.get("error"):
+                st.warning(f"{key} error: {health_entry['error']}")
     config_warnings = status.get("config_warnings") or []
     if config_warnings:
         st.subheader("配置提示")
