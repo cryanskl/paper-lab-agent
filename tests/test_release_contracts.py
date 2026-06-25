@@ -650,6 +650,7 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert "python scripts/doctor.py --compact" in checklist
     assert "scripts/doctor.py" in release_check
     assert "scripts/doctor.py --help" in release_check
+    assert "scripts/doctor.py --strict --compact" in release_check
 
 
 def test_release_check_derives_expected_runtime_version_from_app_version():
