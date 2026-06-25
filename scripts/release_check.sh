@@ -65,6 +65,77 @@ print(json.dumps(payload, ensure_ascii=False))
 PY
 )"
 printf '%s\n' "${FIXTURE_JSON}"
+PREPARE_DEMO_JSON="$("${PYTHON_CMD[@]}" - <<'PY'
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+with tempfile.TemporaryDirectory(prefix="paper-lab-demo-") as demo_dir:
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = demo_dir
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+    # Validate the release demo path directly: scripts/prepare_demo_data.py --compact.
+    result = subprocess.run(
+        [sys.executable, "scripts/prepare_demo_data.py", "--compact"],
+        text=True,
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+    payload = json.loads(result.stdout)
+    for name, export_payload in payload.get("exports", {}).items():
+        path = export_payload.get("output_path")
+        if not path or not os.path.exists(path):
+            print(f"release_check failed: prepare_demo_data export {name} missing at {path!r}", file=sys.stderr)
+            raise SystemExit(1)
+if payload.get("demo_data", {}).get("ready") is not True:
+    print(
+        f"release_check failed: prepare_demo_data demo_data.ready={payload.get('demo_data', {}).get('ready')!r}, "
+        f"missing={payload.get('demo_data', {}).get('missing')!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+expected_counts = {
+    "papers": 2,
+    "documents": 1,
+    "sections": 1,
+    "chunks": 1,
+    "translations": 1,
+    "reaction_sets": 1,
+    "reactions": 1,
+    "reaction_audits": 1,
+}
+for key, minimum in expected_counts.items():
+    actual = payload.get("counts", {}).get(key)
+    if not isinstance(actual, int) or isinstance(actual, bool) or actual < minimum:
+        print(f"release_check failed: prepare_demo_data counts.{key}={actual!r}, expected >= {minimum}", file=sys.stderr)
+        raise SystemExit(1)
+expected_export_formats = ["json", "txt", "bolsig"]
+if sorted(payload.get("exports", {})) != sorted(expected_export_formats):
+    print(
+        f"release_check failed: prepare_demo_data exports={sorted(payload.get('exports', {}))!r}, "
+        f"expected {expected_export_formats!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+if payload.get("reaction_set", {}).get("status") != "verified":
+    print(f"release_check failed: prepare_demo_data reaction_set.status={payload.get('reaction_set', {}).get('status')!r}, expected 'verified'", file=sys.stderr)
+    raise SystemExit(1)
+print(json.dumps(payload, ensure_ascii=False))
+PY
+)"
+printf '%s\n' "${PREPARE_DEMO_JSON}"
 SMOKE_JSON="$("${PYTHON_CMD[@]}" -m scripts.smoke_check)"
 printf '%s\n' "${SMOKE_JSON}"
 SMOKE_JSON="${SMOKE_JSON}" "${PYTHON_CMD[@]}" - <<'PY'

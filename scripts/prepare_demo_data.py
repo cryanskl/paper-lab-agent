@@ -88,6 +88,7 @@ def prepare_demo_data(target_lang: str = "zh", verified_by: str = "prepare-demo-
 
     from app.config import get_settings
     from app.db import dict_from_row, get_conn, init_db
+    from app.routers.system import demo_data_status
     from app.fixture_loader import load_fixture_documents, load_fixture_papers
     from app.services.chemistry import export_reaction_set, extract_reactions
     from app.services.documents import parse_document
@@ -145,6 +146,7 @@ def prepare_demo_data(target_lang: str = "zh", verified_by: str = "prepare-demo-
         },
         "exports": exports,
         "counts": counts,
+        "demo_data": demo_data_status(counts),
     }
 
 

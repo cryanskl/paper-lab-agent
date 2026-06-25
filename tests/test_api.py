@@ -1396,6 +1396,8 @@ def test_prepare_demo_data_script_populates_walking_skeleton(tmp_path):
     assert payload["document"]["chemistry_status"] == "extracted"
     assert payload["translation"]["status"] == "done"
     assert payload["reaction_set"]["status"] == "verified"
+    assert payload["demo_data"]["ready"] is True
+    assert payload["demo_data"]["missing"] == []
     assert payload["exports"]["json"]["reaction_count"] >= 1
     assert Path(payload["exports"]["json"]["output_path"]).exists()
 
@@ -6346,6 +6348,10 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "TemporaryDirectory" in release_text
     assert "scripts/import_fixtures.py" in release_text
     assert "scripts/prepare_demo_data.py" in release_text
+    assert "PREPARE_DEMO_JSON" in release_text
+    assert "prepare_demo_data.py --compact" in release_text
+    assert 'demo_data.ready' in release_text
+    assert '"json", "txt", "bolsig"' in release_text
     assert '"documents"' in release_text
     assert "-m scripts.smoke_check" in release_text
     assert "SMOKE_JSON" in release_text
