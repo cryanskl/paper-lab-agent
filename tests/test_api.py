@@ -9134,6 +9134,24 @@ def test_streamlit_crawl_jobs_show_empty_state():
     assert "暂无抓取任务。" in search_section
 
 
+def test_streamlit_crawl_jobs_exposes_pagination_controls():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+
+    for required in [
+        'crawl_jobs_page = crawl_jobs_page_col.number_input("crawl_jobs_page"',
+        "crawl_jobs_page_size = crawl_jobs_page_size_col.number_input(",
+        '"crawl_jobs_page_size"',
+        'crawl_jobs_response = api_get("/crawl/jobs", page=int(crawl_jobs_page), page_size=int(crawl_jobs_page_size))',
+        'jobs = crawl_jobs_response["items"]',
+        "crawl_jobs_response['page']",
+        "crawl_jobs_response['page_size']",
+        "crawl_jobs_response['total']",
+    ]:
+        assert required in search_section
+
+
 def test_streamlit_crawl_run_surfaces_success_and_error_states():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

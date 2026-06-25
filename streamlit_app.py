@@ -248,7 +248,22 @@ with search_tab:
         else:
             st.warning(crawl_payload)
         st.json(crawl_payload)
-    jobs = api_get("/crawl/jobs", page_size=10)["items"]
+    crawl_jobs_page_col, crawl_jobs_page_size_col = st.columns(2)
+    crawl_jobs_page = crawl_jobs_page_col.number_input("crawl_jobs_page", min_value=1, value=1, key="crawl-jobs-page")
+    crawl_jobs_page_size = crawl_jobs_page_size_col.number_input(
+        "crawl_jobs_page_size",
+        min_value=1,
+        max_value=100,
+        value=10,
+        key="crawl-jobs-page-size",
+    )
+    crawl_jobs_response = api_get("/crawl/jobs", page=int(crawl_jobs_page), page_size=int(crawl_jobs_page_size))
+    jobs = crawl_jobs_response["items"]
+    st.caption(
+        f"crawl jobs page {crawl_jobs_response['page']} · "
+        f"page_size {crawl_jobs_response['page_size']} · "
+        f"total {crawl_jobs_response['total']}"
+    )
     st.dataframe(flatten_crawl_job_rows(jobs), use_container_width=True)
     if not jobs:
         st.info("暂无抓取任务。")
