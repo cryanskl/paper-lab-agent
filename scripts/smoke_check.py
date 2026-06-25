@@ -470,6 +470,11 @@ def run_smoke() -> dict:
             isinstance(reaction_detail["reactions"][0].get("audit_log"), list),
             f"expected reaction audit_log list in detail, got {reaction_detail['reactions'][0]}",
         )
+        extracted_reaction_type = reaction_detail["reactions"][0].get("reaction_type")
+        assert_ok(
+            extracted_reaction_type == "ionization",
+            f"expected inferred ionization reaction type before review, got {reaction_detail['reactions'][0]}",
+        )
         reaction_id = reaction_detail["reactions"][0]["id"]
         blocked_export = client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=json")
         blocked_payload = assert_error_response(blocked_export, 409, "unverified reaction export")
@@ -527,6 +532,11 @@ def run_smoke() -> dict:
         verified_export_payload = json.loads(Path(verified_export["output_path"]).read_text(encoding="utf-8"))
         exported_reactions = verified_export_payload.get("reactions") or []
         assert_ok(len(exported_reactions) == 1, f"expected one reaction in JSON export, got {exported_reactions}")
+        verified_export_reaction_type = exported_reactions[0].get("reaction_type")
+        assert_ok(
+            verified_export_reaction_type == "ionization",
+            f"expected ionization reaction type in JSON export, got {exported_reactions[0]}",
+        )
         export_audit_entries = [
             audit
             for reaction in exported_reactions
@@ -738,6 +748,7 @@ def run_smoke() -> dict:
             "reaction_set_detail_verified_count_before_verify": reaction_detail["verified_count"],
             "reaction_set_detail_unverified_count_before_verify": reaction_detail["unverified_count"],
             "reaction_set_detail_export_ready_before_verify": reaction_detail["export_ready"],
+            "extracted_reaction_type": extracted_reaction_type,
             "reaction_set_detail_export_ready_after_verify": reaction_detail_after_verify["export_ready"],
             "reaction_set_detail_audit_entries_after_verify": reaction_detail_audit_entries_after_verify,
             "blocked_export_status": blocked_export.status_code,
@@ -748,6 +759,7 @@ def run_smoke() -> dict:
             "verified_export_response_reactions": verified_export["reaction_count"],
             "verified_export_response_audit_entries": verified_export["audit_entry_count"],
             "verified_export_reactions": len(exported_reactions),
+            "verified_export_reaction_type": verified_export_reaction_type,
             "verified_export_audit_entries": len(export_audit_entries),
             "verified_export_source_sections": len(export_source_sections),
             "verified_export_text_files": len([txt_export["output_path"], bolsig_export["output_path"]]),
