@@ -493,6 +493,28 @@ def test_schema_validator_reports_missing_required_workflow_columns(tmp_path):
     assert "missing column: reaction_sets.verified_at" in issues
 
 
+def test_schema_validator_reports_missing_required_search_columns(tmp_path):
+    validate_schema = load_validate_schema()
+    repo = Path(__file__).resolve().parent.parent
+    schema_path = tmp_path / "schema.sql"
+    schema_text = (repo / "docs" / "schema.sql").read_text(encoding="utf-8")
+    schema_path.write_text(
+        schema_text.replace(
+            "    dedupe_key      TEXT UNIQUE,                -- 无 DOI 时的保守去重键，NULL 表示不自动合并\n",
+            "",
+        ).replace(
+            "    papers_filtered INTEGER DEFAULT 0,\n",
+            "",
+        ),
+        encoding="utf-8",
+    )
+
+    issues = validate_schema.validate_schema(schema_path)
+
+    assert "missing column: papers.dedupe_key" in issues
+    assert "missing column: crawl_jobs.papers_filtered" in issues
+
+
 def test_schema_validator_runs_as_release_script():
     import subprocess
     import sys
