@@ -9443,6 +9443,18 @@ def test_streamlit_search_results_show_dedupe_strategy():
     assert "dedupe_strategy=" in search_section
 
 
+def test_streamlit_search_tab_exposes_sort_control():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    for required in [
+        'sort_choice = col7.selectbox("排序", ["date_desc", "relevance"])',
+        '"sort": sort_choice',
+    ]:
+        assert required in search_section
+
+
 def test_streamlit_search_results_can_trigger_classification():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

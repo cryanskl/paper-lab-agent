@@ -153,7 +153,7 @@ with search_tab:
     st.caption("可先运行 `python scripts/import_fixtures.py` 导入离线样例。")
     journals = api_get("/journals", active=True, page_size=100)["items"]
     categories = api_get("/categories")["items"]
-    col1, col2, col3, col4, col5, col6 = st.columns([2, 1, 1, 1, 1, 1])
+    col1, col2, col3, col4, col5, col6, col7 = st.columns([2, 1, 1, 1, 1, 1, 1])
     q = col1.text_input("关键词", value="plasma")
     journal_names = ["全部"] + [j["name"] for j in journals]
     journal_choice = col2.selectbox("期刊", journal_names)
@@ -162,6 +162,7 @@ with search_tab:
     year_from = col4.number_input("year_from", min_value=0, max_value=2100, value=0)
     year_to = col5.number_input("year_to", min_value=0, max_value=2100, value=0)
     oa_only = col6.checkbox("OA only")
+    sort_choice = col7.selectbox("排序", ["date_desc", "relevance"])
     page_col, page_size_col = st.columns(2)
     search_page = page_col.number_input("page", min_value=1, value=1, key="search-page")
     search_page_size = page_size_col.number_input("page_size", min_value=1, max_value=100, value=20, key="search-page-size")
@@ -170,6 +171,7 @@ with search_tab:
         "page": int(search_page),
         "page_size": int(search_page_size),
         "oa_only": oa_only,
+        "sort": sort_choice,
     }
     if journal_choice != "全部":
         params["journal_id"] = next(j["id"] for j in journals if j["name"] == journal_choice)
