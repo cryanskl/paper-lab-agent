@@ -6315,7 +6315,7 @@ def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
     assert audit["field_changes"]["verified"] == {"before": False, "after": True}
 
 
-def test_reaction_verify_does_not_add_audit_for_unchanged_review(tmp_path):
+def test_reaction_verify_records_audit_for_unchanged_review(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
         "/api/v1/documents",
@@ -6343,7 +6343,12 @@ def test_reaction_verify_does_not_add_audit_for_unchanged_review(tmp_path):
     assert first["status"] == "verified"
     assert second["status"] == "verified"
     assert len(first["reactions"][0]["audit_log"]) == 1
-    assert len(second["reactions"][0]["audit_log"]) == 1
+    assert len(second["reactions"][0]["audit_log"]) == 2
+    repeated_audit = second["reactions"][0]["audit_log"][0]
+    assert repeated_audit["verified_by"] == "chemist-a"
+    assert repeated_audit["action"] == "verify"
+    assert repeated_audit["changes"] == {}
+    assert repeated_audit["field_changes"] == {}
 
 
 def test_reaction_verify_can_clear_optional_review_fields(tmp_path):

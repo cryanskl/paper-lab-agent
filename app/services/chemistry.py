@@ -383,6 +383,18 @@ def verify_reaction(
         }
         reaction_set_id = row["reaction_set_id"]
         if not changed_updates:
+            conn.execute(
+                """
+                INSERT INTO reaction_audits (reaction_id, action, changes, verified_by)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    reaction_id,
+                    "verify" if verified else "unverify",
+                    json.dumps({"_field_changes": {}}, ensure_ascii=False),
+                    verified_by,
+                ),
+            )
             rs = conn.execute("SELECT * FROM reaction_sets WHERE id=?", (reaction_set_id,)).fetchone()
             return reaction_set_detail(dict_from_row(rs), conn)
         assignments = ", ".join(f"{key}=?" for key in changed_updates)
