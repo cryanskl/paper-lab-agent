@@ -76,11 +76,32 @@ def detect_gas_mixture(text: str) -> Optional[str]:
     return match.group(1)
 
 
-def detect_cross_section_url(text: str) -> Optional[str]:
+def mask_urls_for_reaction_matching(text: str) -> str:
+    def replace(match: re.Match) -> str:
+        raw_url = match.group(0)
+        url = raw_url.rstrip(".,")
+        suffix = raw_url[len(url) :]
+        return (" " * len(url)) + suffix
+
+    return URL_RE.sub(replace, text)
+
+
+def detect_cross_section_url(text: str, start: Optional[int] = None, end: Optional[int] = None) -> Optional[str]:
+    candidates = []
     for match in URL_RE.finditer(text):
         url = match.group(0).rstrip(".,")
         if "lxcat" in url.lower():
-            return url
+            if start is None or end is None:
+                return url
+            if match.end() <= start:
+                distance = start - match.end()
+            elif match.start() >= end:
+                distance = match.start() - end
+            else:
+                distance = 0
+            candidates.append((distance, match.start(), url))
+    if candidates:
+        return min(candidates)[2]
     return None
 
 
@@ -143,10 +164,14 @@ def extract_reactions(document_id: int) -> dict:
                 text = section["content"] or ""
                 detected_gas_mixture = detected_gas_mixture or detect_gas_mixture(text)
                 detected_lxcat_db = detected_lxcat_db or detect_lxcat_db(text)
-                cross_section_url = detect_cross_section_url(text)
-                for match in REACTION_RE.finditer(text):
+                section_cross_section_url = detect_cross_section_url(text)
+                reaction_search_text = mask_urls_for_reaction_matching(text)
+                for match in REACTION_RE.finditer(reaction_search_text):
                     reaction = " ".join(match.group(1).split())
                     normalized_reaction, reactants, products = normalize_reaction(reaction)
+                    cross_section_url = (
+                        detect_cross_section_url(text, match.start(), match.end()) or section_cross_section_url
+                    )
                     conn.execute(
                         """
                         INSERT INTO reactions (
