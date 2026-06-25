@@ -93,6 +93,19 @@ def load_validate_readme_commands():
     return validate_readme_commands
 
 
+def load_smoke_check():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "smoke_check.py"
+    spec = importlib.util.spec_from_file_location("smoke_check_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    smoke_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(smoke_check)
+    return smoke_check
+
+
 def test_env_example_contains_required_external_dependency_keys():
     validate_env_example = load_validate_env_example()
     env_path = Path(__file__).resolve().parent.parent / ".env.example"
@@ -350,6 +363,20 @@ def test_release_hygiene_validator_requires_ci_push_and_pull_request_triggers():
     assert missing == []
 
 
+def test_release_hygiene_validator_accepts_inline_ci_triggers(tmp_path):
+    validate_release_hygiene = load_validate_release_hygiene()
+    workflow_dir = tmp_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "ci.yml").write_text(
+        "name: ci\non: [push, pull_request]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: bash scripts/release_check.sh\n",
+        encoding="utf-8",
+    )
+
+    missing = validate_release_hygiene.missing_required_ci_release_gate(tmp_path)
+
+    assert missing == []
+
+
 def test_release_hygiene_validator_reports_missing_ci_pull_request_trigger(tmp_path):
     validate_release_hygiene = load_validate_release_hygiene()
     workflow_dir = tmp_path / ".github" / "workflows"
@@ -431,6 +458,31 @@ def test_release_check_rejects_failed_smoke_status_counts():
 
     assert "failed_statuses" in release_text
     assert "smoke failed statuses present" in release_text
+
+
+def test_smoke_check_requires_error_response_shape_for_negative_paths():
+    smoke_check = load_smoke_check()
+
+    class Response:
+        status_code = 409
+        text = '{"document":{"id":1}}'
+
+        def json(self):
+            return {"document": {"id": 1}}
+
+    try:
+        smoke_check.assert_error_response(Response(), 409, "duplicate upload")
+    except AssertionError as exc:
+        assert "duplicate upload: expected error object" in str(exc)
+    else:
+        raise AssertionError("expected malformed error response to fail smoke validation")
+
+
+def test_release_check_requires_smoke_error_response_coverage():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert '"error_response_count": 2' in release_text
 
 
 def test_api_contract_documented_endpoints_exist_in_app():
@@ -748,6 +800,24 @@ def test_readme_commands_validator_reports_missing_scripts_module(tmp_path):
     issues = validate_readme_commands.missing_command_targets(tmp_path)
 
     assert issues == ["README.md: command target missing: scripts/missing_check.py"]
+
+
+def test_readme_commands_validator_reports_unknown_python_script_option(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    (scripts_dir / "tool.py").write_text(
+        "import argparse\n"
+        "parser = argparse.ArgumentParser()\n"
+        "parser.add_argument('--known', action='store_true')\n"
+        "parser.parse_args()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "README.md").write_text("```bash\npython scripts/tool.py --known --missing\n```\n", encoding="utf-8")
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == ["README.md: option --missing not found in scripts/tool.py --help"]
 
 
 def test_readme_commands_validator_reports_missing_local_curl_route(tmp_path):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -107,6 +108,16 @@ def missing_required_gitignore_patterns(path: Path) -> list[str]:
     return [pattern for pattern in REQUIRED_GITIGNORE_PATTERNS if pattern not in patterns]
 
 
+def workflow_declares_trigger(workflow_text: str, trigger: str) -> bool:
+    if f"\n  {trigger}:" in workflow_text or f"\n  - {trigger}" in workflow_text:
+        return True
+    for match in re.finditer(r"(?m)^\s*on:\s*\[([^\]]+)\]\s*$", workflow_text):
+        triggers = [item.strip() for item in match.group(1).split(",")]
+        if trigger in triggers:
+            return True
+    return False
+
+
 def missing_required_ci_release_gate(repo: Path) -> list[str]:
     workflow_path = repo / REQUIRED_CI_WORKFLOW
     if not workflow_path.exists():
@@ -114,7 +125,7 @@ def missing_required_ci_release_gate(repo: Path) -> list[str]:
     workflow_text = workflow_path.read_text(encoding="utf-8")
     missing = []
     for trigger in REQUIRED_CI_TRIGGERS:
-        if f"\n  {trigger}:" not in workflow_text and f"\n  - {trigger}" not in workflow_text:
+        if not workflow_declares_trigger(workflow_text, trigger):
             missing.append(f"ci_{trigger}_trigger")
     if REQUIRED_CI_RELEASE_CHECK not in workflow_text:
         missing.append("ci_runs_release_check")

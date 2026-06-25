@@ -13,9 +13,11 @@ fi
 
 bash -n scripts/env.sh
 bash -n scripts/dev.sh
-"${PYTHON_CMD[@]}" -m py_compile scripts/health_check.py scripts/import_fixtures.py scripts/smoke_check.py scripts/validate_api_contract.py scripts/validate_docs_links.py scripts/validate_env_example.py scripts/validate_readme_commands.py scripts/validate_release_hygiene.py scripts/validate_requirements.py scripts/validate_schema.py streamlit_app.py
+"${PYTHON_CMD[@]}" -m py_compile scripts/health_check.py scripts/import_fixtures.py scripts/prepare_demo_data.py scripts/smoke_check.py scripts/validate_api_contract.py scripts/validate_bug_docs.py scripts/validate_docs_links.py scripts/validate_env_example.py scripts/validate_readme_commands.py scripts/validate_release_hygiene.py scripts/validate_requirements.py scripts/validate_schema.py streamlit_app.py
 "${PYTHON_CMD[@]}" scripts/health_check.py --help >/dev/null
+"${PYTHON_CMD[@]}" scripts/prepare_demo_data.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/validate_api_contract.py
+"${PYTHON_CMD[@]}" scripts/validate_bug_docs.py
 "${PYTHON_CMD[@]}" scripts/validate_docs_links.py
 "${PYTHON_CMD[@]}" scripts/validate_env_example.py
 "${PYTHON_CMD[@]}" scripts/validate_readme_commands.py
@@ -63,6 +65,110 @@ print(json.dumps(payload, ensure_ascii=False))
 PY
 )"
 printf '%s\n' "${FIXTURE_JSON}"
+PREPARE_DEMO_JSON="$("${PYTHON_CMD[@]}" - <<'PY'
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+with tempfile.TemporaryDirectory(prefix="paper-lab-demo-") as demo_dir:
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = demo_dir
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+    # Validate the release demo path directly: scripts/prepare_demo_data.py --compact.
+    result = subprocess.run(
+        [sys.executable, "scripts/prepare_demo_data.py", "--compact"],
+        text=True,
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+    payload = json.loads(result.stdout)
+    # Validate the compact release summary path directly: scripts/prepare_demo_data.py --summary-only --compact.
+    summary_result = subprocess.run(
+        [sys.executable, "scripts/prepare_demo_data.py", "--summary-only", "--compact"],
+        text=True,
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+    summary_payload = json.loads(summary_result.stdout)
+    for name, export_payload in payload.get("exports", {}).items():
+        path = export_payload.get("output_path")
+        if not path or not os.path.exists(path):
+            print(f"release_check failed: prepare_demo_data export {name} missing at {path!r}", file=sys.stderr)
+            raise SystemExit(1)
+if payload.get("demo_data", {}).get("ready") is not True:
+    print(
+        f"release_check failed: prepare_demo_data demo_data.ready={payload.get('demo_data', {}).get('ready')!r}, "
+        f"missing={payload.get('demo_data', {}).get('missing')!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+summary = payload.get("summary") or {}
+if summary.get("ready") is not True:
+    print(
+        f"release_check failed: prepare_demo_data summary.ready={summary.get('ready')!r}, "
+        f"missing={summary.get('missing')!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+if summary_payload != summary:
+    print("release_check failed: prepare_demo_data --summary-only output does not match payload.summary", file=sys.stderr)
+    raise SystemExit(1)
+if any(key in summary_payload for key in ("document", "exports")):
+    print("release_check failed: prepare_demo_data --summary-only leaked full payload keys", file=sys.stderr)
+    raise SystemExit(1)
+expected_counts = {
+    "papers": 2,
+    "documents": 1,
+    "sections": 1,
+    "chunks": 1,
+    "translations": 1,
+    "reaction_sets": 1,
+    "reactions": 1,
+    "reaction_audits": 1,
+}
+for key, minimum in expected_counts.items():
+    actual = payload.get("counts", {}).get(key)
+    if not isinstance(actual, int) or isinstance(actual, bool) or actual < minimum:
+        print(f"release_check failed: prepare_demo_data counts.{key}={actual!r}, expected >= {minimum}", file=sys.stderr)
+        raise SystemExit(1)
+expected_export_formats = ["json", "txt", "bolsig"]
+if sorted(payload.get("exports", {})) != sorted(expected_export_formats):
+    print(
+        f"release_check failed: prepare_demo_data exports={sorted(payload.get('exports', {}))!r}, "
+        f"expected {expected_export_formats!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+if summary.get("export_formats") != expected_export_formats:
+    print(
+        f"release_check failed: prepare_demo_data summary.export_formats={summary.get('export_formats')!r}, "
+        f"expected {expected_export_formats!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+if payload.get("reaction_set", {}).get("status") != "verified":
+    print(f"release_check failed: prepare_demo_data reaction_set.status={payload.get('reaction_set', {}).get('status')!r}, expected 'verified'", file=sys.stderr)
+    raise SystemExit(1)
+if summary.get("reaction_set_status") != "verified":
+    print(f"release_check failed: prepare_demo_data summary.reaction_set_status={summary.get('reaction_set_status')!r}, expected 'verified'", file=sys.stderr)
+    raise SystemExit(1)
+print(json.dumps(payload, ensure_ascii=False))
+PY
+)"
+printf '%s\n' "${PREPARE_DEMO_JSON}"
 SMOKE_JSON="$("${PYTHON_CMD[@]}" -m scripts.smoke_check)"
 printf '%s\n' "${SMOKE_JSON}"
 SMOKE_JSON="${SMOKE_JSON}" "${PYTHON_CMD[@]}" - <<'PY'
@@ -83,6 +189,7 @@ expected = {
     "scheduler_job_ids": ["crawl-daily", "crawl-weekly", "crawl-monthly"],
     "config_warning_count": 3,
     "duplicate_upload_status": 409,
+    "error_response_count": 2,
     "papers": 2,
     "paper_categories": 1,
     "sections": 1,
@@ -126,6 +233,24 @@ if payload.get("crawled_papers", 0) < 1:
 if "paper_categories" not in payload:
     print("release_check failed: smoke paper_categories is missing", file=sys.stderr)
     raise SystemExit(1)
+release_readiness = payload.get("release_readiness")
+if not isinstance(release_readiness, dict):
+    print("release_check failed: smoke release_readiness is missing", file=sys.stderr)
+    raise SystemExit(1)
+expected_readiness = {
+    "ready": False,
+    "demo_data_missing": [],
+    "failed_workflows": [],
+    "config_warning_codes": ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"],
+    "storage_errors": [],
+}
+for key, value in expected_readiness.items():
+    if release_readiness.get(key) != value:
+        print(
+            f"release_check failed: smoke release_readiness.{key}={release_readiness.get(key)!r}, expected {value!r}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 status_counts = payload.get("status_counts")
 if not isinstance(status_counts, dict):
     print("release_check failed: smoke status_counts is missing", file=sys.stderr)

@@ -13,6 +13,26 @@ from app.services.rag import SUPPORTED_EMBEDDING_MODELS, SUPPORTED_VECTOR_DB_BAC
 
 router = APIRouter(prefix="/system", tags=["system"])
 
+DEMO_DATA_MIN_COUNTS = {
+    "journals": 6,
+    "papers": 1,
+    "documents": 1,
+    "sections": 1,
+    "chunks": 1,
+    "reaction_sets": 1,
+    "reactions": 1,
+}
+
+RELEASE_STORAGE_WRITABLE_KEYS = [
+    "data_dir",
+    "pdf_dir",
+    "tei_dir",
+    "translation_dir",
+    "export_dir",
+    "database_parent",
+    "vector_db_parent",
+]
+
 
 def normalize_grobid_status(detail: dict, fallback_url: str) -> dict:
     return {
@@ -39,6 +59,20 @@ def status_count(table: str, column: str) -> dict:
             """
         ).fetchall()
     return {row["status"]: row["n"] for row in rows}
+
+
+def demo_data_status(counts: dict[str, int]) -> dict:
+    missing = [
+        f"{key}>={minimum}"
+        for key, minimum in DEMO_DATA_MIN_COUNTS.items()
+        if counts.get(key, 0) < minimum
+    ]
+    return {
+        "ready": not missing,
+        "requirements": DEMO_DATA_MIN_COUNTS,
+        "missing": missing,
+        "counts": {key: counts.get(key, 0) for key in DEMO_DATA_MIN_COUNTS},
+    }
 
 
 def storage_path_health(path: Path) -> dict:
@@ -135,12 +169,98 @@ def config_warnings(settings) -> list[dict]:
     return warnings
 
 
+def storage_readiness_errors(health: dict) -> list[str]:
+    errors = []
+    for key in RELEASE_STORAGE_WRITABLE_KEYS:
+        entry = health.get(key)
+        if not isinstance(entry, dict):
+            errors.append(key)
+            continue
+        if entry.get("exists") is not True:
+            errors.append(f"{key}.exists")
+        if entry.get("writable") is not True:
+            errors.append(f"{key}.writable")
+
+    database = health.get("database")
+    if isinstance(database, dict) and database.get("exists") is True and database.get("writable") is not True:
+        errors.append("database.writable")
+
+    vector_db = health.get("vector_db")
+    if isinstance(vector_db, dict) and vector_db.get("exists") is True and vector_db.get("writable") is not True:
+        errors.append("vector_db.writable")
+
+    return errors
+
+
+def failed_workflow_errors(status_counts: dict) -> list[str]:
+    errors = []
+    for workflow, counts in status_counts.items():
+        if not isinstance(counts, dict):
+            continue
+        failed = counts.get("failed")
+        if isinstance(failed, int) and not isinstance(failed, bool) and failed > 0:
+            errors.append(f"{workflow}.failed={failed}")
+    return errors
+
+
+def warning_codes(warnings: list[dict]) -> list[str]:
+    return [
+        warning["code"].strip()
+        for warning in warnings
+        if isinstance(warning, dict) and isinstance(warning.get("code"), str) and warning["code"].strip()
+    ]
+
+
+def release_readiness_status(
+    demo_data: dict,
+    warnings: list[dict],
+    health: dict,
+    status_counts: dict,
+) -> dict:
+    demo_data_missing = [str(item) for item in demo_data.get("missing", []) if str(item).strip()]
+    failed_workflows = failed_workflow_errors(status_counts)
+    config_warning_codes = warning_codes(warnings)
+    storage_errors = storage_readiness_errors(health)
+    return {
+        "ready": not (demo_data_missing or failed_workflows or config_warning_codes or storage_errors),
+        "demo_data_missing": demo_data_missing,
+        "failed_workflows": failed_workflows,
+        "config_warning_codes": config_warning_codes,
+        "storage_errors": storage_errors,
+    }
+
+
 @router.get("/status")
 async def status(check_external: bool = False) -> dict:
     settings = get_settings()
     grobid = normalize_grobid_status({}, settings.grobid_url)
     if check_external:
         grobid = normalize_grobid_status(await GrobidClient(settings.grobid_url).health_detail(), settings.grobid_url)
+    counts = {
+        "journals": table_count("journals"),
+        "papers": table_count("papers"),
+        "categories": table_count("categories"),
+        "paper_categories": table_count("paper_categories"),
+        "crawl_jobs": table_count("crawl_jobs"),
+        "documents": table_count("documents"),
+        "sections": table_count("sections"),
+        "translations": table_count("translations"),
+        "chunks": table_count("chunks"),
+        "reaction_sets": table_count("reaction_sets"),
+        "reactions": table_count("reactions"),
+        "reaction_audits": table_count("reaction_audits"),
+    }
+    warnings = config_warnings(settings)
+    health = storage_health(settings)
+    status_counts = {
+        "crawl_jobs": status_count("crawl_jobs", "status"),
+        "document_parse": status_count("documents", "parse_status"),
+        "document_index": status_count("documents", "index_status"),
+        "document_chemistry": status_count("documents", "chemistry_status"),
+        "translations": status_count("translations", "status"),
+        "reaction_sets": status_count("reaction_sets", "status"),
+    }
+    demo_data = demo_data_status(counts)
     return {
         "database_path": str(settings.database_path),
         "runtime": {
@@ -149,7 +269,7 @@ async def status(check_external: bool = False) -> dict:
             "scheduler_jobs": scheduled_crawl_jobs(),
             "version": __version__,
         },
-        "config_warnings": config_warnings(settings),
+        "config_warnings": warnings,
         "storage": {
             "data_dir": str(settings.data_dir),
             "pdf_dir": str(settings.pdf_dir),
@@ -158,36 +278,20 @@ async def status(check_external: bool = False) -> dict:
             "export_dir": str(settings.export_dir),
             "vector_db_path": str(settings.vector_db_path),
         },
-        "storage_health": storage_health(settings),
+        "storage_health": health,
         "external_capabilities": {
             "openalex_mailto": bool(settings.openalex_mailto),
             "unpaywall_email": bool(settings.unpaywall_email),
             "grobid_url": settings.grobid_url,
             "grobid": grobid,
             "llm_api_key": bool(settings.llm_api_key),
+            "translation_adapter": "openai-compatible" if settings.llm_api_key else "local-echo",
+            "llm_model": settings.llm_model,
             "embedding_model": settings.embedding_model,
             "vector_db_backend": settings.vector_db_backend,
         },
-        "status_counts": {
-            "crawl_jobs": status_count("crawl_jobs", "status"),
-            "document_parse": status_count("documents", "parse_status"),
-            "document_index": status_count("documents", "index_status"),
-            "document_chemistry": status_count("documents", "chemistry_status"),
-            "translations": status_count("translations", "status"),
-            "reaction_sets": status_count("reaction_sets", "status"),
-        },
-        "counts": {
-            "journals": table_count("journals"),
-            "papers": table_count("papers"),
-            "categories": table_count("categories"),
-            "paper_categories": table_count("paper_categories"),
-            "crawl_jobs": table_count("crawl_jobs"),
-            "documents": table_count("documents"),
-            "sections": table_count("sections"),
-            "translations": table_count("translations"),
-            "chunks": table_count("chunks"),
-            "reaction_sets": table_count("reaction_sets"),
-            "reactions": table_count("reactions"),
-            "reaction_audits": table_count("reaction_audits"),
-        },
+        "status_counts": status_counts,
+        "counts": counts,
+        "demo_data": demo_data,
+        "release_readiness": release_readiness_status(demo_data, warnings, health, status_counts),
     }

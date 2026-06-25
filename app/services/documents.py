@@ -3,6 +3,7 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
+from urllib.parse import unquote
 from xml.sax.saxutils import escape
 
 from fastapi import UploadFile
@@ -17,6 +18,13 @@ from app.utils import now_iso
 def count_pdf_pages(content: bytes) -> Optional[int]:
     matches = re.findall(rb"/Type\s*/Page\b", content)
     return len(matches) or None
+
+
+def safe_original_filename(filename: Optional[str]) -> str:
+    decoded = unquote(filename or "")
+    basename = decoded.replace("\\", "/").rsplit("/", 1)[-1]
+    cleaned = "".join(char for char in basename if ord(char) >= 32).strip()
+    return cleaned or "document.pdf"
 
 
 def mark_parse_queued(document_id: int) -> None:
@@ -55,7 +63,7 @@ async def save_upload(file: UploadFile, paper_id: Optional[int]) -> tuple[dict, 
             INSERT INTO documents (paper_id, file_path, file_hash, original_name, num_pages, parse_status)
             VALUES (?, ?, ?, ?, ?, 'uploaded')
             """,
-            (paper_id, str(stored), digest, file.filename, count_pdf_pages(content)),
+            (paper_id, str(stored), digest, safe_original_filename(file.filename), count_pdf_pages(content)),
         )
         row = conn.execute("SELECT * FROM documents WHERE id=?", (cursor.lastrowid,)).fetchone()
         return dict_from_row(row), True
@@ -116,9 +124,20 @@ def sections_from_tei(tei: str) -> list[dict]:
     def local_name(node: ET.Element) -> str:
         return node.tag.rsplit("}", 1)[-1]
 
-    for abstract in findall(root, ".//tei:text//tei:front//tei:abstract"):
+    abstract_nodes = [
+        *findall(root, ".//tei:teiHeader//tei:profileDesc//tei:abstract"),
+        *findall(root, ".//tei:text//tei:front//tei:abstract"),
+    ]
+    seen_abstracts = set()
+    for abstract in abstract_nodes:
         head = find(abstract, "tei:head")
-        append_section("Abstract", content_without_children(abstract, [head]) if head is not None else " ".join(abstract.itertext()), "abstract")
+        abstract_content = clean_text(
+            content_without_children(abstract, [head]) if head is not None else " ".join(abstract.itertext())
+        )
+        if not abstract_content or abstract_content in seen_abstracts:
+            continue
+        seen_abstracts.add(abstract_content)
+        append_section("Abstract", abstract_content, "abstract")
 
     def append_body_div(div: ET.Element) -> None:
         head = find(div, "tei:head")

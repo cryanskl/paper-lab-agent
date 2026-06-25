@@ -37,8 +37,11 @@ class OpenAlexClient:
         if self.mailto:
             params["mailto"] = self.mailto
         results: list[dict[str, Any]] = []
-        async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as client:
-            for _ in range(max_pages):
+        headers = {}
+        if self.mailto:
+            headers["User-Agent"] = f"paper-lab-agent (mailto:{self.mailto})"
+        async with httpx.AsyncClient(timeout=self.timeout, headers=headers, transport=self.transport) as client:
+            for page_index in range(max_pages):
                 payload = await self._get_json(client, f"{self.base_url}/works", params)
                 if not isinstance(payload, dict):
                     break
@@ -49,7 +52,9 @@ class OpenAlexClient:
                 if not isinstance(meta, dict):
                     meta = {}
                 next_cursor = meta.get("next_cursor")
-                if not next_cursor or next_cursor == params["cursor"]:
+                if not isinstance(next_cursor, str) or not next_cursor or next_cursor == params["cursor"]:
+                    break
+                if page_index >= max_pages - 1:
                     break
                 await self.wait_between_requests()
                 params["cursor"] = next_cursor
@@ -131,12 +136,23 @@ class OpenAlexClient:
                 continue
             author = item.get("author") or {}
             if not isinstance(author, dict):
-                continue
-            name = author.get("display_name")
-            if isinstance(name, str) and name.strip():
-                affiliation = self.normalize_affiliations(item.get("institutions"))
-                authors.append({"name": name.strip(), "affiliation": affiliation})
+                author = {}
+            name = self.author_name(item, author)
+            if name:
+                affiliation = self.normalize_affiliations(item.get("institutions")) or self.normalize_raw_affiliations(
+                    item.get("raw_affiliation_strings")
+                )
+                authors.append({"name": name, "affiliation": affiliation})
         return authors
+
+    def author_name(self, item: dict[str, Any], author: dict[str, Any]) -> Optional[str]:
+        display_name = author.get("display_name")
+        if isinstance(display_name, str) and display_name.strip():
+            return display_name.strip()
+        raw_author_name = item.get("raw_author_name")
+        if isinstance(raw_author_name, str) and raw_author_name.strip():
+            return raw_author_name.strip()
+        return None
 
     def normalize_affiliations(self, value: Any) -> Optional[str]:
         if not isinstance(value, list):
@@ -148,6 +164,12 @@ class OpenAlexClient:
             name = item.get("display_name")
             if isinstance(name, str) and name.strip():
                 names.append(name.strip())
+        return "; ".join(names) if names else None
+
+    def normalize_raw_affiliations(self, value: Any) -> Optional[str]:
+        if not isinstance(value, list):
+            return None
+        names = [item.strip() for item in value if isinstance(item, str) and item.strip()]
         return "; ".join(names) if names else None
 
     def normalize_title(self, value: Any) -> str:

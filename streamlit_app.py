@@ -44,6 +44,9 @@ def flatten_crawl_job_rows(jobs: list[dict]) -> list[dict]:
                 "accepted": diagnostics.get("papers_accepted", 0),
                 "existing": diagnostics.get("papers_existing", 0),
                 "new": diagnostics.get("papers_new", 0),
+                "outcome": diagnostics.get("outcome"),
+                "keyword_mode": diagnostics.get("keyword_mode"),
+                "keyword_terms": ", ".join(diagnostics.get("keyword_terms") or []),
                 "error": diagnostics.get("error") or job.get("error"),
             }
         )
@@ -86,6 +89,36 @@ with st.sidebar:
     st.metric("期刊", status["counts"]["journals"])
     st.metric("论文", status["counts"]["papers"])
     st.metric("文档", status["counts"]["documents"])
+    release_readiness = status.get("release_readiness") or {}
+    st.subheader("发布就绪")
+    if release_readiness.get("ready"):
+        st.success("release ready")
+    else:
+        blockers = []
+        blocker_groups = {
+            "demo_data_missing": "demo data missing:",
+            "failed_workflows": "failed workflows:",
+            "config_warning_codes": "config warnings:",
+            "storage_errors": "storage errors:",
+        }
+        for key in blocker_groups:
+            blockers.extend(str(item) for item in release_readiness.get(key) or [] if str(item).strip())
+        blocker_label = ", ".join(blockers) if blockers else "unknown"
+        st.warning(f"release blockers: {blocker_label}")
+        st.caption("release blocker details")
+        for key, label in blocker_groups.items():
+            items = [str(item) for item in release_readiness.get(key) or [] if str(item).strip()]
+            if items:
+                st.caption(f"{label} {', '.join(items)}")
+    demo_data = status.get("demo_data") or {}
+    st.subheader("演示数据")
+    if demo_data.get("ready"):
+        st.success("walking skeleton ready")
+    else:
+        missing_demo_data = demo_data.get("missing") or []
+        missing_label = ", ".join(missing_demo_data) if missing_demo_data else "unknown"
+        st.warning(f"walking skeleton missing: {missing_label}")
+        st.caption("run: python scripts/prepare_demo_data.py")
     runtime = status.get("runtime", {})
     st.caption(f"API: {runtime.get('api_prefix', '/api/v1')}")
     st.caption(f"version: {runtime.get('version') or '-'}")
@@ -102,6 +135,8 @@ with st.sidebar:
     st.caption(f"Unpaywall email: {'已配置' if external_capabilities.get('unpaywall_email') else '未配置'}")
     st.caption(f"GROBID URL: {external_capabilities.get('grobid_url') or '-'}")
     st.caption(f"LLM key: {'已配置' if external_capabilities.get('llm_api_key') else '未配置'}")
+    st.caption(f"Translation adapter: {external_capabilities.get('translation_adapter') or '-'}")
+    st.caption(f"LLM model: {external_capabilities.get('llm_model') or '-'}")
     st.caption(f"Embedding: {external_capabilities.get('embedding_model') or '-'}")
     st.caption(f"Vector DB: {external_capabilities.get('vector_db_backend') or '-'}")
     grobid = external_capabilities.get("grobid") or {}
@@ -316,6 +351,7 @@ with search_tab:
         j2.metric("filtered", diagnostics.get("papers_filtered", 0))
         j3.metric("accepted", diagnostics.get("papers_accepted", 0))
         j4.metric("new", diagnostics.get("papers_new", 0))
+        st.caption(f"outcome: {diagnostics.get('outcome') or 'unknown'}")
         if diagnostics.get("error"):
             st.warning(diagnostics["error"])
         st.dataframe([diagnostics], use_container_width=True)
@@ -747,7 +783,10 @@ with rag_tab:
                         "document_id": source.get("document_id"),
                         "paper_id": source.get("paper_id"),
                         "paper_title": source.get("paper_title"),
+                        "section_id": source.get("section_id"),
+                        "section_seq": source.get("section_seq"),
                         "section_title": source.get("section_title"),
+                        "section_type": source.get("section_type"),
                         "source_excerpt": source.get("source_excerpt"),
                         "chunk_id": source.get("chunk_id"),
                         "vector_id": source.get("vector_id"),
@@ -764,6 +803,7 @@ with rag_tab:
                         format_func=lambda source: (
                             f"paper {source.get('paper_id') or '-'} · "
                             f"doc {source.get('document_id')} · "
+                            f"section {source.get('section_seq') or source.get('section_id') or '-'} · "
                             f"chunk_id={source.get('chunk_id')} · "
                             f"{source.get('section_title') or '-'}"
                         ),
@@ -852,14 +892,32 @@ with chemistry_tab:
             f"page_size {document_reaction_sets['page_size']} · "
             f"total {document_reaction_sets['total']}"
         )
-        st.dataframe(reaction_set_items)
+        reaction_set_rows = [
+            {
+                "id": item.get("id"),
+                "name": item.get("name"),
+                "status": item.get("status"),
+                "reaction_count": item.get("reaction_count", 0),
+                "verified_count": item.get("verified_count", 0),
+                "unverified_count": item.get("unverified_count", 0),
+                "export_ready": item.get("export_ready", False),
+                "verified_by": item.get("verified_by"),
+                "verified_at": item.get("verified_at"),
+            }
+            for item in reaction_set_items
+        ]
+        st.dataframe(reaction_set_rows, use_container_width=True)
         if not reaction_set_items:
             st.info("该文档暂无反应集。")
         else:
             selected_reaction_set = st.selectbox(
                 "document_reaction_sets",
                 reaction_set_items,
-                format_func=lambda item: f"#{item['id']} · {item.get('status') or 'unknown'} · {item.get('name') or 'Reaction set'}",
+                format_func=lambda item: (
+                    f"#{item['id']} · {item.get('status') or 'unknown'} · "
+                    f"export_ready {bool(item.get('export_ready'))} · "
+                    f"未复核 {item.get('unverified_count', 0)} · {item.get('name') or 'Reaction set'}"
+                ),
             )
             selected_reaction_set_id = selected_reaction_set["id"]
 
@@ -875,10 +933,16 @@ with chemistry_tab:
     if detail:
         reactions = detail.get("reactions", [])
         unverified_reactions = [reaction for reaction in reactions if not reaction.get("verified")]
+        reaction_count = detail.get("reaction_count", len(reactions))
+        verified_count = detail.get("verified_count", reaction_count - len(unverified_reactions))
+        unverified_count = detail.get("unverified_count", len(unverified_reactions))
+        export_ready = detail.get("export_ready", reaction_count > 0 and unverified_count == 0)
         st.caption(
             f"status: {detail.get('status')} · "
-            f"reactions: {len(reactions)} · "
-            f"未复核: {len(unverified_reactions)} · "
+            f"reactions: {reaction_count} · "
+            f"verified: {verified_count} · "
+            f"未复核: {unverified_count} · "
+            f"export_ready: {export_ready} · "
             f"gas_mixture: {detail.get('gas_mixture') or '-'} · "
             f"lxcat_db: {detail.get('lxcat_db') or '-'} · "
             f"verified_by: {detail.get('verified_by') or '-'} · "
@@ -890,9 +954,8 @@ with chemistry_tab:
         if unverified_reactions:
             st.subheader("未复核反应")
             st.dataframe(reaction_review_rows(reactions, only_unverified=True), use_container_width=True)
-        no_reactions = not reactions
-        export_blocked = no_reactions or bool(unverified_reactions)
-        if no_reactions:
+        export_blocked = not export_ready
+        if reaction_count == 0:
             st.info("没有可导出的反应。")
         elif export_blocked:
             st.info("未全复核不可导出：请先完成所有反应复核。")

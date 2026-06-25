@@ -144,6 +144,30 @@ def test_crossref_strips_author_name_parts():
     assert work["authors"] == [{"name": "Jane Doe", "affiliation": None}]
 
 
+def test_crossref_preserves_single_field_author_names():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/group-author",
+            "title": ["Group author"],
+            "author": [
+                {
+                    "name": "  Plasma Data Consortium  ",
+                    "affiliation": [{"name": "  Community Plasma Lab  "}],
+                }
+            ],
+        }
+    )
+
+    assert work["authors"] == [
+        {
+            "name": "Plasma Data Consortium",
+            "affiliation": "Community Plasma Lab",
+        }
+    ]
+
+
 def test_crossref_preserves_author_affiliations():
     client = CrossrefClient()
 
@@ -610,6 +634,31 @@ def test_openalex_strips_author_display_names():
     assert work["authors"] == [{"name": "Jane Doe", "affiliation": None}]
 
 
+def test_openalex_falls_back_to_raw_author_names():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "doi": "10.5555/openalex-raw-author",
+            "title": "OpenAlex raw author",
+            "authorships": [
+                {
+                    "author": {"display_name": {"value": "Malformed"}},
+                    "raw_author_name": "  Plasma Data Consortium  ",
+                    "institutions": [{"display_name": "  Community Plasma Lab  "}],
+                }
+            ],
+        }
+    )
+
+    assert work["authors"] == [
+        {
+            "name": "Plasma Data Consortium",
+            "affiliation": "Community Plasma Lab",
+        }
+    ]
+
+
 def test_openalex_preserves_author_institution_affiliations():
     client = OpenAlexClient()
 
@@ -625,6 +674,38 @@ def test_openalex_preserves_author_institution_affiliations():
                         {"display_name": "  MIT Plasma Science  "},
                         {"display_name": {"value": "Malformed"}},
                         "malformed-institution",
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert work["authors"] == [
+        {
+            "name": "Jane Doe",
+            "affiliation": "Princeton Plasma Physics Laboratory; MIT Plasma Science",
+        }
+    ]
+
+
+def test_openalex_falls_back_to_raw_affiliation_strings():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "doi": "10.5555/openalex-raw-affiliations",
+            "title": "OpenAlex raw affiliations",
+            "authorships": [
+                {
+                    "author": {"display_name": "Jane Doe"},
+                    "institutions": [
+                        {"display_name": {"value": "Malformed"}},
+                        "malformed-institution",
+                    ],
+                    "raw_affiliation_strings": [
+                        "  Princeton Plasma Physics Laboratory  ",
+                        "MIT Plasma Science",
+                        {"value": "Malformed"},
                     ],
                 }
             ],
@@ -704,6 +785,33 @@ async def test_openalex_waits_between_paginated_requests():
 
 
 @pytest.mark.asyncio
+async def test_openalex_does_not_wait_after_max_pages_limit():
+    sleep_calls = []
+
+    async def sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "results": [{"id": "https://openalex.org/W1", "title": "First page"}],
+                "meta": {"next_cursor": "cursor-for-unfetched-page"},
+            }
+        )
+
+    client = OpenAlexClient(
+        transport=httpx.MockTransport(handler),
+        request_interval_seconds=0.75,
+        sleep=sleep,
+    )
+
+    works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert [work["title"] for work in works] == ["First page"]
+    assert sleep_calls == []
+
+
+@pytest.mark.asyncio
 async def test_openalex_skips_malformed_result_items():
     def handler(request: httpx.Request) -> httpx.Response:
         return json_response(
@@ -738,6 +846,37 @@ async def test_openalex_tolerates_malformed_meta_payload():
     works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=1)
 
     assert [work["title"] for work in works] == ["Valid work"]
+
+
+@pytest.mark.asyncio
+async def test_openalex_ignores_malformed_next_cursor():
+    calls = 0
+    sleep_calls = []
+
+    async def sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return json_response(
+            {
+                "results": [{"id": "https://openalex.org/W1", "title": "Valid work"}],
+                "meta": {"next_cursor": {"value": "malformed"}},
+            }
+        )
+
+    client = OpenAlexClient(
+        transport=httpx.MockTransport(handler),
+        request_interval_seconds=0.75,
+        sleep=sleep,
+    )
+
+    works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=2)
+
+    assert [work["title"] for work in works] == ["Valid work"]
+    assert calls == 1
+    assert sleep_calls == []
 
 
 @pytest.mark.asyncio
@@ -814,6 +953,35 @@ async def test_crossref_waits_between_paginated_requests():
 
 
 @pytest.mark.asyncio
+async def test_crossref_does_not_wait_after_max_pages_limit():
+    sleep_calls = []
+
+    async def sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "message": {
+                    "items": [{"DOI": "10.2/first", "title": ["First page"]}],
+                    "next-cursor": "cursor-for-unfetched-page",
+                }
+            }
+        )
+
+    client = CrossrefClient(
+        transport=httpx.MockTransport(handler),
+        request_interval_seconds=0.5,
+        sleep=sleep,
+    )
+
+    works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert [work["title"] for work in works] == ["First page"]
+    assert sleep_calls == []
+
+
+@pytest.mark.asyncio
 async def test_crossref_skips_malformed_result_items():
     def handler(request: httpx.Request) -> httpx.Response:
         return json_response(
@@ -844,6 +1012,39 @@ async def test_crossref_tolerates_malformed_message_payload():
     works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=1)
 
     assert works == []
+
+
+@pytest.mark.asyncio
+async def test_crossref_ignores_malformed_next_cursor():
+    calls = 0
+    sleep_calls = []
+
+    async def sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return json_response(
+            {
+                "message": {
+                    "items": [{"DOI": "10.1/valid", "title": ["Valid work"]}],
+                    "next-cursor": ["malformed"],
+                }
+            }
+        )
+
+    client = CrossrefClient(
+        transport=httpx.MockTransport(handler),
+        request_interval_seconds=0.5,
+        sleep=sleep,
+    )
+
+    works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=2)
+
+    assert [work["title"] for work in works] == ["Valid work"]
+    assert calls == 1
+    assert sleep_calls == []
 
 
 @pytest.mark.asyncio
@@ -983,6 +1184,69 @@ async def test_unpaywall_tolerates_malformed_best_oa_location():
 
 
 @pytest.mark.asyncio
+async def test_unpaywall_tolerates_malformed_oa_status():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "oa_status": {"value": "green"},
+                "best_oa_location": {"url_for_pdf": "https://example.test/paper.pdf"},
+            }
+        )
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.resolve("10.1/malformed-oa-status")
+
+    assert result["oa_status"] == "unknown"
+    assert result["oa_pdf_url"] == "https://example.test/paper.pdf"
+
+
+@pytest.mark.asyncio
+async def test_unpaywall_normalizes_oa_status_case_and_whitespace():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "oa_status": " Green ",
+                "best_oa_location": {"url_for_pdf": "https://example.test/paper.pdf"},
+            }
+        )
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.resolve("10.1/status-case")
+
+    assert result["oa_status"] == "green"
+    assert result["oa_pdf_url"] == "https://example.test/paper.pdf"
+
+
+@pytest.mark.asyncio
+async def test_unpaywall_rejects_unknown_oa_status_values():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "oa_status": "repository-only",
+                "best_oa_location": {"url_for_pdf": "https://example.test/paper.pdf"},
+            }
+        )
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.resolve("10.1/unknown-status")
+
+    assert result["oa_status"] == "unknown"
+    assert result["oa_pdf_url"] == "https://example.test/paper.pdf"
+
+
+@pytest.mark.asyncio
 async def test_unpaywall_rejects_non_web_pdf_url_scheme():
     def handler(request: httpx.Request) -> httpx.Response:
         return json_response(
@@ -1025,6 +1289,35 @@ async def test_unpaywall_falls_back_to_pdf_url_when_url_for_pdf_is_invalid():
 
     assert result["oa_status"] == "green"
     assert result["oa_pdf_url"] == "https://repository.example/paper.pdf"
+
+
+@pytest.mark.asyncio
+async def test_unpaywall_falls_back_to_oa_locations_pdf_url():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "oa_status": "green",
+                "best_oa_location": {
+                    "url_for_pdf": "javascript:alert(1)",
+                    "url": "https://repository.example/landing-page",
+                },
+                "oa_locations": [
+                    "malformed-location",
+                    {"url": "https://repository.example/landing-page"},
+                    {"url_for_pdf": "  https://repository.example/accepted.pdf  "},
+                ],
+            }
+        )
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.resolve("10.1/oa-locations-pdf-fallback")
+
+    assert result["oa_status"] == "green"
+    assert result["oa_pdf_url"] == "https://repository.example/accepted.pdf"
 
 
 @pytest.mark.asyncio

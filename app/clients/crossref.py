@@ -42,7 +42,7 @@ class CrossrefClient:
             params["mailto"] = self.mailto
         results: list[dict[str, Any]] = []
         async with httpx.AsyncClient(timeout=self.timeout, headers=headers, transport=self.transport) as client:
-            for _ in range(max_pages):
+            for page_index in range(max_pages):
                 payload = await self._get_json(client, f"{self.base_url}/journals/{issn}/works", params)
                 if not isinstance(payload, dict):
                     break
@@ -53,7 +53,9 @@ class CrossrefClient:
                 if isinstance(items, list):
                     results.extend(self.normalize(item) for item in items if isinstance(item, dict))
                 next_cursor = message.get("next-cursor")
-                if not next_cursor or next_cursor == params["cursor"]:
+                if not isinstance(next_cursor, str) or not next_cursor or next_cursor == params["cursor"]:
+                    break
+                if page_index >= max_pages - 1:
                     break
                 await self.wait_between_requests()
                 params["cursor"] = next_cursor
@@ -132,16 +134,25 @@ class CrossrefClient:
         for item in value:
             if not isinstance(item, dict):
                 continue
-            name_parts = [
-                value.strip()
-                for value in [item.get("given"), item.get("family")]
-                if isinstance(value, str) and value.strip()
-            ]
-            name = " ".join(name_parts)
+            name = self.author_name(item)
             if name:
                 affiliation = self.normalize_affiliations(item.get("affiliation"))
                 authors.append({"name": name, "affiliation": affiliation})
         return authors
+
+    def author_name(self, item: dict[str, Any]) -> Optional[str]:
+        name_parts = [
+            value.strip()
+            for value in [item.get("given"), item.get("family")]
+            if isinstance(value, str) and value.strip()
+        ]
+        name = " ".join(name_parts)
+        if name:
+            return name
+        single_name = item.get("name")
+        if isinstance(single_name, str) and single_name.strip():
+            return single_name.strip()
+        return None
 
     def normalize_affiliations(self, value: Any) -> Optional[str]:
         if not isinstance(value, list):

@@ -4,23 +4,27 @@ from typing import Any, Optional
 
 from app.clients.crossref import CrossrefClient
 from app.clients.openalex import OpenAlexClient
-from app.clients.unpaywall import UnpaywallClient
+from app.clients.unpaywall import UnpaywallClient, oa_status, web_url
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
 from app.services.classification import get_classifier
 from app.utils import json_dumps, json_loads, now_iso, today_iso
 
 
+def normalize_text(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
 def normalize_keyword_config(keyword_config: Any) -> tuple[str, list[str]]:
     if isinstance(keyword_config, dict):
-        mode = str(keyword_config.get("mode") or "or").lower()
+        mode = str(keyword_config.get("mode") or "or").strip().lower()
         terms = keyword_config.get("terms") or keyword_config.get("keywords") or []
     else:
         mode = "or"
         terms = keyword_config or []
     if isinstance(terms, str):
         terms = [terms]
-    normalized_terms = [str(term).strip().lower() for term in terms if str(term).strip()]
+    normalized_terms = [normalize_text(term) for term in terms if normalize_text(term)]
     return ("and" if mode == "and" else "or", normalized_terms)
 
 
@@ -28,14 +32,10 @@ def matches_keywords(work: dict[str, Any], keywords: Any) -> bool:
     mode, terms = normalize_keyword_config(keywords)
     if not terms:
         return True
-    haystack = f"{work.get('title') or ''}\n{work.get('abstract') or ''}".lower()
+    haystack = normalize_text(f"{work.get('title') or ''}\n{work.get('abstract') or ''}")
     if mode == "and":
         return all(term in haystack for term in terms)
     return any(term in haystack for term in terms)
-
-
-def normalize_text(value: Any) -> str:
-    return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
 def optional_text(value: Any, default: Optional[str] = None) -> Optional[str]:
@@ -83,7 +83,7 @@ def normalize_doi(value: Any) -> Optional[str]:
         .removeprefix("https://dx.doi.org/")
         .removeprefix("http://dx.doi.org/")
         .removeprefix("doi:")
-    )
+    ).strip()
 
 
 def build_dedupe_key(journal: dict[str, Any], work: dict[str, Any]) -> Optional[str]:
@@ -119,8 +119,8 @@ def upsert_paper_record(conn, journal: dict[str, Any], work: dict[str, Any], oa:
         optional_text(work.get("published_date")),
         optional_int(work.get("published_year")),
         optional_text(work.get("landing_url")),
-        optional_text(oa.get("oa_status"), "unknown"),
-        optional_text(oa.get("oa_pdf_url")),
+        oa_status(oa.get("oa_status")),
+        web_url(oa.get("oa_pdf_url")),
         optional_text(work.get("source_api")),
         dedupe_key,
         json_dumps(paper_raw_metadata(work, oa)),

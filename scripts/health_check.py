@@ -5,6 +5,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -14,6 +15,7 @@ STATUS_PATH = "/api/v1/system/status"
 EXTERNAL_STATUS_PATH = "/api/v1/system/status?check_external=true"
 EXPECTED_API_PREFIX = "/api/v1"
 EXPECTED_SERVICE = "paper-lab-agent"
+SUPPORTED_TRANSLATION_ADAPTERS = {"local-echo", "openai-compatible"}
 STATUS_REQUIRED_KEYS = {
     "database_path",
     "runtime",
@@ -48,6 +50,8 @@ EXTERNAL_CAPABILITY_REQUIRED_KEYS = {
     "grobid_url",
     "grobid",
     "llm_api_key",
+    "translation_adapter",
+    "llm_model",
     "embedding_model",
     "vector_db_backend",
 }
@@ -73,6 +77,29 @@ STATUS_COUNT_REQUIRED_KEYS = {
     "document_chemistry",
     "translations",
     "reaction_sets",
+}
+DEMO_DATA_MIN_COUNTS = {
+    "journals": 6,
+    "papers": 1,
+    "documents": 1,
+    "sections": 1,
+    "chunks": 1,
+    "reaction_sets": 1,
+    "reactions": 1,
+}
+DEMO_DATA_REQUIRED_KEYS = {"ready", "requirements", "missing", "counts"}
+RELEASE_READINESS_REQUIRED_KEYS = {
+    "ready",
+    "demo_data_missing",
+    "failed_workflows",
+    "config_warning_codes",
+    "storage_errors",
+}
+RELEASE_READINESS_LIST_KEYS = {
+    "demo_data_missing",
+    "failed_workflows",
+    "config_warning_codes",
+    "storage_errors",
 }
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -120,10 +147,18 @@ def normalize_base_url(url: str) -> str:
     return value
 
 
+def connect_host(host: str) -> str:
+    return "127.0.0.1" if host == "0.0.0.0" else host
+
+
+def url_host(host: str) -> str:
+    return f"[{host}]" if ":" in host and not host.startswith("[") else host
+
+
 def default_base_url() -> str:
     if os.getenv("API_BASE_URL"):
         return normalize_base_url(os.environ["API_BASE_URL"])
-    host = os.getenv("API_HOST", "127.0.0.1")
+    host = url_host(connect_host(os.getenv("API_HOST", "127.0.0.1")))
     port = os.getenv("API_PORT", "8000")
     return f"http://{host}:{port}"
 
@@ -131,7 +166,7 @@ def default_base_url() -> str:
 def default_frontend_url() -> str:
     if os.getenv("FRONTEND_URL"):
         return os.environ["FRONTEND_URL"].rstrip("/")
-    host = os.getenv("STREAMLIT_HOST", "127.0.0.1")
+    host = url_host(connect_host(os.getenv("STREAMLIT_HOST", "127.0.0.1")))
     port = os.getenv("STREAMLIT_PORT", "8501")
     return f"http://{host}:{port}"
 
@@ -314,6 +349,12 @@ def validate_system_status(status: dict) -> list[str]:
                 not isinstance(external_capabilities[key], str) or not external_capabilities[key]
             ):
                 invalid_capabilities.append(key)
+        if "translation_adapter" in external_capabilities and external_capabilities["translation_adapter"] not in SUPPORTED_TRANSLATION_ADAPTERS:
+            invalid_capabilities.append("translation_adapter")
+        if "llm_model" in external_capabilities and (
+            not isinstance(external_capabilities["llm_model"], str) or not external_capabilities["llm_model"]
+        ):
+            invalid_capabilities.append("llm_model")
         if invalid_capabilities:
             errors.append(f"external_capabilities invalid values: {', '.join(sorted(invalid_capabilities))}")
         grobid = external_capabilities.get("grobid")
@@ -348,6 +389,64 @@ def validate_system_status(status: dict) -> list[str]:
         )
         if invalid_counts:
             errors.append(f"counts invalid values: {', '.join(invalid_counts)}")
+    demo_data = status.get("demo_data")
+    if demo_data is not None and not isinstance(demo_data, dict):
+        errors.append("demo_data must be an object")
+    elif isinstance(demo_data, dict):
+        missing_demo_keys = sorted(DEMO_DATA_REQUIRED_KEYS - set(demo_data))
+        if missing_demo_keys:
+            errors.append(f"demo_data missing keys: {', '.join(missing_demo_keys)}")
+        invalid_demo_data = []
+        if "ready" in demo_data and not isinstance(demo_data["ready"], bool):
+            invalid_demo_data.append("ready")
+        if "missing" in demo_data and not isinstance(demo_data["missing"], list):
+            invalid_demo_data.append("missing")
+        elif isinstance(demo_data.get("missing"), list):
+            invalid_demo_data.extend(
+                f"missing.{index}"
+                for index, item in enumerate(demo_data["missing"])
+                if not isinstance(item, str) or not item.strip()
+            )
+        for key in ("requirements", "counts"):
+            value = demo_data.get(key)
+            if not isinstance(value, dict):
+                invalid_demo_data.append(key)
+                continue
+            invalid_demo_data.extend(
+                f"{key}.{item_key}"
+                for item_key, item_value in value.items()
+                if (
+                    not isinstance(item_key, str)
+                    or not item_key.strip()
+                    or isinstance(item_value, bool)
+                    or not isinstance(item_value, int)
+                    or item_value < 0
+                )
+            )
+        if invalid_demo_data:
+            errors.append(f"demo_data invalid values: {', '.join(invalid_demo_data)}")
+    release_readiness = status.get("release_readiness")
+    if release_readiness is not None and not isinstance(release_readiness, dict):
+        errors.append("release_readiness must be an object")
+    elif isinstance(release_readiness, dict):
+        missing_release_readiness = sorted(RELEASE_READINESS_REQUIRED_KEYS - set(release_readiness))
+        if missing_release_readiness:
+            errors.append(f"release_readiness missing keys: {', '.join(missing_release_readiness)}")
+        invalid_release_readiness = []
+        if "ready" in release_readiness and not isinstance(release_readiness["ready"], bool):
+            invalid_release_readiness.append("ready")
+        for key in sorted(RELEASE_READINESS_LIST_KEYS & set(release_readiness)):
+            value = release_readiness[key]
+            if not isinstance(value, list):
+                invalid_release_readiness.append(key)
+                continue
+            invalid_release_readiness.extend(
+                f"{key}.{index}"
+                for index, item in enumerate(value)
+                if not isinstance(item, str) or not item.strip()
+            )
+        if invalid_release_readiness:
+            errors.append(f"release_readiness invalid values: {', '.join(invalid_release_readiness)}")
     status_counts = status.get("status_counts")
     if not isinstance(status_counts, dict):
         errors.append("status_counts must be an object")
@@ -418,17 +517,152 @@ def failed_workflow_errors(status: dict) -> list[str]:
     return errors
 
 
+def config_warning_errors(status: dict) -> list[str]:
+    config_warnings = status.get("config_warnings")
+    if not isinstance(config_warnings, list):
+        return ["config_warnings"]
+    errors: list[str] = []
+    for index, warning in enumerate(config_warnings):
+        if isinstance(warning, dict) and isinstance(warning.get("code"), str) and warning["code"].strip():
+            errors.append(warning["code"].strip())
+        else:
+            errors.append(str(index))
+    return errors
+
+
+def demo_data_errors(status: dict) -> list[str]:
+    demo_data = status.get("demo_data")
+    if isinstance(demo_data, dict):
+        missing = demo_data.get("missing")
+        if isinstance(missing, list):
+            return [str(item) for item in missing if str(item).strip()]
+        if demo_data.get("ready") is True:
+            return []
+    counts = status.get("counts")
+    if not isinstance(counts, dict):
+        return ["counts"]
+    errors: list[str] = []
+    for key, minimum in DEMO_DATA_MIN_COUNTS.items():
+        value = counts.get(key)
+        if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+            errors.append(f"{key}>={minimum}")
+    return errors
+
+
+def api_release_readiness(status: dict) -> Optional[dict]:
+    readiness = status.get("release_readiness")
+    if not isinstance(readiness, dict):
+        return None
+    return {
+        "ready": readiness.get("ready") is True,
+        "demo_data_missing": list_values(readiness.get("demo_data_missing")),
+        "failed_workflows": list_values(readiness.get("failed_workflows")),
+        "config_warning_codes": list_values(readiness.get("config_warning_codes")),
+        "storage_errors": list_values(readiness.get("storage_errors")),
+    }
+
+
+def list_values(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item).strip()]
+
+
+def release_readiness_blockers(readiness: dict) -> list[str]:
+    if readiness.get("ready") is True:
+        return []
+    blockers: list[str] = []
+    for key in ("demo_data_missing", "failed_workflows", "config_warning_codes", "storage_errors"):
+        blockers.extend(f"{key}:{value}" for value in readiness.get(key, []))
+    return blockers or ["ready=false"]
+
+
+def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) -> dict:
+    safe_status = status if isinstance(status, dict) else {}
+    runtime = safe_status.get("runtime")
+    if not isinstance(runtime, dict):
+        runtime = {}
+    demo_data = safe_status.get("demo_data")
+    if not isinstance(demo_data, dict):
+        demo_data = {}
+    config_warnings = safe_status.get("config_warnings")
+    if not isinstance(config_warnings, list):
+        config_warnings = []
+    api_readiness = api_release_readiness(safe_status)
+    if api_readiness is not None:
+        storage_errors = api_readiness["storage_errors"]
+        demo_data_missing = api_readiness["demo_data_missing"]
+        failed_workflows = api_readiness["failed_workflows"]
+        config_warning_codes = api_readiness["config_warning_codes"]
+        release_ready = api_readiness["ready"]
+    else:
+        storage_errors = storage_writability_errors(safe_status)
+        demo_data_missing = demo_data_errors(safe_status)
+        failed_workflows = failed_workflow_errors(safe_status)
+        config_warning_codes = [
+            warning["code"].strip()
+            for warning in config_warnings
+            if isinstance(warning, dict) and isinstance(warning.get("code"), str) and warning["code"].strip()
+        ]
+        release_ready = not (storage_errors or failed_workflows or config_warning_codes or demo_data_missing)
+    summary = {
+        "service": health.get("service") if isinstance(health, dict) else None,
+        "api_status": health.get("status") if isinstance(health, dict) else None,
+        "api_prefix": runtime.get("api_prefix"),
+        "version": runtime.get("version"),
+        "release_ready": release_ready,
+        "demo_data_ready": demo_data.get("ready") is True,
+        "demo_data_missing": demo_data_missing,
+        "failed_workflows": failed_workflows,
+        "config_warning_count": len(config_warning_codes),
+        "config_warning_codes": config_warning_codes,
+        "storage_writable": storage_errors == [],
+        "storage_errors": storage_errors,
+    }
+    if frontend is not None:
+        summary.update(
+            {
+                "frontend_url": frontend.get("url"),
+                "frontend_status_code": frontend.get("status_code"),
+                "frontend_ok": frontend.get("status_code") == 200,
+            }
+        )
+    external_capabilities = safe_status.get("external_capabilities")
+    grobid = external_capabilities.get("grobid") if isinstance(external_capabilities, dict) else None
+    if isinstance(grobid, dict) and any(
+        grobid.get(key) is not None for key in ("available", "status_code", "error")
+    ):
+        summary.update(
+            {
+                "grobid_url": grobid.get("url"),
+                "grobid_available": grobid.get("available"),
+                "grobid_status_code": grobid.get("status_code"),
+                "grobid_error": grobid.get("error"),
+            }
+        )
+    return summary
+
+
 def main() -> int:
     load_env_file()
     parser = argparse.ArgumentParser(description="Check paper-lab-agent API health.")
     parser.add_argument("--base-url", default=default_base_url(), help="FastAPI base URL without /api/v1")
     parser.add_argument("--check-frontend", action="store_true", help="Also check Streamlit frontend health")
     parser.add_argument("--frontend-url", default=default_frontend_url(), help="Streamlit base URL")
+    parser.add_argument("--require-frontend", action="store_true", help="Fail when Streamlit frontend is unavailable")
     parser.add_argument("--check-external", action="store_true", help="Also check configured external services")
     parser.add_argument("--require-grobid", action="store_true", help="Fail when GROBID is unavailable")
     parser.add_argument("--require-storage-writable", action="store_true", help="Fail when local storage paths are missing or not writable")
     parser.add_argument("--require-no-failed-workflows", action="store_true", help="Fail when workflow status counts include failed items")
+    parser.add_argument("--require-no-config-warnings", action="store_true", help="Fail when system status reports configuration warnings")
+    parser.add_argument("--require-demo-data", action="store_true", help="Fail when walking skeleton demo data is not loaded")
+    parser.add_argument(
+        "--require-release-ready",
+        action="store_true",
+        help="Fail unless storage, workflows, configuration, and demo data are release-ready",
+    )
     parser.add_argument("--compact", action="store_true", help="Print health JSON on one line")
+    parser.add_argument("--summary-only", action="store_true", help="Print only release/demo readiness summary JSON")
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args()
 
@@ -441,13 +675,19 @@ def main() -> int:
     except (OSError, URLError, json.JSONDecodeError) as exc:
         print(f"health_check failed: {exc}", file=sys.stderr)
         return 1
-    frontend = probe_frontend(args.frontend_url, args.timeout) if args.check_frontend else None
+    frontend = probe_frontend(args.frontend_url, args.timeout) if args.check_frontend or args.require_frontend else None
 
     config_warnings = status.get("config_warnings", []) if isinstance(status, dict) else []
     output = {"health": health, "status": status, "config_warnings": config_warnings}
     if frontend is not None:
         output["frontend"] = frontend
-    print(json.dumps(output, ensure_ascii=False, indent=None if args.compact else 2))
+    print(
+        json.dumps(
+            health_summary(health, status, frontend) if args.summary_only else output,
+            ensure_ascii=False,
+            indent=None if args.compact else 2,
+        )
+    )
     if not isinstance(health, dict):
         print("health_check failed: health response must be an object", file=sys.stderr)
         return 1
@@ -464,16 +704,36 @@ def main() -> int:
     if status_errors:
         print(f"health_check failed: system status invalid ({'; '.join(status_errors)})", file=sys.stderr)
         return 1
-    if args.require_storage_writable:
+    api_readiness = api_release_readiness(status)
+    if args.require_release_ready and api_readiness is not None:
+        readiness_errors = release_readiness_blockers(api_readiness)
+        if readiness_errors:
+            print(f"health_check failed: release readiness blockers present ({'; '.join(readiness_errors)})", file=sys.stderr)
+            return 1
+    if args.require_storage_writable or (args.require_release_ready and api_readiness is None):
         storage_errors = storage_writability_errors(status)
         if storage_errors:
             print(f"health_check failed: storage is not writable ({'; '.join(storage_errors)})", file=sys.stderr)
             return 1
-    if args.require_no_failed_workflows:
+    if args.require_no_failed_workflows or (args.require_release_ready and api_readiness is None):
         workflow_errors = failed_workflow_errors(status)
         if workflow_errors:
             print(f"health_check failed: failed workflows present ({'; '.join(workflow_errors)})", file=sys.stderr)
             return 1
+    if args.require_no_config_warnings or (args.require_release_ready and api_readiness is None):
+        warning_errors = config_warning_errors(status)
+        if warning_errors:
+            print(f"health_check failed: config warnings present ({'; '.join(warning_errors)})", file=sys.stderr)
+            return 1
+    if args.require_demo_data or (args.require_release_ready and api_readiness is None):
+        demo_errors = demo_data_errors(status)
+        if demo_errors:
+            print(f"health_check failed: demo data is incomplete ({'; '.join(demo_errors)})", file=sys.stderr)
+            return 1
+    if args.require_frontend and isinstance(frontend, dict) and frontend.get("status_code") != 200:
+        detail = frontend.get("error") or f"status_code={frontend.get('status_code')}"
+        print(f"health_check failed: frontend is required but unavailable ({detail})", file=sys.stderr)
+        return 1
     if args.require_grobid:
         grobid = status["external_capabilities"]["grobid"]
         if grobid.get("available") is not True:

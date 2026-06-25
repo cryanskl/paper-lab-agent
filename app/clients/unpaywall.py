@@ -1,8 +1,11 @@
 import asyncio
 from typing import Any, Optional
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
+
+
+KNOWN_OA_STATUSES = {"gold", "green", "hybrid", "bronze", "closed", "unknown"}
 
 
 class UnpaywallClient:
@@ -29,18 +32,19 @@ class UnpaywallClient:
     async def resolve(self, doi: str) -> dict[str, Any]:
         if not self.email:
             return {"oa_status": "unknown", "oa_pdf_url": None, "error": "UNPAYWALL_EMAIL is not configured"}
-        async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as client:
-            payload = await self._get_json(client, f"{self.base_url}/{doi}", {"email": self.email})
+        headers = {"User-Agent": f"paper-lab-agent (mailto:{self.email})"}
+        encoded_doi = quote(doi.strip(), safe="")
+        async with httpx.AsyncClient(timeout=self.timeout, headers=headers, transport=self.transport) as client:
+            payload = await self._get_json(client, f"{self.base_url}/{encoded_doi}", {"email": self.email})
         if not isinstance(payload, dict):
             return {
                 "oa_status": "unknown",
                 "oa_pdf_url": None,
                 "error": "Unpaywall response was not a JSON object",
             }
-        best = payload.get("best_oa_location") or {}
         return {
-            "oa_status": payload.get("oa_status") or "unknown",
-            "oa_pdf_url": best_pdf_url(best),
+            "oa_status": oa_status(payload.get("oa_status")),
+            "oa_pdf_url": payload_pdf_url(payload),
             "raw": payload,
         }
 
@@ -81,6 +85,28 @@ class UnpaywallClient:
                 except ValueError:
                     pass
         return self.retry_backoff_seconds * (attempt + 1)
+
+
+def oa_status(value: Any) -> str:
+    if isinstance(value, str) and value.strip():
+        normalized = value.strip().lower()
+        if normalized in KNOWN_OA_STATUSES:
+            return normalized
+    return "unknown"
+
+
+def payload_pdf_url(payload: dict[str, Any]) -> Optional[str]:
+    pdf_url = best_pdf_url(payload.get("best_oa_location"))
+    if pdf_url:
+        return pdf_url
+    locations = payload.get("oa_locations")
+    if not isinstance(locations, list):
+        return None
+    for location in locations:
+        pdf_url = best_pdf_url(location)
+        if pdf_url:
+            return pdf_url
+    return None
 
 
 def best_pdf_url(location: Any) -> Optional[str]:

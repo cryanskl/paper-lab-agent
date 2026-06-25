@@ -88,6 +88,21 @@ def health_check_storage_health(**overrides):
     return storage_health
 
 
+SEED_KEYWORD_TERMS = [
+    "low temperature plasma",
+    "plasma sources",
+    "plasma theory",
+    "plasma chemistry",
+    "plasma physics",
+    "plasma diagnostics",
+    "capacitively coupled plasma",
+    "inductively coupled plasma",
+    "plasma simulation",
+    "plasma experiment",
+    "pulsed plasma",
+]
+
+
 def make_client(tmp_path):
     os.environ["DATABASE_PATH"] = str(tmp_path / "test.db")
     os.environ["PAPER_LAB_DATA_DIR"] = str(tmp_path)
@@ -105,6 +120,43 @@ def make_client(tmp_path):
     get_settings.cache_clear()
     init_db()
     return TestClient(app)
+
+
+def test_crawl_service_strips_space_after_doi_prefix_for_dedupe():
+    from app.services.crawl import build_dedupe_key, normalize_doi
+
+    work = {"doi": "DOI: 10.5555/ABC.Def", "title": "Example"}
+
+    assert normalize_doi(work["doi"]) == "10.5555/abc.def"
+    assert build_dedupe_key({"id": 2}, work) == "doi:10.5555/abc.def"
+
+
+def test_crawl_keyword_matching_collapses_internal_whitespace():
+    from app.services.crawl import matches_keywords, normalize_keyword_config
+
+    work = {
+        "title": "Low temperature plasma\nchemistry",
+        "abstract": "global    model for argon discharge",
+    }
+
+    assert normalize_keyword_config([" plasma   chemistry "]) == ("or", ["plasma chemistry"])
+    assert matches_keywords(work, [" plasma   chemistry "]) is True
+    assert matches_keywords(work, {"mode": "and", "terms": ["plasma   chemistry", "argon   discharge"]}) is True
+
+
+def test_crawl_keyword_matching_strips_mode_whitespace():
+    from app.services.crawl import matches_keywords, normalize_keyword_config
+
+    work = {
+        "title": "Low temperature plasma",
+        "abstract": "argon discharge",
+    }
+
+    assert normalize_keyword_config({"mode": " and ", "terms": ["plasma", "chemistry"]}) == (
+        "and",
+        ["plasma", "chemistry"],
+    )
+    assert matches_keywords(work, {"mode": " and ", "terms": ["plasma", "chemistry"]}) is False
 
 
 def test_health_seed_and_search(tmp_path):
@@ -603,6 +655,9 @@ def test_crawl_job_detail_includes_journal_and_diagnostics(tmp_path):
         "papers_new": 3,
         "papers_accepted": 7,
         "papers_existing": 4,
+        "outcome": "failed",
+        "keyword_mode": "or",
+        "keyword_terms": SEED_KEYWORD_TERMS,
         "error": "OpenAlex timeout",
     }
 
@@ -641,8 +696,83 @@ def test_crawl_job_list_includes_journal_and_diagnostics(tmp_path):
         "papers_new": 4,
         "papers_accepted": 6,
         "papers_existing": 2,
+        "outcome": "new_papers",
+        "keyword_mode": "or",
+        "keyword_terms": SEED_KEYWORD_TERMS,
         "error": "Crossref fallback",
     }
+
+
+def test_crawl_job_diagnostics_exposes_keyword_filter_config(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    created = client.post(
+        "/api/v1/journals",
+        json={
+            "name": "Keyword Diagnostic Journal",
+            "issn_print": "1234-567X",
+            "keywords": {"mode": "and", "terms": [" plasma   chemistry ", " argon "]},
+            "year_from": 2020,
+        },
+    )
+    assert created.status_code == 201
+    journal_id = created.json()["id"]
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO crawl_jobs (
+                journal_id, period, date_from, date_to, status,
+                papers_found, papers_filtered, papers_new
+            ) VALUES (?, 'manual', '2026-06-01', '2026-06-02', 'success', 3, 3, 0)
+            """,
+            (journal_id,),
+        )
+        job_id = cursor.lastrowid
+
+    response = client.get(f"/api/v1/crawl/jobs/{job_id}")
+
+    assert response.status_code == 200
+    diagnostics = response.json()["diagnostics"]
+    assert diagnostics["outcome"] == "all_filtered"
+    assert diagnostics["keyword_mode"] == "and"
+    assert diagnostics["keyword_terms"] == ["plasma chemistry", "argon"]
+
+
+def test_crawl_job_diagnostics_outcome_distinguishes_no_new_papers(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    scenarios = [
+        ("success", 0, 0, 0, "no_source_results"),
+        ("success", 5, 5, 0, "all_filtered"),
+        ("success", 5, 1, 0, "accepted_existing_only"),
+        ("running", 5, 0, 0, "running"),
+    ]
+    with get_conn() as conn:
+        for status, found, filtered, new_count, _outcome in scenarios:
+            conn.execute(
+                """
+                INSERT INTO crawl_jobs (
+                    journal_id, period, date_from, date_to, status,
+                    papers_found, papers_filtered, papers_new
+                ) VALUES (?, 'manual', '2026-06-01', '2026-06-02', ?, ?, ?, ?)
+                """,
+                (2, status, found, filtered, new_count),
+            )
+
+    response = client.get("/api/v1/crawl/jobs", params={"page_size": 10})
+
+    assert response.status_code == 200
+    outcomes_by_status_and_found = {
+        (item["status"], item["papers_found"], item["papers_filtered"]): item["diagnostics"]["outcome"]
+        for item in response.json()["items"]
+    }
+    for status, found, filtered, _new_count, outcome in scenarios:
+        assert outcomes_by_status_and_found[(status, found, filtered)] == outcome
 
 
 def test_journal_crud_accepts_keyword_config_and_soft_deletes(tmp_path):
@@ -687,6 +817,33 @@ def test_journal_crud_accepts_keyword_config_and_soft_deletes(tmp_path):
     missing = client.put("/api/v1/journals/9999", json={"active": False})
     assert missing.status_code == 404
     assert missing.json()["error"]["code"] == "journal_not_found"
+
+
+def test_journal_keyword_terms_collapse_internal_whitespace(tmp_path):
+    client = make_client(tmp_path)
+
+    created = client.post(
+        "/api/v1/journals",
+        json={
+            "name": "Keyword Whitespace Journal",
+            "issn_print": "1111-2222",
+            "keywords": {"mode": " AND ", "terms": [" low   temperature plasma ", "argon\n discharge"]},
+        },
+    )
+
+    assert created.status_code == 201
+    assert created.json()["keywords"] == {
+        "mode": "and",
+        "terms": ["low temperature plasma", "argon discharge"],
+    }
+
+    updated = client.put(
+        f"/api/v1/journals/{created.json()['id']}",
+        json={"keywords": {"mode": " Or ", "terms": [" plasma   chemistry ", "surface\nkinetics"]}},
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["keywords"] == {"mode": "or", "terms": ["plasma chemistry", "surface kinetics"]}
 
 
 def test_journal_normalizes_issn_fields_for_crawl_lookup(tmp_path):
@@ -1002,6 +1159,50 @@ def test_document_related_lists_use_page_query_and_metadata(tmp_path):
     assert reaction_sets["items"][0]["name"] == "Set 1"
 
 
+def test_document_reaction_sets_include_review_progress_counts(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            "INSERT INTO documents (file_path, file_hash, original_name) VALUES (?, ?, ?)",
+            (str(tmp_path / "reaction-sets.pdf"), "reaction-sets-progress", "reaction-sets.pdf"),
+        ).lastrowid
+        first_set_id = conn.execute(
+            "INSERT INTO reaction_sets (document_id, name, status) VALUES (?, ?, 'pending')",
+            (document_id, "Needs review"),
+        ).lastrowid
+        second_set_id = conn.execute(
+            "INSERT INTO reaction_sets (document_id, name, status) VALUES (?, ?, 'verified')",
+            (document_id, "Complete"),
+        ).lastrowid
+        conn.execute(
+            "INSERT INTO reactions (reaction_set_id, reaction, verified) VALUES (?, ?, ?)",
+            (first_set_id, "e + Ar -> e + Ar", 1),
+        )
+        conn.execute(
+            "INSERT INTO reactions (reaction_set_id, reaction, verified) VALUES (?, ?, ?)",
+            (first_set_id, "e + O2 -> O- + O", 0),
+        )
+        conn.execute(
+            "INSERT INTO reactions (reaction_set_id, reaction, verified) VALUES (?, ?, ?)",
+            (second_set_id, "e + N2 -> e + N2", 1),
+        )
+
+    response = client.get(f"/api/v1/documents/{document_id}/reaction-sets")
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert [
+        (item["name"], item["reaction_count"], item["verified_count"], item["unverified_count"], item["export_ready"])
+        for item in items
+    ] == [
+        ("Needs review", 2, 1, 1, False),
+        ("Complete", 1, 1, 0, True),
+    ]
+
+
 def test_document_responses_include_linked_paper_summary(tmp_path):
     client = make_client(tmp_path)
 
@@ -1087,6 +1288,23 @@ def test_document_upload_stores_pdf_with_pdf_extension_even_when_filename_is_mis
     assert document["original_name"] == "misleading.txt"
     assert document["file_path"].endswith(".pdf")
     assert Path(document["file_path"]).suffix == ".pdf"
+
+
+def test_document_upload_sanitizes_original_filename_for_metadata(tmp_path):
+    client = make_client(tmp_path)
+    from app.db import get_conn
+
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("..\\unsafe/secret\x1f.pdf", pdf_bytes(b"Argon plasma chemistry"), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    assert document["original_name"] == "secret.pdf"
+    with get_conn() as conn:
+        stored = conn.execute("SELECT original_name FROM documents WHERE id=?", (document["id"],)).fetchone()
+    assert stored["original_name"] == "secret.pdf"
 
 
 def test_document_upload_records_pdf_page_count(tmp_path):
@@ -1273,6 +1491,106 @@ def test_fixture_import_script_runs_from_repo_root(tmp_path):
     assert Path(document["file_path"]).resolve().is_relative_to(tmp_path.resolve())
 
 
+def test_prepare_demo_data_script_populates_walking_skeleton(tmp_path):
+    import json
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(tmp_path)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    result = subprocess.run(
+        [sys.executable, "scripts/prepare_demo_data.py"],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    counts = payload["counts"]
+    assert counts["papers"] >= 2
+    assert counts["documents"] >= 1
+    assert counts["sections"] >= 1
+    assert counts["chunks"] >= 1
+    assert counts["translations"] >= 1
+    assert counts["reaction_sets"] >= 1
+    assert counts["reactions"] >= 1
+    assert counts["reaction_audits"] >= 1
+    assert payload["document"]["parse_status"] == "parsed"
+    assert payload["document"]["index_status"] == "indexed"
+    assert payload["document"]["chemistry_status"] == "extracted"
+    assert payload["translation"]["status"] == "done"
+    assert payload["reaction_set"]["status"] == "verified"
+    assert payload["demo_data"]["ready"] is True
+    assert payload["demo_data"]["missing"] == []
+    assert payload["summary"]["ready"] is True
+    assert payload["summary"]["missing"] == []
+    assert payload["summary"]["document_id"] == payload["document"]["id"]
+    assert payload["summary"]["parse_status"] == "parsed"
+    assert payload["summary"]["index_status"] == "indexed"
+    assert payload["summary"]["chemistry_status"] == "extracted"
+    assert payload["summary"]["translation_status"] == "done"
+    assert payload["summary"]["reaction_set_id"] == payload["reaction_set"]["id"]
+    assert payload["summary"]["reaction_set_status"] == "verified"
+    assert payload["summary"]["reaction_count"] == payload["reaction_set"]["reaction_count"]
+    assert payload["summary"]["export_formats"] == ["json", "txt", "bolsig"]
+    assert payload["summary"]["counts"] == payload["counts"]
+    assert payload["exports"]["json"]["reaction_count"] >= 1
+    assert Path(payload["exports"]["json"]["output_path"]).exists()
+
+
+def test_prepare_demo_data_script_can_print_summary_only(tmp_path):
+    import json
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(tmp_path)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    result = subprocess.run(
+        [sys.executable, "scripts/prepare_demo_data.py", "--summary-only", "--compact"],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    summary = json.loads(result.stdout)
+    assert summary["ready"] is True
+    assert summary["missing"] == []
+    assert summary["parse_status"] == "parsed"
+    assert summary["index_status"] == "indexed"
+    assert summary["chemistry_status"] == "extracted"
+    assert summary["translation_status"] == "done"
+    assert summary["reaction_set_status"] == "verified"
+    assert summary["export_formats"] == ["json", "txt", "bolsig"]
+    assert "document" not in summary
+    assert "exports" not in summary
+
+
 def test_smoke_check_covers_translation_and_chemistry_chain():
     from scripts.smoke_check import run_smoke
 
@@ -1315,6 +1633,15 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["runtime_version"] == "0.1.0"
     assert result["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert result["config_warning_count"] == 3
+    assert result["release_readiness"]["ready"] is False
+    assert result["release_readiness"]["demo_data_missing"] == []
+    assert result["release_readiness"]["failed_workflows"] == []
+    assert result["release_readiness"]["config_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
+    assert result["release_readiness"]["storage_errors"] == []
 
 
 def test_smoke_check_script_outputs_json():
@@ -1359,6 +1686,12 @@ def test_smoke_check_script_outputs_json():
     assert payload["runtime_version"] == "0.1.0"
     assert payload["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert payload["config_warning_count"] == 3
+    assert payload["release_readiness"]["ready"] is False
+    assert payload["release_readiness"]["config_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
 
 
 def test_migrations_add_lxcat_db_to_legacy_reaction_sets():
@@ -2303,6 +2636,29 @@ def test_openalex_client_paginates_and_retries():
     assert attempts == 3
 
 
+def test_openalex_client_sends_polite_user_agent_with_mailto():
+    import asyncio
+
+    import httpx
+
+    from app.clients.openalex import OpenAlexClient
+
+    seen_user_agents = []
+    seen_mailtos = []
+
+    def handler(request):
+        seen_user_agents.append(request.headers.get("user-agent"))
+        seen_mailtos.append(request.url.params.get("mailto"))
+        return httpx.Response(200, json={"results": [], "meta": {}})
+
+    client = OpenAlexClient("lab@example.test", transport=httpx.MockTransport(handler))
+    works = asyncio.run(client.works_by_issn("1234-5678", "2025-01-01", "2026-01-01"))
+
+    assert works == []
+    assert seen_mailtos == ["lab@example.test"]
+    assert seen_user_agents == ["paper-lab-agent (mailto:lab@example.test)"]
+
+
 def test_openalex_client_honors_retry_after_without_real_sleep():
     import asyncio
 
@@ -2497,6 +2853,49 @@ def test_unpaywall_client_honors_retry_after_without_real_sleep():
     assert delays == [2.0]
 
 
+def test_unpaywall_client_sends_polite_user_agent_with_email():
+    import asyncio
+
+    import httpx
+
+    from app.clients.unpaywall import UnpaywallClient
+
+    seen_user_agents = []
+    seen_emails = []
+
+    def handler(request):
+        seen_user_agents.append(request.headers.get("user-agent"))
+        seen_emails.append(request.url.params.get("email"))
+        return httpx.Response(200, json={"oa_status": "closed"})
+
+    client = UnpaywallClient("lab@example.test", transport=httpx.MockTransport(handler))
+    result = asyncio.run(client.resolve("10.1/polite"))
+
+    assert result["oa_status"] == "closed"
+    assert seen_emails == ["lab@example.test"]
+    assert seen_user_agents == ["paper-lab-agent (mailto:lab@example.test)"]
+
+
+def test_unpaywall_client_url_encodes_doi_path_segment():
+    import asyncio
+
+    import httpx
+
+    from app.clients.unpaywall import UnpaywallClient
+
+    seen_raw_paths = []
+
+    def handler(request):
+        seen_raw_paths.append(request.url.raw_path.decode("ascii"))
+        return httpx.Response(200, json={"oa_status": "closed"})
+
+    client = UnpaywallClient("lab@example.test", transport=httpx.MockTransport(handler))
+    result = asyncio.run(client.resolve("10.5555/a/b"))
+
+    assert result["oa_status"] == "closed"
+    assert seen_raw_paths == ["/v2/10.5555%2Fa%2Fb?email=lab%40example.test"]
+
+
 def test_unpaywall_client_uses_best_location_url_when_it_is_pdf():
     import asyncio
 
@@ -2654,6 +3053,85 @@ def test_resolve_oa_records_unpaywall_raw_metadata(tmp_path, monkeypatch):
     assert payload["raw_metadata"]["unpaywall"]["doi"] == "10.7/manual-resolve-raw"
     assert payload["raw_metadata"]["unpaywall"]["oa_status"] == "green"
     assert "oa_resolution_error" not in payload["raw_metadata"]
+
+
+def test_resolve_oa_normalizes_adapter_oa_status_before_storing(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import papers as papers_router
+
+    class RawUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            return {
+                "oa_status": " Green ",
+                "oa_pdf_url": "https://repository.example.test/paper.pdf",
+                "raw": {"doi": doi, "oa_status": " Green "},
+            }
+
+    monkeypatch.setattr(papers_router, "UnpaywallClient", RawUnpaywallClient)
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, ?, '[]', 'fixture', ?)
+            """,
+            ("10.7/manual-resolve-status", "Manual OA status", "argon plasma", '{"source":"fixture"}'),
+        )
+        paper_id = cursor.lastrowid
+
+    response = client.post(f"/api/v1/papers/{paper_id}/resolve-oa")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["oa_status"] == "green"
+    with get_conn() as conn:
+        stored = conn.execute("SELECT oa_status FROM papers WHERE id=?", (paper_id,)).fetchone()
+    assert stored["oa_status"] == "green"
+
+
+def test_resolve_oa_rejects_adapter_non_web_pdf_url_before_storing(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import papers as papers_router
+
+    class RawUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            return {
+                "oa_status": "green",
+                "oa_pdf_url": "javascript:alert(1)",
+                "raw": {"doi": doi, "oa_status": "green"},
+            }
+
+    monkeypatch.setattr(papers_router, "UnpaywallClient", RawUnpaywallClient)
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, ?, '[]', 'fixture', ?)
+            """,
+            ("10.7/manual-resolve-pdf-url", "Manual OA PDF URL", "argon plasma", '{"source":"fixture"}'),
+        )
+        paper_id = cursor.lastrowid
+
+    response = client.post(f"/api/v1/papers/{paper_id}/resolve-oa")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["oa_status"] == "green"
+    assert payload["oa_pdf_url"] is None
+    with get_conn() as conn:
+        stored = conn.execute("SELECT oa_pdf_url FROM papers WHERE id=?", (paper_id,)).fetchone()
+    assert stored["oa_pdf_url"] is None
 
 
 def test_resolve_oa_uses_and_stores_normalized_doi(tmp_path, monkeypatch):
@@ -3003,6 +3481,106 @@ def test_crawl_job_records_unpaywall_failure_in_paper_metadata(tmp_path, monkeyp
     assert paper["oa_pdf_url"] is None
     assert raw_metadata["source_id"] == "W-unpaywall-failure"
     assert raw_metadata["oa_resolution_error"] == "Unpaywall temporary outage"
+
+
+def test_crawl_job_normalizes_adapter_oa_status_before_storing(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import crawl as crawl_service
+
+    class FakeOpenAlexClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def works_by_issn(self, *args, **kwargs):
+            return [
+                {
+                    "doi": "10.5/crawl-oa-status",
+                    "title": "Plasma chemistry OA status",
+                    "abstract": "argon oxygen plasma chemistry",
+                    "authors": [],
+                    "published_date": "2026-02-01",
+                    "published_year": 2026,
+                    "landing_url": "https://example.test/crawl-oa-status",
+                    "source_api": "openalex",
+                    "raw_metadata": {},
+                }
+            ]
+
+    class RawUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            return {"oa_status": " Green ", "oa_pdf_url": "https://example.test/crawl-oa-status.pdf"}
+
+    monkeypatch.setattr(crawl_service, "OpenAlexClient", FakeOpenAlexClient)
+    monkeypatch.setattr(crawl_service, "UnpaywallClient", RawUnpaywallClient)
+
+    job = crawl_service.create_jobs([2], "manual", "2026-02-01", "2026-02-28")[0]
+    import asyncio
+
+    asyncio.run(crawl_service.run_crawl_job(job["job_id"], 2, "2026-02-01", "2026-02-28"))
+
+    with get_conn() as conn:
+        paper = conn.execute(
+            "SELECT oa_status, oa_pdf_url FROM papers WHERE doi=?",
+            ("10.5/crawl-oa-status",),
+        ).fetchone()
+
+    assert paper["oa_status"] == "green"
+    assert paper["oa_pdf_url"] == "https://example.test/crawl-oa-status.pdf"
+
+
+def test_crawl_job_rejects_adapter_non_web_pdf_url_before_storing(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import crawl as crawl_service
+
+    class FakeOpenAlexClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def works_by_issn(self, *args, **kwargs):
+            return [
+                {
+                    "doi": "10.5/crawl-pdf-url",
+                    "title": "Plasma chemistry OA PDF URL",
+                    "abstract": "argon oxygen plasma chemistry",
+                    "authors": [],
+                    "published_date": "2026-02-01",
+                    "published_year": 2026,
+                    "landing_url": "https://example.test/crawl-pdf-url",
+                    "source_api": "openalex",
+                    "raw_metadata": {},
+                }
+            ]
+
+    class RawUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            return {"oa_status": "green", "oa_pdf_url": "javascript:alert(1)"}
+
+    monkeypatch.setattr(crawl_service, "OpenAlexClient", FakeOpenAlexClient)
+    monkeypatch.setattr(crawl_service, "UnpaywallClient", RawUnpaywallClient)
+
+    job = crawl_service.create_jobs([2], "manual", "2026-02-01", "2026-02-28")[0]
+    import asyncio
+
+    asyncio.run(crawl_service.run_crawl_job(job["job_id"], 2, "2026-02-01", "2026-02-28"))
+
+    with get_conn() as conn:
+        paper = conn.execute(
+            "SELECT oa_status, oa_pdf_url FROM papers WHERE doi=?",
+            ("10.5/crawl-pdf-url",),
+        ).fetchone()
+
+    assert paper["oa_status"] == "green"
+    assert paper["oa_pdf_url"] is None
 
 
 def test_crawl_job_records_found_filtered_and_new_counts(tmp_path, monkeypatch):
@@ -3496,6 +4074,25 @@ def test_system_status_reports_vector_db_backend(tmp_path):
     status = client.get("/api/v1/system/status").json()
 
     assert status["external_capabilities"]["vector_db_backend"] == "local-json"
+
+
+def test_system_status_reports_translation_adapter(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLM_API_KEY", "")
+    monkeypatch.setenv("LLM_MODEL", "gpt-diagnostic")
+
+    client = make_client(tmp_path)
+
+    local_status = client.get("/api/v1/system/status").json()
+    assert local_status["external_capabilities"]["translation_adapter"] == "local-echo"
+    assert local_status["external_capabilities"]["llm_model"] == "gpt-diagnostic"
+
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+
+    client = make_client(tmp_path)
+
+    configured_status = client.get("/api/v1/system/status").json()
+    assert configured_status["external_capabilities"]["translation_adapter"] == "openai-compatible"
+    assert configured_status["external_capabilities"]["llm_model"] == "gpt-diagnostic"
 
 
 def test_parse_document_records_grobid_fallback_reason(tmp_path, monkeypatch):
@@ -4704,6 +5301,43 @@ def test_rag_sources_include_linked_paper_identity(tmp_path):
     assert "Traceable argon plasma paper" in rag["answer"]
 
 
+def test_rag_sources_include_section_locator_fields(tmp_path):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import index_document
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            ("/tmp/rag-locator.txt", "rag-locator", "rag-locator.txt"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 7, 'Reaction kinetics', 'argon plasma electron impact chemistry evidence', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+
+    assert index_document(document_id)["status"] == "indexed"
+
+    from app.services.rag import query
+
+    rag = query("electron impact chemistry", [document_id], 2)
+
+    assert rag["sources"]
+    assert rag["sources"][0]["section_id"] == section_id
+    assert rag["sources"][0]["section_seq"] == 7
+    assert rag["sources"][0]["section_type"] == "body"
+    assert f"section_id={section_id}" in rag["answer"]
+    assert "section_seq=7" in rag["answer"]
+    assert "section_type=body" in rag["answer"]
+
+
 def test_rag_query_treats_local_hash_collision_as_insufficient_evidence(tmp_path):
     make_client(tmp_path)
 
@@ -5282,6 +5916,35 @@ def test_extract_chemistry_handles_unicode_reaction_arrow(tmp_path):
     assert detail["reactions"][0]["products"] == ["e", "e", "Ar+"]
 
 
+def test_reaction_set_detail_reports_review_progress_counts(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        reaction_set_id = conn.execute(
+            "INSERT INTO reaction_sets (name, status) VALUES (?, ?)",
+            ("Review progress set", "pending"),
+        ).lastrowid
+        conn.execute(
+            "INSERT INTO reactions (reaction_set_id, reaction, verified) VALUES (?, ?, ?)",
+            (reaction_set_id, "e + Ar -> e + Ar", 1),
+        )
+        conn.execute(
+            "INSERT INTO reactions (reaction_set_id, reaction, verified) VALUES (?, ?, ?)",
+            (reaction_set_id, "e + O2 -> O- + O", 0),
+        )
+
+    response = client.get(f"/api/v1/reaction-sets/{reaction_set_id}")
+
+    assert response.status_code == 200
+    detail = response.json()
+    assert detail["reaction_count"] == 2
+    assert detail["verified_count"] == 1
+    assert detail["unverified_count"] == 1
+    assert detail["export_ready"] is False
+
+
 def test_extract_chemistry_handles_unicode_species_subscripts_and_charges(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
@@ -5381,6 +6044,37 @@ def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
     assert audit["field_changes"]["reaction_type"] == {"before": "unknown", "after": "ionization"}
     assert audit["field_changes"]["rate_value"] == {"before": None, "after": "LXCat original table"}
     assert audit["field_changes"]["verified"] == {"before": False, "after": True}
+
+
+def test_reaction_verify_does_not_add_audit_for_unchanged_review(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("unchanged-review.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+    reaction_id = detail["reactions"][0]["id"]
+    payload = {
+        "verified": True,
+        "reaction_type": "ionization",
+        "rate_type": "cross_section",
+        "rate_value": "LXCat original table",
+        "threshold_ev": 15.76,
+        "cross_section_url": "https://nl.lxcat.net/data/set/example",
+        "verified_by": "chemist-a",
+    }
+
+    first = client.put(f"/api/v1/reactions/{reaction_id}/verify", json=payload).json()
+    second = client.put(f"/api/v1/reactions/{reaction_id}/verify", json=payload).json()
+
+    assert first["status"] == "verified"
+    assert second["status"] == "verified"
+    assert len(first["reactions"][0]["audit_log"]) == 1
+    assert len(second["reactions"][0]["audit_log"]) == 1
 
 
 def test_reaction_verify_can_clear_optional_review_fields(tmp_path):
@@ -5809,15 +6503,22 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     env_script = repo / "scripts" / "env.sh"
     dev_script = repo / "scripts" / "dev.sh"
     release_check = repo / "scripts" / "release_check.sh"
+    prepare_demo_data = repo / "scripts" / "prepare_demo_data.py"
     smoke_check = repo / "scripts" / "smoke_check.py"
+    validate_bug_docs = repo / "scripts" / "validate_bug_docs.py"
     validate_env_example = repo / "scripts" / "validate_env_example.py"
     ci_workflow = repo / ".github" / "workflows" / "ci.yml"
+    bug_readme = repo / "docs" / "bug" / "README.md"
     readme = (repo / "README.md").read_text(encoding="utf-8")
     env_example = (repo / ".env.example").read_text(encoding="utf-8")
     config_text = (repo / "app" / "config.py").read_text(encoding="utf-8")
 
     assert health_check.exists()
     assert "api/v1/system/status?check_external=true" in health_check.read_text(encoding="utf-8")
+    assert bug_readme.exists()
+    bug_readme_text = bug_readme.read_text(encoding="utf-8")
+    for required in ["每个已确认 bug 一个文件", "现象", "原因", "修复", "验证"]:
+        assert required in bug_readme_text
     assert env_script.exists()
     env_text = env_script.read_text(encoding="utf-8")
     assert "load_env_file_if_unset" in env_text
@@ -5828,12 +6529,16 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "-m uvicorn app.main:app" in dev_text
     assert "DEV_READY_TIMEOUT" in dev_text
     assert "/api/v1/health" in dev_text
+    assert 'API_URL_HOST="$(format_url_host "${API_CONNECT_HOST}")"' in dev_text
+    assert 'STREAMLIT_URL_HOST="$(format_url_host "${STREAMLIT_CONNECT_HOST}")"' in dev_text
+    assert '"http://${API_URL_HOST}:${API_PORT}/api/v1/health"' in dev_text
     assert "API failed to become ready" in dev_text
     assert "API process exited before becoming ready" in dev_text
     assert "wait_for_api" in dev_text
     assert '"${API_PID}"' in dev_text
     assert "-m streamlit run streamlit_app.py" in dev_text
     assert "/_stcore/health" in dev_text
+    assert '"http://${STREAMLIT_URL_HOST}:${STREAMLIT_PORT}/_stcore/health"' in dev_text
     assert "Streamlit failed to become ready" in dev_text
     assert "Streamlit process exited before becoming ready" in dev_text
     assert '"${STREAMLIT_PID}"' in dev_text
@@ -5848,8 +6553,10 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     for compiled_script in [
         "scripts/health_check.py",
         "scripts/import_fixtures.py",
+        "scripts/prepare_demo_data.py",
         "scripts/smoke_check.py",
         "scripts/validate_api_contract.py",
+        "scripts/validate_bug_docs.py",
         "scripts/validate_docs_links.py",
         "scripts/validate_env_example.py",
         "scripts/validate_readme_commands.py",
@@ -5860,7 +6567,9 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     ]:
         assert compiled_script in release_text
     assert "scripts/health_check.py --help" in release_text
+    assert "scripts/prepare_demo_data.py --help" in release_text
     assert "scripts/validate_api_contract.py" in release_text
+    assert "scripts/validate_bug_docs.py" in release_text
     assert "scripts/validate_docs_links.py" in release_text
     assert "scripts/validate_env_example.py" in release_text
     assert "scripts/validate_readme_commands.py" in release_text
@@ -5871,6 +6580,16 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "VECTOR_DB_BACKEND" in release_text
     assert "TemporaryDirectory" in release_text
     assert "scripts/import_fixtures.py" in release_text
+    assert "scripts/prepare_demo_data.py" in release_text
+    assert "PREPARE_DEMO_JSON" in release_text
+    assert "prepare_demo_data.py --compact" in release_text
+    assert "prepare_demo_data.py --summary-only --compact" in release_text
+    assert 'demo_data.ready' in release_text
+    assert 'summary.ready' in release_text
+    assert 'summary.export_formats' in release_text
+    assert 'summary.reaction_set_status' in release_text
+    assert '"export_formats"' in release_text
+    assert '"json", "txt", "bolsig"' in release_text
     assert '"documents"' in release_text
     assert "-m scripts.smoke_check" in release_text
     assert "SMOKE_JSON" in release_text
@@ -5879,6 +6598,9 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "runtime_version" in release_text
     assert "scheduler_job_ids" in release_text
     assert "config_warning_count" in release_text
+    assert "release_readiness" in release_text
+    assert "config_warning_codes" in release_text
+    assert "missing_openalex_mailto" in release_text
     assert "crawl_job_status" in release_text
     assert "crawled_papers" in release_text
     assert '"papers": 2' in release_text
@@ -5903,7 +6625,9 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "verified_export_txt_has_verification_metadata" in release_text
     assert "verified_export_bolsig_has_verification_metadata" in release_text
     assert "-m pytest -q" in release_text
+    assert prepare_demo_data.exists()
     assert smoke_check.exists()
+    assert validate_bug_docs.exists()
     assert validate_env_example.exists()
     assert "REQUIRED_ENV_KEYS" in validate_env_example.read_text(encoding="utf-8")
     smoke_text = smoke_check.read_text(encoding="utf-8")
@@ -5918,6 +6642,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert '"reaction_sets"' in smoke_text
     assert '"reactions"' in smoke_text
     assert '"status_counts"' in smoke_text
+    assert '"release_readiness"' in smoke_text
     assert '"sections"' in smoke_text
     assert '"chunks"' in smoke_text
     assert '"rag_sources"' in smoke_text
@@ -5945,13 +6670,33 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "bash scripts/dev.sh",
         "python scripts/health_check.py",
         "python scripts/health_check.py --compact",
+        "python scripts/health_check.py --summary-only --compact",
         "API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py",
         "curl http://127.0.0.1:8000/api/v1/system/status",
         "`config_warnings`",
+        "`release_readiness`",
+        "`demo_data_missing`",
+        "`failed_workflows`",
+        "`config_warning_codes`",
+        "`storage_errors`",
+        "`translation_adapter`",
+        "`llm_model`",
         "docker run --rm -p 8070:8070 lfoppiano/grobid",
         "`--check-external` 会主动检查 GROBID",
         "python scripts/health_check.py --require-grobid",
+        "python scripts/health_check.py --require-no-config-warnings",
+        "python scripts/health_check.py --require-demo-data",
+        "python scripts/health_check.py --require-release-ready",
         "python scripts/import_fixtures.py",
+        "python scripts/prepare_demo_data.py",
+        "python scripts/prepare_demo_data.py --compact",
+        "python scripts/prepare_demo_data.py --summary-only --compact",
+        "`summary.ready`",
+        "`release_ready`",
+        "`frontend_ok`",
+        "`grobid_available`",
+        "`storage_errors`",
+        "python scripts/health_check.py --require-frontend",
         "python -m scripts.smoke_check",
         "bash scripts/release_check.sh",
         "PAPER_LAB_SCHEDULER_ENABLED=true",
@@ -5986,6 +6731,147 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert 'alias="UNPAYWALL_API_MAX_RETRIES"' in config_text
     assert 'alias="UNPAYWALL_API_RETRY_BACKOFF_SECONDS"' in config_text
     assert 'alias="UNPAYWALL_API_TIMEOUT_SECONDS"' in config_text
+
+
+def test_env_example_validator_checks_runtime_url_defaults(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_env_example.py"
+    spec = importlib.util.spec_from_file_location("env_example_validator_runtime_urls", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+
+    env_example = tmp_path / ".env.example"
+    env_example.write_text(
+        "\n".join(
+            [
+                "API_HOST=0.0.0.0",
+                "API_PORT=9000",
+                "API_BASE_URL=http://0.0.0.0:8000/api/v1",
+                "STREAMLIT_HOST=0.0.0.0",
+                "STREAMLIT_PORT=9501",
+                "FRONTEND_URL=http://0.0.0.0:8501",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert validator.script_runtime_default_mismatches(env_example) == [
+        "API_BASE_URL expected http://127.0.0.1:9000/api/v1, got http://0.0.0.0:8000/api/v1",
+        "FRONTEND_URL expected http://127.0.0.1:9501, got http://0.0.0.0:8501",
+    ]
+
+
+def test_env_example_validator_brackets_ipv6_runtime_hosts(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_env_example.py"
+    spec = importlib.util.spec_from_file_location("env_example_validator_ipv6_runtime_urls", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+
+    env_example = tmp_path / ".env.example"
+    env_example.write_text(
+        "\n".join(
+            [
+                "API_HOST=::1",
+                "API_PORT=9000",
+                "API_BASE_URL=http://[::1]:9000/api/v1",
+                "STREAMLIT_HOST=::1",
+                "STREAMLIT_PORT=9501",
+                "FRONTEND_URL=http://[::1]:9501",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert validator.script_runtime_default_mismatches(env_example) == []
+
+
+def test_env_example_validator_cli_rejects_runtime_url_drift(tmp_path):
+    import subprocess
+
+    repo = Path(__file__).resolve().parent.parent
+    env_example = tmp_path / ".env.example"
+    env_example.write_text(
+        "\n".join(
+            [
+                "OPENALEX_MAILTO=",
+                "UNPAYWALL_EMAIL=",
+                "GROBID_URL=http://127.0.0.1:8070",
+                "LLM_API_KEY=",
+                "EMBEDDING_MODEL=local-hash",
+                "PAPER_LAB_DATA_DIR=./data",
+                "VECTOR_DB_PATH=./data/vector-index.json",
+                "VECTOR_DB_BACKEND=local-json",
+                "DATABASE_PATH=./data/plasma.db",
+                "PAPER_LAB_PDF_DIR=./data/pdfs",
+                "PAPER_LAB_TEI_DIR=./data/tei",
+                "PAPER_LAB_TRANSLATION_DIR=./data/translations",
+                "PAPER_LAB_EXPORT_DIR=./data/exports",
+                "PAPER_LAB_SCHEDULER_ENABLED=false",
+                "LLM_BASE_URL=https://api.openai.com/v1",
+                "LLM_MODEL=gpt-4o-mini",
+                "ACADEMIC_API_MAX_PAGES=3",
+                "ACADEMIC_API_MAX_RETRIES=3",
+                "ACADEMIC_API_RETRY_BACKOFF_SECONDS=0.25",
+                "ACADEMIC_API_REQUEST_INTERVAL_SECONDS=0",
+                "ACADEMIC_API_TIMEOUT_SECONDS=20",
+                "UNPAYWALL_API_MAX_RETRIES=3",
+                "UNPAYWALL_API_RETRY_BACKOFF_SECONDS=0.25",
+                "UNPAYWALL_API_REQUEST_INTERVAL_SECONDS=0",
+                "UNPAYWALL_API_TIMEOUT_SECONDS=20",
+                "API_HOST=127.0.0.1",
+                "API_PORT=9000",
+                "API_BASE_URL=http://127.0.0.1:8000/api/v1",
+                "STREAMLIT_HOST=127.0.0.1",
+                "STREAMLIT_PORT=8501",
+                "FRONTEND_URL=http://127.0.0.1:8501",
+                "DEV_READY_TIMEOUT=30",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [".venv/bin/python", "scripts/validate_env_example.py", str(env_example)],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "env example runtime defaults drifted" in result.stderr
+    assert "API_BASE_URL expected http://127.0.0.1:9000/api/v1" in result.stderr
+
+
+def test_health_check_brackets_ipv6_loopback_hosts(monkeypatch):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_ipv6_hosts", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    monkeypatch.delenv("API_BASE_URL", raising=False)
+    monkeypatch.delenv("FRONTEND_URL", raising=False)
+    monkeypatch.setenv("API_HOST", "::1")
+    monkeypatch.setenv("API_PORT", "9000")
+    monkeypatch.setenv("STREAMLIT_HOST", "::1")
+    monkeypatch.setenv("STREAMLIT_PORT", "9501")
+
+    assert health_check.default_base_url() == "http://[::1]:9000"
+    assert health_check.default_frontend_url() == "http://[::1]:9501"
 
 
 def test_env_loader_preserves_existing_environment_values(tmp_path):
@@ -6102,6 +6988,38 @@ def test_dev_api_base_url_uses_loopback_for_wildcard_bind_host(tmp_path):
     assert result.stdout == "http://127.0.0.1:9000/api/v1"
 
 
+def test_dev_api_base_url_brackets_ipv6_bind_host(tmp_path):
+    import subprocess
+
+    repo = Path(__file__).resolve().parent.parent
+    env_script = repo / "scripts" / "env.sh"
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                "set -euo pipefail; "
+                f"source {env_script}; "
+                "export API_HOST=::1; "
+                "export API_PORT=9000; "
+                'USER_API_BASE_URL="${API_BASE_URL:-}"; '
+                'USER_API_HOST_SET="${API_HOST+x}"; '
+                'USER_API_PORT_SET="${API_PORT+x}"; '
+                'API_BASE_URL="$(resolve_api_base_url "$USER_API_BASE_URL" "$USER_API_HOST_SET" "$USER_API_PORT_SET")"; '
+                'printf "%s" "$API_BASE_URL"'
+            ),
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "http://[::1]:9000/api/v1"
+
+
 def test_system_status_contract_documents_operational_counts():
     repo = Path(__file__).resolve().parent.parent
     api_doc = (repo / "docs" / "接口设计文档.md").read_text(encoding="utf-8")
@@ -6118,8 +7036,92 @@ def test_system_status_contract_documents_operational_counts():
         "reaction_sets",
         "reactions",
         "reaction_audits",
+        "demo_data",
+        "release_readiness",
+        "ready",
+        "missing",
     ]:
         assert required in system_section
+
+
+def test_system_status_reports_demo_data_readiness(tmp_path):
+    client = make_client(tmp_path)
+
+    initial = client.get("/api/v1/system/status").json()["demo_data"]
+    assert initial["ready"] is False
+    assert initial["requirements"]["journals"] == 6
+    assert "papers>=1" in initial["missing"]
+    assert "documents>=1" in initial["missing"]
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        paper_id = conn.execute(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, ?, '[]', 'status-test', '{}')
+            """,
+            ("10.999/demo-ready", "Demo ready paper", "argon plasma chemistry"),
+        ).lastrowid
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (
+                paper_id, file_path, file_hash, original_name,
+                parse_status, index_status, chemistry_status
+            ) VALUES (?, ?, ?, ?, 'parsed', 'indexed', 'extracted')
+            """,
+            (paper_id, str(tmp_path / "demo.pdf"), "demo-ready", "demo.pdf"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Demo section', 'e + Ar -> e + e + Ar+', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, vector_id, embedded)
+            VALUES (?, ?, 1, 'argon plasma chemistry', 'demo-vector', 1)
+            """,
+            (document_id, section_id),
+        )
+        reaction_set_id = conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, status)
+            VALUES (?, 'Demo reaction set', 'verified')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO reactions (reaction_set_id, reaction, verified)
+            VALUES (?, 'e + Ar -> e + e + Ar+', 1)
+            """,
+            (reaction_set_id,),
+        )
+
+    ready = client.get("/api/v1/system/status").json()["demo_data"]
+    assert ready["ready"] is True
+    assert ready["missing"] == []
+    assert ready["counts"]["documents"] == 1
+
+
+def test_system_status_reports_release_readiness(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
+    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+    monkeypatch.setenv("EMBEDDING_MODEL", "local-hash")
+    monkeypatch.setenv("VECTOR_DB_BACKEND", "local-json")
+    client = make_client(tmp_path)
+
+    readiness = client.get("/api/v1/system/status").json()["release_readiness"]
+
+    assert readiness["ready"] is False
+    assert "documents>=1" in readiness["demo_data_missing"]
+    assert readiness["failed_workflows"] == []
+    assert readiness["config_warning_codes"] == []
+    assert readiness["storage_errors"] == []
 
 
 def test_system_status_counts_reaction_audits(tmp_path):
@@ -6254,7 +7256,8 @@ def test_system_status_reports_workflow_status_counts(tmp_path):
             (failed_document_id,),
         )
 
-    status_counts = client.get("/api/v1/system/status").json()["status_counts"]
+    payload = client.get("/api/v1/system/status").json()
+    status_counts = payload["status_counts"]
 
     assert status_counts["crawl_jobs"]["success"] == 1
     assert status_counts["crawl_jobs"]["failed"] == 1
@@ -6268,6 +7271,13 @@ def test_system_status_reports_workflow_status_counts(tmp_path):
     assert status_counts["translations"]["failed"] == 1
     assert status_counts["reaction_sets"]["verified"] == 1
     assert status_counts["reaction_sets"]["pending"] == 1
+    assert payload["release_readiness"]["failed_workflows"] == [
+        "crawl_jobs.failed=1",
+        "document_parse.failed=1",
+        "document_index.failed=1",
+        "document_chemistry.failed=1",
+        "translations.failed=1",
+    ]
 
 
 def test_reaction_verify_contract_documents_clearable_review_fields():
@@ -6342,6 +7352,8 @@ def test_health_check_fails_when_runtime_status_is_missing(monkeypatch, capsys):
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -6390,6 +7402,8 @@ def test_health_check_requires_runtime_version():
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -6433,6 +7447,8 @@ def test_health_check_requires_scheduler_jobs_runtime_key():
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -6483,6 +7499,8 @@ def test_health_check_rejects_invalid_scheduler_jobs_shape():
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -6531,6 +7549,8 @@ def test_health_check_fails_when_database_path_is_invalid(monkeypatch, capsys):
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -6611,6 +7631,8 @@ def test_health_check_fails_when_storage_values_are_invalid(monkeypatch, capsys)
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -6662,6 +7684,8 @@ def test_health_check_fails_when_external_capability_values_are_invalid(monkeypa
                 "grobid_url": "",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": "false",
+                "translation_adapter": "custom-adapter",
+                "llm_model": "",
                 "embedding_model": 123,
                 "vector_db_backend": 456,
             },
@@ -6678,11 +7702,13 @@ def test_health_check_fails_when_external_capability_values_are_invalid(monkeypa
     assert "openalex_mailto" in captured.err
     assert "grobid_url" in captured.err
     assert "llm_api_key" in captured.err
+    assert "translation_adapter" in captured.err
+    assert "llm_model" in captured.err
     assert "embedding_model" in captured.err
     assert "vector_db_backend" in captured.err
 
 
-def test_health_check_requires_vector_db_backend_capability_key():
+def test_health_check_requires_translation_and_vector_capability_keys():
     import importlib.util
 
     repo = Path(__file__).resolve().parent.parent
@@ -6720,7 +7746,7 @@ def test_health_check_requires_vector_db_backend_capability_key():
         }
     )
 
-    assert "external_capabilities missing keys: vector_db_backend" in errors
+    assert "external_capabilities missing keys: llm_model, translation_adapter, vector_db_backend" in errors
 
 
 def test_health_check_fails_when_grobid_values_are_invalid(monkeypatch, capsys):
@@ -6757,6 +7783,8 @@ def test_health_check_fails_when_grobid_values_are_invalid(monkeypatch, capsys):
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "", "available": "yes", "status_code": "200", "error": 404},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -6815,6 +7843,8 @@ def test_health_check_fails_when_count_values_are_invalid(monkeypatch, capsys):
                     "error": None,
                 },
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -6862,6 +7892,8 @@ def test_health_check_requires_operational_count_keys():
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -6904,6 +7936,8 @@ def test_health_check_requires_config_warnings_key():
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -6913,6 +7947,87 @@ def test_health_check_requires_config_warnings_key():
     )
 
     assert "missing keys: config_warnings" in errors
+
+
+def test_health_check_can_require_no_config_warnings():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_config_warning_gate", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    assert health_check.config_warning_errors({"config_warnings": []}) == []
+    assert health_check.config_warning_errors({"config_warnings": "not-a-list"}) == ["config_warnings"]
+    assert health_check.config_warning_errors(
+        {
+            "config_warnings": [
+                {"code": "missing_llm_api_key", "capability": "llm_translation", "message": "LLM key is not configured"},
+                {
+                    "code": "missing_unpaywall_email",
+                    "capability": "oa_resolution",
+                    "message": "UNPAYWALL_EMAIL is not configured",
+                },
+            ]
+        }
+    ) == ["missing_llm_api_key", "missing_unpaywall_email"]
+
+
+def test_health_check_flag_fails_when_config_warnings_exist(monkeypatch, capsys):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_config_warning_flag", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "database_path": "/tmp/plasma.db",
+        "runtime": health_check_runtime(),
+        "config_warnings": [
+            {"code": "missing_llm_api_key", "capability": "llm_translation", "message": "LLM key is not configured"}
+        ],
+        "storage": {
+            "data_dir": "/tmp/data",
+            "pdf_dir": "/tmp/data/pdfs",
+            "tei_dir": "/tmp/data/tei",
+            "translation_dir": "/tmp/data/translations",
+            "export_dir": "/tmp/data/exports",
+            "vector_db_path": "/tmp/data/vector-index.json",
+        },
+        "storage_health": health_check_storage_health(),
+        "external_capabilities": {
+            "openalex_mailto": True,
+            "unpaywall_email": True,
+            "grobid_url": "http://127.0.0.1:8070",
+            "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+            "llm_api_key": False,
+            "translation_adapter": "local-echo",
+            "llm_model": "gpt-4o-mini",
+            "embedding_model": "local-hash",
+            "vector_db_backend": "local-json",
+        },
+        "counts": health_check_counts(),
+        "status_counts": health_check_status_counts(),
+    }
+
+    def fake_fetch_json(url, timeout):
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return status
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(sys, "argv", ["health_check.py", "--base-url", "http://api.test", "--require-no-config-warnings"])
+
+    assert health_check.main() == 1
+    assert "config warnings present (missing_llm_api_key)" in capsys.readouterr().err
 
 
 def test_health_check_requires_status_counts_key():
@@ -6946,6 +8061,8 @@ def test_health_check_requires_status_counts_key():
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -6986,6 +8103,8 @@ def test_health_check_requires_storage_health_key():
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7030,6 +8149,8 @@ def test_health_check_requires_database_file_health():
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7074,6 +8195,8 @@ def test_health_check_rejects_database_health_path_mismatch():
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7122,6 +8245,8 @@ def test_health_check_rejects_invalid_storage_health_shape():
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7170,6 +8295,8 @@ def test_health_check_rejects_storage_health_path_mismatch():
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7223,6 +8350,8 @@ def test_health_check_rejects_corrupt_vector_store_health():
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7277,6 +8406,8 @@ def test_health_check_rejects_vector_store_health_path_mismatch():
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7324,6 +8455,8 @@ def test_health_check_rejects_invalid_config_warning_shape():
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7369,6 +8502,8 @@ def test_health_check_fails_when_grobid_status_keys_are_missing(monkeypatch, cap
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": False, "error": "connection refused"},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7421,6 +8556,8 @@ def test_health_check_fails_cleanly_when_health_response_is_not_object(monkeypat
                     "error": None,
                 },
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7474,6 +8611,8 @@ def test_health_check_fails_when_health_service_is_unexpected(monkeypatch, capsy
                     "error": None,
                 },
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7528,6 +8667,8 @@ def test_health_check_accepts_valid_system_status(monkeypatch):
                     "error": None,
                 },
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7577,6 +8718,8 @@ def test_health_check_require_storage_writable_fails_when_storage_is_unwritable(
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7627,6 +8770,8 @@ def test_health_check_require_storage_writable_allows_missing_vector_store_when_
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7638,6 +8783,218 @@ def test_health_check_require_storage_writable_allows_missing_vector_store_when_
     monkeypatch.setattr(sys, "argv", ["health_check.py", "--base-url", "http://api.test", "--require-storage-writable"])
 
     assert health_check.main() == 0
+
+
+def test_health_check_require_demo_data_fails_when_walking_skeleton_counts_are_missing(monkeypatch, capsys):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_require_demo_data", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    missing_demo_errors = health_check.demo_data_errors({"counts": health_check_counts(documents=0, sections=0)})
+    assert "documents>=1" in missing_demo_errors
+    assert "sections>=1" in missing_demo_errors
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(documents=0, sections=0),
+            "status_counts": health_check_status_counts(),
+        }
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(sys, "argv", ["health_check.py", "--base-url", "http://api.test", "--require-demo-data"])
+
+    assert health_check.main() == 1
+    captured = capsys.readouterr()
+    assert "demo data is incomplete" in captured.err
+    assert "documents>=1" in captured.err
+    assert "sections>=1" in captured.err
+
+
+def test_health_check_require_demo_data_uses_system_demo_data_status():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_demo_data_status", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.demo_data_errors(
+        {
+            "counts": health_check_counts(documents=1, sections=1),
+            "demo_data": {
+                "ready": False,
+                "missing": ["chunks>=1"],
+                "requirements": {"chunks": 1},
+            },
+        }
+    )
+
+    assert errors == ["chunks>=1"]
+
+
+def test_health_check_require_release_ready_runs_combined_gates(monkeypatch, capsys):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_release_ready", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [
+                {
+                    "code": "missing_llm_api_key",
+                    "capability": "llm_translation",
+                    "message": "LLM_API_KEY is not configured.",
+                }
+            ],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "demo_data": {
+                "ready": True,
+                "requirements": {"papers": 1},
+                "missing": [],
+                "counts": {"papers": 2},
+            },
+            "status_counts": health_check_status_counts(),
+        }
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(sys, "argv", ["health_check.py", "--base-url", "http://api.test", "--require-release-ready"])
+
+    assert health_check.main() == 1
+    captured = capsys.readouterr()
+    assert "config warnings present" in captured.err
+    assert "missing_llm_api_key" in captured.err
+
+
+def test_health_check_require_release_ready_prefers_api_release_readiness(monkeypatch, capsys):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_api_release_ready_gate", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": True,
+                "translation_adapter": "openai-compatible",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+            "demo_data": {
+                "ready": True,
+                "requirements": {"papers": 1},
+                "missing": [],
+                "counts": {"papers": 2},
+            },
+            "status_counts": health_check_status_counts(),
+            "release_readiness": {
+                "ready": False,
+                "demo_data_missing": [],
+                "failed_workflows": ["translations.failed=2"],
+                "config_warning_codes": ["missing_llm_api_key"],
+                "storage_errors": [],
+            },
+        }
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(sys, "argv", ["health_check.py", "--base-url", "http://api.test", "--require-release-ready"])
+
+    assert health_check.main() == 1
+    captured = capsys.readouterr()
+    assert "release readiness blockers present" in captured.err
+    assert "failed_workflows:translations.failed=2" in captured.err
+    assert "config_warning_codes:missing_llm_api_key" in captured.err
 
 
 def test_health_check_require_no_failed_workflows_fails_on_failed_status_counts(monkeypatch, capsys):
@@ -7674,6 +9031,8 @@ def test_health_check_require_no_failed_workflows_fails_on_failed_status_counts(
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7736,6 +9095,8 @@ def test_health_check_outputs_config_warnings(monkeypatch, capsys):
                     "error": None,
                 },
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7793,6 +9154,8 @@ def test_health_check_compact_outputs_single_line_json(monkeypatch, capsys):
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7810,6 +9173,473 @@ def test_health_check_compact_outputs_single_line_json(monkeypatch, capsys):
     assert payload["status"]["runtime"]["api_prefix"] == "/api/v1"
     assert captured.out.count("\n") == 1
     assert "\n  " not in captured.out
+
+
+def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
+    import importlib.util
+    import json
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_summary_only", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(version="0.1.0"),
+            "config_warnings": [
+                {
+                    "code": "missing_llm_api_key",
+                    "capability": "llm_translation",
+                    "message": "LLM_API_KEY is not configured.",
+                }
+            ],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "demo_data": {
+                "ready": True,
+                "requirements": {"papers": 1},
+                "missing": [],
+                "counts": {"papers": 2},
+            },
+            "status_counts": health_check_status_counts(document_parse={"parsed": 2, "failed": 1}),
+        }
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["health_check.py", "--base-url", "http://api.test", "--summary-only", "--compact"],
+    )
+
+    assert health_check.main() == 0
+    captured = capsys.readouterr()
+    summary = json.loads(captured.out)
+    assert summary == {
+        "service": "paper-lab-agent",
+        "api_status": "ok",
+        "api_prefix": "/api/v1",
+        "version": "0.1.0",
+        "release_ready": False,
+        "demo_data_ready": True,
+        "demo_data_missing": [],
+        "failed_workflows": ["document_parse.failed=1"],
+        "config_warning_count": 1,
+        "config_warning_codes": ["missing_llm_api_key"],
+        "storage_writable": True,
+        "storage_errors": [],
+    }
+    assert "health" not in summary
+    assert "status" not in summary
+    assert captured.out.count("\n") == 1
+
+
+def test_health_check_summary_only_reports_release_ready_when_gates_are_clean():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_summary_release_ready", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [],
+        "storage_health": health_check_storage_health(),
+        "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+        "demo_data": {
+            "ready": True,
+            "requirements": {"papers": 1},
+            "missing": [],
+            "counts": {"papers": 1},
+        },
+        "status_counts": health_check_status_counts(),
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
+    assert summary["release_ready"] is True
+    assert summary["demo_data_missing"] == []
+    assert summary["failed_workflows"] == []
+    assert summary["config_warning_codes"] == []
+    assert summary["storage_errors"] == []
+
+
+def test_health_check_summary_prefers_api_release_readiness():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_api_readiness", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [],
+        "storage_health": health_check_storage_health(),
+        "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+        "demo_data": {
+            "ready": True,
+            "requirements": {"papers": 1},
+            "missing": [],
+            "counts": {"papers": 1},
+        },
+        "status_counts": health_check_status_counts(),
+        "release_readiness": {
+            "ready": False,
+            "demo_data_missing": ["documents>=1"],
+            "failed_workflows": ["translations.failed=2"],
+            "config_warning_codes": ["missing_llm_api_key"],
+            "storage_errors": ["pdf_dir.writable"],
+        },
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
+    assert summary["release_ready"] is False
+    assert summary["demo_data_missing"] == ["documents>=1"]
+    assert summary["failed_workflows"] == ["translations.failed=2"]
+    assert summary["config_warning_count"] == 1
+    assert summary["config_warning_codes"] == ["missing_llm_api_key"]
+    assert summary["storage_writable"] is False
+    assert summary["storage_errors"] == ["pdf_dir.writable"]
+
+
+def test_health_check_validates_release_readiness_shape():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_release_readiness_shape", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(version="0.1.0"),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": True,
+                "translation_adapter": "openai-compatible",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+            "demo_data": {
+                "ready": True,
+                "requirements": {"papers": 1},
+                "missing": [],
+                "counts": {"papers": 1},
+            },
+            "status_counts": health_check_status_counts(),
+            "release_readiness": {
+                "ready": "no",
+                "demo_data_missing": ["documents>=1", ""],
+                "config_warning_codes": "missing_llm_api_key",
+                "storage_errors": [False],
+            },
+        }
+    )
+
+    joined = "; ".join(errors)
+    assert "release_readiness missing keys: failed_workflows" in joined
+    assert "release_readiness invalid values" in joined
+    assert "ready" in joined
+    assert "demo_data_missing.1" in joined
+    assert "config_warning_codes" in joined
+    assert "storage_errors.0" in joined
+
+
+def test_health_check_summary_only_includes_storage_errors():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_summary_storage_errors", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [],
+        "storage_health": health_check_storage_health(
+            pdf_dir={"path": "/tmp/data/pdfs", "exists": True, "writable": False},
+            database_parent={"path": "/tmp", "exists": False, "writable": False},
+        ),
+        "counts": health_check_counts(),
+        "status_counts": health_check_status_counts(),
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
+    assert summary["storage_writable"] is False
+    assert summary["storage_errors"] == ["pdf_dir.writable", "database_parent.exists", "database_parent.writable"]
+
+
+def test_health_check_summary_only_includes_frontend_probe(monkeypatch, capsys):
+    import importlib.util
+    import json
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_summary_frontend", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(version="0.1.0"),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
+        }
+
+    def fake_fetch_status(url: str, timeout: float) -> int:
+        return 200
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(health_check, "fetch_status", fake_fetch_status, raising=False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "health_check.py",
+            "--base-url",
+            "http://api.test",
+            "--check-frontend",
+            "--frontend-url",
+            "http://ui.test",
+            "--summary-only",
+            "--compact",
+        ],
+    )
+
+    assert health_check.main() == 0
+    captured = capsys.readouterr()
+    summary = json.loads(captured.out)
+    assert summary["frontend_url"] == "http://ui.test/_stcore/health"
+    assert summary["frontend_status_code"] == 200
+    assert summary["frontend_ok"] is True
+    assert "frontend" not in summary
+
+
+def test_health_check_require_frontend_fails_when_streamlit_is_unhealthy(monkeypatch, capsys):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_require_frontend", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(version="0.1.0"),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
+        }
+
+    def fake_fetch_status(url: str, timeout: float) -> int:
+        assert url == "http://ui.test/_stcore/health"
+        return 503
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(health_check, "fetch_status", fake_fetch_status, raising=False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "health_check.py",
+            "--base-url",
+            "http://api.test",
+            "--frontend-url",
+            "http://ui.test",
+            "--require-frontend",
+        ],
+    )
+
+    assert health_check.main() == 1
+    captured = capsys.readouterr()
+    assert "frontend is required but unavailable" in captured.err
+    assert "status_code=503" in captured.err
+
+
+def test_health_check_summary_only_includes_external_grobid_probe(monkeypatch, capsys):
+    import importlib.util
+    import json
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_summary_grobid", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        assert url.endswith("/api/v1/system/status?check_external=true")
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(version="0.1.0"),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {
+                    "url": "http://127.0.0.1:8070",
+                    "available": False,
+                    "status_code": 503,
+                    "error": "unexpected health response",
+                },
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
+        }
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "health_check.py",
+            "--base-url",
+            "http://api.test",
+            "--check-external",
+            "--summary-only",
+            "--compact",
+        ],
+    )
+
+    assert health_check.main() == 0
+    captured = capsys.readouterr()
+    summary = json.loads(captured.out)
+    assert summary["grobid_url"] == "http://127.0.0.1:8070"
+    assert summary["grobid_available"] is False
+    assert summary["grobid_status_code"] == 503
+    assert summary["grobid_error"] == "unexpected health response"
+    assert "status" not in summary
 
 
 def test_health_check_can_include_streamlit_frontend_probe(monkeypatch, capsys):
@@ -7848,6 +9678,8 @@ def test_health_check_can_include_streamlit_frontend_probe(monkeypatch, capsys):
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7916,6 +9748,8 @@ def test_health_check_check_frontend_fails_when_streamlit_is_unhealthy(monkeypat
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -7976,6 +9810,8 @@ def test_health_check_check_frontend_reports_connection_error(monkeypatch, capsy
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -8055,6 +9891,8 @@ def test_health_check_require_grobid_fails_when_external_grobid_is_unavailable(m
                     "error": "connection refused",
                 },
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -8113,6 +9951,8 @@ def test_health_check_uses_api_base_url_from_env_file(monkeypatch, tmp_path):
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -8130,6 +9970,28 @@ def test_health_check_uses_api_base_url_from_env_file(monkeypatch, tmp_path):
     ]
 
 
+def test_health_check_uses_loopback_for_wildcard_hosts(monkeypatch):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_wildcard_hosts", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    monkeypatch.delenv("API_BASE_URL", raising=False)
+    monkeypatch.delenv("FRONTEND_URL", raising=False)
+    monkeypatch.setenv("API_HOST", "0.0.0.0")
+    monkeypatch.setenv("API_PORT", "9000")
+    monkeypatch.setenv("STREAMLIT_HOST", "0.0.0.0")
+    monkeypatch.setenv("STREAMLIT_PORT", "9501")
+
+    assert health_check.default_base_url() == "http://127.0.0.1:9000"
+    assert health_check.default_frontend_url() == "http://127.0.0.1:9501"
+
+
 def test_health_check_env_value_parser_preserves_unquoted_hashes():
     import importlib.util
 
@@ -8145,6 +10007,55 @@ def test_health_check_env_value_parser_preserves_unquoted_hashes():
     assert health_check.clean_env_value("sk-test#not-comment # inline comment") == "sk-test#not-comment"
     assert health_check.clean_env_value("http://ui.test/#/papers # inline comment") == "http://ui.test/#/papers"
     assert health_check.clean_env_value('"sk-test#quoted" # inline comment') == "sk-test#quoted"
+
+
+def test_readme_command_validator_checks_inline_command_targets(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_readme_commands.py"
+    spec = importlib.util.spec_from_file_location("readme_command_validator_inline", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+
+    (tmp_path / "README.md").write_text(
+        "Troubleshooting: `PYTHON=.venv/bin/python bash scripts/dev.sh` and `python scripts/missing.py`.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "dev.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    assert validator.missing_command_targets(tmp_path) == [
+        "README.md: command target missing: scripts/missing.py"
+    ]
+
+
+def test_bug_docs_validator_checks_naming_and_required_sections(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_bug_docs.py"
+    spec = importlib.util.spec_from_file_location("bug_docs_validator", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+
+    bug_dir = tmp_path / "docs" / "bug"
+    bug_dir.mkdir(parents=True)
+    (bug_dir / "README.md").write_text("# Bug 记录约定\n", encoding="utf-8")
+    (bug_dir / "bad-name.md").write_text("# Bad\n\n## 现象\n", encoding="utf-8")
+    (bug_dir / "2026-06-25-good-bug.md").write_text(
+        "# Good\n\n## 现象\n\n## 原因\n\n## 修复\n\n## 验证\n",
+        encoding="utf-8",
+    )
+
+    assert validator.bug_doc_issues(tmp_path) == [
+        "docs/bug/bad-name.md: filename must match YYYY-MM-DD-short-slug.md",
+        "docs/bug/bad-name.md: missing sections: 原因, 修复, 验证",
+    ]
 
 
 def test_health_check_env_loader_ignores_invalid_key_names(monkeypatch, tmp_path):
@@ -8210,6 +10121,8 @@ def test_health_check_rejects_unexpected_api_prefix():
                 "grobid_url": "http://127.0.0.1:8070",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
@@ -8246,6 +10159,10 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         "chemistry_document_id",
         "document_reaction_sets",
         "/documents/{chemistry_document_id}/reaction-sets",
+        "reaction_count",
+        "verified_count",
+        "unverified_count",
+        "export_ready",
         "unverified_reactions",
         "show_only_unverified",
         "export_blocked",
@@ -8261,6 +10178,29 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         "format={export_format}",
     ]:
         assert required in chemistry_section
+
+
+def test_streamlit_sidebar_surfaces_release_readiness():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+
+    for required in [
+        "release_readiness",
+        "发布就绪",
+        "release ready",
+        "release blockers",
+        "demo_data_missing",
+        "failed_workflows",
+        "config_warning_codes",
+        "storage_errors",
+        "release blocker details",
+        "demo data missing:",
+        "failed workflows:",
+        "config warnings:",
+        "storage errors:",
+    ]:
+        assert required in sidebar_section
 
 
 def test_streamlit_chemistry_export_surfaces_file_and_metadata_status():
@@ -8335,6 +10275,11 @@ def test_streamlit_chemistry_tab_exposes_reaction_set_pagination_controls():
         "document_reaction_sets['page']",
         "document_reaction_sets['page_size']",
         "document_reaction_sets['total']",
+        "reaction_set_rows",
+        "reaction_count",
+        "verified_count",
+        "unverified_count",
+        "st.dataframe(reaction_set_rows",
     ]:
         assert required in chemistry_section
 
@@ -8435,9 +10380,9 @@ def test_streamlit_chemistry_export_blocks_empty_reaction_sets():
     chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
 
     for required in [
-        "no_reactions = not reactions",
-        "export_blocked = no_reactions or bool(unverified_reactions)",
-        "if no_reactions:",
+        'export_ready = detail.get("export_ready"',
+        "export_blocked = not export_ready",
+        "if reaction_count == 0:",
         "没有可导出的反应。",
         "elif export_blocked:",
         "disabled=export_blocked",
@@ -9275,6 +11220,9 @@ def test_streamlit_rag_tab_separates_answer_and_sources():
         "st.code(source_preview.get(\"source_excerpt\")",
         "chunk_id",
         "section_title",
+        "section_id",
+        "section_seq",
+        "section_type",
     ]:
         assert required in rag_section
 
@@ -9407,6 +11355,8 @@ def test_streamlit_sidebar_exposes_external_capability_status():
         "unpaywall_email",
         "grobid_url",
         "llm_api_key",
+        "translation_adapter",
+        "llm_model",
         "embedding_model",
         "vector_db_backend",
     ]:
@@ -9463,6 +11413,21 @@ def test_streamlit_sidebar_surfaces_workflow_status_counts():
         assert required in sidebar_section
 
 
+def test_streamlit_sidebar_surfaces_demo_data_readiness():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+
+    for required in [
+        "演示数据",
+        "demo_data",
+        'demo_data.get("ready")',
+        'demo_data.get("missing")',
+        "prepare_demo_data.py",
+    ]:
+        assert required in sidebar_section
+
+
 def test_streamlit_sidebar_can_check_grobid_live_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
@@ -9496,8 +11461,12 @@ def test_streamlit_crawl_jobs_table_flattens_diagnostics():
         "papers_accepted",
         "papers_existing",
         "papers_new",
+        "outcome",
+        "keyword_mode",
+        "keyword_terms",
     ]:
         assert required in flatten_helper
+    assert 'st.caption(f"outcome: {diagnostics.get(\'outcome\') or \'unknown\'}")' in search_section
     assert "flatten_crawl_job_rows(jobs)" in search_section
     assert 'st.dataframe(flatten_crawl_job_rows(jobs), use_container_width=True)' in search_section
 

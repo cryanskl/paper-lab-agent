@@ -16,6 +16,8 @@ STREAMLIT_PORT="${STREAMLIT_PORT:-8501}"
 API_BASE_URL="$(resolve_api_base_url "${USER_API_BASE_URL}" "${USER_API_HOST_SET}" "${USER_API_PORT_SET}")"
 API_CONNECT_HOST="$(resolve_connect_host "${API_HOST}")"
 STREAMLIT_CONNECT_HOST="$(resolve_connect_host "${STREAMLIT_HOST}")"
+API_URL_HOST="$(format_url_host "${API_CONNECT_HOST}")"
+STREAMLIT_URL_HOST="$(format_url_host "${STREAMLIT_CONNECT_HOST}")"
 DEV_READY_TIMEOUT="${DEV_READY_TIMEOUT:-30}"
 PYTHON="${PYTHON:-}"
 
@@ -80,7 +82,7 @@ wait_for_api() {
 "${PYTHON}" -m uvicorn app.main:app --host "${API_HOST}" --port "${API_PORT}" &
 API_PID=$!
 
-wait_for_api "http://${API_CONNECT_HOST}:${API_PORT}/api/v1/health" "${DEV_READY_TIMEOUT}" "${API_PID}"
+wait_for_api "http://${API_URL_HOST}:${API_PORT}/api/v1/health" "${DEV_READY_TIMEOUT}" "${API_PID}"
 
 API_BASE_URL="${API_BASE_URL}" "${PYTHON}" -m streamlit run streamlit_app.py \
   --server.address "${STREAMLIT_HOST}" \
@@ -88,7 +90,7 @@ API_BASE_URL="${API_BASE_URL}" "${PYTHON}" -m streamlit run streamlit_app.py \
   --server.headless true &
 STREAMLIT_PID=$!
 
-wait_for_service "Streamlit" "http://${STREAMLIT_CONNECT_HOST}:${STREAMLIT_PORT}/_stcore/health" "${DEV_READY_TIMEOUT}" "${STREAMLIT_PID}"
+wait_for_service "Streamlit" "http://${STREAMLIT_URL_HOST}:${STREAMLIT_PORT}/_stcore/health" "${DEV_READY_TIMEOUT}" "${STREAMLIT_PID}"
 
 echo "FastAPI:   http://${API_HOST}:${API_PORT}"
 echo "Streamlit: http://${STREAMLIT_HOST}:${STREAMLIT_PORT}"
