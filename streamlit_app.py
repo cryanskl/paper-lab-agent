@@ -904,10 +904,14 @@ with chemistry_tab:
     if detail:
         reactions = detail.get("reactions", [])
         unverified_reactions = [reaction for reaction in reactions if not reaction.get("verified")]
+        reaction_count = detail.get("reaction_count", len(reactions))
+        verified_count = detail.get("verified_count", reaction_count - len(unverified_reactions))
+        unverified_count = detail.get("unverified_count", len(unverified_reactions))
         st.caption(
             f"status: {detail.get('status')} · "
-            f"reactions: {len(reactions)} · "
-            f"未复核: {len(unverified_reactions)} · "
+            f"reactions: {reaction_count} · "
+            f"verified: {verified_count} · "
+            f"未复核: {unverified_count} · "
             f"gas_mixture: {detail.get('gas_mixture') or '-'} · "
             f"lxcat_db: {detail.get('lxcat_db') or '-'} · "
             f"verified_by: {detail.get('verified_by') or '-'} · "

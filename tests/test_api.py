@@ -5872,6 +5872,34 @@ def test_extract_chemistry_handles_unicode_reaction_arrow(tmp_path):
     assert detail["reactions"][0]["products"] == ["e", "e", "Ar+"]
 
 
+def test_reaction_set_detail_reports_review_progress_counts(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        reaction_set_id = conn.execute(
+            "INSERT INTO reaction_sets (name, status) VALUES (?, ?)",
+            ("Review progress set", "pending"),
+        ).lastrowid
+        conn.execute(
+            "INSERT INTO reactions (reaction_set_id, reaction, verified) VALUES (?, ?, ?)",
+            (reaction_set_id, "e + Ar -> e + Ar", 1),
+        )
+        conn.execute(
+            "INSERT INTO reactions (reaction_set_id, reaction, verified) VALUES (?, ?, ?)",
+            (reaction_set_id, "e + O2 -> O- + O", 0),
+        )
+
+    response = client.get(f"/api/v1/reaction-sets/{reaction_set_id}")
+
+    assert response.status_code == 200
+    detail = response.json()
+    assert detail["reaction_count"] == 2
+    assert detail["verified_count"] == 1
+    assert detail["unverified_count"] == 1
+
+
 def test_extract_chemistry_handles_unicode_species_subscripts_and_charges(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
@@ -10086,6 +10114,9 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         "chemistry_document_id",
         "document_reaction_sets",
         "/documents/{chemistry_document_id}/reaction-sets",
+        "reaction_count",
+        "verified_count",
+        "unverified_count",
         "unverified_reactions",
         "show_only_unverified",
         "export_blocked",
