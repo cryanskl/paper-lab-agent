@@ -138,9 +138,13 @@ with search_tab:
     year_from = col4.number_input("year_from", min_value=0, max_value=2100, value=0)
     year_to = col5.number_input("year_to", min_value=0, max_value=2100, value=0)
     oa_only = col6.checkbox("OA only")
+    page_col, page_size_col = st.columns(2)
+    search_page = page_col.number_input("page", min_value=1, value=1, key="search-page")
+    search_page_size = page_size_col.number_input("page_size", min_value=1, max_value=100, value=20, key="search-page-size")
     params = {
         "q": q or None,
-        "page_size": 20,
+        "page": int(search_page),
+        "page_size": int(search_page_size),
         "oa_only": oa_only,
     }
     if journal_choice != "全部":
@@ -164,6 +168,7 @@ with search_tab:
             search_error = exc
             st.warning(f"检索失败: {exc}")
     st.metric("结果", papers["total"])
+    st.caption(f"page {papers['page']} · page_size {papers['page_size']}")
     if not search_error and papers["total"] == 0:
         st.info("没有检索结果。")
     for paper in papers["items"]:

@@ -9219,6 +9219,21 @@ def test_streamlit_search_tab_exposes_year_filters():
         assert required in search_section
 
 
+def test_streamlit_search_tab_exposes_pagination_controls():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    for required in [
+        "search_page",
+        "search_page_size",
+        '"page": int(search_page)',
+        '"page_size": int(search_page_size)',
+        'st.caption(f"page {papers[\'page\']} · page_size {papers[\'page_size\']}")',
+    ]:
+        assert required in search_section
+
+
 def test_streamlit_api_put_preserves_json_errors_for_callers():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
