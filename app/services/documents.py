@@ -98,6 +98,25 @@ def sections_from_tei(tei: str) -> list[dict]:
     def clean_text(value: str) -> str:
         return re.sub(r"\s+", " ", value).strip()
 
+    def clean_mixed_text(parts: list[str]) -> str:
+        text = clean_text(" ".join(part for part in parts if part))
+        return re.sub(r"\s+([,.;:!?])", r"\1", text)
+
+    def local_name(node: ET.Element) -> str:
+        return node.tag.rsplit("}", 1)[-1]
+
+    def text_content(node: ET.Element, include_targets: bool = True) -> str:
+        parts = [node.text or ""]
+        for child in list(node):
+            child_text = text_content(child, include_targets)
+            if include_targets and local_name(child) in {"ptr", "ref"}:
+                target = clean_text(child.get("target") or "")
+                if target:
+                    child_text = f"{child_text} ({target})" if child_text else target
+            parts.append(child_text)
+            parts.append(child.tail or "")
+        return clean_mixed_text(parts)
+
     def append_section(title: str, content: str, section_type: str) -> None:
         text = clean_text(content)
         if not text:
@@ -107,7 +126,7 @@ def sections_from_tei(tei: str) -> list[dict]:
     def table_rows(table: ET.Element) -> list[str]:
         rows = []
         for row in findall(table, ".//tei:row"):
-            cells = [clean_text(" ".join(cell.itertext())) for cell in findall(row, ".//tei:cell")]
+            cells = [text_content(cell) for cell in findall(row, ".//tei:cell")]
             if any(cells):
                 rows.append(" ".join(cell for cell in cells if cell))
         return rows
@@ -115,35 +134,34 @@ def sections_from_tei(tei: str) -> list[dict]:
     def title_from_head_or_label(node: ET.Element, fallback: str) -> str:
         head = find(node, "tei:head")
         if head is not None:
-            title = clean_text(" ".join(head.itertext()))
+            title = text_content(head, include_targets=False)
             if title:
                 return title
         label = find(node, "tei:label")
         if label is not None:
-            title = clean_text(" ".join(label.itertext()))
+            title = text_content(label, include_targets=False)
             if title:
                 return title
         return fallback
 
-    def content_without_children(node: ET.Element, excluded: list[Optional[ET.Element]]) -> str:
+    def content_without_children(
+        node: ET.Element, excluded: list[Optional[ET.Element]], include_targets: bool = True
+    ) -> str:
         excluded_children = [excluded_child for excluded_child in excluded if excluded_child is not None]
         parts = [node.text or ""]
         for child in list(node):
             if all(child is not excluded_child for excluded_child in excluded_children):
-                parts.append(" ".join(child.itertext()))
+                parts.append(text_content(child, include_targets=include_targets))
             parts.append(child.tail or "")
-        return " ".join(parts)
-
-    def local_name(node: ET.Element) -> str:
-        return node.tag.rsplit("}", 1)[-1]
+        return clean_mixed_text(parts)
 
     def reference_text(bibl: ET.Element) -> str:
         id_nodes = findall(bibl, ".//tei:idno")
-        text = clean_text(content_without_children(bibl, id_nodes))
+        text = content_without_children(bibl, id_nodes, include_targets=False)
         parts = [text] if text else []
         seen_values = {text} if text else set()
         for id_node in id_nodes:
-            value = clean_text(" ".join(id_node.itertext()))
+            value = text_content(id_node, include_targets=False)
             if not value or value in seen_values:
                 continue
             id_type = clean_text(id_node.get("type") or "").upper()
@@ -168,7 +186,7 @@ def sections_from_tei(tei: str) -> list[dict]:
     for abstract in abstract_nodes:
         head = find(abstract, "tei:head")
         abstract_content = clean_text(
-            content_without_children(abstract, [head]) if head is not None else " ".join(abstract.itertext())
+            content_without_children(abstract, [head]) if head is not None else text_content(abstract)
         )
         if not abstract_content or abstract_content in seen_abstracts:
             continue
@@ -177,7 +195,7 @@ def sections_from_tei(tei: str) -> list[dict]:
 
     def append_body_div(div: ET.Element) -> None:
         head = find(div, "tei:head")
-        explicit_title = clean_text(" ".join(head.itertext())) if head is not None else None
+        explicit_title = text_content(head, include_targets=False) if head is not None else None
         content_parts = []
 
         def flush_body_content() -> None:
@@ -191,9 +209,9 @@ def sections_from_tei(tei: str) -> list[dict]:
             if child_name == "head":
                 continue
             if child_name == "p":
-                content_parts.append(clean_text(" ".join(child.itertext())))
+                content_parts.append(text_content(child))
             elif child_name == "list":
-                content_parts.extend(clean_text(" ".join(item.itertext())) for item in findall(child, "tei:item"))
+                content_parts.extend(text_content(item) for item in findall(child, "tei:item"))
             elif child_name == "div":
                 flush_body_content()
                 append_body_div(child)
@@ -213,7 +231,7 @@ def sections_from_tei(tei: str) -> list[dict]:
             nested_table = find(figure, ".//tei:table")
             content_parts = []
             if caption is not None:
-                content_parts.append(" ".join(caption.itertext()))
+                content_parts.append(text_content(caption))
             if nested_table is not None:
                 content_parts.extend(table_rows(nested_table))
             else:
@@ -228,7 +246,7 @@ def sections_from_tei(tei: str) -> list[dict]:
             return
         append_section(
             title_from_head_or_label(figure, f"Figure {len(sections) + 1}"),
-            " ".join(caption.itertext()) if caption is not None else content_without_children(figure, [head, label]),
+            text_content(caption) if caption is not None else content_without_children(figure, [head, label]),
             "figure_caption",
         )
 
@@ -257,14 +275,14 @@ def sections_from_tei(tei: str) -> list[dict]:
             child_name = local_name(child)
             if child_name == "head":
                 flush_body_content()
-                pending_body_head = clean_text(" ".join(child.itertext()))
+                pending_body_head = text_content(child, include_targets=False)
             elif child_name == "div":
                 flush_body_content()
                 append_body_div(child)
             elif child_name == "p":
-                content_parts.append(clean_text(" ".join(child.itertext())))
+                content_parts.append(text_content(child))
             elif child_name == "list":
-                content_parts.extend(clean_text(" ".join(item.itertext())) for item in findall(child, "tei:item"))
+                content_parts.extend(text_content(item) for item in findall(child, "tei:item"))
             elif child_name == "figure":
                 flush_body_content()
                 append_figure(child)

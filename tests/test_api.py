@@ -4968,6 +4968,46 @@ def test_sections_from_tei_extracts_biblstruct_reference_identifiers():
     ]
 
 
+def test_sections_from_tei_preserves_inline_reference_targets():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <div>
+            <head>Data sources</head>
+            <p>Rates follow <ref target="https://nl.lxcat.net/set/argon">LXCat argon set</ref>.</p>
+            <list>
+              <item>Cross sections from <ptr target="https://example.org/cross-sections.xml"/>.</item>
+            </list>
+          </div>
+          <table>
+            <head>Table 1</head>
+            <row>
+              <cell>Dataset</cell>
+              <cell><ref target="https://example.org/table-source">table source</ref></cell>
+            </row>
+          </table>
+          <figure>
+            <head>Figure 1</head>
+            <figDesc>Geometry adapted from <ref target="https://example.org/figure-source">CAD source</ref>.</figDesc>
+          </figure>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections[0]["content"] == (
+        "Rates follow LXCat argon set (https://nl.lxcat.net/set/argon). "
+        "Cross sections from https://example.org/cross-sections.xml."
+    )
+    assert sections[1]["content"] == "Dataset table source (https://example.org/table-source)"
+    assert sections[2]["content"] == "Geometry adapted from CAD source (https://example.org/figure-source)."
+
+
 def test_translation_adapter_preserves_formula_masks():
     from app.services.translation import translate_text_preserving_formulas
 
