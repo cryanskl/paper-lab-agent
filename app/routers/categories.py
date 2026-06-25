@@ -15,10 +15,18 @@ class CategoryIn(BaseModel):
     description: Optional[str] = None
     parent_id: Optional[int] = None
 
-    @field_validator("name", "slug")
+    @field_validator("name")
     @classmethod
     def required_text_must_not_be_blank(cls, value: str) -> str:
         normalized = value.strip()
+        if not normalized:
+            raise ValueError("field must not be blank")
+        return normalized
+
+    @field_validator("slug")
+    @classmethod
+    def slug_must_not_be_blank(cls, value: str) -> str:
+        normalized = value.strip().lower()
         if not normalized:
             raise ValueError("field must not be blank")
         return normalized

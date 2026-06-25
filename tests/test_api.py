@@ -810,6 +810,21 @@ def test_create_category_rejects_blank_name_and_slug(tmp_path):
     assert blank_slug.json()["error"]["code"] == "validation_error"
 
 
+def test_create_category_normalizes_slug_for_taxonomy_consistency(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/v1/categories",
+        json={"name": "Surface Chemistry", "slug": "  Surface-Chemistry  "},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["slug"] == "surface-chemistry"
+    categories = client.get("/api/v1/categories").json()["items"]
+    created = next(item for item in categories if item["name"] == "Surface Chemistry")
+    assert created["slug"] == "surface-chemistry"
+
+
 def test_create_category_with_unknown_parent_returns_json_error(tmp_path):
     client = make_client(tmp_path)
 
