@@ -6285,6 +6285,35 @@ def test_env_example_validator_checks_runtime_url_defaults(tmp_path):
     ]
 
 
+def test_env_example_validator_brackets_ipv6_runtime_hosts(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_env_example.py"
+    spec = importlib.util.spec_from_file_location("env_example_validator_ipv6_runtime_urls", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+
+    env_example = tmp_path / ".env.example"
+    env_example.write_text(
+        "\n".join(
+            [
+                "API_HOST=::1",
+                "API_PORT=9000",
+                "API_BASE_URL=http://[::1]:9000/api/v1",
+                "STREAMLIT_HOST=::1",
+                "STREAMLIT_PORT=9501",
+                "FRONTEND_URL=http://[::1]:9501",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert validator.script_runtime_default_mismatches(env_example) == []
+
+
 def test_env_example_validator_cli_rejects_runtime_url_drift(tmp_path):
     import subprocess
 

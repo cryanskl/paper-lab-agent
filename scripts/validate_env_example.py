@@ -165,6 +165,10 @@ def connect_host(host: str) -> str:
     return "127.0.0.1" if host == "0.0.0.0" else host
 
 
+def url_host(host: str) -> str:
+    return f"[{host}]" if ":" in host and not host.startswith("[") else host
+
+
 def script_runtime_default_mismatches(path: Path) -> list[str]:
     values = parse_env_values(path)
     mismatches: list[str] = []
@@ -172,7 +176,7 @@ def script_runtime_default_mismatches(path: Path) -> list[str]:
     api_port = values.get("API_PORT")
     api_base_url = values.get("API_BASE_URL")
     if api_host and api_port and api_base_url:
-        expected_api_base_url = f"http://{connect_host(api_host)}:{api_port}/api/v1"
+        expected_api_base_url = f"http://{url_host(connect_host(api_host))}:{api_port}/api/v1"
         if api_base_url != expected_api_base_url:
             mismatches.append(f"API_BASE_URL expected {expected_api_base_url}, got {api_base_url}")
 
@@ -180,7 +184,7 @@ def script_runtime_default_mismatches(path: Path) -> list[str]:
     streamlit_port = values.get("STREAMLIT_PORT")
     frontend_url = values.get("FRONTEND_URL")
     if streamlit_host and streamlit_port and frontend_url:
-        expected_frontend_url = f"http://{connect_host(streamlit_host)}:{streamlit_port}"
+        expected_frontend_url = f"http://{url_host(connect_host(streamlit_host))}:{streamlit_port}"
         if frontend_url != expected_frontend_url:
             mismatches.append(f"FRONTEND_URL expected {expected_frontend_url}, got {frontend_url}")
     return mismatches
