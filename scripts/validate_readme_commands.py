@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import re
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 from urllib.parse import urlparse
@@ -149,6 +150,54 @@ def command_targets(readme_path: Path) -> list[str]:
     return targets
 
 
+def python_script_option_refs(readme_path: Path) -> list[tuple[str, str]]:
+    refs: list[tuple[str, str]] = []
+    for line in command_lines(readme_path):
+        tokens = strip_leading_env_assignments(split_command(line))
+        if not tokens:
+            continue
+        for index, token in enumerate(tokens):
+            if token in {"python", "python3"} and index + 1 < len(tokens):
+                script = tokens[index + 1]
+                option_tokens = tokens[index + 2 :]
+            elif token == "-m" and index > 0 and tokens[index - 1] in {"python", "python3"} and index + 1 < len(tokens):
+                module = tokens[index + 1]
+                if not module.startswith("scripts."):
+                    continue
+                script = module.replace(".", "/") + ".py"
+                option_tokens = tokens[index + 2 :]
+            else:
+                continue
+            if not script.startswith("scripts/") or not script.endswith(".py"):
+                continue
+            for option in option_tokens:
+                if option.startswith("--"):
+                    refs.append((script, option.split("=", 1)[0]))
+    return refs
+
+
+def missing_python_script_options(repo: Path, readme_path: Path) -> list[str]:
+    issues: list[str] = []
+    help_cache: dict[str, str | None] = {}
+    for script, option in python_script_option_refs(readme_path):
+        script_path = repo / script
+        if not script_path.exists():
+            continue
+        if script not in help_cache:
+            result = subprocess.run(
+                [sys.executable, script, "--help"],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            help_cache[script] = result.stdout + result.stderr if result.returncode == 0 else None
+        help_text = help_cache[script]
+        if help_text is not None and option not in help_text:
+            issues.append(f"README.md: option {option} not found in {script} --help")
+    return issues
+
+
 def missing_command_targets(repo: Path) -> list[str]:
     readme_path = repo / "README.md"
     if not readme_path.exists():
@@ -158,6 +207,7 @@ def missing_command_targets(repo: Path) -> list[str]:
     for target in command_targets(readme_path):
         if not (repo / target).exists():
             issues.append(f"README.md: command target missing: {target}")
+    issues.extend(missing_python_script_options(repo, readme_path))
     actual_routes = app_routes()
     for method, path in documented_local_curl_routes(readme_path):
         if (method, path) not in actual_routes:

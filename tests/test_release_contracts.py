@@ -802,6 +802,24 @@ def test_readme_commands_validator_reports_missing_scripts_module(tmp_path):
     assert issues == ["README.md: command target missing: scripts/missing_check.py"]
 
 
+def test_readme_commands_validator_reports_unknown_python_script_option(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    (scripts_dir / "tool.py").write_text(
+        "import argparse\n"
+        "parser = argparse.ArgumentParser()\n"
+        "parser.add_argument('--known', action='store_true')\n"
+        "parser.parse_args()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "README.md").write_text("```bash\npython scripts/tool.py --known --missing\n```\n", encoding="utf-8")
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == ["README.md: option --missing not found in scripts/tool.py --help"]
+
+
 def test_readme_commands_validator_reports_missing_local_curl_route(tmp_path):
     validate_readme_commands = load_validate_readme_commands()
     (tmp_path / "README.md").write_text(
