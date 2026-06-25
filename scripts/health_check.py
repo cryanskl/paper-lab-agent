@@ -525,6 +525,7 @@ def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) 
     config_warnings = safe_status.get("config_warnings")
     if not isinstance(config_warnings, list):
         config_warnings = []
+    storage_errors = storage_writability_errors(safe_status)
     summary = {
         "service": health.get("service") if isinstance(health, dict) else None,
         "api_status": health.get("status") if isinstance(health, dict) else None,
@@ -539,7 +540,8 @@ def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) 
             for warning in config_warnings
             if isinstance(warning, dict) and isinstance(warning.get("code"), str) and warning["code"].strip()
         ],
-        "storage_writable": storage_writability_errors(safe_status) == [],
+        "storage_writable": storage_errors == [],
+        "storage_errors": storage_errors,
     }
     if frontend is not None:
         summary.update(

@@ -6504,6 +6504,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "`summary.ready`",
         "`frontend_ok`",
         "`grobid_available`",
+        "`storage_errors`",
         "python -m scripts.smoke_check",
         "bash scripts/release_check.sh",
         "PAPER_LAB_SCHEDULER_ENABLED=true",
@@ -8903,10 +8904,39 @@ def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
         "config_warning_count": 1,
         "config_warning_codes": ["missing_llm_api_key"],
         "storage_writable": True,
+        "storage_errors": [],
     }
     assert "health" not in summary
     assert "status" not in summary
     assert captured.out.count("\n") == 1
+
+
+def test_health_check_summary_only_includes_storage_errors():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_summary_storage_errors", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [],
+        "storage_health": health_check_storage_health(
+            pdf_dir={"path": "/tmp/data/pdfs", "exists": True, "writable": False},
+            database_parent={"path": "/tmp", "exists": False, "writable": False},
+        ),
+        "counts": health_check_counts(),
+        "status_counts": health_check_status_counts(),
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
+    assert summary["storage_writable"] is False
+    assert summary["storage_errors"] == ["pdf_dir.writable", "database_parent.exists", "database_parent.writable"]
 
 
 def test_health_check_summary_only_includes_frontend_probe(monkeypatch, capsys):
