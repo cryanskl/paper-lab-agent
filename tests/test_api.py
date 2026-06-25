@@ -6848,6 +6848,7 @@ def test_system_status_contract_documents_operational_counts():
         "reactions",
         "reaction_audits",
         "demo_data",
+        "release_readiness",
         "ready",
         "missing",
     ]:
@@ -6915,6 +6916,23 @@ def test_system_status_reports_demo_data_readiness(tmp_path):
     assert ready["ready"] is True
     assert ready["missing"] == []
     assert ready["counts"]["documents"] == 1
+
+
+def test_system_status_reports_release_readiness(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
+    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+    monkeypatch.setenv("EMBEDDING_MODEL", "local-hash")
+    monkeypatch.setenv("VECTOR_DB_BACKEND", "local-json")
+    client = make_client(tmp_path)
+
+    readiness = client.get("/api/v1/system/status").json()["release_readiness"]
+
+    assert readiness["ready"] is False
+    assert "documents>=1" in readiness["demo_data_missing"]
+    assert readiness["failed_workflows"] == []
+    assert readiness["config_warning_codes"] == []
+    assert readiness["storage_errors"] == []
 
 
 def test_system_status_counts_reaction_audits(tmp_path):
@@ -7049,7 +7067,8 @@ def test_system_status_reports_workflow_status_counts(tmp_path):
             (failed_document_id,),
         )
 
-    status_counts = client.get("/api/v1/system/status").json()["status_counts"]
+    payload = client.get("/api/v1/system/status").json()
+    status_counts = payload["status_counts"]
 
     assert status_counts["crawl_jobs"]["success"] == 1
     assert status_counts["crawl_jobs"]["failed"] == 1
@@ -7063,6 +7082,13 @@ def test_system_status_reports_workflow_status_counts(tmp_path):
     assert status_counts["translations"]["failed"] == 1
     assert status_counts["reaction_sets"]["verified"] == 1
     assert status_counts["reaction_sets"]["pending"] == 1
+    assert payload["release_readiness"]["failed_workflows"] == [
+        "crawl_jobs.failed=1",
+        "document_parse.failed=1",
+        "document_index.failed=1",
+        "document_chemistry.failed=1",
+        "translations.failed=1",
+    ]
 
 
 def test_reaction_verify_contract_documents_clearable_review_fields():
