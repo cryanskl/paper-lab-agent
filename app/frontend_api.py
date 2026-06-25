@@ -205,6 +205,85 @@ def document_status_rows(document: dict[str, Any], chunks: Optional[dict[str, An
     return [{"field": field, "value": value} for field, value in rows]
 
 
+def document_section_rows(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for section in sections:
+        section_id = section.get("id")
+        section_seq = section.get("seq")
+        section_ref = section_seq if section_seq is not None else section_id
+        content = section.get("content") or ""
+        section_location = " · ".join(
+            compact_parts(
+                [
+                    f"section {section_ref}" if section_ref is not None else None,
+                    section.get("section_type"),
+                    section.get("title"),
+                ]
+            )
+        )
+        rows.append(
+            {
+                "id": section_id,
+                "document_id": section.get("document_id"),
+                "seq": section_seq,
+                "section_type": section.get("section_type"),
+                "title": section.get("title"),
+                "section_location": section_location or "-",
+                "content_preview": summarize_text(content, limit=160),
+                "content_chars": len(content),
+            }
+        )
+    return rows
+
+
+def translation_status_rows(
+    translation: dict[str, Any], *, preview_text: Optional[str] = None
+) -> list[dict[str, Any]]:
+    preview = preview_text or ""
+    rows = [
+        ("document_id", translation.get("document_id")),
+        ("status", translation.get("status") or "unknown"),
+        ("target_lang", translation.get("target_lang")),
+        ("output_path", translation.get("output_path")),
+        ("error", translation.get("error")),
+        ("preview_chars", len(preview)),
+        ("preview", summarize_text(preview, limit=160)),
+    ]
+    return [{"field": field, "value": value} for field, value in rows]
+
+
+def document_chunk_rows(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for chunk in chunks:
+        section_id = chunk.get("section_id")
+        section_seq = chunk.get("section_seq")
+        section_ref = section_seq if section_seq is not None else section_id
+        text = chunk.get("text") or ""
+        chunk_location = " · ".join(
+            compact_parts(
+                [
+                    f"section {section_ref}" if section_ref is not None else None,
+                    chunk.get("section_title"),
+                    f"vector {chunk.get('vector_id')}" if chunk.get("vector_id") else None,
+                ]
+            )
+        )
+        rows.append(
+            {
+                "id": chunk.get("id"),
+                "document_id": chunk.get("document_id"),
+                "section_id": section_id,
+                "section_seq": section_seq,
+                "section_title": chunk.get("section_title"),
+                "vector_id": chunk.get("vector_id"),
+                "chunk_location": chunk_location or "-",
+                "text_preview": summarize_text(text, limit=160),
+                "text_chars": len(text),
+            }
+        )
+    return rows
+
+
 def rag_source_rows(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for source in sources:

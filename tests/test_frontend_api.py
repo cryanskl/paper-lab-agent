@@ -582,6 +582,134 @@ def test_document_status_rows_summarize_document_workflow_and_errors():
     ]
 
 
+def test_document_section_rows_surface_location_and_preview():
+    from app import frontend_api
+
+    rows = frontend_api.document_section_rows(
+        [
+            {
+                "id": 21,
+                "document_id": 5,
+                "seq": 2,
+                "section_type": "body",
+                "title": "Reaction kinetics",
+                "content": "  Electron impact ionization controls the density.  " * 20,
+            },
+            {
+                "id": 22,
+                "document_id": 5,
+                "section_type": "table",
+                "content": "",
+            },
+        ]
+    )
+
+    assert rows == [
+        {
+            "id": 21,
+            "document_id": 5,
+            "seq": 2,
+            "section_type": "body",
+            "title": "Reaction kinetics",
+            "section_location": "section 2 · body · Reaction kinetics",
+            "content_preview": (
+                "Electron impact ionization controls the density. Electron impact ionization controls the "
+                "density. Electron impact ionization controls the density. Electron impa..."
+            ),
+            "content_chars": 1040,
+        },
+        {
+            "id": 22,
+            "document_id": 5,
+            "seq": None,
+            "section_type": "table",
+            "title": None,
+            "section_location": "section 22 · table",
+            "content_preview": "",
+            "content_chars": 0,
+        },
+    ]
+
+
+def test_document_chunk_rows_surface_vector_backlinks_and_preview():
+    from app import frontend_api
+
+    rows = frontend_api.document_chunk_rows(
+        [
+            {
+                "id": 31,
+                "document_id": 5,
+                "section_id": 21,
+                "section_seq": 2,
+                "section_title": "Reaction kinetics",
+                "vector_id": "doc-5-section-21-chunk-31",
+                "text": "Ar + e -> Ar+ + 2e is listed in the extracted table.",
+            },
+            {
+                "id": 32,
+                "section_id": 22,
+                "text": None,
+            },
+        ]
+    )
+
+    assert rows == [
+        {
+            "id": 31,
+            "document_id": 5,
+            "section_id": 21,
+            "section_seq": 2,
+            "section_title": "Reaction kinetics",
+            "vector_id": "doc-5-section-21-chunk-31",
+            "chunk_location": "section 2 · Reaction kinetics · vector doc-5-section-21-chunk-31",
+            "text_preview": "Ar + e -> Ar+ + 2e is listed in the extracted table.",
+            "text_chars": 52,
+        },
+        {
+            "id": 32,
+            "document_id": None,
+            "section_id": 22,
+            "section_seq": None,
+            "section_title": None,
+            "vector_id": None,
+            "chunk_location": "section 22",
+            "text_preview": "",
+            "text_chars": 0,
+        },
+    ]
+
+
+def test_translation_status_rows_summarize_output_file_preview():
+    from app import frontend_api
+
+    rows = frontend_api.translation_status_rows(
+        {
+            "document_id": 5,
+            "status": "translated",
+            "target_lang": "zh",
+            "output_path": "/tmp/translations/doc-5.zh.md",
+            "error": None,
+        },
+        preview_text="# Title\n\n" + "Translated plasma paragraph. " * 30,
+    )
+
+    assert rows == [
+        {"field": "document_id", "value": 5},
+        {"field": "status", "value": "translated"},
+        {"field": "target_lang", "value": "zh"},
+        {"field": "output_path", "value": "/tmp/translations/doc-5.zh.md"},
+        {"field": "error", "value": None},
+        {"field": "preview_chars", "value": 879},
+        {
+            "field": "preview",
+            "value": (
+                "# Title Translated plasma paragraph. Translated plasma paragraph. Translated plasma "
+                "paragraph. Translated plasma paragraph. Translated plasma paragraph. Transla..."
+            ),
+        },
+    ]
+
+
 def test_rag_source_rows_include_citation_and_location_labels():
     from app import frontend_api
 

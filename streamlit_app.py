@@ -8,7 +8,9 @@ from app.frontend_api import (
     crawl_job_diagnostic_rows,
     crawl_job_rows,
     crawl_journal_options,
+    document_chunk_rows,
     document_option_label,
+    document_section_rows,
     document_status_rows,
     rag_source_rows,
     reaction_audit_rows,
@@ -16,6 +18,7 @@ from app.frontend_api import (
     reaction_set_rows,
     request_json,
     request_json_status,
+    translation_status_rows,
 )
 
 
@@ -685,19 +688,25 @@ with documents_tab:
                 f"page_size {sections_response['page_size']} · "
                 f"total {sections_response['total']}"
             )
-            st.dataframe(sections, use_container_width=True)
+            st.dataframe(document_section_rows(sections), use_container_width=True)
         with translation_tab:
             try:
                 translation_preview = api_get(f"/documents/{selected['id']}/translation")
                 st.caption(translation_preview.get("status"))
+                translation_text = ""
                 if translation_preview.get("status") == "failed":
                     translation_error = translation_preview.get("error") or "unknown error"
                     st.warning(f"translation failed: {translation_error}")
+                    st.dataframe(translation_status_rows(translation_preview), use_container_width=True)
                     st.json(translation_preview)
                 elif translation_preview.get("output_path"):
                     output_path = Path(translation_preview.get("output_path"))
                     if output_path.exists():
                         translation_text = output_path.read_text(encoding="utf-8")
+                        st.dataframe(
+                            translation_status_rows(translation_preview, preview_text=translation_text),
+                            use_container_width=True,
+                        )
                         st.download_button(
                             "下载双语翻译",
                             data=translation_text,
@@ -707,8 +716,10 @@ with documents_tab:
                         st.markdown(translation_text[:4000])
                     else:
                         st.warning(f"翻译文件不存在: {output_path}")
+                        st.dataframe(translation_status_rows(translation_preview), use_container_width=True)
                         st.json(translation_preview)
                 else:
+                    st.dataframe(translation_status_rows(translation_preview), use_container_width=True)
                     st.json(translation_preview)
             except Exception as exc:
                 translation_preview = None
@@ -722,7 +733,7 @@ with documents_tab:
                 )
                 st.code(chunk_preview.get("text") or "")
             st.caption(f"chunks page {chunks['page']} · page_size {chunks['page_size']} · total {chunks['total']}")
-            st.dataframe(chunks["items"], use_container_width=True)
+            st.dataframe(document_chunk_rows(chunks["items"]), use_container_width=True)
 
 with rag_tab:
     rag_documents_page_col, rag_documents_page_size_col = st.columns(2)
