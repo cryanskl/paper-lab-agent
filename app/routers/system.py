@@ -165,6 +165,8 @@ async def status(check_external: bool = False) -> dict:
             "grobid_url": settings.grobid_url,
             "grobid": grobid,
             "llm_api_key": bool(settings.llm_api_key),
+            "translation_adapter": "openai-compatible" if settings.llm_api_key else "local-echo",
+            "llm_model": settings.llm_model,
             "embedding_model": settings.embedding_model,
             "vector_db_backend": settings.vector_db_backend,
         },

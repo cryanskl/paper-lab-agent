@@ -3824,6 +3824,25 @@ def test_system_status_reports_vector_db_backend(tmp_path):
     assert status["external_capabilities"]["vector_db_backend"] == "local-json"
 
 
+def test_system_status_reports_translation_adapter(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLM_API_KEY", "")
+    monkeypatch.setenv("LLM_MODEL", "gpt-diagnostic")
+
+    client = make_client(tmp_path)
+
+    local_status = client.get("/api/v1/system/status").json()
+    assert local_status["external_capabilities"]["translation_adapter"] == "local-echo"
+    assert local_status["external_capabilities"]["llm_model"] == "gpt-diagnostic"
+
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+
+    client = make_client(tmp_path)
+
+    configured_status = client.get("/api/v1/system/status").json()
+    assert configured_status["external_capabilities"]["translation_adapter"] == "openai-compatible"
+    assert configured_status["external_capabilities"]["llm_model"] == "gpt-diagnostic"
+
+
 def test_parse_document_records_grobid_fallback_reason(tmp_path, monkeypatch):
     client = make_client(tmp_path)
     response = client.post(
@@ -10106,6 +10125,8 @@ def test_streamlit_sidebar_exposes_external_capability_status():
         "unpaywall_email",
         "grobid_url",
         "llm_api_key",
+        "translation_adapter",
+        "llm_model",
         "embedding_model",
         "vector_db_backend",
     ]:
