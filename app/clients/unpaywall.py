@@ -5,6 +5,9 @@ from urllib.parse import urlparse
 import httpx
 
 
+KNOWN_OA_STATUSES = {"gold", "green", "hybrid", "bronze", "closed", "unknown"}
+
+
 class UnpaywallClient:
     base_url = "https://api.unpaywall.org/v2"
 
@@ -84,7 +87,9 @@ class UnpaywallClient:
 
 def oa_status(value: Any) -> str:
     if isinstance(value, str) and value.strip():
-        return value.strip().lower()
+        normalized = value.strip().lower()
+        if normalized in KNOWN_OA_STATUSES:
+            return normalized
     return "unknown"
 
 

@@ -1226,6 +1226,27 @@ async def test_unpaywall_normalizes_oa_status_case_and_whitespace():
 
 
 @pytest.mark.asyncio
+async def test_unpaywall_rejects_unknown_oa_status_values():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "oa_status": "repository-only",
+                "best_oa_location": {"url_for_pdf": "https://example.test/paper.pdf"},
+            }
+        )
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.resolve("10.1/unknown-status")
+
+    assert result["oa_status"] == "unknown"
+    assert result["oa_pdf_url"] == "https://example.test/paper.pdf"
+
+
+@pytest.mark.asyncio
 async def test_unpaywall_rejects_non_web_pdf_url_scheme():
     def handler(request: httpx.Request) -> httpx.Response:
         return json_response(
