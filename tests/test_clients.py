@@ -108,6 +108,21 @@ def test_crossref_tolerates_malformed_published_date_fields():
     assert work["published_year"] is None
 
 
+def test_crossref_rejects_non_integer_date_parts():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/string-date-parts",
+            "title": ["String date parts"],
+            "issued": {"date-parts": [["2026", "07", "15"]]},
+        }
+    )
+
+    assert work["published_date"] is None
+    assert work["published_year"] is None
+
+
 def test_crossref_tolerates_malformed_landing_url_field():
     client = CrossrefClient()
 

@@ -129,14 +129,20 @@ class CrossrefClient:
             return value
         return None
 
+    def normalize_date_parts(self, value: Any) -> tuple[Optional[str], Optional[int]]:
+        if not isinstance(value, list) or not value or not isinstance(value[0], list):
+            return None, None
+        parts = value[0]
+        if not parts or any(isinstance(part, bool) or not isinstance(part, int) for part in parts):
+            return None, None
+        return "-".join(str(part).zfill(2) for part in parts), parts[0]
+
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         published = item.get("published-print") or item.get("published-online") or item.get("issued") or {}
         if not isinstance(published, dict):
             published = {}
         date_parts = published.get("date-parts")
-        parts = date_parts[0] if isinstance(date_parts, list) and date_parts and isinstance(date_parts[0], list) else []
-        year = parts[0] if parts else None
-        published_date = "-".join(str(p).zfill(2) for p in parts if p is not None) if parts else None
+        published_date, year = self.normalize_date_parts(date_parts)
         authors = self.normalize_authors(item.get("author"))
         return {
             "doi": self.normalize_doi(item.get("DOI")),
