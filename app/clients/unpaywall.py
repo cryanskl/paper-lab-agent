@@ -83,9 +83,18 @@ def best_pdf_url(location: Any) -> Optional[str]:
         return None
     url_for_pdf = location.get("url_for_pdf")
     if url_for_pdf:
-        return url_for_pdf
+        return web_url(url_for_pdf)
     url = location.get("url")
     if not url:
         return None
-    path = urlparse(str(url)).path.lower()
-    return str(url) if path.endswith(".pdf") else None
+    parsed = urlparse(str(url))
+    return str(url) if parsed.scheme in {"http", "https"} and parsed.path.lower().endswith(".pdf") else None
+
+
+def web_url(value: Any) -> Optional[str]:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    parsed = urlparse(value.strip())
+    if parsed.scheme not in {"http", "https"}:
+        return None
+    return value.strip()
