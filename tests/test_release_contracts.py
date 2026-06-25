@@ -383,6 +383,14 @@ def test_release_check_requires_export_source_label_smoke_metadata():
     assert '"verified_export_bolsig_has_source_label": True' in release_text
 
 
+def test_release_check_rejects_failed_smoke_status_counts():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert "failed_statuses" in release_text
+    assert "smoke failed statuses present" in release_text
+
+
 def test_api_contract_documented_endpoints_exist_in_app():
     validate_api_contract = load_validate_api_contract()
     repo = Path(__file__).resolve().parent.parent
