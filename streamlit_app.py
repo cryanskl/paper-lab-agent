@@ -45,6 +45,8 @@ def flatten_crawl_job_rows(jobs: list[dict]) -> list[dict]:
                 "existing": diagnostics.get("papers_existing", 0),
                 "new": diagnostics.get("papers_new", 0),
                 "outcome": diagnostics.get("outcome"),
+                "keyword_mode": diagnostics.get("keyword_mode"),
+                "keyword_terms": ", ".join(diagnostics.get("keyword_terms") or []),
                 "error": diagnostics.get("error") or job.get("error"),
             }
         )

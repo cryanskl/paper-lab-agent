@@ -88,6 +88,21 @@ def health_check_storage_health(**overrides):
     return storage_health
 
 
+SEED_KEYWORD_TERMS = [
+    "low temperature plasma",
+    "plasma sources",
+    "plasma theory",
+    "plasma chemistry",
+    "plasma physics",
+    "plasma diagnostics",
+    "capacitively coupled plasma",
+    "inductively coupled plasma",
+    "plasma simulation",
+    "plasma experiment",
+    "pulsed plasma",
+]
+
+
 def make_client(tmp_path):
     os.environ["DATABASE_PATH"] = str(tmp_path / "test.db")
     os.environ["PAPER_LAB_DATA_DIR"] = str(tmp_path)
@@ -641,6 +656,8 @@ def test_crawl_job_detail_includes_journal_and_diagnostics(tmp_path):
         "papers_accepted": 7,
         "papers_existing": 4,
         "outcome": "failed",
+        "keyword_mode": "or",
+        "keyword_terms": SEED_KEYWORD_TERMS,
         "error": "OpenAlex timeout",
     }
 
@@ -680,8 +697,48 @@ def test_crawl_job_list_includes_journal_and_diagnostics(tmp_path):
         "papers_accepted": 6,
         "papers_existing": 2,
         "outcome": "new_papers",
+        "keyword_mode": "or",
+        "keyword_terms": SEED_KEYWORD_TERMS,
         "error": "Crossref fallback",
     }
+
+
+def test_crawl_job_diagnostics_exposes_keyword_filter_config(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    created = client.post(
+        "/api/v1/journals",
+        json={
+            "name": "Keyword Diagnostic Journal",
+            "issn_print": "1234-567X",
+            "keywords": {"mode": "and", "terms": [" plasma   chemistry ", " argon "]},
+            "year_from": 2020,
+        },
+    )
+    assert created.status_code == 201
+    journal_id = created.json()["id"]
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO crawl_jobs (
+                journal_id, period, date_from, date_to, status,
+                papers_found, papers_filtered, papers_new
+            ) VALUES (?, 'manual', '2026-06-01', '2026-06-02', 'success', 3, 3, 0)
+            """,
+            (journal_id,),
+        )
+        job_id = cursor.lastrowid
+
+    response = client.get(f"/api/v1/crawl/jobs/{job_id}")
+
+    assert response.status_code == 200
+    diagnostics = response.json()["diagnostics"]
+    assert diagnostics["outcome"] == "all_filtered"
+    assert diagnostics["keyword_mode"] == "and"
+    assert diagnostics["keyword_terms"] == ["plasma chemistry", "argon"]
 
 
 def test_crawl_job_diagnostics_outcome_distinguishes_no_new_papers(tmp_path):
@@ -11318,6 +11375,8 @@ def test_streamlit_crawl_jobs_table_flattens_diagnostics():
         "papers_existing",
         "papers_new",
         "outcome",
+        "keyword_mode",
+        "keyword_terms",
     ]:
         assert required in flatten_helper
     assert 'st.caption(f"outcome: {diagnostics.get(\'outcome\') or \'unknown\'}")' in search_section
