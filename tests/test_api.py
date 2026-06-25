@@ -3108,6 +3108,56 @@ def test_crawl_job_records_unpaywall_failure_in_paper_metadata(tmp_path, monkeyp
     assert raw_metadata["oa_resolution_error"] == "Unpaywall temporary outage"
 
 
+def test_crawl_job_normalizes_adapter_oa_status_before_storing(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import crawl as crawl_service
+
+    class FakeOpenAlexClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def works_by_issn(self, *args, **kwargs):
+            return [
+                {
+                    "doi": "10.5/crawl-oa-status",
+                    "title": "Plasma chemistry OA status",
+                    "abstract": "argon oxygen plasma chemistry",
+                    "authors": [],
+                    "published_date": "2026-02-01",
+                    "published_year": 2026,
+                    "landing_url": "https://example.test/crawl-oa-status",
+                    "source_api": "openalex",
+                    "raw_metadata": {},
+                }
+            ]
+
+    class RawUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            return {"oa_status": " Green ", "oa_pdf_url": "https://example.test/crawl-oa-status.pdf"}
+
+    monkeypatch.setattr(crawl_service, "OpenAlexClient", FakeOpenAlexClient)
+    monkeypatch.setattr(crawl_service, "UnpaywallClient", RawUnpaywallClient)
+
+    job = crawl_service.create_jobs([2], "manual", "2026-02-01", "2026-02-28")[0]
+    import asyncio
+
+    asyncio.run(crawl_service.run_crawl_job(job["job_id"], 2, "2026-02-01", "2026-02-28"))
+
+    with get_conn() as conn:
+        paper = conn.execute(
+            "SELECT oa_status, oa_pdf_url FROM papers WHERE doi=?",
+            ("10.5/crawl-oa-status",),
+        ).fetchone()
+
+    assert paper["oa_status"] == "green"
+    assert paper["oa_pdf_url"] == "https://example.test/crawl-oa-status.pdf"
+
+
 def test_crawl_job_records_found_filtered_and_new_counts(tmp_path, monkeypatch):
     make_client(tmp_path)
 

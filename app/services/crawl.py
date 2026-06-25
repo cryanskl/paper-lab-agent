@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 from app.clients.crossref import CrossrefClient
 from app.clients.openalex import OpenAlexClient
-from app.clients.unpaywall import UnpaywallClient
+from app.clients.unpaywall import UnpaywallClient, oa_status
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
 from app.services.classification import get_classifier
@@ -119,7 +119,7 @@ def upsert_paper_record(conn, journal: dict[str, Any], work: dict[str, Any], oa:
         optional_text(work.get("published_date")),
         optional_int(work.get("published_year")),
         optional_text(work.get("landing_url")),
-        optional_text(oa.get("oa_status"), "unknown"),
+        oa_status(oa.get("oa_status")),
         optional_text(oa.get("oa_pdf_url")),
         optional_text(work.get("source_api")),
         dedupe_key,
