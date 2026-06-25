@@ -16,6 +16,7 @@ Environment variables:
   STREAMLIT_PORT                 Streamlit port, default 8501.
   API_BASE_URL                   Frontend API base URL override.
   DEV_READY_TIMEOUT              Seconds to wait for each service, default 30.
+  DEV_EXIT_AFTER_READY           Set true to exit after both services are ready.
   PAPER_LAB_SCHEDULER_ENABLED    Set true to enable APScheduler crawl jobs.
 
 After startup, verify the live frontend gate with:
@@ -42,6 +43,7 @@ STREAMLIT_CONNECT_HOST="$(resolve_connect_host "${STREAMLIT_HOST}")"
 API_URL_HOST="$(format_url_host "${API_CONNECT_HOST}")"
 STREAMLIT_URL_HOST="$(format_url_host "${STREAMLIT_CONNECT_HOST}")"
 DEV_READY_TIMEOUT="${DEV_READY_TIMEOUT:-30}"
+DEV_EXIT_AFTER_READY="${DEV_EXIT_AFTER_READY:-false}"
 PYTHON="${PYTHON:-}"
 
 if [[ -z "${PYTHON}" ]]; then
@@ -119,5 +121,10 @@ echo "FastAPI:   http://${API_HOST}:${API_PORT}"
 echo "Streamlit: http://${STREAMLIT_HOST}:${STREAMLIT_PORT}"
 echo "API_BASE_URL=${API_BASE_URL}"
 echo "PYTHON=${PYTHON}"
+echo "DEV_EXIT_AFTER_READY=${DEV_EXIT_AFTER_READY}"
+
+if [[ "${DEV_EXIT_AFTER_READY}" == "true" ]]; then
+  exit 0
+fi
 
 wait

@@ -112,6 +112,7 @@ bash scripts/release_check.sh
 `python scripts/health_check.py --require-no-config-warnings` 会在 OpenAlex、Unpaywall、LLM、向量后端等配置告警存在时返回非零，适合正式演示或部署前确认外部能力已按预期配置。
 `python scripts/health_check.py --require-demo-data` 会在 live API 的 `counts` 缺少期刊、论文、文档、章节、chunk、反应集或反应样例时返回非零，适合正式演示前确认 walking skeleton 数据已准备好。
 `python scripts/health_check.py --require-release-ready` 会组合 storage writable、no failed workflows、no config warnings 和 demo data 四个门禁，适合发布或正式演示前一条命令预检；前端和 GROBID 仍用 `--require-frontend`、`--require-grobid` 按需单独强制。
+`DEV_EXIT_AFTER_READY=true bash scripts/dev.sh` 会在 API 和 Streamlit 都 ready 后退出并清理子进程，适合 CI 或发布前验证统一启动命令本身。
 
 如需只跑离线 walking skeleton smoke：
 

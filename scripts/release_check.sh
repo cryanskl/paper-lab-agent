@@ -24,6 +24,71 @@ bash -n scripts/dev.sh
 "${PYTHON_CMD[@]}" scripts/validate_release_hygiene.py
 "${PYTHON_CMD[@]}" scripts/validate_requirements.py
 "${PYTHON_CMD[@]}" scripts/validate_schema.py
+DEV_CHECK_JSON="$("${PYTHON_CMD[@]}" - <<'PY'
+import json
+import os
+import socket
+import subprocess
+import sys
+import tempfile
+
+
+def free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+with tempfile.TemporaryDirectory(prefix="paper-lab-dev-") as data_dir:
+    api_port = free_port()
+    streamlit_port = free_port()
+    env = os.environ.copy()
+    env.update(
+        {
+            "PYTHON": sys.executable,
+            "PAPER_LAB_DATA_DIR": data_dir,
+            "API_PORT": str(api_port),
+            "STREAMLIT_PORT": str(streamlit_port),
+            "DEV_READY_TIMEOUT": "30",
+            "DEV_EXIT_AFTER_READY": "true",
+            "PAPER_LAB_SCHEDULER_ENABLED": "false",
+        }
+    )
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+    result = subprocess.run(
+        ["bash", "scripts/dev.sh"],
+        text=True,
+        capture_output=True,
+        timeout=45,
+        check=True,
+        env=env,
+    )
+expected = {
+    "fastapi": f"FastAPI:   http://127.0.0.1:{api_port}",
+    "streamlit": f"Streamlit: http://127.0.0.1:{streamlit_port}",
+    "api_base_url": f"API_BASE_URL=http://127.0.0.1:{api_port}/api/v1",
+    "exit_after_ready": "DEV_EXIT_AFTER_READY=true",
+}
+missing = [value for value in expected.values() if value not in result.stdout]
+if missing:
+    print(
+        f"release_check failed: dev.sh output missing {missing!r}; stdout={result.stdout!r}; stderr={result.stderr!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+print(json.dumps({"dev_script_ready": True, "api_port": api_port, "streamlit_port": streamlit_port}))
+PY
+)"
+printf '%s\n' "${DEV_CHECK_JSON}"
 FIXTURE_JSON="$("${PYTHON_CMD[@]}" - <<'PY'
 import json
 import os
