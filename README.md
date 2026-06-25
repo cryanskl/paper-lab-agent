@@ -16,6 +16,7 @@ bash scripts/dev.sh
 
 服务启动时会自动用 `docs/schema.sql` 初始化 `data/plasma.db`。
 `scripts/dev.sh` 会等待 FastAPI `/api/v1/health` 和 Streamlit `/_stcore/health` 都可访问后再打印地址。
+如果只设置 `PAPER_LAB_DATA_DIR`，SQLite、PDF、TEI、翻译、导出和本地向量索引默认都会落在该目录下；需要拆分存储位置时再单独设置 `DATABASE_PATH`、`PAPER_LAB_PDF_DIR`、`VECTOR_DB_PATH` 等变量。
 
 验证：
 
