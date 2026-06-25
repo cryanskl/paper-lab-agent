@@ -611,6 +611,35 @@ def test_doctor_script_reports_missing_required_project_files(tmp_path):
     assert "streamlit_app.py" in missing
 
 
+def test_doctor_script_reports_missing_python_dependencies(monkeypatch):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+
+    def fake_find_spec(name):
+        if name == "fastapi":
+            return None
+        return object()
+
+    monkeypatch.setattr(doctor.importlib.util, "find_spec", fake_find_spec)
+
+    check = doctor.check_python_dependencies()
+
+    assert check["status"] == "fail"
+    assert {
+        "code": "missing_python_dependency",
+        "package": "fastapi",
+        "import_name": "fastapi",
+        "message": "Python dependency fastapi is not importable as fastapi",
+    } in check["issues"]
+
+
 def test_doctor_preflight_is_documented_and_in_release_gate():
     repo = Path(__file__).resolve().parent.parent
     readme = (repo / "README.md").read_text(encoding="utf-8")
@@ -1097,7 +1126,10 @@ def test_requirements_validator_ignores_standard_library_imports(tmp_path):
     validate_requirements = load_validate_requirements()
     source_dir = tmp_path / "scripts"
     source_dir.mkdir()
-    (source_dir / "uses_stdlib.py").write_text("import fnmatch\nimport shlex\nimport subprocess\n", encoding="utf-8")
+    (source_dir / "uses_stdlib.py").write_text(
+        "import fnmatch\nimport importlib.util\nimport shlex\nimport subprocess\n",
+        encoding="utf-8",
+    )
     requirements_path = tmp_path / "requirements.txt"
     requirements_path.write_text("", encoding="utf-8")
 

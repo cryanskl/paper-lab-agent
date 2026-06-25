@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -20,6 +21,18 @@ REQUIRED_FILES = (
     "scripts/release_check.sh",
     "streamlit_app.py",
     "app/main.py",
+)
+PYTHON_DEPENDENCIES = (
+    ("fastapi", "fastapi"),
+    ("uvicorn", "uvicorn"),
+    ("pydantic", "pydantic"),
+    ("pydantic-settings", "pydantic_settings"),
+    ("python-multipart", "multipart"),
+    ("httpx", "httpx"),
+    ("requests", "requests"),
+    ("apscheduler", "apscheduler"),
+    ("streamlit", "streamlit"),
+    ("pytest", "pytest"),
 )
 
 
@@ -88,12 +101,36 @@ def check_env_example(repo: Path) -> dict[str, Any]:
     }
 
 
+def check_python_dependencies() -> dict[str, Any]:
+    issues = []
+    for package, import_name in PYTHON_DEPENDENCIES:
+        if importlib.util.find_spec(import_name) is None:
+            issues.append(
+                {
+                    "code": "missing_python_dependency",
+                    "package": package,
+                    "import_name": import_name,
+                    "message": f"Python dependency {package} is not importable as {import_name}",
+                }
+            )
+    return {
+        "name": "python_dependencies",
+        "status": status_from_issues(issues),
+        "required": [
+            {"package": package, "import_name": import_name}
+            for package, import_name in PYTHON_DEPENDENCIES
+        ],
+        "issues": issues,
+    }
+
+
 def run_checks(repo: Path = Path(".")) -> dict[str, Any]:
     repo = repo.resolve()
     checks = [
         check_python_version(),
         check_required_files(repo),
         check_env_example(repo),
+        check_python_dependencies(),
     ]
     return {
         "ok": all(check["status"] == "pass" for check in checks),
