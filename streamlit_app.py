@@ -95,10 +95,21 @@ with st.sidebar:
         st.success("release ready")
     else:
         blockers = []
-        for key in ["demo_data_missing", "failed_workflows", "config_warning_codes", "storage_errors"]:
+        blocker_groups = {
+            "demo_data_missing": "demo data missing:",
+            "failed_workflows": "failed workflows:",
+            "config_warning_codes": "config warnings:",
+            "storage_errors": "storage errors:",
+        }
+        for key in blocker_groups:
             blockers.extend(str(item) for item in release_readiness.get(key) or [] if str(item).strip())
         blocker_label = ", ".join(blockers) if blockers else "unknown"
         st.warning(f"release blockers: {blocker_label}")
+        st.caption("release blocker details")
+        for key, label in blocker_groups.items():
+            items = [str(item) for item in release_readiness.get(key) or [] if str(item).strip()]
+            if items:
+                st.caption(f"{label} {', '.join(items)}")
     demo_data = status.get("demo_data") or {}
     st.subheader("演示数据")
     if demo_data.get("ready"):

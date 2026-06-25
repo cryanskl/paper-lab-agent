@@ -10194,6 +10194,11 @@ def test_streamlit_sidebar_surfaces_release_readiness():
         "failed_workflows",
         "config_warning_codes",
         "storage_errors",
+        "release blocker details",
+        "demo data missing:",
+        "failed workflows:",
+        "config warnings:",
+        "storage errors:",
     ]:
         assert required in sidebar_section
 
