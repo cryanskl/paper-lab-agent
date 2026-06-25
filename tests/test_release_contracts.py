@@ -1014,6 +1014,14 @@ def test_schema_validator_accepts_schema_truth_source():
     assert issues == []
 
 
+def test_schema_validator_accepts_runtime_migrations():
+    validate_schema = load_validate_schema()
+
+    issues = validate_schema.validate_migrations()
+
+    assert issues == []
+
+
 def test_schema_validator_reports_missing_required_table(tmp_path):
     validate_schema = load_validate_schema()
     schema_path = tmp_path / "schema.sql"
