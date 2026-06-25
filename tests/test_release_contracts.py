@@ -216,7 +216,10 @@ def test_release_hygiene_validator_reports_missing_gitignore_pattern(tmp_path):
 
     assert ".DS_Store" in missing
     assert ".coverage" in missing
+    assert ".coverage.*" in missing
     assert "htmlcov/" in missing
+    assert "build/" in missing
+    assert "dist/" in missing
     assert "*.db-wal" in missing
     assert "*.db-shm" in missing
     assert "*.db-journal" in missing
@@ -236,7 +239,10 @@ def test_release_hygiene_validator_reports_tracked_generated_artifacts():
             ".DS_Store",
             "docs/.DS_Store",
             ".coverage",
+            ".coverage.worker-1",
             "htmlcov/index.html",
+            "build/lib/app/main.py",
+            "dist/paper_lab_agent-0.1.0.tar.gz",
             "plasma.db-wal",
             "plasma.db-shm",
             "plasma.db-journal",
@@ -254,7 +260,10 @@ def test_release_hygiene_validator_reports_tracked_generated_artifacts():
         ".DS_Store",
         "docs/.DS_Store",
         ".coverage",
+        ".coverage.worker-1",
         "htmlcov/index.html",
+        "build/lib/app/main.py",
+        "dist/paper_lab_agent-0.1.0.tar.gz",
         "plasma.db-wal",
         "plasma.db-shm",
         "plasma.db-journal",

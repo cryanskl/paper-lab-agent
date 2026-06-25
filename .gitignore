@@ -38,6 +38,9 @@ yarn-error.log*
 coverage/
 htmlcov/
 .coverage
+.coverage.*
+build/
+dist/
 test-results/
 playwright-report/
 
