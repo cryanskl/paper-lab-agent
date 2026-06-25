@@ -969,6 +969,35 @@ def test_api_contract_validator_reports_missing_page_size_on_documented_list_rou
     assert issues == ["GET /api/v1/things missing query parameters: page_size"]
 
 
+def test_api_contract_async_routes_expose_accepted_response():
+    validate_api_contract = load_validate_api_contract()
+    repo = Path(__file__).resolve().parent.parent
+
+    issues = validate_api_contract.async_response_contract_issues(repo / "docs" / "接口设计文档.md")
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_accepted_response_on_async_route(tmp_path):
+    validate_api_contract = load_validate_api_contract()
+    contract_path = tmp_path / "接口设计文档.md"
+    contract_path.write_text("| POST | `/documents/{id}/parse` | 触发 GROBID 解析 |\n", encoding="utf-8")
+    openapi_paths = {
+        "/api/v1/documents/{document_id}/parse": {
+            "post": {
+                "responses": {
+                    "200": {"description": "OK"},
+                    "422": {"description": "Validation Error"},
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.async_response_contract_issues(contract_path, openapi_paths=openapi_paths)
+
+    assert issues == ["POST /api/v1/documents/{id}/parse missing 202 response"]
+
+
 def test_streamlit_requests_full_category_page_for_manual_selection():
     repo = Path(__file__).resolve().parent.parent
     streamlit_source = (repo / "streamlit_app.py").read_text(encoding="utf-8")
