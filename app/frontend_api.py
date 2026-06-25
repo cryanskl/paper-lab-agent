@@ -160,6 +160,37 @@ def rag_source_rows(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
+def reaction_set_rows(reaction_sets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for item in reaction_sets:
+        reaction_count = int(item.get("reaction_count") or 0)
+        verified_count = int(item.get("verified_count") or 0)
+        unverified_count = int(item.get("unverified_count") or 0)
+        export_ready = bool(item.get("export_ready"))
+        if reaction_count == 0:
+            export_state = "empty"
+        elif export_ready:
+            export_state = "ready"
+        else:
+            export_state = f"blocked: {unverified_count} unverified"
+        rows.append(
+            {
+                "id": item.get("id"),
+                "name": item.get("name"),
+                "status": item.get("status"),
+                "reaction_count": reaction_count,
+                "verified_count": verified_count,
+                "unverified_count": unverified_count,
+                "export_ready": export_ready,
+                "export_state": export_state,
+                "review_progress": f"{verified_count}/{reaction_count} verified",
+                "verified_by": item.get("verified_by"),
+                "verified_at": item.get("verified_at"),
+            }
+        )
+    return rows
+
+
 def reaction_review_rows(reactions: list[dict[str, Any]], *, only_unverified: bool = False) -> list[dict[str, Any]]:
     rows = []
     for reaction in reactions:

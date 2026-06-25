@@ -234,6 +234,86 @@ def test_reaction_review_rows_label_verified_state_and_sparse_source_location():
     assert rows[0]["source_location"] == "section 22 · Appendix"
 
 
+def test_reaction_set_rows_label_export_state_and_review_progress():
+    from app import frontend_api
+
+    rows = frontend_api.reaction_set_rows(
+        [
+            {
+                "id": 1,
+                "name": "Ar chemistry",
+                "status": "verified",
+                "reaction_count": 4,
+                "verified_count": 4,
+                "unverified_count": 0,
+                "export_ready": True,
+                "verified_by": "engineer_a",
+                "verified_at": "2026-06-25T10:00:00",
+            },
+            {
+                "id": 2,
+                "name": "O2 chemistry",
+                "status": "pending",
+                "reaction_count": 5,
+                "verified_count": 2,
+                "unverified_count": 3,
+                "export_ready": False,
+            },
+            {
+                "id": 3,
+                "name": "Empty extraction",
+                "status": "rejected",
+                "reaction_count": 0,
+                "verified_count": 0,
+                "unverified_count": 0,
+                "export_ready": False,
+            },
+        ]
+    )
+
+    assert rows == [
+        {
+            "id": 1,
+            "name": "Ar chemistry",
+            "status": "verified",
+            "reaction_count": 4,
+            "verified_count": 4,
+            "unverified_count": 0,
+            "export_ready": True,
+            "export_state": "ready",
+            "review_progress": "4/4 verified",
+            "verified_by": "engineer_a",
+            "verified_at": "2026-06-25T10:00:00",
+        },
+        {
+            "id": 2,
+            "name": "O2 chemistry",
+            "status": "pending",
+            "reaction_count": 5,
+            "verified_count": 2,
+            "unverified_count": 3,
+            "export_ready": False,
+            "export_state": "blocked: 3 unverified",
+            "review_progress": "2/5 verified",
+            "verified_by": None,
+            "verified_at": None,
+        },
+        {
+            "id": 3,
+            "name": "Empty extraction",
+            "status": "rejected",
+            "reaction_count": 0,
+            "verified_count": 0,
+            "unverified_count": 0,
+            "export_ready": False,
+            "export_state": "empty",
+            "review_progress": "0/0 verified",
+            "verified_by": None,
+            "verified_at": None,
+        },
+    ]
+
+
 def test_rag_source_rows_include_citation_and_location_labels():
     from app import frontend_api
 

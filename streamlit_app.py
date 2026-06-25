@@ -4,7 +4,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from app.frontend_api import rag_source_rows, reaction_review_rows, request_json, request_json_status
+from app.frontend_api import rag_source_rows, reaction_review_rows, reaction_set_rows, request_json, request_json_status
 
 
 API_BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000/api/v1").rstrip("/")
@@ -871,21 +871,7 @@ with chemistry_tab:
             f"page_size {document_reaction_sets['page_size']} · "
             f"total {document_reaction_sets['total']}"
         )
-        reaction_set_rows = [
-            {
-                "id": item.get("id"),
-                "name": item.get("name"),
-                "status": item.get("status"),
-                "reaction_count": item.get("reaction_count", 0),
-                "verified_count": item.get("verified_count", 0),
-                "unverified_count": item.get("unverified_count", 0),
-                "export_ready": item.get("export_ready", False),
-                "verified_by": item.get("verified_by"),
-                "verified_at": item.get("verified_at"),
-            }
-            for item in reaction_set_items
-        ]
-        st.dataframe(reaction_set_rows, use_container_width=True)
+        st.dataframe(reaction_set_rows(reaction_set_items), use_container_width=True)
         if not reaction_set_items:
             st.info("该文档暂无反应集。")
         else:
