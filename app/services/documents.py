@@ -124,7 +124,11 @@ def sections_from_tei(tei: str) -> list[dict]:
     def local_name(node: ET.Element) -> str:
         return node.tag.rsplit("}", 1)[-1]
 
-    for abstract in findall(root, ".//tei:text//tei:front//tei:abstract"):
+    abstract_nodes = [
+        *findall(root, ".//tei:teiHeader//tei:profileDesc//tei:abstract"),
+        *findall(root, ".//tei:text//tei:front//tei:abstract"),
+    ]
+    for abstract in abstract_nodes:
         head = find(abstract, "tei:head")
         append_section("Abstract", content_without_children(abstract, [head]) if head is not None else " ".join(abstract.itertext()), "abstract")
 
