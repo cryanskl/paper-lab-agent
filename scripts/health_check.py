@@ -418,6 +418,19 @@ def failed_workflow_errors(status: dict) -> list[str]:
     return errors
 
 
+def config_warning_errors(status: dict) -> list[str]:
+    config_warnings = status.get("config_warnings")
+    if not isinstance(config_warnings, list):
+        return ["config_warnings"]
+    errors: list[str] = []
+    for index, warning in enumerate(config_warnings):
+        if isinstance(warning, dict) and isinstance(warning.get("code"), str) and warning["code"].strip():
+            errors.append(warning["code"].strip())
+        else:
+            errors.append(str(index))
+    return errors
+
+
 def main() -> int:
     load_env_file()
     parser = argparse.ArgumentParser(description="Check paper-lab-agent API health.")
@@ -428,6 +441,7 @@ def main() -> int:
     parser.add_argument("--require-grobid", action="store_true", help="Fail when GROBID is unavailable")
     parser.add_argument("--require-storage-writable", action="store_true", help="Fail when local storage paths are missing or not writable")
     parser.add_argument("--require-no-failed-workflows", action="store_true", help="Fail when workflow status counts include failed items")
+    parser.add_argument("--require-no-config-warnings", action="store_true", help="Fail when system status reports configuration warnings")
     parser.add_argument("--compact", action="store_true", help="Print health JSON on one line")
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args()
@@ -473,6 +487,11 @@ def main() -> int:
         workflow_errors = failed_workflow_errors(status)
         if workflow_errors:
             print(f"health_check failed: failed workflows present ({'; '.join(workflow_errors)})", file=sys.stderr)
+            return 1
+    if args.require_no_config_warnings:
+        warning_errors = config_warning_errors(status)
+        if warning_errors:
+            print(f"health_check failed: config warnings present ({'; '.join(warning_errors)})", file=sys.stderr)
             return 1
     if args.require_grobid:
         grobid = status["external_capabilities"]["grobid"]

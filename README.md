@@ -28,6 +28,7 @@ python scripts/health_check.py
 python scripts/health_check.py --compact
 python scripts/health_check.py --require-storage-writable
 python scripts/health_check.py --require-no-failed-workflows
+python scripts/health_check.py --require-no-config-warnings
 python scripts/health_check.py --check-frontend
 python scripts/health_check.py --check-frontend --frontend-url http://127.0.0.1:8501
 API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
@@ -93,6 +94,7 @@ bash scripts/release_check.sh
 `python scripts/health_check.py --check-frontend` 会额外探测 Streamlit `/_stcore/health`，用于确认 `scripts/dev.sh` 启动后的后端和前端都可访问。
 `python scripts/health_check.py --require-storage-writable` 会在数据目录、PDF/TEI/翻译/导出目录、数据库父目录或向量索引父目录不可写时返回非零，适合发布前预检本机运行环境。
 `python scripts/health_check.py --require-no-failed-workflows` 会在抓取、解析、索引、翻译、化学抽取或反应集复核状态统计中存在 failed 项时返回非零，适合部署前确认没有已知失败积压。
+`python scripts/health_check.py --require-no-config-warnings` 会在 OpenAlex、Unpaywall、LLM、向量后端等配置告警存在时返回非零，适合正式演示或部署前确认外部能力已按预期配置。
 
 如需只跑离线 walking skeleton smoke：
 

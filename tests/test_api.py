@@ -6194,6 +6194,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "docker run --rm -p 8070:8070 lfoppiano/grobid",
         "`--check-external` 会主动检查 GROBID",
         "python scripts/health_check.py --require-grobid",
+        "python scripts/health_check.py --require-no-config-warnings",
         "python scripts/import_fixtures.py",
         "python -m scripts.smoke_check",
         "bash scripts/release_check.sh",
@@ -7156,6 +7157,85 @@ def test_health_check_requires_config_warnings_key():
     )
 
     assert "missing keys: config_warnings" in errors
+
+
+def test_health_check_can_require_no_config_warnings():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_config_warning_gate", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    assert health_check.config_warning_errors({"config_warnings": []}) == []
+    assert health_check.config_warning_errors({"config_warnings": "not-a-list"}) == ["config_warnings"]
+    assert health_check.config_warning_errors(
+        {
+            "config_warnings": [
+                {"code": "missing_llm_api_key", "capability": "llm_translation", "message": "LLM key is not configured"},
+                {
+                    "code": "missing_unpaywall_email",
+                    "capability": "oa_resolution",
+                    "message": "UNPAYWALL_EMAIL is not configured",
+                },
+            ]
+        }
+    ) == ["missing_llm_api_key", "missing_unpaywall_email"]
+
+
+def test_health_check_flag_fails_when_config_warnings_exist(monkeypatch, capsys):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_config_warning_flag", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "database_path": "/tmp/plasma.db",
+        "runtime": health_check_runtime(),
+        "config_warnings": [
+            {"code": "missing_llm_api_key", "capability": "llm_translation", "message": "LLM key is not configured"}
+        ],
+        "storage": {
+            "data_dir": "/tmp/data",
+            "pdf_dir": "/tmp/data/pdfs",
+            "tei_dir": "/tmp/data/tei",
+            "translation_dir": "/tmp/data/translations",
+            "export_dir": "/tmp/data/exports",
+            "vector_db_path": "/tmp/data/vector-index.json",
+        },
+        "storage_health": health_check_storage_health(),
+        "external_capabilities": {
+            "openalex_mailto": True,
+            "unpaywall_email": True,
+            "grobid_url": "http://127.0.0.1:8070",
+            "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+            "llm_api_key": False,
+            "embedding_model": "local-hash",
+            "vector_db_backend": "local-json",
+        },
+        "counts": health_check_counts(),
+        "status_counts": health_check_status_counts(),
+    }
+
+    def fake_fetch_json(url, timeout):
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return status
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(sys, "argv", ["health_check.py", "--base-url", "http://api.test", "--require-no-config-warnings"])
+
+    assert health_check.main() == 1
+    assert "config warnings present (missing_llm_api_key)" in capsys.readouterr().err
 
 
 def test_health_check_requires_status_counts_key():
