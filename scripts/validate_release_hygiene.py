@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 REQUIRED_GITIGNORE_PATTERNS = [
+    ".DS_Store",
     ".env",
     ".venv/",
     "data/",
@@ -20,6 +21,8 @@ REQUIRED_CI_WORKFLOW = Path(".github/workflows/ci.yml")
 REQUIRED_CI_RELEASE_CHECK = "bash scripts/release_check.sh"
 REQUIRED_CI_TRIGGERS = ["push", "pull_request"]
 FORBIDDEN_TRACKED_PATTERNS = [
+    ".DS_Store",
+    "*/.DS_Store",
     ".env",
     ".env.local",
     ".env.*.local",

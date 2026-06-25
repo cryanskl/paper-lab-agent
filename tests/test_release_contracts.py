@@ -214,6 +214,7 @@ def test_release_hygiene_validator_reports_missing_gitignore_pattern(tmp_path):
 
     missing = validate_release_hygiene.missing_required_gitignore_patterns(gitignore_path)
 
+    assert ".DS_Store" in missing
     assert ".next/" in missing
 
 
@@ -224,6 +225,8 @@ def test_release_hygiene_validator_reports_tracked_generated_artifacts():
         [
             "README.md",
             ".env",
+            ".DS_Store",
+            "docs/.DS_Store",
             "data/plasma.db",
             "scripts/__pycache__/smoke_check.cpython-313.pyc",
             "coverage/index.html",
@@ -232,6 +235,8 @@ def test_release_hygiene_validator_reports_tracked_generated_artifacts():
 
     assert forbidden == [
         ".env",
+        ".DS_Store",
+        "docs/.DS_Store",
         "data/plasma.db",
         "scripts/__pycache__/smoke_check.cpython-313.pyc",
         "coverage/index.html",
