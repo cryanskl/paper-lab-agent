@@ -1,6 +1,6 @@
 import asyncio
 from typing import Any, Optional
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 
@@ -33,8 +33,9 @@ class UnpaywallClient:
         if not self.email:
             return {"oa_status": "unknown", "oa_pdf_url": None, "error": "UNPAYWALL_EMAIL is not configured"}
         headers = {"User-Agent": f"paper-lab-agent (mailto:{self.email})"}
+        encoded_doi = quote(doi.strip(), safe="")
         async with httpx.AsyncClient(timeout=self.timeout, headers=headers, transport=self.transport) as client:
-            payload = await self._get_json(client, f"{self.base_url}/{doi}", {"email": self.email})
+            payload = await self._get_json(client, f"{self.base_url}/{encoded_doi}", {"email": self.email})
         if not isinstance(payload, dict):
             return {
                 "oa_status": "unknown",

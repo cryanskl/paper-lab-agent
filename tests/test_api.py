@@ -2624,6 +2624,26 @@ def test_unpaywall_client_sends_polite_user_agent_with_email():
     assert seen_user_agents == ["paper-lab-agent (mailto:lab@example.test)"]
 
 
+def test_unpaywall_client_url_encodes_doi_path_segment():
+    import asyncio
+
+    import httpx
+
+    from app.clients.unpaywall import UnpaywallClient
+
+    seen_raw_paths = []
+
+    def handler(request):
+        seen_raw_paths.append(request.url.raw_path.decode("ascii"))
+        return httpx.Response(200, json={"oa_status": "closed"})
+
+    client = UnpaywallClient("lab@example.test", transport=httpx.MockTransport(handler))
+    result = asyncio.run(client.resolve("10.5555/a/b"))
+
+    assert result["oa_status"] == "closed"
+    assert seen_raw_paths == ["/v2/10.5555%2Fa%2Fb?email=lab%40example.test"]
+
+
 def test_unpaywall_client_uses_best_location_url_when_it_is_pdf():
     import asyncio
 
