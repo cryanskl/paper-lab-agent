@@ -305,6 +305,20 @@ def test_openalex_rejects_unsafe_landing_url():
     assert missing_host_id["landing_url"] is None
 
 
+def test_openalex_strips_landing_url_whitespace():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-whitespace-url",
+            "title": "Whitespace landing URL",
+            "primary_location": {"landing_page_url": "  https://publisher.example/article  "},
+        }
+    )
+
+    assert work["landing_url"] == "https://publisher.example/article"
+
+
 def test_openalex_tolerates_malformed_source_display_name():
     client = OpenAlexClient()
 

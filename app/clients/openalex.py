@@ -155,6 +155,7 @@ class OpenAlexClient:
         text = self.normalize_optional_text(value)
         if not text:
             return None
+        text = text.strip()
         parsed = urlparse(text)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             return None
