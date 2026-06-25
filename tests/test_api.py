@@ -9512,6 +9512,8 @@ def test_streamlit_search_tab_handles_empty_results_and_api_errors():
         "search_error",
         "检索失败",
         "没有检索结果",
+        "sort=relevance requires q",
+        'elif sort_choice == "relevance" and not q.strip():',
         "try:",
         'papers = {"items": [], "total": 0, "page": 1, "page_size": 20}',
         'if not search_error and papers["total"] == 0:',

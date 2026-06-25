@@ -185,6 +185,10 @@ with search_tab:
         st.warning("year_from must be less than or equal to year_to")
         papers = {"items": [], "total": 0, "page": 1, "page_size": 20}
         search_error = None
+    elif sort_choice == "relevance" and not q.strip():
+        st.warning("sort=relevance requires q")
+        papers = {"items": [], "total": 0, "page": 1, "page_size": 20}
+        search_error = None
     else:
         try:
             papers = api_get("/papers", **{k: v for k, v in params.items() if v is not None})
