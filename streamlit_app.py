@@ -937,6 +937,11 @@ with chemistry_tab:
                 source_excerpt = reaction.get("source_excerpt")
                 if source_excerpt:
                     st.code(source_excerpt)
+                st.caption(
+                    f"reactants: {reaction.get('reactants') or '-'} · "
+                    f"products: {reaction.get('products') or '-'} · "
+                    f"reference: {reaction.get('reference') or '-'}"
+                )
                 c1, c2, c3 = st.columns(3)
                 reaction_type_options = ["", "elastic", "excitation", "ionization", "attachment", "recombination"]
                 rate_type_options = ["", "cross_section", "arrhenius", "constant"]

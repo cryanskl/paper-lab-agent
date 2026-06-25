@@ -8177,8 +8177,11 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
     chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
     for required in [
         "reaction_type",
+        "reactants",
+        "products",
         "rate_type",
         "rate_value",
+        "reference",
         "threshold_ev",
         "confidence",
         "source_section_id",
