@@ -497,6 +497,22 @@ def test_release_check_requires_smoke_error_response_coverage():
     assert '"error_response_count": 2' in release_text
 
 
+def test_dev_script_documents_help_mode_without_starting_services():
+    repo = Path(__file__).resolve().parent.parent
+    dev_script = (repo / "scripts" / "dev.sh").read_text(encoding="utf-8")
+
+    for required in [
+        "--help",
+        "Usage: bash scripts/dev.sh",
+        "API_PORT",
+        "STREAMLIT_PORT",
+        "DEV_READY_TIMEOUT",
+        "PAPER_LAB_SCHEDULER_ENABLED",
+        "python scripts/health_check.py --require-frontend",
+    ]:
+        assert required in dev_script
+
+
 def test_api_contract_documented_endpoints_exist_in_app():
     validate_api_contract = load_validate_api_contract()
     repo = Path(__file__).resolve().parent.parent
