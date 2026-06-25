@@ -12,6 +12,18 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONTRACT_PATH = REPO_ROOT / "docs" / "接口设计文档.md"
 HTTP_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH"}
+PAGINATION_QUERY_PARAMS = ("page", "page_size")
+PAGINATED_GET_PATHS = {
+    "/api/v1/journals",
+    "/api/v1/crawl/jobs",
+    "/api/v1/papers",
+    "/api/v1/categories",
+    "/api/v1/documents",
+    "/api/v1/documents/{}/sections",
+    "/api/v1/documents/{}/chunks",
+    "/api/v1/documents/{}/reaction-sets",
+}
+PAGINATED_DESCRIPTION_MARKERS = ("列出", "列表", "检索")
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -36,7 +48,11 @@ def display_path(path: str) -> str:
 
 
 def documented_routes(path: Path = DEFAULT_CONTRACT_PATH) -> list[tuple[str, str, str]]:
-    routes: list[tuple[str, str, str]] = []
+    return [(method, display, normalized) for method, display, normalized, _description in documented_route_rows(path)]
+
+
+def documented_route_rows(path: Path = DEFAULT_CONTRACT_PATH) -> list[tuple[str, str, str, str]]:
+    routes: list[tuple[str, str, str, str]] = []
     endpoint_pattern = re.compile(r"`([^`]+)`")
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
@@ -52,21 +68,24 @@ def documented_routes(path: Path = DEFAULT_CONTRACT_PATH) -> list[tuple[str, str
         if not match:
             continue
         route_path = match.group(1)
-        routes.append((method, display_path(route_path), normalize_path(route_path)))
+        description = cells[2] if len(cells) > 2 else ""
+        routes.append((method, display_path(route_path), normalize_path(route_path), description))
     return routes
 
 
-def app_routes() -> set[tuple[str, str]]:
+def app_openapi_paths() -> dict:
     from app.main import app
 
+    return app.openapi()["paths"]
+
+
+def app_routes() -> set[tuple[str, str]]:
     routes: set[tuple[str, str]] = set()
-    for route in app.routes:
-        path = getattr(route, "path", None)
-        methods = getattr(route, "methods", None)
-        if not path or not methods or not str(path).startswith("/api/v1"):
+    for path, methods in app_openapi_paths().items():
+        if not str(path).startswith("/api/v1"):
             continue
         normalized_path = normalize_path(str(path))
-        for method in methods:
+        for method in methods.keys():
             method = method.upper()
             if method in HTTP_METHODS:
                 routes.add((method, normalized_path))
@@ -91,6 +110,47 @@ def undocumented_app_routes(contract_path: Path = DEFAULT_CONTRACT_PATH) -> list
     return undocumented
 
 
+def is_paginated_documented_get(method: str, normalized: str, description: str) -> bool:
+    if method != "GET":
+        return False
+    if normalized in PAGINATED_GET_PATHS:
+        return True
+    return any(marker in description for marker in PAGINATED_DESCRIPTION_MARKERS)
+
+
+def normalized_openapi_specs(openapi_paths: dict | None = None) -> dict[tuple[str, str], dict]:
+    paths = openapi_paths if openapi_paths is not None else app_openapi_paths()
+    specs: dict[tuple[str, str], dict] = {}
+    for path, methods in paths.items():
+        normalized_path = normalize_path(str(path))
+        for method, spec in methods.items():
+            specs[(method.upper(), normalized_path)] = spec
+    return specs
+
+
+def pagination_contract_issues(
+    contract_path: Path = DEFAULT_CONTRACT_PATH,
+    openapi_paths: dict | None = None,
+) -> list[str]:
+    specs = normalized_openapi_specs(openapi_paths)
+    issues: list[str] = []
+    for method, display, normalized, description in documented_route_rows(contract_path):
+        if not is_paginated_documented_get(method, normalized, description):
+            continue
+        spec = specs.get((method, normalized))
+        if spec is None:
+            continue
+        query_params = {
+            parameter.get("name")
+            for parameter in spec.get("parameters", [])
+            if parameter.get("in") == "query"
+        }
+        missing = [name for name in PAGINATION_QUERY_PARAMS if name not in query_params]
+        if missing:
+            issues.append(f"{method} {display} missing query parameters: {', '.join(missing)}")
+    return issues
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate documented API endpoints against FastAPI routes.")
     parser.add_argument("contract_path", nargs="?", default=str(DEFAULT_CONTRACT_PATH))
@@ -98,7 +158,8 @@ def main() -> int:
 
     missing = missing_documented_routes(Path(args.contract_path))
     undocumented = undocumented_app_routes(Path(args.contract_path))
-    if missing or undocumented:
+    pagination_issues = pagination_contract_issues(Path(args.contract_path))
+    if missing or undocumented or pagination_issues:
         if missing:
             print("api contract missing routes:", file=sys.stderr)
             for route in missing:
@@ -107,6 +168,10 @@ def main() -> int:
             print("api contract undocumented app routes:", file=sys.stderr)
             for route in undocumented:
                 print(f"- {route}", file=sys.stderr)
+        if pagination_issues:
+            print("api contract pagination issues:", file=sys.stderr)
+            for issue in pagination_issues:
+                print(f"- {issue}", file=sys.stderr)
         return 1
     return 0
 
