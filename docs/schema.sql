@@ -209,6 +209,7 @@ CREATE TABLE reactions (
     reference         TEXT,
     cross_section_url TEXT,                       -- LXCat 链接
     source_section_id INTEGER REFERENCES sections(id),
+    source_label      TEXT,                       -- 表号/出处标签，如 table 7: Reaction kinetics
     source_excerpt    TEXT,
     confidence        REAL,
     verified          INTEGER DEFAULT 0,

@@ -180,6 +180,7 @@ def test_reaction_review_rows_can_focus_unverified_source_metadata():
             "source_section_title": "Table 2",
             "source_section_type": "table",
             "source_section_seq": 4,
+            "source_label": "table 4: Table 2",
             "source_excerpt": "e + Ar -> e + e + Ar+ .",
         },
         {
@@ -206,6 +207,7 @@ def test_reaction_review_rows_can_focus_unverified_source_metadata():
             "cross_section_url": "https://nl.lxcat.net/data/set/example",
             "source_section": "4 | table | Table 2",
             "source_section_id": 12,
+            "source_label": "table 4: Table 2",
             "source_excerpt": "e + Ar -> e + e + Ar+ .",
         }
     ]

@@ -422,6 +422,7 @@ def ensure_migrations(conn: sqlite3.Connection) -> None:
         "threshold_ev": "REAL",
         "reference": "TEXT",
         "cross_section_url": "TEXT",
+        "source_label": "TEXT",
         "confidence": "REAL",
         "verified": "INTEGER DEFAULT 0",
         "created_at": "TEXT",

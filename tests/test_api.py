@@ -5595,6 +5595,7 @@ def test_reaction_export_bolsig_text_and_rejects_unknown_format(tmp_path):
     assert f"SOURCE_SECTION_TITLE: {reaction['source_section_title']}" in text
     assert f"SOURCE_SECTION_TYPE: {reaction['source_section_type']}" in text
     assert f"SOURCE_SECTION_SEQ: {reaction['source_section_seq']}" in text
+    assert f"SOURCE_LABEL: {reaction['source_label']}" in text
     assert "VERIFIED_BY: chemist-a" in text
     assert "VERIFIED_AT:" in text
 
@@ -5605,6 +5606,7 @@ def test_reaction_export_bolsig_text_and_rejects_unknown_format(tmp_path):
     assert f"source_section_title: {reaction['source_section_title']}" in txt
     assert f"source_section_type: {reaction['source_section_type']}" in txt
     assert f"source_section_seq: {reaction['source_section_seq']}" in txt
+    assert f"source_label: {reaction['source_label']}" in txt
     assert f"source_excerpt: {reaction['source_excerpt']}" in txt
     assert "verified_by: chemist-a" in txt
     assert "verified_at:" in txt
@@ -8370,6 +8372,7 @@ def test_extracted_reaction_keeps_source_section_and_excerpt(tmp_path):
     assert reaction["source_section_title"] == sections[0]["title"]
     assert reaction["source_section_type"] == sections[0]["section_type"]
     assert reaction["source_section_seq"] == sections[0]["seq"]
+    assert reaction["source_label"] == f"{sections[0]['section_type']} {sections[0]['seq']}: {sections[0]['title']}"
     assert "e + Ar -> e + e + Ar" in reaction["source_excerpt"]
     assert "Section text before" in reaction["source_excerpt"]
     assert reaction["reactants"] == ["e", "Ar"]

@@ -134,6 +134,7 @@ def reaction_review_rows(reactions: list[dict[str, Any]], *, only_unverified: bo
                 "cross_section_url": reaction.get("cross_section_url"),
                 "source_section": source_section or "-",
                 "source_section_id": reaction.get("source_section_id"),
+                "source_label": reaction.get("source_label"),
                 "source_excerpt": reaction.get("source_excerpt"),
             }
         )

@@ -49,6 +49,19 @@ def source_excerpt(text: str, start: int, end: int, window: int = 80) -> str:
     return " ".join(text[left:right].split())
 
 
+def source_label(section: dict) -> str:
+    section_type = section.get("section_type") or "section"
+    seq = section.get("seq")
+    title = section.get("title")
+    if seq is not None and title:
+        return f"{section_type} {seq}: {title}"
+    if title:
+        return f"{section_type}: {title}"
+    if seq is not None:
+        return f"{section_type} {seq}"
+    return section_type
+
+
 def detect_lxcat_db(text: str) -> Optional[str]:
     match = LXCAT_DB_RE.search(text)
     if not match:
@@ -139,8 +152,8 @@ def extract_reactions(document_id: int) -> dict:
                         INSERT INTO reactions (
                             reaction_set_id, reaction, reaction_type, reactants, products,
                             rate_type, rate_value, threshold_ev, reference, cross_section_url,
-                            source_section_id, source_excerpt, confidence, verified
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                            source_section_id, source_label, source_excerpt, confidence, verified
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                         """,
                         (
                             reaction_set_id,
@@ -154,6 +167,7 @@ def extract_reactions(document_id: int) -> dict:
                             section["title"],
                             cross_section_url,
                             section["id"],
+                            source_label(dict_from_row(section)),
                             source_excerpt(text, match.start(), match.end()),
                             0.5,
                         ),
@@ -358,6 +372,8 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
                 lines.append(f"SOURCE_SECTION_TYPE: {reaction['source_section_type']}")
             if reaction.get("source_section_seq") is not None:
                 lines.append(f"SOURCE_SECTION_SEQ: {reaction['source_section_seq']}")
+            if reaction.get("source_label"):
+                lines.append(f"SOURCE_LABEL: {reaction['source_label']}")
             if reaction.get("source_excerpt"):
                 lines.append(f"SOURCE_EXCERPT: {reaction['source_excerpt']}")
             lines.append("END")
@@ -381,6 +397,8 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
                 lines.append(f"source_section_type: {reaction['source_section_type']}")
             if reaction.get("source_section_seq") is not None:
                 lines.append(f"source_section_seq: {reaction['source_section_seq']}")
+            if reaction.get("source_label"):
+                lines.append(f"source_label: {reaction['source_label']}")
             if reaction.get("source_excerpt"):
                 lines.append(f"source_excerpt: {reaction['source_excerpt']}")
         out_path.write_text("\n".join(lines), encoding="utf-8")
