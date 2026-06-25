@@ -654,6 +654,14 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert "scripts/doctor.py --strict --compact" in release_check
 
 
+def test_release_check_compiles_application_package():
+    repo = Path(__file__).resolve().parent.parent
+    release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert "-m compileall" in release_check
+    assert " app " in release_check or " app\n" in release_check
+
+
 def test_release_check_derives_expected_runtime_version_from_app_version():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")

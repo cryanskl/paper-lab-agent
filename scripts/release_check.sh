@@ -13,6 +13,7 @@ fi
 
 bash -n scripts/env.sh
 bash -n scripts/dev.sh
+"${PYTHON_CMD[@]}" -m compileall -q app scripts tests streamlit_app.py
 "${PYTHON_CMD[@]}" -m py_compile scripts/doctor.py scripts/health_check.py scripts/import_fixtures.py scripts/prepare_demo_data.py scripts/smoke_check.py scripts/validate_api_contract.py scripts/validate_bug_docs.py scripts/validate_docs_links.py scripts/validate_env_example.py scripts/validate_readme_commands.py scripts/validate_release_hygiene.py scripts/validate_requirements.py scripts/validate_schema.py streamlit_app.py
 "${PYTHON_CMD[@]}" scripts/doctor.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact
