@@ -8206,6 +8206,23 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         assert required in chemistry_section
 
 
+def test_streamlit_chemistry_export_surfaces_file_and_metadata_status():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    for required in [
+        'export_path = Path(payload["output_path"])',
+        "export_path.exists()",
+        "下载导出文件",
+        "导出文件不存在",
+        'payload.get("reaction_count")',
+        'payload.get("audit_entry_count")',
+        'payload.get("mime_type")',
+    ]:
+        assert required in chemistry_section
+
+
 def test_streamlit_chemistry_tab_can_select_document_for_reaction_sets():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

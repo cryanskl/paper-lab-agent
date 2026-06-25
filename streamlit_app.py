@@ -861,6 +861,12 @@ with chemistry_tab:
                 st.error(payload)
             else:
                 st.success(payload["output_path"])
+                st.caption(
+                    f'format: {payload.get("format")} · '
+                    f'mime_type: {payload.get("mime_type")} · '
+                    f'reactions: {payload.get("reaction_count")} · '
+                    f'audit_entries: {payload.get("audit_entry_count")}'
+                )
                 export_path = Path(payload["output_path"])
                 if export_path.exists():
                     export_text = export_path.read_text(encoding="utf-8")
@@ -870,6 +876,8 @@ with chemistry_tab:
                         file_name=export_path.name,
                         mime=payload.get("mime_type") or "text/plain",
                     )
+                else:
+                    st.warning(f"导出文件不存在: {export_path}")
                 st.json(payload)
         display_reactions = unverified_reactions if show_only_unverified else reactions
         for reaction in display_reactions:
