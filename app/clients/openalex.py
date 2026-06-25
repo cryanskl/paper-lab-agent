@@ -196,6 +196,20 @@ class OpenAlexClient:
                 return url
         return None
 
+    def first_location_source_name(self, value: Any) -> Optional[str]:
+        if not isinstance(value, list):
+            return None
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            source = item.get("source") or {}
+            if not isinstance(source, dict):
+                continue
+            name = self.normalize_optional_text(source.get("display_name"))
+            if name:
+                return name
+        return None
+
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         doi = self.normalize_doi(item.get("doi"))
         primary_location = item.get("primary_location") or {}
@@ -211,7 +225,8 @@ class OpenAlexClient:
             "title": self.normalize_title(item.get("title")),
             "abstract": abstract,
             "authors": authors,
-            "journal_name": self.normalize_optional_text(source.get("display_name")),
+            "journal_name": self.normalize_optional_text(source.get("display_name"))
+            or self.first_location_source_name(item.get("locations")),
             "published_date": self.normalize_publication_date(item.get("publication_date")),
             "published_year": self.normalize_publication_year(item.get("publication_year")),
             "landing_url": self.normalize_url(primary_location.get("landing_page_url"))

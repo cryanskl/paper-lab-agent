@@ -502,6 +502,25 @@ def test_openalex_tolerates_malformed_source_display_name():
     assert work["journal_name"] is None
 
 
+def test_openalex_falls_back_to_locations_source_display_name():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-locations-source",
+            "title": "Locations source",
+            "primary_location": {"source": {"display_name": {"value": "Malformed"}}},
+            "locations": [
+                "malformed-location",
+                {"source": "malformed-source"},
+                {"source": {"display_name": "  Plasma Sources Science and Technology  "}},
+            ],
+        }
+    )
+
+    assert work["journal_name"] == "Plasma Sources Science and Technology"
+
+
 def test_openalex_skips_malformed_authorship_items():
     client = OpenAlexClient()
 
