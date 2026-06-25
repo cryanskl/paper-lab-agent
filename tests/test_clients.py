@@ -688,6 +688,38 @@ def test_openalex_preserves_author_institution_affiliations():
     ]
 
 
+def test_openalex_falls_back_to_raw_affiliation_strings():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "doi": "10.5555/openalex-raw-affiliations",
+            "title": "OpenAlex raw affiliations",
+            "authorships": [
+                {
+                    "author": {"display_name": "Jane Doe"},
+                    "institutions": [
+                        {"display_name": {"value": "Malformed"}},
+                        "malformed-institution",
+                    ],
+                    "raw_affiliation_strings": [
+                        "  Princeton Plasma Physics Laboratory  ",
+                        "MIT Plasma Science",
+                        {"value": "Malformed"},
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert work["authors"] == [
+        {
+            "name": "Jane Doe",
+            "affiliation": "Princeton Plasma Physics Laboratory; MIT Plasma Science",
+        }
+    ]
+
+
 def test_openalex_tolerates_malformed_primary_location_fields():
     client = OpenAlexClient()
 
