@@ -37,9 +37,8 @@ class UnpaywallClient:
                 "oa_pdf_url": None,
                 "error": "Unpaywall response was not a JSON object",
             }
-        best = payload.get("best_oa_location") or {}
         return {
-            "oa_status": payload.get("oa_status") or "unknown",
+            "oa_status": oa_status(payload.get("oa_status")),
             "oa_pdf_url": payload_pdf_url(payload),
             "raw": payload,
         }
@@ -81,6 +80,12 @@ class UnpaywallClient:
                 except ValueError:
                     pass
         return self.retry_backoff_seconds * (attempt + 1)
+
+
+def oa_status(value: Any) -> str:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return "unknown"
 
 
 def payload_pdf_url(payload: dict[str, Any]) -> Optional[str]:

@@ -1064,6 +1064,27 @@ async def test_unpaywall_tolerates_malformed_best_oa_location():
 
 
 @pytest.mark.asyncio
+async def test_unpaywall_tolerates_malformed_oa_status():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "oa_status": {"value": "green"},
+                "best_oa_location": {"url_for_pdf": "https://example.test/paper.pdf"},
+            }
+        )
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.resolve("10.1/malformed-oa-status")
+
+    assert result["oa_status"] == "unknown"
+    assert result["oa_pdf_url"] == "https://example.test/paper.pdf"
+
+
+@pytest.mark.asyncio
 async def test_unpaywall_rejects_non_web_pdf_url_scheme():
     def handler(request: httpx.Request) -> httpx.Response:
         return json_response(
