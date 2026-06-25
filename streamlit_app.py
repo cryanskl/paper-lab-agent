@@ -524,6 +524,17 @@ with documents_tab:
         document_detail = api_get(f"/documents/{selected['id']}")
         if document_detail.get("parse_error"):
             st.warning(f"parse_error: {document_detail['parse_error']}")
+        if document_detail.get("file_path"):
+            pdf_path = Path(document_detail.get("file_path"))
+            if pdf_path.exists():
+                st.download_button(
+                    "下载原始 PDF",
+                    data=pdf_path.read_bytes(),
+                    file_name=pdf_path.name,
+                    mime="application/pdf",
+                )
+            else:
+                st.warning(f"PDF 文件不存在: {pdf_path}")
         if document_detail.get("tei_path"):
             tei_path = Path(document_detail.get("tei_path"))
             if tei_path.exists():

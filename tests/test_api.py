@@ -9000,6 +9000,21 @@ def test_streamlit_documents_tab_offers_tei_xml_download():
         assert required in documents_section
 
 
+def test_streamlit_documents_tab_offers_original_pdf_download():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    for required in [
+        'document_detail.get("file_path")',
+        'pdf_path = Path(document_detail.get("file_path"))',
+        "pdf_path.exists()",
+        "下载原始 PDF",
+        "PDF 文件不存在",
+    ]:
+        assert required in documents_section
+
+
 def test_streamlit_documents_tab_exposes_section_and_chunk_pagination_controls():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
