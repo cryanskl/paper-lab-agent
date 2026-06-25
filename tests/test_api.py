@@ -2759,6 +2759,46 @@ def test_resolve_oa_normalizes_adapter_oa_status_before_storing(tmp_path, monkey
     assert stored["oa_status"] == "green"
 
 
+def test_resolve_oa_rejects_adapter_non_web_pdf_url_before_storing(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import papers as papers_router
+
+    class RawUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            return {
+                "oa_status": "green",
+                "oa_pdf_url": "javascript:alert(1)",
+                "raw": {"doi": doi, "oa_status": "green"},
+            }
+
+    monkeypatch.setattr(papers_router, "UnpaywallClient", RawUnpaywallClient)
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, ?, '[]', 'fixture', ?)
+            """,
+            ("10.7/manual-resolve-pdf-url", "Manual OA PDF URL", "argon plasma", '{"source":"fixture"}'),
+        )
+        paper_id = cursor.lastrowid
+
+    response = client.post(f"/api/v1/papers/{paper_id}/resolve-oa")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["oa_status"] == "green"
+    assert payload["oa_pdf_url"] is None
+    with get_conn() as conn:
+        stored = conn.execute("SELECT oa_pdf_url FROM papers WHERE id=?", (paper_id,)).fetchone()
+    assert stored["oa_pdf_url"] is None
+
+
 def test_resolve_oa_uses_and_stores_normalized_doi(tmp_path, monkeypatch):
     client = make_client(tmp_path)
 
