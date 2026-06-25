@@ -543,8 +543,35 @@ with documents_tab:
             else:
                 st.warning(extract_payload)
             st.json(extract_payload)
-        sections = api_get(f"/documents/{selected['id']}/sections")["items"]
-        chunks = api_get(f"/documents/{selected['id']}/chunks")
+        sections_page_col, sections_page_size_col = st.columns(2)
+        sections_page = sections_page_col.number_input("sections_page", min_value=1, value=1, key=f"sections-page-{selected['id']}")
+        sections_page_size = sections_page_size_col.number_input(
+            "sections_page_size",
+            min_value=1,
+            max_value=100,
+            value=20,
+            key=f"sections-page-size-{selected['id']}",
+        )
+        chunks_page_col, chunks_page_size_col = st.columns(2)
+        chunks_page = chunks_page_col.number_input("chunks_page", min_value=1, value=1, key=f"chunks-page-{selected['id']}")
+        chunks_page_size = chunks_page_size_col.number_input(
+            "chunks_page_size",
+            min_value=1,
+            max_value=100,
+            value=20,
+            key=f"chunks-page-size-{selected['id']}",
+        )
+        sections_response = api_get(
+            f"/documents/{selected['id']}/sections",
+            page=int(sections_page),
+            page_size=int(sections_page_size),
+        )
+        sections = sections_response["items"]
+        chunks = api_get(
+            f"/documents/{selected['id']}/chunks",
+            page=int(chunks_page),
+            page_size=int(chunks_page_size),
+        )
         index_status = "indexed" if chunks["indexed"] else "not indexed"
         st.caption(f"index_status: {index_status} · chunks: {chunks['total']}")
         if chunks.get("index_error"):
@@ -559,6 +586,11 @@ with documents_tab:
                 )
                 st.markdown(f"### {section_preview.get('title') or 'Section'}")
                 st.write(section_preview.get("content") or "")
+            st.caption(
+                f"sections page {sections_response['page']} · "
+                f"page_size {sections_response['page_size']} · "
+                f"total {sections_response['total']}"
+            )
             st.dataframe(sections, use_container_width=True)
         with translation_tab:
             try:
@@ -591,6 +623,7 @@ with documents_tab:
                     format_func=lambda chunk: f"{chunk.get('vector_id') or chunk.get('id')} · {chunk.get('section_title') or '-'}",
                 )
                 st.code(chunk_preview.get("text") or "")
+            st.caption(f"chunks page {chunks['page']} · page_size {chunks['page_size']} · total {chunks['total']}")
             st.dataframe(chunks["items"], use_container_width=True)
 
 with rag_tab:

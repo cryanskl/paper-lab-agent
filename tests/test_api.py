@@ -8847,6 +8847,35 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
     assert 'type=["pdf", "txt"]' not in documents_section
 
 
+def test_streamlit_documents_tab_exposes_section_and_chunk_pagination_controls():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    for required in [
+        'sections_page = sections_page_col.number_input("sections_page"',
+        "sections_page_size = sections_page_size_col.number_input(",
+        '"sections_page_size"',
+        "sections_response = api_get(",
+        "page=int(sections_page)",
+        "page_size=int(sections_page_size)",
+        'sections = sections_response["items"]',
+        "sections_response['page']",
+        "sections_response['page_size']",
+        "sections_response['total']",
+        'chunks_page = chunks_page_col.number_input("chunks_page"',
+        "chunks_page_size = chunks_page_size_col.number_input(",
+        '"chunks_page_size"',
+        "chunks = api_get(",
+        "page=int(chunks_page)",
+        "page_size=int(chunks_page_size)",
+        "chunks['page']",
+        "chunks['page_size']",
+        "chunks['total']",
+    ]:
+        assert required in documents_section
+
+
 def test_streamlit_document_parse_surfaces_success_and_error_states():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
