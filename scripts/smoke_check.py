@@ -150,6 +150,17 @@ def run_smoke() -> dict:
             None,
         )
         assert_ok(chemistry_category is not None, f"expected chemistry category, got {categories}")
+        auto_classified = assert_status(
+            client.post(f"/api/v1/papers/{crawled_paper_id}/classify"),
+            200,
+            "auto classify paper",
+        )
+        auto_classify_details = auto_classified.get("category_details") or []
+        assert_ok(auto_classified.get("categories") == ["chemistry"], f"expected auto chemistry category, got {auto_classified}")
+        assert_ok(
+            len(auto_classify_details) == 1 and auto_classify_details[0].get("method") == "auto",
+            f"expected auto category method, got {auto_classify_details}",
+        )
         manual_category = assert_status(
             client.put(
                 f"/api/v1/papers/{crawled_paper_id}/categories",
@@ -459,6 +470,8 @@ def run_smoke() -> dict:
             "crawl_job_filtered": crawl_diagnostics["papers_filtered"],
             "crawl_job_new": crawl_diagnostics["papers_new"],
             "crawled_papers": crawled_search["total"],
+            "auto_classify_category_count": len(auto_classify_details),
+            "auto_classify_method": auto_classify_details[0]["method"],
             "journal_filter_search_hits": journal_filter_search["total"],
             "manual_category_count": len(manual_category_details),
             "manual_category_method": manual_category_details[0]["method"],
