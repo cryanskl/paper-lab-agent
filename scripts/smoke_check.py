@@ -167,6 +167,15 @@ def run_smoke() -> dict:
             manual_category_search["total"] == 1,
             f"expected manual category search to return one paper, got {manual_category_search}",
         )
+        journal_filter_search = assert_status(
+            client.get("/api/v1/papers?q=smoke crawl&journal_id=2"),
+            200,
+            "journal-filtered paper search",
+        )
+        assert_ok(
+            journal_filter_search["total"] == 1,
+            f"expected journal-filtered search to return one paper, got {journal_filter_search}",
+        )
 
         original_paper_unpaywall_client = papers_router.UnpaywallClient
 
@@ -435,6 +444,7 @@ def run_smoke() -> dict:
             "crawl_job_filtered": crawl_diagnostics["papers_filtered"],
             "crawl_job_new": crawl_diagnostics["papers_new"],
             "crawled_papers": crawled_search["total"],
+            "journal_filter_search_hits": journal_filter_search["total"],
             "manual_category_count": len(manual_category_details),
             "manual_category_method": manual_category_details[0]["method"],
             "manual_category_search_hits": manual_category_search["total"],

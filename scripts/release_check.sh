@@ -190,6 +190,7 @@ expected = {
     "config_warning_count": 3,
     "duplicate_upload_status": 409,
     "error_response_count": 2,
+    "journal_filter_search_hits": 1,
     "manual_category_count": 1,
     "manual_category_method": "manual",
     "manual_category_search_hits": 1,
