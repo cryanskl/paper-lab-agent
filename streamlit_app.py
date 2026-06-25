@@ -286,12 +286,31 @@ with search_tab:
         st.json(job_detail)
 
 with config_tab:
-    journals_response = api_get("/journals", page_size=100)
+    config_journals_page_col, config_journals_page_size_col = st.columns(2)
+    config_journals_page = config_journals_page_col.number_input(
+        "config_journals_page",
+        min_value=1,
+        value=1,
+        key="config-journals-page",
+    )
+    config_journals_page_size = config_journals_page_size_col.number_input(
+        "config_journals_page_size",
+        min_value=1,
+        max_value=100,
+        value=100,
+        key="config-journals-page-size",
+    )
+    journals_response = api_get("/journals", page=int(config_journals_page), page_size=int(config_journals_page_size))
     categories_response = api_get("/categories")
     journals_all = journals_response["items"]
     categories_all = categories_response["items"]
 
     st.subheader("期刊白名单")
+    st.caption(
+        f"journals page {journals_response['page']} · "
+        f"page_size {journals_response['page_size']} · "
+        f"total {journals_response['total']}"
+    )
     journals_table = [
         {
             **journal,

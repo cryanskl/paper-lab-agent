@@ -9328,6 +9328,24 @@ def test_streamlit_config_tab_normalizes_journal_keywords_for_dataframe():
         assert required in config_section
 
 
+def test_streamlit_config_tab_exposes_journal_pagination_controls():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+
+    for required in [
+        "config_journals_page = config_journals_page_col.number_input(",
+        '"config_journals_page"',
+        "config_journals_page_size = config_journals_page_size_col.number_input(",
+        '"config_journals_page_size"',
+        'journals_response = api_get("/journals", page=int(config_journals_page), page_size=int(config_journals_page_size))',
+        "journals_response['page']",
+        "journals_response['page_size']",
+        "journals_response['total']",
+    ]:
+        assert required in config_section
+
+
 def test_streamlit_config_tab_can_update_journal_year_range():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
