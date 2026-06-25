@@ -94,6 +94,15 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-demo-") as demo_dir:
         env=env,
     )
     payload = json.loads(result.stdout)
+    # Validate the compact release summary path directly: scripts/prepare_demo_data.py --summary-only --compact.
+    summary_result = subprocess.run(
+        [sys.executable, "scripts/prepare_demo_data.py", "--summary-only", "--compact"],
+        text=True,
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+    summary_payload = json.loads(summary_result.stdout)
     for name, export_payload in payload.get("exports", {}).items():
         path = export_payload.get("output_path")
         if not path or not os.path.exists(path):
@@ -113,6 +122,12 @@ if summary.get("ready") is not True:
         f"missing={summary.get('missing')!r}",
         file=sys.stderr,
     )
+    raise SystemExit(1)
+if summary_payload != summary:
+    print("release_check failed: prepare_demo_data --summary-only output does not match payload.summary", file=sys.stderr)
+    raise SystemExit(1)
+if any(key in summary_payload for key in ("document", "exports")):
+    print("release_check failed: prepare_demo_data --summary-only leaked full payload keys", file=sys.stderr)
     raise SystemExit(1)
 expected_counts = {
     "papers": 2,

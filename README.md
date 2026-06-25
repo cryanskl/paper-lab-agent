@@ -44,12 +44,13 @@ API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
 python scripts/import_fixtures.py
 python scripts/prepare_demo_data.py
 python scripts/prepare_demo_data.py --compact
+python scripts/prepare_demo_data.py --summary-only --compact
 python scripts/health_check.py --require-demo-data
 curl 'http://127.0.0.1:8000/api/v1/papers?q=plasma'
 curl 'http://127.0.0.1:8000/api/v1/documents'
 ```
 
-`scripts/import_fixtures.py` 只导入论文和 PDF fixture；`scripts/prepare_demo_data.py` 会继续跑解析、索引、翻译、化学抽取、人工复核标记和三种导出，适合正式演示前一次性准备 walking skeleton 数据。`--compact` 会输出单行 JSON，发布脚本和人工检查可直接看 `summary.ready`、`summary.export_formats` 和核心状态字段。
+`scripts/import_fixtures.py` 只导入论文和 PDF fixture；`scripts/prepare_demo_data.py` 会继续跑解析、索引、翻译、化学抽取、人工复核标记和三种导出，适合正式演示前一次性准备 walking skeleton 数据。`--compact` 会输出单行完整 JSON，可看 `summary.ready`；`--summary-only --compact` 只输出发布摘要，可直接看顶层 `ready`、`export_formats` 和核心状态字段。
 
 启用定时抓取：
 

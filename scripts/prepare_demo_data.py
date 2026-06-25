@@ -183,10 +183,12 @@ def main() -> int:
     parser.add_argument("--target-lang", default="zh")
     parser.add_argument("--verified-by", default="prepare-demo-data")
     parser.add_argument("--compact", action="store_true", help="Print JSON on one line")
+    parser.add_argument("--summary-only", action="store_true", help="Print only the release/demo summary object")
     args = parser.parse_args()
 
     payload = prepare_demo_data(args.target_lang, args.verified_by)
-    print(json.dumps(payload, ensure_ascii=False, indent=None if args.compact else 2))
+    output = payload["summary"] if args.summary_only else payload
+    print(json.dumps(output, ensure_ascii=False, indent=None if args.compact else 2))
     return 0
 
 

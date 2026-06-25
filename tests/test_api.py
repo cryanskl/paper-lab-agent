@@ -1414,6 +1414,46 @@ def test_prepare_demo_data_script_populates_walking_skeleton(tmp_path):
     assert Path(payload["exports"]["json"]["output_path"]).exists()
 
 
+def test_prepare_demo_data_script_can_print_summary_only(tmp_path):
+    import json
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(tmp_path)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    result = subprocess.run(
+        [sys.executable, "scripts/prepare_demo_data.py", "--summary-only", "--compact"],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    summary = json.loads(result.stdout)
+    assert summary["ready"] is True
+    assert summary["missing"] == []
+    assert summary["parse_status"] == "parsed"
+    assert summary["index_status"] == "indexed"
+    assert summary["chemistry_status"] == "extracted"
+    assert summary["translation_status"] == "done"
+    assert summary["reaction_set_status"] == "verified"
+    assert summary["export_formats"] == ["json", "txt", "bolsig"]
+    assert "document" not in summary
+    assert "exports" not in summary
+
+
 def test_smoke_check_covers_translation_and_chemistry_chain():
     from scripts.smoke_check import run_smoke
 
@@ -6362,6 +6402,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "scripts/prepare_demo_data.py" in release_text
     assert "PREPARE_DEMO_JSON" in release_text
     assert "prepare_demo_data.py --compact" in release_text
+    assert "prepare_demo_data.py --summary-only --compact" in release_text
     assert 'demo_data.ready' in release_text
     assert 'summary.ready' in release_text
     assert 'summary.export_formats' in release_text
@@ -6457,6 +6498,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "python scripts/import_fixtures.py",
         "python scripts/prepare_demo_data.py",
         "python scripts/prepare_demo_data.py --compact",
+        "python scripts/prepare_demo_data.py --summary-only --compact",
         "`summary.ready`",
         "python -m scripts.smoke_check",
         "bash scripts/release_check.sh",
