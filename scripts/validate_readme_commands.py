@@ -6,11 +6,19 @@ import re
 import shlex
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 BASH_FENCE_RE = re.compile(r"^```(?:bash|sh|shell)\s*$")
 FENCE_RE = re.compile(r"^```")
 ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+LOCAL_CURL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+HTTP_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH"}
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 def bash_command_lines(readme_path: Path) -> list[str]:
@@ -44,6 +52,63 @@ def strip_leading_env_assignments(tokens: list[str]) -> list[str]:
     return stripped
 
 
+def normalize_route_path(path: str) -> str:
+    value = path.strip().split("?", 1)[0].rstrip("/")
+    if not value.startswith("/"):
+        value = f"/{value}"
+    return re.sub(r"\{[^}/]+\}", "{}", value)
+
+
+def app_routes() -> set[tuple[str, str]]:
+    from app.main import app
+
+    routes: set[tuple[str, str]] = set()
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        methods = getattr(route, "methods", None)
+        if not path or not methods:
+            continue
+        normalized_path = normalize_route_path(str(path))
+        for method in methods:
+            method = method.upper()
+            if method in HTTP_METHODS:
+                routes.add((method, normalized_path))
+    return routes
+
+
+def curl_method(tokens: list[str]) -> str:
+    method = "GET"
+    for index, token in enumerate(tokens):
+        if token in {"-X", "--request"} and index + 1 < len(tokens):
+            candidate = tokens[index + 1].upper()
+            if candidate in HTTP_METHODS:
+                method = candidate
+    return method
+
+
+def curl_url(tokens: list[str]) -> str | None:
+    for token in tokens[1:]:
+        if token.startswith(("http://", "https://")):
+            return token
+    return None
+
+
+def documented_local_curl_routes(readme_path: Path) -> list[tuple[str, str]]:
+    routes: list[tuple[str, str]] = []
+    for line in bash_command_lines(readme_path):
+        tokens = strip_leading_env_assignments(split_command(line))
+        if not tokens or tokens[0] != "curl":
+            continue
+        url = curl_url(tokens)
+        if not url:
+            continue
+        parsed = urlparse(url)
+        if parsed.hostname not in LOCAL_CURL_HOSTS:
+            continue
+        routes.append((curl_method(tokens), normalize_route_path(parsed.path)))
+    return routes
+
+
 def command_targets(readme_path: Path) -> list[str]:
     targets: list[str] = []
     for line in bash_command_lines(readme_path):
@@ -69,6 +134,10 @@ def missing_command_targets(repo: Path) -> list[str]:
     for target in command_targets(readme_path):
         if not (repo / target).exists():
             issues.append(f"README.md: command target missing: {target}")
+    actual_routes = app_routes()
+    for method, path in documented_local_curl_routes(readme_path):
+        if (method, path) not in actual_routes:
+            issues.append(f"README.md: curl route missing: {method} {path}")
     return issues
 
 
