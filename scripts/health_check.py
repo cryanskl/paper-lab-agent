@@ -49,6 +49,8 @@ EXTERNAL_CAPABILITY_REQUIRED_KEYS = {
     "grobid_url",
     "grobid",
     "llm_api_key",
+    "translation_adapter",
+    "llm_model",
     "embedding_model",
     "vector_db_backend",
 }
