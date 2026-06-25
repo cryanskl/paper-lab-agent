@@ -217,6 +217,10 @@ def test_release_hygiene_validator_reports_missing_gitignore_pattern(tmp_path):
     assert ".DS_Store" in missing
     assert ".coverage" in missing
     assert "htmlcov/" in missing
+    assert "*.db-wal" in missing
+    assert "*.db-shm" in missing
+    assert "*.db-journal" in missing
+    assert "*.sqlite-journal" in missing
     assert ".next/" in missing
 
 
@@ -231,6 +235,10 @@ def test_release_hygiene_validator_reports_tracked_generated_artifacts():
             "docs/.DS_Store",
             ".coverage",
             "htmlcov/index.html",
+            "plasma.db-wal",
+            "plasma.db-shm",
+            "plasma.db-journal",
+            "archive.sqlite-journal",
             "data/plasma.db",
             "scripts/__pycache__/smoke_check.cpython-313.pyc",
             "coverage/index.html",
@@ -243,6 +251,10 @@ def test_release_hygiene_validator_reports_tracked_generated_artifacts():
         "docs/.DS_Store",
         ".coverage",
         "htmlcov/index.html",
+        "plasma.db-wal",
+        "plasma.db-shm",
+        "plasma.db-journal",
+        "archive.sqlite-journal",
         "data/plasma.db",
         "scripts/__pycache__/smoke_check.cpython-313.pyc",
         "coverage/index.html",

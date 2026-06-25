@@ -12,6 +12,10 @@ data/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+*.sqlite-journal
+*.db-wal
+*.db-shm
+*.db-journal
 
 # Environment files
 .env

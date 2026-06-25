@@ -18,6 +18,10 @@ REQUIRED_GITIGNORE_PATTERNS = [
     "__pycache__/",
     ".coverage",
     "htmlcov/",
+    "*.db-wal",
+    "*.db-shm",
+    "*.db-journal",
+    "*.sqlite-journal",
 ]
 REQUIRED_CI_WORKFLOW = Path(".github/workflows/ci.yml")
 REQUIRED_CI_RELEASE_CHECK = "bash scripts/release_check.sh"
@@ -35,6 +39,10 @@ FORBIDDEN_TRACKED_PATTERNS = [
     "*.sqlite",
     "*.sqlite-shm",
     "*.sqlite-wal",
+    "*.sqlite-journal",
+    "*.db-wal",
+    "*.db-shm",
+    "*.db-journal",
     "__pycache__/*",
     "*.pyc",
     ".pytest_cache/*",
