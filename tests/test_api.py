@@ -874,6 +874,30 @@ def test_create_category_normalizes_slug_for_taxonomy_consistency(tmp_path):
     assert created["slug"] == "surface-chemistry"
 
 
+def test_create_category_normalizes_slug_whitespace_to_hyphen(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/v1/categories",
+        json={"name": "Plasma Transport", "slug": "  Plasma Transport  "},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["slug"] == "plasma-transport"
+
+
+def test_create_category_rejects_path_like_slug(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/v1/categories",
+        json={"name": "Bad Slug", "slug": "bad/slug"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+
+
 def test_create_category_with_unknown_parent_returns_json_error(tmp_path):
     client = make_client(tmp_path)
 
