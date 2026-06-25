@@ -104,7 +104,8 @@ class CrawlRunIn(BaseModel):
 
 
 @router.post("/run", status_code=202)
-def run_crawl(body: CrawlRunIn, background_tasks: BackgroundTasks) -> dict:
+def run_crawl(background_tasks: BackgroundTasks, body: Optional[CrawlRunIn] = None) -> dict:
+    body = body or CrawlRunIn()
     try:
         jobs = create_jobs(body.journal_ids, body.period, body.date_from, body.date_to)
     except LookupError as exc:

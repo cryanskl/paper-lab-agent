@@ -3812,6 +3812,49 @@ def test_crawl_run_rejects_invalid_period_and_reversed_dates(tmp_path):
     assert reversed_dates.json()["error"]["code"] == "validation_error"
 
 
+def test_crawl_run_accepts_missing_body_with_default_all_active_journals(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.routers import crawl as crawl_router
+
+    def fake_create_jobs(journal_ids, period, date_from, date_to):
+        assert journal_ids is None
+        assert period == "manual"
+        assert date_from is None
+        assert date_to is None
+        return [
+            {
+                "job_id": 41,
+                "journal_id": 2,
+                "period": period,
+                "date_from": date_from,
+                "date_to": date_to,
+            }
+        ]
+
+    async def fake_run_crawl_job(job_id, journal_id, date_from, date_to):
+        return None
+
+    monkeypatch.setattr(crawl_router, "create_jobs", fake_create_jobs)
+    monkeypatch.setattr(crawl_router, "run_crawl_job", fake_run_crawl_job)
+
+    response = client.post("/api/v1/crawl/run")
+
+    assert response.status_code == 202
+    assert response.json() == {
+        "jobs": [
+            {
+                "job_id": 41,
+                "journal_id": 2,
+                "period": "manual",
+                "date_from": None,
+                "date_to": None,
+                "status": "pending",
+            }
+        ]
+    }
+
+
 def test_crawl_run_response_includes_created_job_context(tmp_path, monkeypatch):
     client = make_client(tmp_path)
 
