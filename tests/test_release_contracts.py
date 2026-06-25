@@ -462,6 +462,17 @@ def test_release_check_requires_manual_resolve_oa_smoke_path():
     assert '"year_filter_search_hits": 1' in release_text
 
 
+def test_release_check_requires_crawl_job_observability_smoke_path():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert '"crawl_job_list_total": 1' in release_text
+    assert '"crawl_job_detail_status": "success"' in release_text
+    assert '"crawl_job_detail_journal_name": "Plasma Sources Science and Technology"' in release_text
+    assert '"crawl_job_detail_diagnostics_outcome": "new_papers"' in release_text
+    assert '"crawl_job_detail_diagnostics_papers_accepted": 1' in release_text
+
+
 def test_release_check_requires_document_list_and_detail_smoke_paths():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")

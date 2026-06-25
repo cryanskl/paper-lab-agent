@@ -129,11 +129,28 @@ def run_smoke() -> dict:
         assert_ok(crawl_run["jobs"], "expected crawl run to create a job")
         crawl_job_id = crawl_run["jobs"][0]["job_id"]
         crawl_job = assert_status(client.get(f"/api/v1/crawl/jobs/{crawl_job_id}"), 200, "crawl job detail")
+        crawl_job_list = assert_status(client.get("/api/v1/crawl/jobs"), 200, "crawl job list")
+        listed_crawl_job = next(
+            (item for item in crawl_job_list["items"] if item["id"] == crawl_job_id),
+            None,
+        )
+        assert_ok(crawl_job_list["total"] == 1, f"expected one crawl job in list, got {crawl_job_list}")
+        assert_ok(listed_crawl_job is not None, f"expected crawl job {crawl_job_id} in list, got {crawl_job_list}")
+        assert_ok(
+            crawl_job["journal"]["name"] == "Plasma Sources Science and Technology",
+            f"expected crawl job journal summary, got {crawl_job}",
+        )
+        assert_ok(
+            listed_crawl_job["journal"]["name"] == crawl_job["journal"]["name"],
+            f"expected crawl job list journal summary to match detail, got {listed_crawl_job}",
+        )
         crawl_diagnostics = crawl_job["diagnostics"]
         assert_ok(crawl_diagnostics["status"] == "success", f"expected crawl job success, got {crawl_diagnostics}")
         assert_ok(crawl_diagnostics["papers_found"] == 2, f"expected crawl papers_found=2, got {crawl_diagnostics}")
         assert_ok(crawl_diagnostics["papers_filtered"] == 1, f"expected crawl papers_filtered=1, got {crawl_diagnostics}")
         assert_ok(crawl_diagnostics["papers_new"] == 1, f"expected crawl papers_new=1, got {crawl_diagnostics}")
+        assert_ok(crawl_diagnostics["outcome"] == "new_papers", f"expected crawl outcome=new_papers, got {crawl_diagnostics}")
+        assert_ok(crawl_diagnostics["papers_accepted"] == 1, f"expected crawl papers_accepted=1, got {crawl_diagnostics}")
         crawled_search = assert_status(client.get("/api/v1/papers?q=smoke crawl"), 200, "crawled paper search")
         assert_ok(crawled_search["total"] >= 1, f"expected crawled paper to be searchable, got {crawled_search}")
         crawled_paper_id = crawled_search["items"][0]["id"]
@@ -485,6 +502,11 @@ def run_smoke() -> dict:
             "crawl_job_found": crawl_diagnostics["papers_found"],
             "crawl_job_filtered": crawl_diagnostics["papers_filtered"],
             "crawl_job_new": crawl_diagnostics["papers_new"],
+            "crawl_job_list_total": crawl_job_list["total"],
+            "crawl_job_detail_status": crawl_job["status"],
+            "crawl_job_detail_journal_name": crawl_job["journal"]["name"],
+            "crawl_job_detail_diagnostics_outcome": crawl_diagnostics["outcome"],
+            "crawl_job_detail_diagnostics_papers_accepted": crawl_diagnostics["papers_accepted"],
             "crawled_papers": crawled_search["total"],
             "auto_classify_category_count": len(auto_classify_details),
             "auto_classify_method": auto_classify_details[0]["method"],
