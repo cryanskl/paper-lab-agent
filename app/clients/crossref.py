@@ -114,7 +114,7 @@ class CrossrefClient:
             .removeprefix("https://dx.doi.org/")
             .removeprefix("http://dx.doi.org/")
             .removeprefix("doi:")
-        )
+        ).strip()
 
     def first_text(self, value: Any, default: Optional[str] = None) -> Optional[str]:
         if isinstance(value, str) and value.strip():

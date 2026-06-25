@@ -120,7 +120,7 @@ class OpenAlexClient:
             .removeprefix("https://dx.doi.org/")
             .removeprefix("http://dx.doi.org/")
             .removeprefix("doi:")
-        )
+        ).strip()
 
     def normalize_authors(self, value: Any) -> list[dict[str, Optional[str]]]:
         if not isinstance(value, list):
