@@ -207,6 +207,15 @@ def run_smoke() -> dict:
             oa_only_search["total"] == 1,
             f"expected oa-only search to return one paper, got {oa_only_search}",
         )
+        year_filter_search = assert_status(
+            client.get("/api/v1/papers?q=smoke crawl&year_from=2026&year_to=2026"),
+            200,
+            "year-filtered paper search",
+        )
+        assert_ok(
+            year_filter_search["total"] == 1,
+            f"expected year-filtered search to return one paper, got {year_filter_search}",
+        )
 
         smoke_pdf = (
             b"%PDF-1.4\nArgon plasma chemistry and electron impact reactions. "
@@ -432,6 +441,7 @@ def run_smoke() -> dict:
             "manual_resolve_oa_status": manual_resolve_oa["oa_status"],
             "manual_resolve_oa_pdf_url": manual_resolve_oa["oa_pdf_url"],
             "oa_only_search_hits": oa_only_search["total"],
+            "year_filter_search_hits": year_filter_search["total"],
             "document_id": document_id,
             "duplicate_upload_status": duplicate_upload.status_code,
             "duplicate_document_id": duplicate_document["id"],

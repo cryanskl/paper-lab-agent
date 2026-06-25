@@ -198,6 +198,7 @@ expected = {
     "oa_only_search_hits": 1,
     "papers": 2,
     "paper_categories": 1,
+    "year_filter_search_hits": 1,
     "sections": 1,
     "chunks": 1,
     "rag_sources": 1,
