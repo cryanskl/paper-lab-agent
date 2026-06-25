@@ -1174,6 +1174,9 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["duplicate_upload_status"] == 409
     assert result["duplicate_document_id"] == result["document_id"]
     assert result["translation_status"] == "done"
+    assert result["sections"] == 1
+    assert result["chunks"] == 1
+    assert result["rag_sources"] == 1
     assert result["reaction_sets"] == 1
     assert result["reactions"] == 1
     assert result["blocked_export_status"] == 409
@@ -1218,6 +1221,9 @@ def test_smoke_check_script_outputs_json():
     assert payload["crawled_papers"] >= 1
     assert payload["duplicate_upload_status"] == 409
     assert payload["translation_status"] == "done"
+    assert payload["sections"] == 1
+    assert payload["chunks"] == 1
+    assert payload["rag_sources"] == 1
     assert payload["blocked_export_status"] == 409
     assert payload["verified_export_format"] == "json"
     assert payload["verified_export_formats"] == ["json", "txt", "bolsig"]
@@ -5756,6 +5762,9 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "crawled_papers" in release_text
     assert "paper_categories" in release_text
     assert "status_counts" in release_text
+    assert "sections" in release_text
+    assert "chunks" in release_text
+    assert "rag_sources" in release_text
     assert "duplicate_upload_status" in release_text
     assert "verified_export_reactions" in release_text
     assert "verified_export_audit_entries" in release_text
@@ -5782,6 +5791,9 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert '"crawled_papers"' in smoke_text
     assert '"paper_categories"' in smoke_text
     assert '"status_counts"' in smoke_text
+    assert '"sections"' in smoke_text
+    assert '"chunks"' in smoke_text
+    assert '"rag_sources"' in smoke_text
     assert '"duplicate_upload_status"' in smoke_text
     assert '"scheduler_job_ids"' in smoke_text
     assert '"verified_export_reactions"' in smoke_text
