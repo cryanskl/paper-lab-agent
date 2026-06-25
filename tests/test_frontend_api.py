@@ -314,6 +314,87 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
     ]
 
 
+def test_crawl_job_rows_summarize_diagnostics_and_workflow_state():
+    from app import frontend_api
+
+    rows = frontend_api.crawl_job_rows(
+        [
+            {
+                "id": 11,
+                "journal_id": 2,
+                "status": "success",
+                "period": "manual",
+                "date_from": "2026-01-01",
+                "date_to": "2026-01-31",
+                "journal": {"name": "Plasma Sources Science and Technology"},
+                "diagnostics": {
+                    "status": "success",
+                    "period": "manual",
+                    "date_from": "2026-01-01",
+                    "date_to": "2026-01-31",
+                    "papers_found": 12,
+                    "papers_filtered": 4,
+                    "papers_accepted": 8,
+                    "papers_existing": 3,
+                    "papers_new": 5,
+                    "outcome": "new_papers",
+                    "keyword_mode": "or",
+                    "keyword_terms": ["plasma chemistry", "argon"],
+                },
+            },
+            {
+                "id": 12,
+                "journal_id": 3,
+                "status": "failed",
+                "period": "weekly",
+                "error": "OpenAlex timeout",
+                "diagnostics": {"error": "OpenAlex timeout"},
+            },
+        ]
+    )
+
+    assert rows == [
+        {
+            "id": 11,
+            "journal": "Plasma Sources Science and Technology",
+            "status": "success",
+            "workflow_state": "success",
+            "period": "manual",
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-31",
+            "found": 12,
+            "filtered": 4,
+            "accepted": 8,
+            "existing": 3,
+            "new": 5,
+            "progress_summary": "12 found / 8 accepted / 5 new",
+            "outcome": "new_papers",
+            "keyword_mode": "or",
+            "keyword_terms": "plasma chemistry, argon",
+            "error": None,
+        },
+        {
+            "id": 12,
+            "journal": 3,
+            "status": "failed",
+            "workflow_state": "failed: OpenAlex timeout",
+            "period": "weekly",
+            "date_from": None,
+            "date_to": None,
+            "found": 0,
+            "filtered": 0,
+            "accepted": 0,
+            "existing": 0,
+            "new": 0,
+            "progress_summary": "0 found / 0 accepted / 0 new",
+            "outcome": None,
+            "keyword_mode": None,
+            "keyword_terms": "",
+            "error": "OpenAlex timeout",
+        },
+    ]
+
+
 def test_rag_source_rows_include_citation_and_location_labels():
     from app import frontend_api
 

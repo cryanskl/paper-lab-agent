@@ -110,6 +110,40 @@ def compact_parts(parts: list[Any]) -> list[str]:
     return [str(part) for part in parts if part is not None and str(part) != ""]
 
 
+def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for job in jobs:
+        diagnostics = job.get("diagnostics") or {}
+        journal = job.get("journal") or {}
+        status = diagnostics.get("status") or job.get("status")
+        error = diagnostics.get("error") or job.get("error")
+        found = int(diagnostics.get("papers_found") or 0)
+        accepted = int(diagnostics.get("papers_accepted") or 0)
+        new = int(diagnostics.get("papers_new") or 0)
+        rows.append(
+            {
+                "id": job.get("id") or job.get("job_id"),
+                "journal": journal.get("name") or diagnostics.get("journal_name") or job.get("journal_id"),
+                "status": status,
+                "workflow_state": f"failed: {error}" if status == "failed" and error else str(status or "unknown"),
+                "period": diagnostics.get("period") or job.get("period"),
+                "date_from": diagnostics.get("date_from") or job.get("date_from"),
+                "date_to": diagnostics.get("date_to") or job.get("date_to"),
+                "found": found,
+                "filtered": int(diagnostics.get("papers_filtered") or 0),
+                "accepted": accepted,
+                "existing": int(diagnostics.get("papers_existing") or 0),
+                "new": new,
+                "progress_summary": f"{found} found / {accepted} accepted / {new} new",
+                "outcome": diagnostics.get("outcome"),
+                "keyword_mode": diagnostics.get("keyword_mode"),
+                "keyword_terms": ", ".join(diagnostics.get("keyword_terms") or []),
+                "error": error,
+            }
+        )
+    return rows
+
+
 def rag_source_rows(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for source in sources:

@@ -11462,25 +11462,13 @@ def test_streamlit_sidebar_can_check_grobid_live_status():
 def test_streamlit_crawl_jobs_table_flattens_diagnostics():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    flatten_helper = streamlit[streamlit.index("def flatten_crawl_job_rows") : streamlit.index("st.set_page_config")]
     search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
 
-    for required in [
-        "diagnostics",
-        "journal",
-        "papers_found",
-        "papers_filtered",
-        "papers_accepted",
-        "papers_existing",
-        "papers_new",
-        "outcome",
-        "keyword_mode",
-        "keyword_terms",
-    ]:
-        assert required in flatten_helper
+    assert "crawl_job_rows" in streamlit
+    assert "def flatten_crawl_job_rows" not in streamlit
     assert 'st.caption(f"outcome: {diagnostics.get(\'outcome\') or \'unknown\'}")' in search_section
-    assert "flatten_crawl_job_rows(jobs)" in search_section
-    assert 'st.dataframe(flatten_crawl_job_rows(jobs), use_container_width=True)' in search_section
+    assert "crawl_job_rows(jobs)" in search_section
+    assert "st.dataframe(crawl_job_rows(jobs), use_container_width=True)" in search_section
 
 
 def test_streamlit_crawl_jobs_show_empty_state():
@@ -11664,7 +11652,7 @@ def test_streamlit_api_put_preserves_json_errors_for_callers():
 def test_streamlit_config_tab_exposes_journal_and_category_management():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    helper_section = streamlit[: streamlit.index("def flatten_crawl_job_rows")]
+    helper_section = streamlit[: streamlit.index("st.set_page_config")]
     assert "配置" in streamlit
     config_section = streamlit[streamlit.index("with config_tab:") :]
     assert "def api_delete(path: str):" in helper_section

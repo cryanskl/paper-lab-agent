@@ -4,7 +4,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from app.frontend_api import rag_source_rows, reaction_review_rows, reaction_set_rows, request_json, request_json_status
+from app.frontend_api import crawl_job_rows, rag_source_rows, reaction_review_rows, reaction_set_rows, request_json, request_json_status
 
 
 API_BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000/api/v1").rstrip("/")
@@ -24,33 +24,6 @@ def api_put(path: str, json=None):
 
 def api_delete(path: str):
     return request_json_status("DELETE", API_BASE, path, timeout=20)
-
-
-def flatten_crawl_job_rows(jobs: list[dict]) -> list[dict]:
-    rows = []
-    for job in jobs:
-        diagnostics = job.get("diagnostics") or {}
-        journal = job.get("journal") or {}
-        rows.append(
-            {
-                "id": job.get("id") or job.get("job_id"),
-                "journal": journal.get("name") or diagnostics.get("journal_name") or job.get("journal_id"),
-                "status": diagnostics.get("status") or job.get("status"),
-                "period": diagnostics.get("period") or job.get("period"),
-                "date_from": diagnostics.get("date_from") or job.get("date_from"),
-                "date_to": diagnostics.get("date_to") or job.get("date_to"),
-                "found": diagnostics.get("papers_found", 0),
-                "filtered": diagnostics.get("papers_filtered", 0),
-                "accepted": diagnostics.get("papers_accepted", 0),
-                "existing": diagnostics.get("papers_existing", 0),
-                "new": diagnostics.get("papers_new", 0),
-                "outcome": diagnostics.get("outcome"),
-                "keyword_mode": diagnostics.get("keyword_mode"),
-                "keyword_terms": ", ".join(diagnostics.get("keyword_terms") or []),
-                "error": diagnostics.get("error") or job.get("error"),
-            }
-        )
-    return rows
 
 
 def format_category_summary(paper: dict) -> str:
@@ -335,7 +308,7 @@ with search_tab:
         f"page_size {crawl_jobs_response['page_size']} · "
         f"total {crawl_jobs_response['total']}"
     )
-    st.dataframe(flatten_crawl_job_rows(jobs), use_container_width=True)
+    st.dataframe(crawl_job_rows(jobs), use_container_width=True)
     if not jobs:
         st.info("暂无抓取任务。")
     else:
