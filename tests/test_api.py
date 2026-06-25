@@ -11,6 +11,7 @@ def health_check_counts(**overrides):
         "journals": 6,
         "papers": 1,
         "categories": 7,
+        "paper_categories": 0,
         "crawl_jobs": 0,
         "documents": 0,
         "sections": 0,
@@ -5734,6 +5735,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "config_warning_count" in release_text
     assert "crawl_job_status" in release_text
     assert "crawled_papers" in release_text
+    assert "paper_categories" in release_text
     assert "duplicate_upload_status" in release_text
     assert "verified_export_reactions" in release_text
     assert "verified_export_audit_entries" in release_text
@@ -5758,6 +5760,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert '"/api/v1/crawl/run"' in smoke_text
     assert '"crawl_job_status"' in smoke_text
     assert '"crawled_papers"' in smoke_text
+    assert '"paper_categories"' in smoke_text
     assert '"duplicate_upload_status"' in smoke_text
     assert '"scheduler_job_ids"' in smoke_text
     assert '"verified_export_reactions"' in smoke_text
@@ -5917,6 +5920,7 @@ def test_system_status_contract_documents_operational_counts():
         "storage_health",
         "config_warnings",
         "categories",
+        "paper_categories",
         "crawl_jobs",
         "reaction_sets",
         "reactions",
@@ -5963,6 +5967,33 @@ def test_system_status_counts_reaction_audits(tmp_path):
     payload = client.get("/api/v1/system/status").json()
 
     assert payload["counts"]["reaction_audits"] == 1
+
+
+def test_system_status_counts_paper_categories(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        paper_id = conn.execute(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, ?, '[]', 'status-test', '{}')
+            """,
+            ("10.999/status-paper-category", "Status category paper", "argon plasma chemistry"),
+        ).lastrowid
+        category_id = conn.execute("SELECT id FROM categories WHERE slug='chemistry'").fetchone()["id"]
+        conn.execute(
+            """
+            INSERT INTO paper_categories (paper_id, category_id, confidence, method)
+            VALUES (?, ?, 0.9, 'manual')
+            """,
+            (paper_id, category_id),
+        )
+
+    payload = client.get("/api/v1/system/status").json()
+
+    assert payload["counts"]["paper_categories"] == 1
 
 
 def test_reaction_verify_contract_documents_clearable_review_fields():
@@ -6555,7 +6586,7 @@ def test_health_check_requires_operational_count_keys():
     )
 
     assert "counts missing keys" in "; ".join(errors)
-    for required in ["categories", "crawl_jobs", "reaction_sets", "reactions", "reaction_audits"]:
+    for required in ["categories", "paper_categories", "crawl_jobs", "reaction_sets", "reactions", "reaction_audits"]:
         assert required in "; ".join(errors)
 
 

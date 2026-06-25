@@ -159,6 +159,7 @@ async def status(check_external: bool = False) -> dict:
             "journals": table_count("journals"),
             "papers": table_count("papers"),
             "categories": table_count("categories"),
+            "paper_categories": table_count("paper_categories"),
             "crawl_jobs": table_count("crawl_jobs"),
             "documents": table_count("documents"),
             "sections": table_count("sections"),

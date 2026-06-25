@@ -110,6 +110,9 @@ if payload.get("crawl_job_new", 0) < 1:
 if payload.get("crawled_papers", 0) < 1:
     print(f"release_check failed: smoke crawled_papers={payload.get('crawled_papers')!r}, expected >= 1", file=sys.stderr)
     raise SystemExit(1)
+if "paper_categories" not in payload:
+    print("release_check failed: smoke paper_categories is missing", file=sys.stderr)
+    raise SystemExit(1)
 if not payload.get("duplicate_document_id"):
     print("release_check failed: smoke duplicate_document_id is missing", file=sys.stderr)
     raise SystemExit(1)

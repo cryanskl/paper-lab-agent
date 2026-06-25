@@ -54,6 +54,7 @@ COUNT_REQUIRED_KEYS = {
     "journals",
     "papers",
     "categories",
+    "paper_categories",
     "crawl_jobs",
     "documents",
     "sections",

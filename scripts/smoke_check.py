@@ -307,6 +307,7 @@ def run_smoke() -> dict:
         assert_ok(isinstance(config_warnings, list), "expected config_warnings list")
         counts = status["counts"]
         assert_ok(counts["papers"] >= 2, "expected system status to include fixture papers")
+        assert_ok("paper_categories" in counts, "expected paper category count")
         assert_ok(counts["documents"] == 1, "expected one smoke document")
         assert_ok(counts["sections"] >= 1, "expected parsed section count")
         assert_ok(counts["chunks"] >= 1, "expected indexed chunk count")
@@ -318,6 +319,7 @@ def run_smoke() -> dict:
         return {
             "fixture": fixture_result,
             "papers": papers["total"],
+            "paper_categories": counts["paper_categories"],
             "crawl_jobs": counts["crawl_jobs"],
             "crawl_job_status": crawl_diagnostics["status"],
             "crawl_job_found": crawl_diagnostics["papers_found"],
