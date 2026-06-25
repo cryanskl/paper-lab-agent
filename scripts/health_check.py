@@ -2,7 +2,6 @@
 import argparse
 import json
 import os
-import shlex
 import sys
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -77,13 +76,23 @@ STATUS_COUNT_REQUIRED_KEYS = {
 
 
 def clean_env_value(value: str) -> str:
-    try:
-        parts = shlex.split(value, comments=True, posix=True)
-    except ValueError:
-        return value.strip().strip('"').strip("'")
-    if not parts:
-        return ""
-    return " ".join(parts)
+    result = []
+    in_single = False
+    in_double = False
+    previous = ""
+    for char in value:
+        if char == "'" and not in_double:
+            in_single = not in_single
+        elif char == '"' and not in_single:
+            in_double = not in_double
+        elif char == "#" and not in_single and not in_double and (not result or previous.isspace()):
+            break
+        result.append(char)
+        previous = char
+    cleaned = "".join(result).strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {"'", '"'}:
+        return cleaned[1:-1]
+    return cleaned
 
 
 def load_env_file(path: Path = Path(".env")) -> None:

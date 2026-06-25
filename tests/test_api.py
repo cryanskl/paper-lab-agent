@@ -7804,6 +7804,23 @@ def test_health_check_uses_api_base_url_from_env_file(monkeypatch, tmp_path):
     ]
 
 
+def test_health_check_env_value_parser_preserves_unquoted_hashes():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_env_value_parser", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    assert health_check.clean_env_value("8001 # local override") == "8001"
+    assert health_check.clean_env_value("sk-test#not-comment # inline comment") == "sk-test#not-comment"
+    assert health_check.clean_env_value("http://ui.test/#/papers # inline comment") == "http://ui.test/#/papers"
+    assert health_check.clean_env_value('"sk-test#quoted" # inline comment') == "sk-test#quoted"
+
+
 def test_health_check_rejects_unexpected_api_prefix():
     import importlib.util
 
