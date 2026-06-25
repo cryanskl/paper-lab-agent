@@ -106,6 +106,60 @@ def request_json(
     return payload
 
 
+def compact_parts(parts: list[Any]) -> list[str]:
+    return [str(part) for part in parts if part is not None and str(part) != ""]
+
+
+def rag_source_rows(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for source in sources:
+        paper_id = source.get("paper_id")
+        document_id = source.get("document_id")
+        section_seq = source.get("section_seq")
+        section_id = source.get("section_id")
+        section_ref = section_seq if section_seq is not None else section_id
+        chunk_id = source.get("chunk_id")
+        citation = " · ".join(
+            compact_parts(
+                [
+                    f"paper {paper_id}" if paper_id is not None else None,
+                    f"doc {document_id}" if document_id is not None else None,
+                    f"section {section_ref}" if section_ref is not None else None,
+                    f"chunk {chunk_id}" if chunk_id is not None else None,
+                ]
+            )
+        )
+        source_location = " · ".join(
+            compact_parts(
+                [
+                    f"paper {paper_id}" if paper_id is not None else None,
+                    f"doc {document_id}" if document_id is not None else None,
+                    f"section {section_ref}" if section_ref is not None else None,
+                    source.get("section_type"),
+                    source.get("section_title"),
+                ]
+            )
+        )
+        rows.append(
+            {
+                "citation": f"[{citation}]" if citation else "[-]",
+                "source_location": source_location or "-",
+                "document_id": document_id,
+                "paper_id": paper_id,
+                "paper_title": source.get("paper_title"),
+                "section_id": section_id,
+                "section_seq": section_seq,
+                "section_title": source.get("section_title"),
+                "section_type": source.get("section_type"),
+                "source_excerpt": source.get("source_excerpt"),
+                "chunk_id": chunk_id,
+                "vector_id": source.get("vector_id"),
+                "score": source.get("score"),
+            }
+        )
+    return rows
+
+
 def reaction_review_rows(reactions: list[dict[str, Any]], *, only_unverified: bool = False) -> list[dict[str, Any]]:
     rows = []
     for reaction in reactions:

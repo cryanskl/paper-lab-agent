@@ -11227,18 +11227,14 @@ def test_streamlit_rag_tab_separates_answer_and_sources():
         "rag_payload",
         'rag_payload.get("answer")',
         'rag_payload.get("sources")',
+        "rag_source_rows",
         "引用来源",
         "st.dataframe(sources",
-        "paper_id",
-        "paper_title",
         "source_excerpt",
         'source_preview.get("source_excerpt")',
         "st.code(source_preview.get(\"source_excerpt\")",
-        "chunk_id",
-        "section_title",
-        "section_id",
-        "section_seq",
-        "section_type",
+        "source_location",
+        "citation",
     ]:
         assert required in rag_section
 

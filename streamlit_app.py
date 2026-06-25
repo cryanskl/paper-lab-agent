@@ -4,7 +4,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from app.frontend_api import reaction_review_rows, request_json, request_json_status
+from app.frontend_api import rag_source_rows, reaction_review_rows, request_json, request_json_status
 
 
 API_BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000/api/v1").rstrip("/")
@@ -778,35 +778,14 @@ with rag_tab:
             else:
                 answer = rag_payload.get("answer") or ""
                 st.markdown(answer)
-                sources = [
-                    {
-                        "document_id": source.get("document_id"),
-                        "paper_id": source.get("paper_id"),
-                        "paper_title": source.get("paper_title"),
-                        "section_id": source.get("section_id"),
-                        "section_seq": source.get("section_seq"),
-                        "section_title": source.get("section_title"),
-                        "section_type": source.get("section_type"),
-                        "source_excerpt": source.get("source_excerpt"),
-                        "chunk_id": source.get("chunk_id"),
-                        "vector_id": source.get("vector_id"),
-                        "score": source.get("score"),
-                    }
-                    for source in rag_payload.get("sources") or []
-                ]
+                sources = rag_source_rows(rag_payload.get("sources") or [])
                 st.subheader("引用来源")
                 if sources:
                     st.dataframe(sources, use_container_width=True)
                     source_preview = st.selectbox(
                         "source chunk",
                         sources,
-                        format_func=lambda source: (
-                            f"paper {source.get('paper_id') or '-'} · "
-                            f"doc {source.get('document_id')} · "
-                            f"section {source.get('section_seq') or source.get('section_id') or '-'} · "
-                            f"chunk_id={source.get('chunk_id')} · "
-                            f"{source.get('section_title') or '-'}"
-                        ),
+                        format_func=lambda source: f"{source.get('citation')} · {source.get('source_location')}",
                     )
                     if source_preview.get("source_excerpt"):
                         st.code(source_preview.get("source_excerpt"))

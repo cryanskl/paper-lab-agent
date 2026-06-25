@@ -211,3 +211,63 @@ def test_reaction_review_rows_can_focus_unverified_source_metadata():
             "source_excerpt": "e + Ar -> e + e + Ar+ .",
         }
     ]
+
+
+def test_rag_source_rows_include_citation_and_location_labels():
+    from app import frontend_api
+
+    sources = [
+        {
+            "document_id": 3,
+            "paper_id": 7,
+            "paper_title": "Argon plasma chemistry",
+            "section_id": 12,
+            "section_seq": 4,
+            "section_title": "Reaction table",
+            "section_type": "table",
+            "source_excerpt": "e + Ar -> e + e + Ar+",
+            "chunk_id": 19,
+            "vector_id": "doc-3-section-12-chunk-19",
+            "score": 0.875,
+        },
+        {
+            "document_id": 4,
+            "section_id": 20,
+            "section_title": "Appendix",
+        },
+    ]
+
+    rows = frontend_api.rag_source_rows(sources)
+
+    assert rows == [
+        {
+            "citation": "[paper 7 · doc 3 · section 4 · chunk 19]",
+            "source_location": "paper 7 · doc 3 · section 4 · table · Reaction table",
+            "document_id": 3,
+            "paper_id": 7,
+            "paper_title": "Argon plasma chemistry",
+            "section_id": 12,
+            "section_seq": 4,
+            "section_title": "Reaction table",
+            "section_type": "table",
+            "source_excerpt": "e + Ar -> e + e + Ar+",
+            "chunk_id": 19,
+            "vector_id": "doc-3-section-12-chunk-19",
+            "score": 0.875,
+        },
+        {
+            "citation": "[doc 4 · section 20]",
+            "source_location": "doc 4 · section 20 · Appendix",
+            "document_id": 4,
+            "paper_id": None,
+            "paper_title": None,
+            "section_id": 20,
+            "section_seq": None,
+            "section_title": "Appendix",
+            "section_type": None,
+            "source_excerpt": None,
+            "chunk_id": None,
+            "vector_id": None,
+            "score": None,
+        },
+    ]
