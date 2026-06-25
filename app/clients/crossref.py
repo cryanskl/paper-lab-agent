@@ -139,8 +139,21 @@ class CrossrefClient:
             ]
             name = " ".join(name_parts)
             if name:
-                authors.append({"name": name, "affiliation": None})
+                affiliation = self.normalize_affiliations(item.get("affiliation"))
+                authors.append({"name": name, "affiliation": affiliation})
         return authors
+
+    def normalize_affiliations(self, value: Any) -> Optional[str]:
+        if not isinstance(value, list):
+            return None
+        names = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name")
+            if isinstance(name, str) and name.strip():
+                names.append(name.strip())
+        return "; ".join(names) if names else None
 
     def normalize_url(self, value: Any) -> Optional[str]:
         if isinstance(value, str) and value.strip():

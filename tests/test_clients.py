@@ -136,6 +136,36 @@ def test_crossref_strips_author_name_parts():
     assert work["authors"] == [{"name": "Jane Doe", "affiliation": None}]
 
 
+def test_crossref_preserves_author_affiliations():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/crossref-affiliations",
+            "title": ["Crossref affiliations"],
+            "author": [
+                {
+                    "given": "Jane",
+                    "family": "Doe",
+                    "affiliation": [
+                        {"name": "Princeton Plasma Physics Laboratory"},
+                        {"name": "  MIT Plasma Science  "},
+                        {"name": {"value": "Malformed"}},
+                        "malformed-affiliation",
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert work["authors"] == [
+        {
+            "name": "Jane Doe",
+            "affiliation": "Princeton Plasma Physics Laboratory; MIT Plasma Science",
+        }
+    ]
+
+
 def test_crossref_tolerates_malformed_published_date_fields():
     client = CrossrefClient()
 
