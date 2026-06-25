@@ -42,6 +42,26 @@ REQUIRED_INDEXES = [
 ]
 REQUIRED_TRIGGERS = ["papers_ai", "papers_ad", "papers_au"]
 SEED_COUNTS = {"journals": 6, "categories": 7}
+REQUIRED_COLUMNS = {
+    "reactions": [
+        "id",
+        "reaction_set_id",
+        "reaction",
+        "reaction_type",
+        "reactants",
+        "products",
+        "rate_type",
+        "rate_value",
+        "threshold_ev",
+        "reference",
+        "cross_section_url",
+        "source_section_id",
+        "source_label",
+        "source_excerpt",
+        "confidence",
+        "verified",
+    ],
+}
 
 
 def sqlite_names(conn: sqlite3.Connection, object_type: str) -> set[str]:
@@ -49,6 +69,10 @@ def sqlite_names(conn: sqlite3.Connection, object_type: str) -> set[str]:
         row[0]
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type=? ORDER BY name", (object_type,)).fetchall()
     }
+
+
+def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
 
 
 def validate_fts(conn: sqlite3.Connection) -> list[str]:
@@ -105,6 +129,13 @@ def validate_schema(schema_path: Path = DEFAULT_SCHEMA_PATH) -> list[str]:
             for trigger in REQUIRED_TRIGGERS:
                 if trigger not in triggers:
                     issues.append(f"missing trigger: {trigger}")
+            for table, columns in REQUIRED_COLUMNS.items():
+                if table not in tables:
+                    continue
+                existing_columns = table_columns(conn, table)
+                for column in columns:
+                    if column not in existing_columns:
+                        issues.append(f"missing column: {table}.{column}")
 
             for table, expected_count in SEED_COUNTS.items():
                 if table in tables:
