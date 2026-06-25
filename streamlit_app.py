@@ -630,7 +630,7 @@ with documents_tab:
             page=int(chunks_page),
             page_size=int(chunks_page_size),
         )
-        index_status = "indexed" if chunks["indexed"] else "not indexed"
+        index_status = chunks.get("index_status") or ("indexed" if chunks["indexed"] else "not_indexed")
         st.caption(f"index_status: {index_status} · chunks: {chunks['total']}")
         if chunks.get("index_error"):
             st.warning(f"index_error: {chunks['index_error']}")

@@ -9041,6 +9041,15 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
     assert 'type=["pdf", "txt"]' not in documents_section
 
 
+def test_streamlit_documents_tab_preserves_api_index_status_values():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    assert 'chunks.get("index_status")' in documents_section
+    assert 'if chunks["indexed"] else "not indexed"' not in documents_section
+
+
 def test_streamlit_documents_tab_offers_tei_xml_download():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
