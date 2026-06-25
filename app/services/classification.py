@@ -121,6 +121,8 @@ def parse_classifier_response_content(content: str) -> dict[str, Any]:
         raise ValueError("classifier response content must be a JSON object")
     if not isinstance(data.get("categories"), list):
         raise ValueError("classifier response content missing categories list")
+    if not all(isinstance(item, dict) for item in data["categories"]):
+        raise ValueError("classifier response categories items must be JSON objects")
     return data
 
 

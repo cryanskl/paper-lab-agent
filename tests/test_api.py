@@ -5350,6 +5350,31 @@ def test_openai_classifier_reports_non_list_categories_field():
         )
 
 
+def test_openai_classifier_reports_non_object_category_items():
+    import json
+
+    import httpx
+    import pytest
+
+    from app.services.classification import OpenAICompatibleClassifier
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps({"categories": ["chemistry"]})}}]})
+
+    classifier = OpenAICompatibleClassifier(
+        "test-key",
+        "http://llm.test/v1",
+        "classify-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match="classifier response categories items must be JSON objects"):
+        classifier.classify(
+            "argon oxygen plasma chemistry",
+            [{"id": 2, "slug": "chemistry", "name": "Plasma chemistry"}],
+        )
+
+
 def test_translate_document_preserves_table_and_reference_sections(tmp_path, monkeypatch):
     make_client(tmp_path)
 
