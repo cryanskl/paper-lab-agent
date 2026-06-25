@@ -17,6 +17,10 @@ def normalize_base_url(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
+def normalize_path(path: str) -> str:
+    return f"/{path.lstrip('/')}"
+
+
 def summarize_text(text: str, limit: int = ERROR_TEXT_LIMIT) -> str:
     value = " ".join((text or "").split())
     if len(value) <= limit:
@@ -61,7 +65,7 @@ def request_json_status(
     try:
         response = requests.request(
             method,
-            f"{normalize_base_url(base_url)}{path}",
+            f"{normalize_base_url(base_url)}{normalize_path(path)}",
             params=params,
             json=json,
             files=files,
