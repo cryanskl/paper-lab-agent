@@ -1,6 +1,7 @@
 import asyncio
 import html
 import re
+from datetime import date
 from typing import Any, Optional
 
 import httpx
@@ -134,6 +135,10 @@ class CrossrefClient:
             return None, None
         parts = value[0]
         if not parts or any(isinstance(part, bool) or not isinstance(part, int) for part in parts):
+            return None, None
+        try:
+            date(parts[0], parts[1] if len(parts) > 1 else 1, parts[2] if len(parts) > 2 else 1)
+        except ValueError:
             return None, None
         return "-".join(str(part).zfill(2) for part in parts), parts[0]
 
