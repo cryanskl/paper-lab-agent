@@ -101,7 +101,7 @@ bash scripts/release_check.sh
 这条命令会执行与 CI 相同的离线发布检查：校验启动脚本语法、编译关键脚本、运行全量测试。
 
 `python scripts/health_check.py --check-frontend` 会额外探测 Streamlit `/_stcore/health`，用于确认 `scripts/dev.sh` 启动后的后端和前端都可访问。
-`python scripts/health_check.py --summary-only --compact` 会输出短摘要，包含 `api_status`、`demo_data_ready`、`failed_workflows`、`config_warning_count` 和 `storage_writable`，适合发布或演示前快速确认 live 环境。
+`python scripts/health_check.py --summary-only --compact` 会输出短摘要，包含 `api_status`、`demo_data_ready`、`failed_workflows`、`config_warning_count` 和 `storage_writable`，适合发布或演示前快速确认 live 环境；搭配 `--check-frontend` 时还会返回 `frontend_ok`、`frontend_status_code` 和 `frontend_url`。
 `python scripts/health_check.py --require-storage-writable` 会在数据目录、PDF/TEI/翻译/导出目录、数据库父目录或向量索引父目录不可写时返回非零，适合发布前预检本机运行环境。
 `python scripts/health_check.py --require-no-failed-workflows` 会在抓取、解析、索引、翻译、化学抽取或反应集复核状态统计中存在 failed 项时返回非零，适合部署前确认没有已知失败积压。
 `python scripts/health_check.py --require-no-config-warnings` 会在 OpenAlex、Unpaywall、LLM、向量后端等配置告警存在时返回非零，适合正式演示或部署前确认外部能力已按预期配置。

@@ -5,6 +5,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -513,7 +514,7 @@ def demo_data_errors(status: dict) -> list[str]:
     return errors
 
 
-def health_summary(health: dict, status: dict) -> dict:
+def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) -> dict:
     safe_status = status if isinstance(status, dict) else {}
     runtime = safe_status.get("runtime")
     if not isinstance(runtime, dict):
@@ -524,7 +525,7 @@ def health_summary(health: dict, status: dict) -> dict:
     config_warnings = safe_status.get("config_warnings")
     if not isinstance(config_warnings, list):
         config_warnings = []
-    return {
+    summary = {
         "service": health.get("service") if isinstance(health, dict) else None,
         "api_status": health.get("status") if isinstance(health, dict) else None,
         "api_prefix": runtime.get("api_prefix"),
@@ -535,6 +536,15 @@ def health_summary(health: dict, status: dict) -> dict:
         "config_warning_count": len(config_warnings),
         "storage_writable": storage_writability_errors(safe_status) == [],
     }
+    if frontend is not None:
+        summary.update(
+            {
+                "frontend_url": frontend.get("url"),
+                "frontend_status_code": frontend.get("status_code"),
+                "frontend_ok": frontend.get("status_code") == 200,
+            }
+        )
+    return summary
 
 
 def main() -> int:
@@ -571,7 +581,7 @@ def main() -> int:
         output["frontend"] = frontend
     print(
         json.dumps(
-            health_summary(health, status) if args.summary_only else output,
+            health_summary(health, status, frontend) if args.summary_only else output,
             ensure_ascii=False,
             indent=None if args.compact else 2,
         )

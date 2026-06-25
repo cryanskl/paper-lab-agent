@@ -6501,6 +6501,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "python scripts/prepare_demo_data.py --compact",
         "python scripts/prepare_demo_data.py --summary-only --compact",
         "`summary.ready`",
+        "`frontend_ok`",
         "python -m scripts.smoke_check",
         "bash scripts/release_check.sh",
         "PAPER_LAB_SCHEDULER_ENABLED=true",
@@ -8903,6 +8904,79 @@ def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
     assert "health" not in summary
     assert "status" not in summary
     assert captured.out.count("\n") == 1
+
+
+def test_health_check_summary_only_includes_frontend_probe(monkeypatch, capsys):
+    import importlib.util
+    import json
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_summary_frontend", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(version="0.1.0"),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
+        }
+
+    def fake_fetch_status(url: str, timeout: float) -> int:
+        return 200
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(health_check, "fetch_status", fake_fetch_status, raising=False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "health_check.py",
+            "--base-url",
+            "http://api.test",
+            "--check-frontend",
+            "--frontend-url",
+            "http://ui.test",
+            "--summary-only",
+            "--compact",
+        ],
+    )
+
+    assert health_check.main() == 0
+    captured = capsys.readouterr()
+    summary = json.loads(captured.out)
+    assert summary["frontend_url"] == "http://ui.test/_stcore/health"
+    assert summary["frontend_status_code"] == 200
+    assert summary["frontend_ok"] is True
+    assert "frontend" not in summary
 
 
 def test_health_check_can_include_streamlit_frontend_probe(monkeypatch, capsys):
