@@ -9297,6 +9297,26 @@ def test_streamlit_sidebar_surfaces_storage_health():
         assert required in sidebar_section
 
 
+def test_streamlit_sidebar_surfaces_workflow_status_counts():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+
+    for required in [
+        "状态分布",
+        "status_counts",
+        "crawl_jobs",
+        "document_parse",
+        "document_index",
+        "document_chemistry",
+        "translations",
+        "reaction_sets",
+        "status_count_rows",
+        "st.dataframe(status_count_rows",
+    ]:
+        assert required in sidebar_section
+
+
 def test_streamlit_sidebar_can_check_grobid_live_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

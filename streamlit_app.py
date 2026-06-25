@@ -131,6 +131,16 @@ with st.sidebar:
                 st.caption(f"vector_db valid_json: {valid_json_label}")
             if health_entry.get("error"):
                 st.warning(f"{key} error: {health_entry['error']}")
+    status_counts = status.get("status_counts", {})
+    if status_counts:
+        st.subheader("状态分布")
+        status_count_rows = [
+            {"workflow": workflow, "status": state, "count": count}
+            for workflow in ["crawl_jobs", "document_parse", "document_index", "document_chemistry", "translations", "reaction_sets"]
+            for state, count in (status_counts.get(workflow) or {}).items()
+        ]
+        if status_count_rows:
+            st.dataframe(status_count_rows, use_container_width=True)
     config_warnings = status.get("config_warnings") or []
     if config_warnings:
         st.subheader("配置提示")
