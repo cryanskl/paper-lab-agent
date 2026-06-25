@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, field_validator
 
-from app.clients.unpaywall import UnpaywallClient
+from app.clients.unpaywall import UnpaywallClient, oa_status
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
 from app.errors import AppError, page
@@ -194,7 +194,7 @@ async def resolve_oa(paper_id: int) -> dict:
     with get_conn() as conn:
         conn.execute(
             "UPDATE papers SET doi=?, oa_status=?, oa_pdf_url=?, raw_metadata=?, updated_at=datetime('now') WHERE id=?",
-            (normalized_doi, result.get("oa_status") or "unknown", result.get("oa_pdf_url"), json_dumps(raw_metadata), paper_id),
+            (normalized_doi, oa_status(result.get("oa_status")), result.get("oa_pdf_url"), json_dumps(raw_metadata), paper_id),
         )
     return get_paper(paper_id)
 
