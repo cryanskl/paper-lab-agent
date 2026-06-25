@@ -35,6 +35,7 @@ FALLBACK_STDLIB_MODULES = {
     "collections",
     "contextlib",
     "datetime",
+    "email",
     "fnmatch",
     "functools",
     "hashlib",

@@ -7,6 +7,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from app.clients.retry_after import retry_after_delay
+
 
 class CrossrefClient:
     base_url = "https://api.crossref.org"
@@ -89,12 +91,9 @@ class CrossrefClient:
 
     def retry_delay(self, attempt: int, response: Optional[httpx.Response] = None) -> float:
         if response is not None and response.status_code == 429:
-            retry_after = response.headers.get("Retry-After")
-            if retry_after:
-                try:
-                    return max(float(retry_after), 0.0)
-                except ValueError:
-                    pass
+            parsed_delay = retry_after_delay(response)
+            if parsed_delay is not None:
+                return parsed_delay
         return self.retry_backoff_seconds * (attempt + 1)
 
     def clean_abstract(self, value: Any) -> str:
