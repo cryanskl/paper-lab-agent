@@ -57,8 +57,11 @@ def infer_reaction_type(reactants: list[str], products: list[str]) -> str:
     reactant_electrons = sum(1 for species in reactants if species == "e")
     product_electrons = sum(1 for species in products if species == "e")
     produces_positive_ion = any(species.endswith("+") for species in products)
+    produces_negative_ion = any(species.endswith("-") or species.endswith("⁻") for species in products)
     if reactant_electrons >= 1 and product_electrons > reactant_electrons and produces_positive_ion:
         return "ionization"
+    if reactant_electrons >= 1 and produces_negative_ion:
+        return "attachment"
     return "unknown"
 
 

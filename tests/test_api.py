@@ -6044,6 +6044,7 @@ def test_extract_chemistry_handles_unicode_species_subscripts_and_charges(tmp_pa
 
     assert detail["status"] == "pending"
     assert detail["reactions"][0]["reaction"] == "e + O₂ -> O⁻ + O"
+    assert detail["reactions"][0]["reaction_type"] == "attachment"
     assert detail["reactions"][0]["reactants"] == ["e", "O₂"]
     assert detail["reactions"][0]["products"] == ["O⁻", "O"]
 
@@ -6082,6 +6083,7 @@ def test_extract_chemistry_handles_equilibrium_reaction_arrows(tmp_path):
 
     assert detail["status"] == "pending"
     assert detail["reactions"][0]["reaction"] == "e + O₂ -> O₂⁻"
+    assert detail["reactions"][0]["reaction_type"] == "attachment"
     assert detail["reactions"][0]["reactants"] == ["e", "O₂"]
     assert detail["reactions"][0]["products"] == ["O₂⁻"]
 
