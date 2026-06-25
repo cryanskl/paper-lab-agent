@@ -116,6 +116,19 @@ def test_crawl_service_strips_space_after_doi_prefix_for_dedupe():
     assert build_dedupe_key({"id": 2}, work) == "doi:10.5555/abc.def"
 
 
+def test_crawl_keyword_matching_collapses_internal_whitespace():
+    from app.services.crawl import matches_keywords, normalize_keyword_config
+
+    work = {
+        "title": "Low temperature plasma\nchemistry",
+        "abstract": "global    model for argon discharge",
+    }
+
+    assert normalize_keyword_config([" plasma   chemistry "]) == ("or", ["plasma chemistry"])
+    assert matches_keywords(work, [" plasma   chemistry "]) is True
+    assert matches_keywords(work, {"mode": "and", "terms": ["plasma   chemistry", "argon   discharge"]}) is True
+
+
 def test_health_seed_and_search(tmp_path):
     client = make_client(tmp_path)
     assert client.get("/health").json()["status"] == "ok"

@@ -11,6 +11,10 @@ from app.services.classification import get_classifier
 from app.utils import json_dumps, json_loads, now_iso, today_iso
 
 
+def normalize_text(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
 def normalize_keyword_config(keyword_config: Any) -> tuple[str, list[str]]:
     if isinstance(keyword_config, dict):
         mode = str(keyword_config.get("mode") or "or").lower()
@@ -20,7 +24,7 @@ def normalize_keyword_config(keyword_config: Any) -> tuple[str, list[str]]:
         terms = keyword_config or []
     if isinstance(terms, str):
         terms = [terms]
-    normalized_terms = [str(term).strip().lower() for term in terms if str(term).strip()]
+    normalized_terms = [normalize_text(term) for term in terms if normalize_text(term)]
     return ("and" if mode == "and" else "or", normalized_terms)
 
 
@@ -28,14 +32,10 @@ def matches_keywords(work: dict[str, Any], keywords: Any) -> bool:
     mode, terms = normalize_keyword_config(keywords)
     if not terms:
         return True
-    haystack = f"{work.get('title') or ''}\n{work.get('abstract') or ''}".lower()
+    haystack = normalize_text(f"{work.get('title') or ''}\n{work.get('abstract') or ''}")
     if mode == "and":
         return all(term in haystack for term in terms)
     return any(term in haystack for term in terms)
-
-
-def normalize_text(value: Any) -> str:
-    return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
 def optional_text(value: Any, default: Optional[str] = None) -> Optional[str]:
