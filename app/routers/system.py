@@ -166,5 +166,6 @@ async def status(check_external: bool = False) -> dict:
             "chunks": table_count("chunks"),
             "reaction_sets": table_count("reaction_sets"),
             "reactions": table_count("reactions"),
+            "reaction_audits": table_count("reaction_audits"),
         },
     }

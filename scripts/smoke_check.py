@@ -313,6 +313,7 @@ def run_smoke() -> dict:
         assert_ok(counts["translations"] == 1, "expected one translation")
         assert_ok(counts["reaction_sets"] == 1, "expected one reaction set")
         assert_ok(counts["reactions"] == 1, "expected one reaction")
+        assert_ok(counts["reaction_audits"] >= 1, "expected reaction audit count")
 
         return {
             "fixture": fixture_result,
@@ -335,6 +336,7 @@ def run_smoke() -> dict:
             "translation_output_path": translation["output_path"],
             "reaction_sets": counts["reaction_sets"],
             "reactions": counts["reactions"],
+            "reaction_audits": counts["reaction_audits"],
             "blocked_export_status": blocked_export.status_code,
             "verified_export_format": verified_export["format"],
             "verified_export_formats": [verified_export["format"], txt_export["format"], bolsig_export["format"]],

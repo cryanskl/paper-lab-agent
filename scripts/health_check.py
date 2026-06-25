@@ -61,6 +61,7 @@ COUNT_REQUIRED_KEYS = {
     "chunks",
     "reaction_sets",
     "reactions",
+    "reaction_audits",
 }
 
 

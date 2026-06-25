@@ -18,6 +18,7 @@ def health_check_counts(**overrides):
         "chunks": 0,
         "reaction_sets": 0,
         "reactions": 0,
+        "reaction_audits": 0,
     }
     counts.update(overrides)
     return counts
@@ -5686,6 +5687,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "duplicate_upload_status" in release_text
     assert "verified_export_reactions" in release_text
     assert "verified_export_audit_entries" in release_text
+    assert "reaction_audits" in release_text
     assert "verified_export_formats" in release_text
     assert "verified_export_text_files" in release_text
     assert "verified_export_bolsig_contains_header" in release_text
@@ -5710,6 +5712,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert '"scheduler_job_ids"' in smoke_text
     assert '"verified_export_reactions"' in smoke_text
     assert '"verified_export_audit_entries"' in smoke_text
+    assert '"reaction_audits"' in smoke_text
     assert '"verified_export_formats"' in smoke_text
     assert '"verified_export_text_files"' in smoke_text
     assert '"verified_export_bolsig_contains_header"' in smoke_text
@@ -5859,8 +5862,57 @@ def test_system_status_contract_documents_operational_counts():
     api_doc = (repo / "docs" / "接口设计文档.md").read_text(encoding="utf-8")
     system_section = api_doc[api_doc.index("## 模块 0") : api_doc.index("## 模块 A")]
 
-    for required in ["version", "storage_health", "config_warnings", "categories", "crawl_jobs", "reaction_sets", "reactions"]:
+    for required in [
+        "version",
+        "storage_health",
+        "config_warnings",
+        "categories",
+        "crawl_jobs",
+        "reaction_sets",
+        "reactions",
+        "reaction_audits",
+    ]:
         assert required in system_section
+
+
+def test_system_status_counts_reaction_audits(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name)
+            VALUES (?, ?, ?)
+            """,
+            (str(tmp_path / "audit.pdf"), "audit-status", "audit.pdf"),
+        ).lastrowid
+        reaction_set_id = conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, status)
+            VALUES (?, 'Audit status set', 'pending')
+            """,
+            (document_id,),
+        ).lastrowid
+        reaction_id = conn.execute(
+            """
+            INSERT INTO reactions (reaction_set_id, reaction, verified)
+            VALUES (?, 'e + Ar -> e + e + Ar+', 1)
+            """,
+            (reaction_set_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO reaction_audits (reaction_id, action, changes, verified_by)
+            VALUES (?, 'verify', '{}', 'status-test')
+            """,
+            (reaction_id,),
+        )
+
+    payload = client.get("/api/v1/system/status").json()
+
+    assert payload["counts"]["reaction_audits"] == 1
 
 
 def test_reaction_verify_contract_documents_clearable_review_fields():
@@ -6453,7 +6505,7 @@ def test_health_check_requires_operational_count_keys():
     )
 
     assert "counts missing keys" in "; ".join(errors)
-    for required in ["categories", "crawl_jobs", "reaction_sets", "reactions"]:
+    for required in ["categories", "crawl_jobs", "reaction_sets", "reactions", "reaction_audits"]:
         assert required in "; ".join(errors)
 
 

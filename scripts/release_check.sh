@@ -119,5 +119,11 @@ if payload.get("verified_export_audit_entries", 0) < 1:
         file=sys.stderr,
     )
     raise SystemExit(1)
+if payload.get("reaction_audits", 0) < 1:
+    print(
+        f"release_check failed: smoke reaction_audits={payload.get('reaction_audits')!r}, expected >= 1",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 PY
 "${PYTHON_CMD[@]}" -m pytest -q
