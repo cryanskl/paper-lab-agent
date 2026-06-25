@@ -50,6 +50,7 @@ def run_smoke() -> dict:
         from app.db import init_db
         from app.fixture_loader import load_fixture_papers
         from app.main import app
+        from app.routers import papers as papers_router
         from app.services import crawl as crawl_service
         from fastapi.testclient import TestClient
 
@@ -135,6 +136,38 @@ def run_smoke() -> dict:
         assert_ok(crawl_diagnostics["papers_new"] == 1, f"expected crawl papers_new=1, got {crawl_diagnostics}")
         crawled_search = assert_status(client.get("/api/v1/papers?q=smoke crawl"), 200, "crawled paper search")
         assert_ok(crawled_search["total"] >= 1, f"expected crawled paper to be searchable, got {crawled_search}")
+        crawled_paper_id = crawled_search["items"][0]["id"]
+
+        original_paper_unpaywall_client = papers_router.UnpaywallClient
+
+        class ManualResolveUnpaywallClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def resolve(self, doi: str) -> dict:
+                return {
+                    "oa_status": "green",
+                    "oa_pdf_url": f"https://example.test/manual-resolve-{doi.replace('/', '-')}.pdf",
+                    "raw": {"doi": doi, "oa_status": "green", "source": "smoke-manual-resolve"},
+                }
+
+        papers_router.UnpaywallClient = ManualResolveUnpaywallClient
+        try:
+            manual_resolve_oa = assert_status(
+                client.post(f"/api/v1/papers/{crawled_paper_id}/resolve-oa"),
+                200,
+                "manual resolve oa",
+            )
+        finally:
+            papers_router.UnpaywallClient = original_paper_unpaywall_client
+        assert_ok(
+            manual_resolve_oa["oa_status"] == "green",
+            f"expected manual resolve oa_status=green, got {manual_resolve_oa}",
+        )
+        assert_ok(
+            manual_resolve_oa.get("oa_pdf_url", "").startswith("https://example.test/manual-resolve-"),
+            f"expected manual resolve oa_pdf_url, got {manual_resolve_oa}",
+        )
 
         smoke_pdf = (
             b"%PDF-1.4\nArgon plasma chemistry and electron impact reactions. "
@@ -354,6 +387,8 @@ def run_smoke() -> dict:
             "crawl_job_filtered": crawl_diagnostics["papers_filtered"],
             "crawl_job_new": crawl_diagnostics["papers_new"],
             "crawled_papers": crawled_search["total"],
+            "manual_resolve_oa_status": manual_resolve_oa["oa_status"],
+            "manual_resolve_oa_pdf_url": manual_resolve_oa["oa_pdf_url"],
             "document_id": document_id,
             "duplicate_upload_status": duplicate_upload.status_code,
             "duplicate_document_id": duplicate_document["id"],

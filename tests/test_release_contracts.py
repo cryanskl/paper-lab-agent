@@ -448,6 +448,14 @@ def test_release_check_derives_expected_runtime_version_from_app_version():
     assert '"runtime_version": "0.1.0"' not in release_text
 
 
+def test_release_check_requires_manual_resolve_oa_smoke_path():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert '"manual_resolve_oa_status": "green"' in release_text
+    assert '"manual_resolve_oa_pdf_url"' in release_text
+
+
 def test_release_check_requires_export_confidence_smoke_metadata():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
