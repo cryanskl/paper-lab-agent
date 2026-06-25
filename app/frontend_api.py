@@ -166,6 +166,11 @@ def reaction_review_rows(reactions: list[dict[str, Any]], *, only_unverified: bo
         verified = bool(reaction.get("verified"))
         if only_unverified and verified:
             continue
+        section_ref = (
+            reaction.get("source_section_seq")
+            if reaction.get("source_section_seq") is not None
+            else reaction.get("source_section_id")
+        )
         source_section = " | ".join(
             str(part)
             for part in [
@@ -175,10 +180,20 @@ def reaction_review_rows(reactions: list[dict[str, Any]], *, only_unverified: bo
             ]
             if part is not None and part != ""
         )
+        source_location = " · ".join(
+            compact_parts(
+                [
+                    f"section {section_ref}" if section_ref is not None else None,
+                    reaction.get("source_section_type"),
+                    reaction.get("source_section_title"),
+                ]
+            )
+        )
         rows.append(
             {
                 "id": reaction.get("id"),
                 "verified": verified,
+                "review_state": "verified" if verified else "unverified",
                 "reaction": reaction.get("reaction"),
                 "confidence": reaction.get("confidence"),
                 "reaction_type": reaction.get("reaction_type"),
@@ -187,6 +202,7 @@ def reaction_review_rows(reactions: list[dict[str, Any]], *, only_unverified: bo
                 "threshold_ev": reaction.get("threshold_ev"),
                 "cross_section_url": reaction.get("cross_section_url"),
                 "source_section": source_section or "-",
+                "source_location": source_location or "-",
                 "source_section_id": reaction.get("source_section_id"),
                 "source_label": reaction.get("source_label"),
                 "source_excerpt": reaction.get("source_excerpt"),

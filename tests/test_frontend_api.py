@@ -198,6 +198,7 @@ def test_reaction_review_rows_can_focus_unverified_source_metadata():
         {
             "id": 1,
             "verified": False,
+            "review_state": "unverified",
             "reaction": "e + Ar -> e + e + Ar+",
             "confidence": 0.5,
             "reaction_type": "ionization",
@@ -206,11 +207,31 @@ def test_reaction_review_rows_can_focus_unverified_source_metadata():
             "threshold_ev": 15.76,
             "cross_section_url": "https://nl.lxcat.net/data/set/example",
             "source_section": "4 | table | Table 2",
+            "source_location": "section 4 · table · Table 2",
             "source_section_id": 12,
             "source_label": "table 4: Table 2",
             "source_excerpt": "e + Ar -> e + e + Ar+ .",
         }
     ]
+
+
+def test_reaction_review_rows_label_verified_state_and_sparse_source_location():
+    from app import frontend_api
+
+    rows = frontend_api.reaction_review_rows(
+        [
+            {
+                "id": 2,
+                "reaction": "Ar+ + e -> Ar",
+                "verified": 1,
+                "source_section_id": 22,
+                "source_section_title": "Appendix",
+            }
+        ]
+    )
+
+    assert rows[0]["review_state"] == "verified"
+    assert rows[0]["source_location"] == "section 22 · Appendix"
 
 
 def test_rag_source_rows_include_citation_and_location_labels():
