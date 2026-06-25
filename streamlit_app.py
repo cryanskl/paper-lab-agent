@@ -624,16 +624,20 @@ with documents_tab:
                     translation_error = translation_preview.get("error") or "unknown error"
                     st.warning(f"translation failed: {translation_error}")
                     st.json(translation_preview)
-                elif translation_preview.get("output_path") and Path(translation_preview.get("output_path")).exists():
+                elif translation_preview.get("output_path"):
                     output_path = Path(translation_preview.get("output_path"))
-                    translation_text = output_path.read_text(encoding="utf-8")
-                    st.download_button(
-                        "下载双语翻译",
-                        data=translation_text,
-                        file_name=output_path.name,
-                        mime="text/markdown",
-                    )
-                    st.markdown(translation_text[:4000])
+                    if output_path.exists():
+                        translation_text = output_path.read_text(encoding="utf-8")
+                        st.download_button(
+                            "下载双语翻译",
+                            data=translation_text,
+                            file_name=output_path.name,
+                            mime="text/markdown",
+                        )
+                        st.markdown(translation_text[:4000])
+                    else:
+                        st.warning(f"翻译文件不存在: {output_path}")
+                        st.json(translation_preview)
                 else:
                     st.json(translation_preview)
             except Exception as exc:
