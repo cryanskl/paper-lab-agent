@@ -689,6 +689,55 @@ def test_journal_crud_accepts_keyword_config_and_soft_deletes(tmp_path):
     assert missing.json()["error"]["code"] == "journal_not_found"
 
 
+def test_journal_normalizes_issn_fields_for_crawl_lookup(tmp_path):
+    client = make_client(tmp_path)
+
+    created = client.post(
+        "/api/v1/journals",
+        json={
+            "name": "ISSN Normalization Journal",
+            "issn_print": " 1234-567x ",
+            "issn_electronic": " 9876-5432 ",
+            "keywords": ["plasma"],
+        },
+    )
+
+    assert created.status_code == 201
+    journal = created.json()
+    assert journal["issn_print"] == "1234-567X"
+    assert journal["issn_electronic"] == "9876-5432"
+
+    updated = client.put(
+        f"/api/v1/journals/{journal['id']}",
+        json={"issn_print": " 1111-222x "},
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["issn_print"] == "1111-222X"
+
+
+def test_journal_rejects_invalid_issn_fields(tmp_path):
+    client = make_client(tmp_path)
+
+    created = client.post(
+        "/api/v1/journals",
+        json={"name": "Invalid ISSN Journal", "issn_print": "12345678"},
+    )
+    existing = client.post(
+        "/api/v1/journals",
+        json={"name": "Valid ISSN Journal", "issn_print": "1234-567X"},
+    ).json()
+    updated = client.put(
+        f"/api/v1/journals/{existing['id']}",
+        json={"issn_electronic": "not-an-issn"},
+    )
+
+    assert created.status_code == 422
+    assert created.json()["error"]["code"] == "validation_error"
+    assert updated.status_code == 422
+    assert updated.json()["error"]["code"] == "validation_error"
+
+
 def test_journal_keywords_reject_invalid_config(tmp_path):
     client = make_client(tmp_path)
 

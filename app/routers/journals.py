@@ -1,3 +1,4 @@
+import re
 from typing import Any, Optional, Union
 
 from fastapi import APIRouter, Query
@@ -10,6 +11,7 @@ from app.utils import json_dumps, json_loads, to_int
 router = APIRouter(prefix="/journals", tags=["journals"])
 
 KeywordConfig = Union[list[str], dict[str, Any]]
+ISSN_RE = re.compile(r"^\d{4}-\d{3}[\dX]$")
 
 
 def validate_keyword_config(value: KeywordConfig) -> KeywordConfig:
@@ -24,6 +26,17 @@ def validate_keyword_config(value: KeywordConfig) -> KeywordConfig:
     if not isinstance(terms, list) or not terms or any(not isinstance(term, str) or not term.strip() for term in terms):
         raise ValueError("keywords.terms must be a non-empty list of strings")
     return {"mode": mode, "terms": [term.strip() for term in terms]}
+
+
+def normalize_issn(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = value.strip().upper()
+    if not normalized:
+        return None
+    if ISSN_RE.fullmatch(normalized) is None:
+        raise ValueError("ISSN must match ####-###X")
+    return normalized
 
 
 class JournalIn(BaseModel):
@@ -44,6 +57,11 @@ class JournalIn(BaseModel):
     @classmethod
     def keywords_must_match_contract(cls, value: KeywordConfig) -> KeywordConfig:
         return validate_keyword_config(value)
+
+    @field_validator("issn_print", "issn_electronic")
+    @classmethod
+    def issn_must_match_contract(cls, value: Optional[str]) -> Optional[str]:
+        return normalize_issn(value)
 
     @field_validator("name")
     @classmethod
@@ -80,6 +98,11 @@ class JournalUpdate(BaseModel):
         if value is None:
             return None
         return validate_keyword_config(value)
+
+    @field_validator("issn_print", "issn_electronic")
+    @classmethod
+    def issn_must_match_contract(cls, value: Optional[str]) -> Optional[str]:
+        return normalize_issn(value)
 
     @field_validator("name")
     @classmethod
