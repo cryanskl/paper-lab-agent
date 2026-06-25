@@ -112,6 +112,19 @@ def sections_from_tei(tei: str) -> list[dict]:
                 rows.append(" ".join(cell for cell in cells if cell))
         return rows
 
+    def title_from_head_or_label(node: ET.Element, fallback: str) -> str:
+        head = find(node, "tei:head")
+        if head is not None:
+            title = clean_text(" ".join(head.itertext()))
+            if title:
+                return title
+        label = find(node, "tei:label")
+        if label is not None:
+            title = clean_text(" ".join(label.itertext()))
+            if title:
+                return title
+        return fallback
+
     def content_without_children(node: ET.Element, excluded: list[Optional[ET.Element]]) -> str:
         excluded_children = [excluded_child for excluded_child in excluded if excluded_child is not None]
         parts = [node.text or ""]
@@ -171,6 +184,7 @@ def sections_from_tei(tei: str) -> list[dict]:
 
     def append_figure(figure: ET.Element) -> None:
         head = find(figure, "tei:head")
+        label = find(figure, "tei:label")
         caption = find(figure, "tei:figDesc")
         if figure.get("type") == "table":
             nested_table = find(figure, ".//tei:table")
@@ -180,27 +194,28 @@ def sections_from_tei(tei: str) -> list[dict]:
             if nested_table is not None:
                 content_parts.extend(table_rows(nested_table))
             else:
-                fallback_content = content_without_children(figure, [head, caption])
+                fallback_content = content_without_children(figure, [head, label, caption])
                 if fallback_content:
                     content_parts.append(fallback_content)
             append_section(
-                clean_text(" ".join(head.itertext())) if head is not None else f"Table {len(sections) + 1}",
+                title_from_head_or_label(figure, f"Table {len(sections) + 1}"),
                 "\n".join(content_parts),
                 "table",
             )
             return
         append_section(
-            clean_text(" ".join(head.itertext())) if head is not None else f"Figure {len(sections) + 1}",
-            " ".join(caption.itertext()) if caption is not None else content_without_children(figure, [head]),
+            title_from_head_or_label(figure, f"Figure {len(sections) + 1}"),
+            " ".join(caption.itertext()) if caption is not None else content_without_children(figure, [head, label]),
             "figure_caption",
         )
 
     def append_table(table: ET.Element) -> None:
         head = find(table, "tei:head")
+        label = find(table, "tei:label")
         rows = table_rows(table)
         append_section(
-            clean_text(" ".join(head.itertext())) if head is not None else f"Table {len(sections) + 1}",
-            "\n".join(rows) or content_without_children(table, [head]),
+            title_from_head_or_label(table, f"Table {len(sections) + 1}"),
+            "\n".join(rows) or content_without_children(table, [head, label]),
             "table",
         )
 
