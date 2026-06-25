@@ -456,6 +456,14 @@ def test_release_check_requires_manual_resolve_oa_smoke_path():
     assert '"manual_resolve_oa_pdf_url"' in release_text
 
 
+def test_release_check_requires_manual_category_override_smoke_path():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert '"manual_category_method": "manual"' in release_text
+    assert '"manual_category_count": 1' in release_text
+
+
 def test_release_check_requires_export_confidence_smoke_metadata():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")

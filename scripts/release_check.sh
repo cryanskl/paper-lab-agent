@@ -190,6 +190,8 @@ expected = {
     "config_warning_count": 3,
     "duplicate_upload_status": 409,
     "error_response_count": 2,
+    "manual_category_count": 1,
+    "manual_category_method": "manual",
     "manual_resolve_oa_status": "green",
     "manual_resolve_oa_pdf_url": "https://example.test/manual-resolve-10.999-smoke-crawl.pdf",
     "papers": 2,

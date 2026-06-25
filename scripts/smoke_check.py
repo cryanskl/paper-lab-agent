@@ -138,6 +138,27 @@ def run_smoke() -> dict:
         assert_ok(crawled_search["total"] >= 1, f"expected crawled paper to be searchable, got {crawled_search}")
         crawled_paper_id = crawled_search["items"][0]["id"]
 
+        categories = assert_status(client.get("/api/v1/categories"), 200, "category list")
+        chemistry_category = next(
+            (category for category in categories["items"] if category.get("slug") == "chemistry"),
+            None,
+        )
+        assert_ok(chemistry_category is not None, f"expected chemistry category, got {categories}")
+        manual_category = assert_status(
+            client.put(
+                f"/api/v1/papers/{crawled_paper_id}/categories",
+                json={"category_ids": [chemistry_category["id"]], "method": "manual"},
+            ),
+            200,
+            "manual category override",
+        )
+        manual_category_details = manual_category.get("category_details") or []
+        assert_ok(manual_category.get("categories") == ["chemistry"], f"expected manual chemistry category, got {manual_category}")
+        assert_ok(
+            len(manual_category_details) == 1 and manual_category_details[0].get("method") == "manual",
+            f"expected manual category method, got {manual_category_details}",
+        )
+
         original_paper_unpaywall_client = papers_router.UnpaywallClient
 
         class ManualResolveUnpaywallClient:
@@ -387,6 +408,8 @@ def run_smoke() -> dict:
             "crawl_job_filtered": crawl_diagnostics["papers_filtered"],
             "crawl_job_new": crawl_diagnostics["papers_new"],
             "crawled_papers": crawled_search["total"],
+            "manual_category_count": len(manual_category_details),
+            "manual_category_method": manual_category_details[0]["method"],
             "manual_resolve_oa_status": manual_resolve_oa["oa_status"],
             "manual_resolve_oa_pdf_url": manual_resolve_oa["oa_pdf_url"],
             "document_id": document_id,
