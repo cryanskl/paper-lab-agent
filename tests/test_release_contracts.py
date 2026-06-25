@@ -1001,6 +1001,38 @@ def test_docs_links_validator_reports_missing_backtick_reference(tmp_path):
     assert issues == ["docs/guide.md: missing reference target missing.sql"]
 
 
+def test_docs_links_validator_reports_missing_backtick_runtime_file_reference(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "guide.md").write_text(
+        "Run `scripts/missing.py`, check `.github/workflows/missing.yml`, then copy `.env.example`.\n",
+        encoding="utf-8",
+    )
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == [
+        "docs/guide.md: missing reference target scripts/missing.py",
+        "docs/guide.md: missing reference target .github/workflows/missing.yml",
+        "docs/guide.md: missing reference target .env.example",
+    ]
+
+
+def test_docs_links_validator_ignores_backtick_glob_patterns(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "guide.md").write_text(
+        "Runtime references include `scripts/*.py` and `.github/workflows/*.yml`.\n",
+        encoding="utf-8",
+    )
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == []
+
+
 def test_docs_links_validator_runs_as_release_script():
     import subprocess
     import sys

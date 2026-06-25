@@ -2,7 +2,7 @@
 
 ## 现象
 
-使用临时目录启动 demo/API 时，如果只设置 `PAPER_LAB_DATA_DIR`，数据库、PDF、TEI、翻译、导出和本地向量索引路径仍可能落到默认 `data/...`，导致 `prepare_demo_data.py` 生成的数据和随后启动的 API/Streamlit 读取的数据目录不一致。
+使用临时目录启动 demo/API 时，如果只设置 `PAPER_LAB_DATA_DIR`，数据库、PDF、TEI、翻译、导出和本地向量索引路径仍可能落到默认 `data/...`，导致 `scripts/prepare_demo_data.py` 生成的数据和随后启动的 API/Streamlit 读取的数据目录不一致。
 
 ## 原因
 

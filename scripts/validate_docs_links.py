@@ -8,7 +8,10 @@ from urllib.parse import unquote
 
 
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
-BACKTICK_FILE_RE = re.compile(r"`([^`\s]+\.(?:md|sql))`", re.IGNORECASE)
+BACKTICK_FILE_RE = re.compile(
+    r"`([^`\s]+\.(?:md|sql|py|sh|ya?ml|example))`",
+    re.IGNORECASE,
+)
 EXTERNAL_PREFIXES = ("http://", "https://", "mailto:")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$", re.MULTILINE)
 
@@ -45,7 +48,12 @@ def clean_link_fragment(target: str) -> str:
 
 def is_ignored_target(target: str) -> bool:
     lowered = target.lower()
-    return not target or target.startswith("#") or lowered.startswith(EXTERNAL_PREFIXES)
+    return (
+        not target
+        or target.startswith("#")
+        or lowered.startswith(EXTERNAL_PREFIXES)
+        or any(marker in target for marker in "*?[]")
+    )
 
 
 def resolve_target_path(repo: Path, source: Path, target: str) -> Path | None:
