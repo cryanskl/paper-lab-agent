@@ -236,6 +236,22 @@ def test_crossref_rejects_overlong_date_parts():
     assert work["published_year"] is None
 
 
+def test_crossref_falls_back_to_next_valid_publication_date():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/fallback-date",
+            "title": ["Fallback date"],
+            "published-print": {"date-parts": [[2026, 13, 40]]},
+            "issued": {"date-parts": [[2026, 7, 15]]},
+        }
+    )
+
+    assert work["published_date"] == "2026-07-15"
+    assert work["published_year"] == 2026
+
+
 def test_crossref_expands_partial_date_parts_to_iso_dates():
     client = CrossrefClient()
 

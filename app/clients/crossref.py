@@ -186,12 +186,18 @@ class CrossrefClient:
             return None, None
         return parsed.isoformat(), year
 
+    def first_publication_date(self, item: dict[str, Any]) -> tuple[Optional[str], Optional[int]]:
+        for key in ["published-print", "published-online", "issued"]:
+            published = item.get(key)
+            if not isinstance(published, dict):
+                continue
+            published_date, year = self.normalize_date_parts(published.get("date-parts"))
+            if published_date is not None and year is not None:
+                return published_date, year
+        return None, None
+
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
-        published = item.get("published-print") or item.get("published-online") or item.get("issued") or {}
-        if not isinstance(published, dict):
-            published = {}
-        date_parts = published.get("date-parts")
-        published_date, year = self.normalize_date_parts(date_parts)
+        published_date, year = self.first_publication_date(item)
         authors = self.normalize_authors(item.get("author"))
         return {
             "doi": self.normalize_doi(item.get("DOI")),
