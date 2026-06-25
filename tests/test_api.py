@@ -6049,6 +6049,26 @@ def test_extract_chemistry_handles_unicode_species_subscripts_and_charges(tmp_pa
     assert detail["reactions"][0]["products"] == ["O⁻", "O"]
 
 
+def test_extract_chemistry_infers_excitation_for_starred_product(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("excitation.pdf", pdf_bytes(b"e + Ar -> e + Ar* ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar*"
+    assert reaction["reaction_type"] == "excitation"
+    assert reaction["reactants"] == ["e", "Ar"]
+    assert reaction["products"] == ["e", "Ar*"]
+
+
 def test_extract_chemistry_handles_compact_reaction_species_separators(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
