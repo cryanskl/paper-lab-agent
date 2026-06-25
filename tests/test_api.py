@@ -5925,6 +5925,38 @@ def test_dev_api_base_url_tracks_runtime_port_override(tmp_path):
     assert result.stdout == "http://127.0.0.1:9000/api/v1"
 
 
+def test_dev_api_base_url_uses_loopback_for_wildcard_bind_host(tmp_path):
+    import subprocess
+
+    repo = Path(__file__).resolve().parent.parent
+    env_script = repo / "scripts" / "env.sh"
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                "set -euo pipefail; "
+                f"source {env_script}; "
+                "export API_HOST=0.0.0.0; "
+                "export API_PORT=9000; "
+                'USER_API_BASE_URL="${API_BASE_URL:-}"; '
+                'USER_API_HOST_SET="${API_HOST+x}"; '
+                'USER_API_PORT_SET="${API_PORT+x}"; '
+                'API_BASE_URL="$(resolve_api_base_url "$USER_API_BASE_URL" "$USER_API_HOST_SET" "$USER_API_PORT_SET")"; '
+                'printf "%s" "$API_BASE_URL"'
+            ),
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "http://127.0.0.1:9000/api/v1"
+
+
 def test_system_status_contract_documents_operational_counts():
     repo = Path(__file__).resolve().parent.parent
     api_doc = (repo / "docs" / "接口设计文档.md").read_text(encoding="utf-8")
