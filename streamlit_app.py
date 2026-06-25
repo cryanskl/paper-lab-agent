@@ -296,19 +296,23 @@ with search_tab:
     date_from = crawl_col2.text_input("date_from", value="")
     date_to = crawl_col3.text_input("date_to", value="")
     if st.button("创建抓取任务"):
-        body = {"period": "manual"}
-        if selected_crawl_journal_id is not None:
-            body["journal_ids"] = [int(selected_crawl_journal_id)]
-        if date_from:
-            body["date_from"] = date_from
-        if date_to:
-            body["date_to"] = date_to
-        status_code, crawl_payload = api_post("/crawl/run", json=body)
-        if status_code < 400:
-            st.success("已创建抓取任务")
+        crawl_date_error = date_from and date_to and date_from > date_to
+        if crawl_date_error:
+            st.warning("date_from must be less than or equal to date_to")
         else:
-            st.warning(crawl_payload)
-        st.json(crawl_payload)
+            body = {"period": "manual"}
+            if selected_crawl_journal_id is not None:
+                body["journal_ids"] = [int(selected_crawl_journal_id)]
+            if date_from:
+                body["date_from"] = date_from
+            if date_to:
+                body["date_to"] = date_to
+            status_code, crawl_payload = api_post("/crawl/run", json=body)
+            if status_code < 400:
+                st.success("已创建抓取任务")
+            else:
+                st.warning(crawl_payload)
+            st.json(crawl_payload)
     crawl_jobs_page_col, crawl_jobs_page_size_col = st.columns(2)
     crawl_jobs_page = crawl_jobs_page_col.number_input("crawl_jobs_page", min_value=1, value=1, key="crawl-jobs-page")
     crawl_jobs_page_size = crawl_jobs_page_size_col.number_input(
