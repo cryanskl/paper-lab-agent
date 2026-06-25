@@ -243,13 +243,13 @@ def test_openalex_strips_text_fields():
         {
             "id": "https://openalex.org/W-stripped-text",
             "title": "  Trimmed title  ",
-            "abstract": "  Trimmed abstract  ",
+            "abstract": "  Trimmed\n\tabstract   text  ",
             "primary_location": {"source": {"display_name": "  Trimmed journal  "}},
         }
     )
 
     assert work["title"] == "Trimmed title"
-    assert work["abstract"] == "Trimmed abstract"
+    assert work["abstract"] == "Trimmed abstract text"
     assert work["journal_name"] == "Trimmed journal"
 
 

@@ -89,7 +89,7 @@ class OpenAlexClient:
     def abstract_text(self, item: dict[str, Any]) -> str:
         abstract = item.get("abstract")
         if isinstance(abstract, str) and abstract.strip():
-            return abstract.strip()
+            return " ".join(abstract.split())
         inverted = item.get("abstract_inverted_index")
         if not isinstance(inverted, dict):
             return ""
