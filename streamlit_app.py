@@ -7,6 +7,7 @@ import streamlit as st
 from app.frontend_api import (
     crawl_job_diagnostic_rows,
     crawl_job_rows,
+    crawl_journal_options,
     rag_source_rows,
     reaction_review_rows,
     reaction_set_rows,
@@ -283,13 +284,18 @@ with search_tab:
     st.divider()
     st.subheader("抓取任务")
     crawl_col1, crawl_col2, crawl_col3 = st.columns([1, 1, 1])
-    crawl_journal_id = crawl_col1.number_input("journal_id", min_value=0, value=0)
+    crawl_journal_choice = crawl_col1.selectbox(
+        "抓取期刊",
+        crawl_journal_options(journals),
+        format_func=lambda option: option["label"],
+    )
+    selected_crawl_journal_id = crawl_journal_choice["journal_id"]
     date_from = crawl_col2.text_input("date_from", value="")
     date_to = crawl_col3.text_input("date_to", value="")
     if st.button("创建抓取任务"):
         body = {"period": "manual"}
-        if crawl_journal_id:
-            body["journal_ids"] = [int(crawl_journal_id)]
+        if selected_crawl_journal_id is not None:
+            body["journal_ids"] = [int(selected_crawl_journal_id)]
         if date_from:
             body["date_from"] = date_from
         if date_to:

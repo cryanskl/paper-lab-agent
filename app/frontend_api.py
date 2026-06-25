@@ -110,6 +110,15 @@ def compact_parts(parts: list[Any]) -> list[str]:
     return [str(part) for part in parts if part is not None and str(part) != ""]
 
 
+def crawl_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    options = [{"label": "全部 active 期刊", "journal_id": None}]
+    for journal in journals:
+        issn_label = " / ".join(compact_parts([journal.get("issn_print"), journal.get("issn_electronic")]))
+        suffix = f" · {issn_label}" if issn_label else ""
+        options.append({"label": f"#{journal['id']} · {journal['name']}{suffix}", "journal_id": journal["id"]})
+    return options
+
+
 def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for job in jobs:

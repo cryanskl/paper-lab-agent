@@ -443,6 +443,36 @@ def test_crawl_job_diagnostic_rows_flatten_job_detail_for_review():
     ]
 
 
+def test_crawl_journal_options_label_whitelist_choices_for_manual_runs():
+    from app import frontend_api
+
+    options = frontend_api.crawl_journal_options(
+        [
+            {
+                "id": 2,
+                "name": "Plasma Sources Science and Technology",
+                "issn_print": "0963-0252",
+                "issn_electronic": "1361-6595",
+            },
+            {
+                "id": 5,
+                "name": "Journal of Physics D",
+                "issn_print": None,
+                "issn_electronic": "1361-6463",
+            },
+        ]
+    )
+
+    assert options == [
+        {"label": "全部 active 期刊", "journal_id": None},
+        {
+            "label": "#2 · Plasma Sources Science and Technology · 0963-0252 / 1361-6595",
+            "journal_id": 2,
+        },
+        {"label": "#5 · Journal of Physics D · 1361-6463", "journal_id": 5},
+    ]
+
+
 def test_rag_source_rows_include_citation_and_location_labels():
     from app import frontend_api
 

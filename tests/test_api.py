@@ -11505,6 +11505,13 @@ def test_streamlit_crawl_run_surfaces_success_and_error_states():
     search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
 
     for required in [
+        "crawl_journal_choice = crawl_col1.selectbox(",
+        '"抓取期刊"',
+        "crawl_journal_options(journals)",
+        'format_func=lambda option: option["label"]',
+        'selected_crawl_journal_id = crawl_journal_choice["journal_id"]',
+        "if selected_crawl_journal_id is not None:",
+        'body["journal_ids"] = [int(selected_crawl_journal_id)]',
         'status_code, crawl_payload = api_post("/crawl/run", json=body)',
         "if status_code < 400:",
         "已创建抓取任务",
@@ -11513,6 +11520,7 @@ def test_streamlit_crawl_run_surfaces_success_and_error_states():
         "st.json(crawl_payload)",
     ]:
         assert required in search_section
+    assert 'number_input("journal_id"' not in search_section
 
 
 def test_streamlit_search_results_show_dedupe_strategy():
