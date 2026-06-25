@@ -471,6 +471,9 @@ def test_release_check_requires_document_list_and_detail_smoke_paths():
     assert '"document_detail_has_paper": True' in release_text
     assert '"section_list_first_type": "body"' in release_text
     assert '"section_list_has_content": True' in release_text
+    assert '"chunk_list_index_status": "indexed"' in release_text
+    assert '"chunk_list_has_vector_id": True' in release_text
+    assert '"chunk_list_has_section_title": True' in release_text
 
 
 def test_release_check_requires_manual_category_override_smoke_path():

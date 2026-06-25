@@ -297,6 +297,10 @@ def run_smoke() -> dict:
         assert_status(client.post(f"/api/v1/documents/{document_id}/index"), 202, "document index")
         chunks = assert_status(client.get(f"/api/v1/documents/{document_id}/chunks"), 200, "document chunks")
         assert_ok(chunks["total"] >= 1, "expected indexed document chunks")
+        assert_ok(chunks["index_status"] == "indexed", f"expected indexed chunk response, got {chunks}")
+        first_chunk = chunks["items"][0]
+        assert_ok(bool(first_chunk.get("vector_id")), f"expected chunk vector_id, got {first_chunk}")
+        assert_ok(bool(first_chunk.get("section_title")), f"expected chunk section_title, got {first_chunk}")
 
         assert_status(
             client.post(f"/api/v1/documents/{document_id}/translate", json={"target_lang": "zh"}),
@@ -507,6 +511,9 @@ def run_smoke() -> dict:
             "section_list_first_type": first_section["section_type"],
             "section_list_has_content": bool(first_section.get("content")),
             "chunks": counts["chunks"],
+            "chunk_list_index_status": chunks["index_status"],
+            "chunk_list_has_vector_id": bool(first_chunk.get("vector_id")),
+            "chunk_list_has_section_title": bool(first_chunk.get("section_title")),
             "rag_sources": len(rag["sources"]),
             "rag_answer_has_citation": rag_answer_has_citation,
             "rag_source_excerpts": rag_source_excerpts,
