@@ -351,6 +351,8 @@ def run_smoke() -> dict:
             "verified_export_format": verified_export["format"],
             "verified_export_formats": [verified_export["format"], txt_export["format"], bolsig_export["format"]],
             "verified_export_path": verified_export["output_path"],
+            "verified_export_response_reactions": verified_export["reaction_count"],
+            "verified_export_response_audit_entries": verified_export["audit_entry_count"],
             "verified_export_reactions": len(exported_reactions),
             "verified_export_audit_entries": len(export_audit_entries),
             "verified_export_source_sections": len(export_source_sections),

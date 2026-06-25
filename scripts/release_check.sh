@@ -84,6 +84,8 @@ expected = {
     "config_warning_count": 3,
     "duplicate_upload_status": 409,
     "verified_export_reactions": 1,
+    "verified_export_response_reactions": 1,
+    "verified_export_response_audit_entries": 1,
     "verified_export_source_sections": 1,
     "verified_export_text_files": 2,
     "verified_export_bolsig_contains_header": True,

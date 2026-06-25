@@ -1181,6 +1181,8 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["verified_export_formats"] == ["json", "txt", "bolsig"]
     assert result["verified_export_reactions"] == 1
     assert result["verified_export_audit_entries"] >= 1
+    assert result["verified_export_response_reactions"] == 1
+    assert result["verified_export_response_audit_entries"] >= 1
     assert result["verified_export_source_sections"] == 1
     assert result["verified_export_text_files"] == 2
     assert result["verified_export_bolsig_contains_header"] is True
@@ -1221,6 +1223,8 @@ def test_smoke_check_script_outputs_json():
     assert payload["verified_export_formats"] == ["json", "txt", "bolsig"]
     assert payload["verified_export_reactions"] == 1
     assert payload["verified_export_audit_entries"] >= 1
+    assert payload["verified_export_response_reactions"] == 1
+    assert payload["verified_export_response_audit_entries"] >= 1
     assert payload["verified_export_text_files"] == 2
     assert payload["verified_export_bolsig_contains_header"] is True
     assert payload["verified_export_txt_contains_reaction"] is True
