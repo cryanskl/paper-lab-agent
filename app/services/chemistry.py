@@ -228,7 +228,12 @@ def extract_reactions(document_id: int) -> dict:
                     )
                     threshold_ev = detect_threshold_ev(text, match.start(), match.end())
                     rate_value = detect_rate_value(text, match.start(), match.end())
-                    rate_type = "constant" if rate_value else "unknown"
+                    if rate_value:
+                        rate_type = "constant"
+                    elif cross_section_url:
+                        rate_type = "cross_section"
+                    else:
+                        rate_type = "unknown"
                     conn.execute(
                         """
                         INSERT INTO reactions (

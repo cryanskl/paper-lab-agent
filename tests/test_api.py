@@ -11038,6 +11038,8 @@ def test_extract_reactions_detects_lxcat_database_and_url(tmp_path):
     assert reaction["reaction"] == "e + Ar -> e + e + Ar+"
     assert reaction["reactants"] == ["e", "Ar"]
     assert reaction["products"] == ["e", "e", "Ar+"]
+    assert reaction["rate_type"] == "cross_section"
+    assert reaction["rate_value"] is None
     assert reaction["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
 
 
