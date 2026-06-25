@@ -214,6 +214,32 @@ def test_release_hygiene_validator_reports_missing_gitignore_pattern(tmp_path):
 
     missing = validate_release_hygiene.missing_required_gitignore_patterns(gitignore_path)
 
+    assert ".DS_Store" in missing
+    assert ".coverage" in missing
+    assert ".coverage.*" in missing
+    assert "htmlcov/" in missing
+    assert "build/" in missing
+    assert "dist/" in missing
+    assert "node_modules/" in missing
+    assert "out/" in missing
+    assert "*.sqlite" in missing
+    assert "*.log" in missing
+    assert "tsconfig.tsbuildinfo" in missing
+    assert "npm-debug.log*" in missing
+    assert "pnpm-debug.log*" in missing
+    assert "yarn-debug.log*" in missing
+    assert "yarn-error.log*" in missing
+    assert ".turbo/" in missing
+    assert ".cache/" in missing
+    assert "coverage/" in missing
+    assert "test-results/" in missing
+    assert "playwright-report/" in missing
+    assert "*.db-wal" in missing
+    assert "*.db-shm" in missing
+    assert "*.db-journal" in missing
+    assert "*.sqlite-journal" in missing
+    assert ".mypy_cache/" in missing
+    assert ".ruff_cache/" in missing
     assert ".next/" in missing
 
 
@@ -224,6 +250,33 @@ def test_release_hygiene_validator_reports_tracked_generated_artifacts():
         [
             "README.md",
             ".env",
+            ".DS_Store",
+            "docs/.DS_Store",
+            ".next/app-build-manifest.json",
+            "node_modules/react/index.js",
+            "out/index.html",
+            ".coverage",
+            ".coverage.worker-1",
+            "app.log",
+            "logs/dev.log",
+            "tsconfig.tsbuildinfo",
+            "npm-debug.log",
+            "pnpm-debug.log",
+            "yarn-debug.log",
+            "yarn-error.log",
+            ".turbo/cache/state.json",
+            ".cache/tool/state.json",
+            "htmlcov/index.html",
+            "build/lib/app/main.py",
+            "dist/paper_lab_agent-0.1.0.tar.gz",
+            "test-results/e2e.json",
+            "playwright-report/index.html",
+            "plasma.db-wal",
+            "plasma.db-shm",
+            "plasma.db-journal",
+            "archive.sqlite-journal",
+            ".mypy_cache/3.11/app.meta.json",
+            ".ruff_cache/0.8.0/123456789",
             "data/plasma.db",
             "scripts/__pycache__/smoke_check.cpython-313.pyc",
             "coverage/index.html",
@@ -232,6 +285,33 @@ def test_release_hygiene_validator_reports_tracked_generated_artifacts():
 
     assert forbidden == [
         ".env",
+        ".DS_Store",
+        "docs/.DS_Store",
+        ".next/app-build-manifest.json",
+        "node_modules/react/index.js",
+        "out/index.html",
+        ".coverage",
+        ".coverage.worker-1",
+        "app.log",
+        "logs/dev.log",
+        "tsconfig.tsbuildinfo",
+        "npm-debug.log",
+        "pnpm-debug.log",
+        "yarn-debug.log",
+        "yarn-error.log",
+        ".turbo/cache/state.json",
+        ".cache/tool/state.json",
+        "htmlcov/index.html",
+        "build/lib/app/main.py",
+        "dist/paper_lab_agent-0.1.0.tar.gz",
+        "test-results/e2e.json",
+        "playwright-report/index.html",
+        "plasma.db-wal",
+        "plasma.db-shm",
+        "plasma.db-journal",
+        "archive.sqlite-journal",
+        ".mypy_cache/3.11/app.meta.json",
+        ".ruff_cache/0.8.0/123456789",
         "data/plasma.db",
         "scripts/__pycache__/smoke_check.cpython-313.pyc",
         "coverage/index.html",
@@ -329,6 +409,30 @@ def test_release_check_derives_expected_runtime_version_from_app_version():
     assert '"runtime_version": "0.1.0"' not in release_text
 
 
+def test_release_check_requires_export_confidence_smoke_metadata():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert '"verified_export_txt_has_confidence": True' in release_text
+    assert '"verified_export_bolsig_has_confidence": True' in release_text
+
+
+def test_release_check_requires_export_source_label_smoke_metadata():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert '"verified_export_txt_has_source_label": True' in release_text
+    assert '"verified_export_bolsig_has_source_label": True' in release_text
+
+
+def test_release_check_rejects_failed_smoke_status_counts():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert "failed_statuses" in release_text
+    assert "smoke failed statuses present" in release_text
+
+
 def test_api_contract_documented_endpoints_exist_in_app():
     validate_api_contract = load_validate_api_contract()
     repo = Path(__file__).resolve().parent.parent
@@ -397,6 +501,68 @@ def test_schema_validator_reports_missing_required_table(tmp_path):
 
     assert "missing table: papers" in issues
     assert "missing table: documents" in issues
+
+
+def test_schema_validator_reports_missing_required_reaction_column(tmp_path):
+    validate_schema = load_validate_schema()
+    repo = Path(__file__).resolve().parent.parent
+    schema_path = tmp_path / "schema.sql"
+    schema_text = (repo / "docs" / "schema.sql").read_text(encoding="utf-8")
+    schema_path.write_text(
+        schema_text.replace(
+            "    source_label      TEXT,                       -- 表号/出处标签，如 table 7: Reaction kinetics\n",
+            "",
+        ),
+        encoding="utf-8",
+    )
+
+    issues = validate_schema.validate_schema(schema_path)
+
+    assert "missing column: reactions.source_label" in issues
+
+
+def test_schema_validator_reports_missing_required_workflow_columns(tmp_path):
+    validate_schema = load_validate_schema()
+    repo = Path(__file__).resolve().parent.parent
+    schema_path = tmp_path / "schema.sql"
+    schema_text = (repo / "docs" / "schema.sql").read_text(encoding="utf-8")
+    schema_path.write_text(
+        schema_text.replace(
+            "    chemistry_status TEXT DEFAULT 'not_extracted', -- not_extracted/extracting/extracted/rejected/failed\n",
+            "",
+        ).replace(
+            "    verified_at   TEXT,\n",
+            "",
+        ),
+        encoding="utf-8",
+    )
+
+    issues = validate_schema.validate_schema(schema_path)
+
+    assert "missing column: documents.chemistry_status" in issues
+    assert "missing column: reaction_sets.verified_at" in issues
+
+
+def test_schema_validator_reports_missing_required_search_columns(tmp_path):
+    validate_schema = load_validate_schema()
+    repo = Path(__file__).resolve().parent.parent
+    schema_path = tmp_path / "schema.sql"
+    schema_text = (repo / "docs" / "schema.sql").read_text(encoding="utf-8")
+    schema_path.write_text(
+        schema_text.replace(
+            "    dedupe_key      TEXT UNIQUE,                -- 无 DOI 时的保守去重键，NULL 表示不自动合并\n",
+            "",
+        ).replace(
+            "    papers_filtered INTEGER DEFAULT 0,\n",
+            "",
+        ),
+        encoding="utf-8",
+    )
+
+    issues = validate_schema.validate_schema(schema_path)
+
+    assert "missing column: papers.dedupe_key" in issues
+    assert "missing column: crawl_jobs.papers_filtered" in issues
 
 
 def test_schema_validator_runs_as_release_script():
@@ -599,3 +765,36 @@ def test_readme_commands_validator_runs_as_release_script():
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_env_loader_strips_inline_comments_without_touching_quoted_hashes(tmp_path):
+    import subprocess
+
+    repo = Path(__file__).resolve().parent.parent
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "API_PORT=8001 # local override",
+                'LLM_API_KEY="sk-test#not-comment" # inline comment',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            'source scripts/env.sh; load_env_file_if_unset "$1"; printf "%s\\n%s\\n" "$API_PORT" "$LLM_API_KEY"',
+            "bash",
+            str(env_file),
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ["8001", "sk-test#not-comment"]

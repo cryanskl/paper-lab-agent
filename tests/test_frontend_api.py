@@ -33,6 +33,29 @@ def test_frontend_api_status_request_preserves_non_json_error(monkeypatch):
     }
 
 
+def test_frontend_api_status_request_normalizes_paths_without_leading_slash(monkeypatch):
+    from app import frontend_api
+
+    class FakeResponse:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {"items": [], "total": 0}
+
+    def fake_request(method, url, **kwargs):
+        assert method == "GET"
+        assert url == "http://api.test/api/v1/papers"
+        return FakeResponse()
+
+    monkeypatch.setattr(frontend_api.requests, "request", fake_request)
+
+    status_code, payload = frontend_api.request_json_status("GET", "http://api.test/api/v1/", "papers")
+
+    assert status_code == 200
+    assert payload == {"items": [], "total": 0}
+
+
 def test_frontend_api_get_raises_readable_api_error_for_json_error(monkeypatch):
     from app import frontend_api
 
@@ -137,3 +160,54 @@ def test_frontend_api_status_request_promotes_invalid_success_payload(monkeypatc
     assert status_code == 599
     assert payload["error"]["code"] == "invalid_response"
     assert "HTTP 200" in payload["error"]["message"]
+
+
+def test_reaction_review_rows_can_focus_unverified_source_metadata():
+    from app import frontend_api
+
+    reactions = [
+        {
+            "id": 1,
+            "reaction": "e + Ar -> e + e + Ar+",
+            "verified": 0,
+            "confidence": 0.5,
+            "reaction_type": "ionization",
+            "rate_type": "cross_section",
+            "rate_value": "original table value",
+            "threshold_ev": 15.76,
+            "cross_section_url": "https://nl.lxcat.net/data/set/example",
+            "source_section_id": 12,
+            "source_section_title": "Table 2",
+            "source_section_type": "table",
+            "source_section_seq": 4,
+            "source_label": "table 4: Table 2",
+            "source_excerpt": "e + Ar -> e + e + Ar+ .",
+        },
+        {
+            "id": 2,
+            "reaction": "Ar+ + e -> Ar",
+            "verified": 1,
+            "confidence": 0.9,
+            "source_section_title": "Appendix",
+        },
+    ]
+
+    rows = frontend_api.reaction_review_rows(reactions, only_unverified=True)
+
+    assert rows == [
+        {
+            "id": 1,
+            "verified": False,
+            "reaction": "e + Ar -> e + e + Ar+",
+            "confidence": 0.5,
+            "reaction_type": "ionization",
+            "rate_type": "cross_section",
+            "rate_value": "original table value",
+            "threshold_ev": 15.76,
+            "cross_section_url": "https://nl.lxcat.net/data/set/example",
+            "source_section": "4 | table | Table 2",
+            "source_section_id": 12,
+            "source_label": "table 4: Table 2",
+            "source_excerpt": "e + Ar -> e + e + Ar+ .",
+        }
+    ]

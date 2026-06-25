@@ -17,6 +17,10 @@ def normalize_base_url(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
+def normalize_path(path: str) -> str:
+    return f"/{path.lstrip('/')}"
+
+
 def summarize_text(text: str, limit: int = ERROR_TEXT_LIMIT) -> str:
     value = " ".join((text or "").split())
     if len(value) <= limit:
@@ -61,7 +65,7 @@ def request_json_status(
     try:
         response = requests.request(
             method,
-            f"{normalize_base_url(base_url)}{path}",
+            f"{normalize_base_url(base_url)}{normalize_path(path)}",
             params=params,
             json=json,
             files=files,
@@ -100,3 +104,38 @@ def request_json(
     if status_code < 200 or status_code >= 300 or "error" in payload:
         raise FrontendApiError(status_code, payload)
     return payload
+
+
+def reaction_review_rows(reactions: list[dict[str, Any]], *, only_unverified: bool = False) -> list[dict[str, Any]]:
+    rows = []
+    for reaction in reactions:
+        verified = bool(reaction.get("verified"))
+        if only_unverified and verified:
+            continue
+        source_section = " | ".join(
+            str(part)
+            for part in [
+                reaction.get("source_section_seq"),
+                reaction.get("source_section_type"),
+                reaction.get("source_section_title"),
+            ]
+            if part is not None and part != ""
+        )
+        rows.append(
+            {
+                "id": reaction.get("id"),
+                "verified": verified,
+                "reaction": reaction.get("reaction"),
+                "confidence": reaction.get("confidence"),
+                "reaction_type": reaction.get("reaction_type"),
+                "rate_type": reaction.get("rate_type"),
+                "rate_value": reaction.get("rate_value"),
+                "threshold_ev": reaction.get("threshold_ev"),
+                "cross_section_url": reaction.get("cross_section_url"),
+                "source_section": source_section or "-",
+                "source_section_id": reaction.get("source_section_id"),
+                "source_label": reaction.get("source_label"),
+                "source_excerpt": reaction.get("source_excerpt"),
+            }
+        )
+    return rows

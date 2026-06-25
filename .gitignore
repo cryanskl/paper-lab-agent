@@ -12,6 +12,10 @@ data/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+*.sqlite-journal
+*.db-wal
+*.db-shm
+*.db-journal
 
 # Environment files
 .env
@@ -32,6 +36,11 @@ yarn-error.log*
 .cache/
 .uv-cache/
 coverage/
+htmlcov/
+.coverage
+.coverage.*
+build/
+dist/
 test-results/
 playwright-report/
 
@@ -40,4 +49,6 @@ playwright-report/
 __pycache__/
 *.pyc
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .ipynb_checkpoints/

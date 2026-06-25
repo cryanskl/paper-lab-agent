@@ -23,6 +23,10 @@ class TranslateIn(BaseModel):
         normalized = value.strip()
         if not normalized:
             raise ValueError("target_lang must not be blank")
+        if any(char in normalized for char in ("/", "\\")):
+            raise ValueError("target_lang must not contain path separators")
+        if any(ord(char) < 32 for char in normalized):
+            raise ValueError("target_lang must not contain control characters")
         return normalized
 
 

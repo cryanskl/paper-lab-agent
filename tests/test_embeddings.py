@@ -35,3 +35,19 @@ def test_config_warnings_accept_supported_embedding_model_case_insensitively():
     warnings = config_warnings(Settings(EMBEDDING_MODEL="LOCAL-HASH"))
 
     assert not any(warning["code"] == "unsupported_embedding_model" for warning in warnings)
+
+
+def test_config_warnings_report_unsupported_vector_db_backend():
+    warnings = config_warnings(Settings(VECTOR_DB_BACKEND="faiss"))
+
+    assert {
+        "code": "unsupported_vector_db_backend",
+        "capability": "rag_indexing",
+        "message": "VECTOR_DB_BACKEND=faiss is not supported by the current vector store registry.",
+    } in warnings
+
+
+def test_config_warnings_accept_supported_vector_db_backend_case_insensitively():
+    warnings = config_warnings(Settings(VECTOR_DB_BACKEND="LOCAL-JSON"))
+
+    assert not any(warning["code"] == "unsupported_vector_db_backend" for warning in warnings)

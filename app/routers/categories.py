@@ -1,3 +1,4 @@
+import re
 from typing import Optional
 
 from fastapi import APIRouter
@@ -8,6 +9,8 @@ from app.errors import AppError
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
+SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
 
 class CategoryIn(BaseModel):
     name: str
@@ -15,12 +18,22 @@ class CategoryIn(BaseModel):
     description: Optional[str] = None
     parent_id: Optional[int] = None
 
-    @field_validator("name", "slug")
+    @field_validator("name")
     @classmethod
     def required_text_must_not_be_blank(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
             raise ValueError("field must not be blank")
+        return normalized
+
+    @field_validator("slug")
+    @classmethod
+    def slug_must_not_be_blank(cls, value: str) -> str:
+        normalized = re.sub(r"\s+", "-", value.strip().lower())
+        if not normalized:
+            raise ValueError("field must not be blank")
+        if SLUG_RE.fullmatch(normalized) is None:
+            raise ValueError("slug must contain only lowercase letters, numbers, hyphens, or underscores")
         return normalized
 
 

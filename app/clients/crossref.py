@@ -1,7 +1,9 @@
 import asyncio
 import html
 import re
+from datetime import date
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
 
@@ -104,12 +106,12 @@ class CrossrefClient:
         return doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/")
 
     def first_text(self, value: Any, default: Optional[str] = None) -> Optional[str]:
-        if isinstance(value, str) and value:
-            return value
+        if isinstance(value, str) and value.strip():
+            return value.strip()
         if isinstance(value, list):
             for item in value:
-                if isinstance(item, str) and item:
-                    return item
+                if isinstance(item, str) and item.strip():
+                    return item.strip()
         return default
 
     def normalize_authors(self, value: Any) -> list[dict[str, Optional[str]]]:
@@ -119,24 +121,42 @@ class CrossrefClient:
         for item in value:
             if not isinstance(item, dict):
                 continue
-            name = " ".join(v for v in [item.get("given"), item.get("family")] if isinstance(v, str) and v)
+            name_parts = [
+                value.strip()
+                for value in [item.get("given"), item.get("family")]
+                if isinstance(value, str) and value.strip()
+            ]
+            name = " ".join(name_parts)
             if name:
                 authors.append({"name": name, "affiliation": None})
         return authors
 
     def normalize_url(self, value: Any) -> Optional[str]:
         if isinstance(value, str) and value.strip():
-            return value
+            text = value.strip()
+            parsed = urlparse(text)
+            if parsed.scheme in {"http", "https"} and parsed.netloc:
+                return text
         return None
+
+    def normalize_date_parts(self, value: Any) -> tuple[Optional[str], Optional[int]]:
+        if not isinstance(value, list) or not value or not isinstance(value[0], list):
+            return None, None
+        parts = value[0]
+        if not parts or len(parts) > 3 or any(isinstance(part, bool) or not isinstance(part, int) for part in parts):
+            return None, None
+        try:
+            date(parts[0], parts[1] if len(parts) > 1 else 1, parts[2] if len(parts) > 2 else 1)
+        except ValueError:
+            return None, None
+        return "-".join(str(part).zfill(2) for part in parts), parts[0]
 
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         published = item.get("published-print") or item.get("published-online") or item.get("issued") or {}
         if not isinstance(published, dict):
             published = {}
         date_parts = published.get("date-parts")
-        parts = date_parts[0] if isinstance(date_parts, list) and date_parts and isinstance(date_parts[0], list) else []
-        year = parts[0] if parts else None
-        published_date = "-".join(str(p).zfill(2) for p in parts if p is not None) if parts else None
+        published_date, year = self.normalize_date_parts(date_parts)
         authors = self.normalize_authors(item.get("author"))
         return {
             "doi": self.normalize_doi(item.get("DOI")),

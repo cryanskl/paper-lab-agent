@@ -33,6 +33,21 @@ def test_crossref_normalizes_scalar_title_fields():
     assert work["journal_name"] == "Scalar journal"
 
 
+def test_crossref_strips_text_fields():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/stripped-text",
+            "title": ["  Trimmed title  "],
+            "container-title": ["  Trimmed journal  "],
+        }
+    )
+
+    assert work["title"] == "Trimmed title"
+    assert work["journal_name"] == "Trimmed journal"
+
+
 def test_crossref_skips_malformed_text_list_items():
     client = CrossrefClient()
 
@@ -91,6 +106,20 @@ def test_crossref_tolerates_malformed_author_name_parts():
     ]
 
 
+def test_crossref_strips_author_name_parts():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/trimmed-authors",
+            "title": ["Trimmed authors"],
+            "author": [{"given": "  Jane  ", "family": "  Doe  "}],
+        }
+    )
+
+    assert work["authors"] == [{"name": "Jane Doe", "affiliation": None}]
+
+
 def test_crossref_tolerates_malformed_published_date_fields():
     client = CrossrefClient()
 
@@ -108,6 +137,51 @@ def test_crossref_tolerates_malformed_published_date_fields():
     assert work["published_year"] is None
 
 
+def test_crossref_rejects_non_integer_date_parts():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/string-date-parts",
+            "title": ["String date parts"],
+            "issued": {"date-parts": [["2026", "07", "15"]]},
+        }
+    )
+
+    assert work["published_date"] is None
+    assert work["published_year"] is None
+
+
+def test_crossref_rejects_out_of_range_date_parts():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/out-of-range-date-parts",
+            "title": ["Out of range date parts"],
+            "issued": {"date-parts": [[2026, 13, 40]]},
+        }
+    )
+
+    assert work["published_date"] is None
+    assert work["published_year"] is None
+
+
+def test_crossref_rejects_overlong_date_parts():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/overlong-date-parts",
+            "title": ["Overlong date parts"],
+            "issued": {"date-parts": [[2026, 7, 15, 9]]},
+        }
+    )
+
+    assert work["published_date"] is None
+    assert work["published_year"] is None
+
+
 def test_crossref_tolerates_malformed_landing_url_field():
     client = CrossrefClient()
 
@@ -120,6 +194,28 @@ def test_crossref_tolerates_malformed_landing_url_field():
     )
 
     assert work["landing_url"] is None
+
+
+def test_crossref_rejects_unsafe_landing_url():
+    client = CrossrefClient()
+
+    unsafe_scheme = client.normalize(
+        {
+            "DOI": "10.5555/unsafe-url",
+            "title": ["Unsafe landing URL"],
+            "URL": "javascript:alert(1)",
+        }
+    )
+    missing_host = client.normalize(
+        {
+            "DOI": "10.5555/missing-host-url",
+            "title": ["Missing host landing URL"],
+            "URL": "https:article",
+        }
+    )
+
+    assert unsafe_scheme["landing_url"] is None
+    assert missing_host["landing_url"] is None
 
 
 def test_openalex_normalizes_url_doi_to_bare_identifier():
@@ -140,6 +236,41 @@ def test_openalex_tolerates_malformed_title_fields():
     assert object_title["title"] == "Untitled"
 
 
+def test_openalex_strips_text_fields():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-stripped-text",
+            "title": "  Trimmed title  ",
+            "abstract": "  Trimmed\n\tabstract   text  ",
+            "primary_location": {"source": {"display_name": "  Trimmed journal  "}},
+        }
+    )
+
+    assert work["title"] == "Trimmed title"
+    assert work["abstract"] == "Trimmed abstract text"
+    assert work["journal_name"] == "Trimmed journal"
+
+
+def test_openalex_ignores_boolean_abstract_positions():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-boolean-abstract-positions",
+            "title": "Boolean abstract positions",
+            "abstract_inverted_index": {
+                "bad": [True],
+                "also_bad": [False],
+                "valid": [0],
+            },
+        }
+    )
+
+    assert work["abstract"] == "valid"
+
+
 def test_openalex_tolerates_malformed_publication_fields():
     client = OpenAlexClient()
 
@@ -154,6 +285,44 @@ def test_openalex_tolerates_malformed_publication_fields():
 
     assert work["published_date"] is None
     assert work["published_year"] is None
+
+
+def test_openalex_rejects_invalid_publication_date_string():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-invalid-date",
+            "title": "Invalid publication date",
+            "publication_date": "2026-13-40",
+            "publication_year": 2026,
+        }
+    )
+
+    assert work["published_date"] is None
+    assert work["published_year"] == 2026
+
+
+def test_openalex_rejects_out_of_range_publication_year():
+    client = OpenAlexClient()
+
+    zero_year = client.normalize(
+        {
+            "id": "https://openalex.org/W-zero-year",
+            "title": "Zero publication year",
+            "publication_year": 0,
+        }
+    )
+    too_large_year = client.normalize(
+        {
+            "id": "https://openalex.org/W-too-large-year",
+            "title": "Too large publication year",
+            "publication_year": 10000,
+        }
+    )
+
+    assert zero_year["published_year"] is None
+    assert too_large_year["published_year"] is None
 
 
 def test_openalex_tolerates_malformed_landing_url_fields():
@@ -176,6 +345,42 @@ def test_openalex_tolerates_malformed_landing_url_fields():
 
     assert malformed_primary_url["landing_url"] == "https://openalex.org/W-safe-fallback"
     assert malformed_primary_and_id["landing_url"] is None
+
+
+def test_openalex_rejects_unsafe_landing_url():
+    client = OpenAlexClient()
+
+    unsafe_primary_url = client.normalize(
+        {
+            "id": "https://openalex.org/W-unsafe-primary",
+            "title": "Unsafe primary landing URL",
+            "primary_location": {"landing_page_url": "javascript:alert(1)"},
+        }
+    )
+    missing_host_id = client.normalize(
+        {
+            "id": "https:openalex-work",
+            "title": "Missing host fallback URL",
+            "primary_location": {"landing_page_url": ["malformed"]},
+        }
+    )
+
+    assert unsafe_primary_url["landing_url"] == "https://openalex.org/W-unsafe-primary"
+    assert missing_host_id["landing_url"] is None
+
+
+def test_openalex_strips_landing_url_whitespace():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-whitespace-url",
+            "title": "Whitespace landing URL",
+            "primary_location": {"landing_page_url": "  https://publisher.example/article  "},
+        }
+    )
+
+    assert work["landing_url"] == "https://publisher.example/article"
 
 
 def test_openalex_tolerates_malformed_source_display_name():
@@ -214,6 +419,20 @@ def test_openalex_skips_malformed_authorship_items():
         {"name": "Jane Doe", "affiliation": None},
         {"name": "Solo", "affiliation": None},
     ]
+
+
+def test_openalex_strips_author_display_names():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "doi": "10.5555/openalex-trimmed-authors",
+            "title": "OpenAlex trimmed authors",
+            "authorships": [{"author": {"display_name": "  Jane Doe  "}}],
+        }
+    )
+
+    assert work["authors"] == [{"name": "Jane Doe", "affiliation": None}]
 
 
 def test_openalex_tolerates_malformed_primary_location_fields():
@@ -475,6 +694,48 @@ async def test_unpaywall_tolerates_malformed_best_oa_location():
     )
 
     result = await client.resolve("10.1/malformed-location")
+
+    assert result["oa_status"] == "green"
+    assert result["oa_pdf_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_unpaywall_rejects_non_web_pdf_url_scheme():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "oa_status": "green",
+                "best_oa_location": {"url_for_pdf": "javascript:alert(1)"},
+            }
+        )
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.resolve("10.1/non-web-url")
+
+    assert result["oa_status"] == "green"
+    assert result["oa_pdf_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_unpaywall_rejects_web_pdf_url_without_host():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "oa_status": "green",
+                "best_oa_location": {"url_for_pdf": "https:paper.pdf"},
+            }
+        )
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.resolve("10.1/no-host-url")
 
     assert result["oa_status"] == "green"
     assert result["oa_pdf_url"] is None

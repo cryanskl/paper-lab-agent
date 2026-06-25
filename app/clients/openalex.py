@@ -1,5 +1,7 @@
 import asyncio
+from datetime import date
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
 
@@ -87,7 +89,7 @@ class OpenAlexClient:
     def abstract_text(self, item: dict[str, Any]) -> str:
         abstract = item.get("abstract")
         if isinstance(abstract, str) and abstract.strip():
-            return abstract
+            return " ".join(abstract.split())
         inverted = item.get("abstract_inverted_index")
         if not isinstance(inverted, dict):
             return ""
@@ -96,7 +98,7 @@ class OpenAlexClient:
             if not isinstance(positions, list):
                 continue
             for position in positions:
-                if isinstance(position, int) and position >= 0:
+                if isinstance(position, int) and not isinstance(position, bool) and position >= 0:
                     positioned_words.append((position, str(word)))
         positioned_words.sort(key=lambda pair: pair[0])
         return " ".join(word for _, word in positioned_words)
@@ -120,29 +122,44 @@ class OpenAlexClient:
             if not isinstance(author, dict):
                 continue
             name = author.get("display_name")
-            if isinstance(name, str) and name:
-                authors.append({"name": name, "affiliation": None})
+            if isinstance(name, str) and name.strip():
+                authors.append({"name": name.strip(), "affiliation": None})
         return authors
 
     def normalize_title(self, value: Any) -> str:
         if isinstance(value, str) and value.strip():
-            return value
+            return value.strip()
         return "Untitled"
 
     def normalize_publication_date(self, value: Any) -> Optional[str]:
         if isinstance(value, str) and value.strip():
-            return value
+            text = value.strip()
+            try:
+                date.fromisoformat(text)
+            except ValueError:
+                return None
+            return text
         return None
 
     def normalize_publication_year(self, value: Any) -> Optional[int]:
-        if isinstance(value, int) and not isinstance(value, bool):
+        if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 9999:
             return value
         return None
 
     def normalize_optional_text(self, value: Any) -> Optional[str]:
         if isinstance(value, str) and value.strip():
-            return value
+            return value.strip()
         return None
+
+    def normalize_url(self, value: Any) -> Optional[str]:
+        text = self.normalize_optional_text(value)
+        if not text:
+            return None
+        text = text.strip()
+        parsed = urlparse(text)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return None
+        return text
 
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         doi = self.normalize_doi(item.get("doi"))
@@ -162,8 +179,7 @@ class OpenAlexClient:
             "journal_name": self.normalize_optional_text(source.get("display_name")),
             "published_date": self.normalize_publication_date(item.get("publication_date")),
             "published_year": self.normalize_publication_year(item.get("publication_year")),
-            "landing_url": self.normalize_optional_text(primary_location.get("landing_page_url"))
-            or self.normalize_optional_text(item.get("id")),
+            "landing_url": self.normalize_url(primary_location.get("landing_page_url")) or self.normalize_url(item.get("id")),
             "source_api": "openalex",
             "raw_metadata": item,
         }

@@ -18,6 +18,7 @@ def configure_runtime(base_dir: Path) -> None:
     os.environ["PAPER_LAB_TRANSLATION_DIR"] = str(base_dir / "translations")
     os.environ["PAPER_LAB_EXPORT_DIR"] = str(base_dir / "exports")
     os.environ["VECTOR_DB_PATH"] = str(base_dir / "vector-index.json")
+    os.environ["VECTOR_DB_BACKEND"] = "local-json"
     os.environ["PAPER_LAB_SCHEDULER_ENABLED"] = "false"
 
 
@@ -285,6 +286,10 @@ def run_smoke() -> dict:
         )
         txt_has_verification_metadata = "verified_by: smoke-check" in txt_content and "verified_at:" in txt_content
         bolsig_has_verification_metadata = "# VERIFIED_BY: smoke-check" in bolsig_content and "# VERIFIED_AT:" in bolsig_content
+        txt_has_confidence = "confidence: " in txt_content
+        bolsig_has_confidence = "CONFIDENCE: " in bolsig_content
+        txt_has_source_label = "source_label: " in txt_content
+        bolsig_has_source_label = "SOURCE_LABEL: " in bolsig_content
         assert_ok(txt_contains_reaction, f"expected reaction and rate in txt export, got {txt_content!r}")
         assert_ok(txt_has_source_excerpt, f"expected source excerpt in txt export, got {txt_content!r}")
         assert_ok(bolsig_contains_header, f"expected BOLSIG header and reaction, got {bolsig_content!r}")
@@ -293,24 +298,44 @@ def run_smoke() -> dict:
             bolsig_has_verification_metadata,
             f"expected verification metadata in BOLSIG export, got {bolsig_content!r}",
         )
+        assert_ok(txt_has_confidence, f"expected confidence in txt export, got {txt_content!r}")
+        assert_ok(bolsig_has_confidence, f"expected confidence in BOLSIG export, got {bolsig_content!r}")
+        assert_ok(txt_has_source_label, f"expected source_label in txt export, got {txt_content!r}")
+        assert_ok(bolsig_has_source_label, f"expected SOURCE_LABEL in BOLSIG export, got {bolsig_content!r}")
 
         status = assert_status(client.get("/api/v1/system/status"), 200, "system status")
         runtime = status["runtime"]
         config_warnings = status["config_warnings"]
         assert_ok(runtime["version"], "expected runtime version")
+        scheduler_job_ids = [job["id"] for job in runtime.get("scheduler_jobs") or []]
+        assert_ok(
+            scheduler_job_ids == ["crawl-daily", "crawl-weekly", "crawl-monthly"],
+            f"expected scheduler crawl jobs, got {scheduler_job_ids}",
+        )
         assert_ok(isinstance(config_warnings, list), "expected config_warnings list")
         counts = status["counts"]
+        status_counts = status["status_counts"]
+        assert_ok(status_counts["crawl_jobs"]["success"] == 1, "expected successful crawl job count")
+        assert_ok(status_counts["document_parse"]["parsed"] == 1, "expected parsed document count")
+        assert_ok(status_counts["document_index"]["indexed"] == 1, "expected indexed document count")
+        assert_ok(status_counts["document_chemistry"]["extracted"] == 1, "expected extracted chemistry count")
+        assert_ok(status_counts["translations"]["done"] == 1, "expected done translation count")
+        assert_ok(status_counts["reaction_sets"]["verified"] == 1, "expected verified reaction set count")
         assert_ok(counts["papers"] >= 2, "expected system status to include fixture papers")
+        assert_ok("paper_categories" in counts, "expected paper category count")
         assert_ok(counts["documents"] == 1, "expected one smoke document")
         assert_ok(counts["sections"] >= 1, "expected parsed section count")
         assert_ok(counts["chunks"] >= 1, "expected indexed chunk count")
         assert_ok(counts["translations"] == 1, "expected one translation")
         assert_ok(counts["reaction_sets"] == 1, "expected one reaction set")
         assert_ok(counts["reactions"] == 1, "expected one reaction")
+        assert_ok(counts["reaction_audits"] >= 1, "expected reaction audit count")
 
         return {
             "fixture": fixture_result,
             "papers": papers["total"],
+            "paper_categories": counts["paper_categories"],
+            "status_counts": status_counts,
             "crawl_jobs": counts["crawl_jobs"],
             "crawl_job_status": crawl_diagnostics["status"],
             "crawl_job_found": crawl_diagnostics["papers_found"],
@@ -329,10 +354,13 @@ def run_smoke() -> dict:
             "translation_output_path": translation["output_path"],
             "reaction_sets": counts["reaction_sets"],
             "reactions": counts["reactions"],
+            "reaction_audits": counts["reaction_audits"],
             "blocked_export_status": blocked_export.status_code,
             "verified_export_format": verified_export["format"],
             "verified_export_formats": [verified_export["format"], txt_export["format"], bolsig_export["format"]],
             "verified_export_path": verified_export["output_path"],
+            "verified_export_response_reactions": verified_export["reaction_count"],
+            "verified_export_response_audit_entries": verified_export["audit_entry_count"],
             "verified_export_reactions": len(exported_reactions),
             "verified_export_audit_entries": len(export_audit_entries),
             "verified_export_source_sections": len(export_source_sections),
@@ -342,7 +370,12 @@ def run_smoke() -> dict:
             "verified_export_txt_has_source_excerpt": txt_has_source_excerpt,
             "verified_export_txt_has_verification_metadata": txt_has_verification_metadata,
             "verified_export_bolsig_has_verification_metadata": bolsig_has_verification_metadata,
+            "verified_export_txt_has_confidence": txt_has_confidence,
+            "verified_export_bolsig_has_confidence": bolsig_has_confidence,
+            "verified_export_txt_has_source_label": txt_has_source_label,
+            "verified_export_bolsig_has_source_label": bolsig_has_source_label,
             "runtime_version": runtime["version"],
+            "scheduler_job_ids": scheduler_job_ids,
             "config_warning_count": len(config_warnings),
         }
 

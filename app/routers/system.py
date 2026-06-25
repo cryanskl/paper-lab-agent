@@ -7,8 +7,9 @@ from fastapi import APIRouter
 from app import __version__
 from app.clients.grobid import GrobidClient
 from app.config import get_settings
-from app.db import fetch_one
-from app.services.rag import SUPPORTED_EMBEDDING_MODELS
+from app.db import fetch_one, get_conn
+from app.scheduler import scheduled_crawl_jobs
+from app.services.rag import SUPPORTED_EMBEDDING_MODELS, SUPPORTED_VECTOR_DB_BACKENDS
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -25,6 +26,19 @@ def normalize_grobid_status(detail: dict, fallback_url: str) -> dict:
 def table_count(table: str) -> int:
     row = fetch_one(f"SELECT COUNT(*) AS n FROM {table}") or {"n": 0}
     return row["n"]
+
+
+def status_count(table: str, column: str) -> dict:
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT COALESCE({column}, 'unknown') AS status, COUNT(*) AS n
+            FROM {table}
+            GROUP BY COALESCE({column}, 'unknown')
+            ORDER BY status
+            """
+        ).fetchall()
+    return {row["status"]: row["n"] for row in rows}
 
 
 def storage_path_health(path: Path) -> dict:
@@ -69,6 +83,7 @@ def storage_health(settings) -> dict:
         "tei_dir": storage_path_health(settings.tei_dir),
         "translation_dir": storage_path_health(settings.translation_dir),
         "export_dir": storage_path_health(settings.export_dir),
+        "database": storage_path_health(settings.database_path),
         "database_parent": storage_path_health(settings.database_path.parent),
         "vector_db_parent": storage_path_health(settings.vector_db_path.parent),
         "vector_db": vector_store_health(settings.vector_db_path),
@@ -109,6 +124,14 @@ def config_warnings(settings) -> list[dict]:
                 "message": f"EMBEDDING_MODEL={settings.embedding_model} is not supported by the local adapter registry.",
             }
         )
+    if (settings.vector_db_backend or "").strip().lower() not in SUPPORTED_VECTOR_DB_BACKENDS:
+        warnings.append(
+            {
+                "code": "unsupported_vector_db_backend",
+                "capability": "rag_indexing",
+                "message": f"VECTOR_DB_BACKEND={settings.vector_db_backend} is not supported by the current vector store registry.",
+            }
+        )
     return warnings
 
 
@@ -123,6 +146,7 @@ async def status(check_external: bool = False) -> dict:
         "runtime": {
             "api_prefix": settings.api_prefix,
             "scheduler_enabled": settings.scheduler_enabled,
+            "scheduler_jobs": scheduled_crawl_jobs(),
             "version": __version__,
         },
         "config_warnings": config_warnings(settings),
@@ -142,11 +166,21 @@ async def status(check_external: bool = False) -> dict:
             "grobid": grobid,
             "llm_api_key": bool(settings.llm_api_key),
             "embedding_model": settings.embedding_model,
+            "vector_db_backend": settings.vector_db_backend,
+        },
+        "status_counts": {
+            "crawl_jobs": status_count("crawl_jobs", "status"),
+            "document_parse": status_count("documents", "parse_status"),
+            "document_index": status_count("documents", "index_status"),
+            "document_chemistry": status_count("documents", "chemistry_status"),
+            "translations": status_count("translations", "status"),
+            "reaction_sets": status_count("reaction_sets", "status"),
         },
         "counts": {
             "journals": table_count("journals"),
             "papers": table_count("papers"),
             "categories": table_count("categories"),
+            "paper_categories": table_count("paper_categories"),
             "crawl_jobs": table_count("crawl_jobs"),
             "documents": table_count("documents"),
             "sections": table_count("sections"),
@@ -154,5 +188,6 @@ async def status(check_external: bool = False) -> dict:
             "chunks": table_count("chunks"),
             "reaction_sets": table_count("reaction_sets"),
             "reactions": table_count("reactions"),
+            "reaction_audits": table_count("reaction_audits"),
         },
     }

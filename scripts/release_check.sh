@@ -39,6 +39,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-fixtures-") as fixture_dir:
         "PAPER_LAB_TRANSLATION_DIR",
         "PAPER_LAB_EXPORT_DIR",
         "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
     ]:
         env.pop(key, None)
     result = subprocess.run(
@@ -79,9 +80,19 @@ expected = {
     "verified_export_format": "json",
     "verified_export_formats": ["json", "txt", "bolsig"],
     "runtime_version": __version__,
+    "scheduler_job_ids": ["crawl-daily", "crawl-weekly", "crawl-monthly"],
     "config_warning_count": 3,
     "duplicate_upload_status": 409,
+    "papers": 2,
+    "paper_categories": 1,
+    "sections": 1,
+    "chunks": 1,
+    "rag_sources": 1,
+    "reaction_sets": 1,
+    "reactions": 1,
     "verified_export_reactions": 1,
+    "verified_export_response_reactions": 1,
+    "verified_export_response_audit_entries": 1,
     "verified_export_source_sections": 1,
     "verified_export_text_files": 2,
     "verified_export_bolsig_contains_header": True,
@@ -91,6 +102,10 @@ expected = {
     "rag_source_excerpts": 1,
     "verified_export_txt_has_verification_metadata": True,
     "verified_export_bolsig_has_verification_metadata": True,
+    "verified_export_txt_has_confidence": True,
+    "verified_export_bolsig_has_confidence": True,
+    "verified_export_txt_has_source_label": True,
+    "verified_export_bolsig_has_source_label": True,
 }
 for key, value in expected.items():
     if payload.get(key) != value:
@@ -108,12 +123,50 @@ if payload.get("crawl_job_new", 0) < 1:
 if payload.get("crawled_papers", 0) < 1:
     print(f"release_check failed: smoke crawled_papers={payload.get('crawled_papers')!r}, expected >= 1", file=sys.stderr)
     raise SystemExit(1)
+if "paper_categories" not in payload:
+    print("release_check failed: smoke paper_categories is missing", file=sys.stderr)
+    raise SystemExit(1)
+status_counts = payload.get("status_counts")
+if not isinstance(status_counts, dict):
+    print("release_check failed: smoke status_counts is missing", file=sys.stderr)
+    raise SystemExit(1)
+failed_statuses = []
+for section, counts in status_counts.items():
+    if isinstance(counts, dict):
+        failed = counts.get("failed")
+        if isinstance(failed, int) and not isinstance(failed, bool) and failed > 0:
+            failed_statuses.append(f"{section}.failed={failed}")
+if failed_statuses:
+    print(f"release_check failed: smoke failed statuses present ({'; '.join(failed_statuses)})", file=sys.stderr)
+    raise SystemExit(1)
+expected_status_counts = {
+    ("crawl_jobs", "success"): 1,
+    ("document_parse", "parsed"): 1,
+    ("document_index", "indexed"): 1,
+    ("document_chemistry", "extracted"): 1,
+    ("translations", "done"): 1,
+    ("reaction_sets", "verified"): 1,
+}
+for (section, state), value in expected_status_counts.items():
+    actual = status_counts.get(section, {}).get(state)
+    if actual != value:
+        print(
+            f"release_check failed: smoke status_counts.{section}.{state}={actual!r}, expected {value!r}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 if not payload.get("duplicate_document_id"):
     print("release_check failed: smoke duplicate_document_id is missing", file=sys.stderr)
     raise SystemExit(1)
 if payload.get("verified_export_audit_entries", 0) < 1:
     print(
         f"release_check failed: smoke verified_export_audit_entries={payload.get('verified_export_audit_entries')!r}, expected >= 1",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+if payload.get("reaction_audits", 0) < 1:
+    print(
+        f"release_check failed: smoke reaction_audits={payload.get('reaction_audits')!r}, expected >= 1",
         file=sys.stderr,
     )
     raise SystemExit(1)

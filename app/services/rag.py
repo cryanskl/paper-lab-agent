@@ -3,7 +3,7 @@ import math
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Iterable, Protocol
+from typing import Iterable, Optional, Protocol
 
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
@@ -47,7 +47,12 @@ class LocalHashEmbeddingAdapter:
 
 
 SUPPORTED_EMBEDDING_MODELS = {"local-hash"}
+SUPPORTED_VECTOR_DB_BACKENDS = {"local-json"}
 SOURCE_EXCERPT_MAX_CHARS = 360
+
+
+def normalize_vector_db_backend(backend: Optional[str]) -> str:
+    return (backend or "local-json").strip().lower()
 
 
 def get_embedding_adapter(model_name: str) -> EmbeddingAdapter:
@@ -138,6 +143,13 @@ class JsonVectorStore:
         return selected[:top_k]
 
 
+def get_vector_store(settings) -> JsonVectorStore:
+    normalized = normalize_vector_db_backend(settings.vector_db_backend)
+    if normalized == "local-json":
+        return JsonVectorStore(settings.vector_db_path)
+    raise ValueError(f"unsupported vector db backend: {settings.vector_db_backend}")
+
+
 def chunk_text(text: str, max_words: int = 220) -> Iterable[str]:
     words = text.split()
     if not words:
@@ -156,7 +168,7 @@ def mark_index_queued(document_id: int) -> None:
 
 def index_document(document_id: int) -> dict:
     settings = get_settings()
-    vector_store = JsonVectorStore(settings.vector_db_path)
+    vector_store = None
     vector_index = {}
     with get_conn() as conn:
         conn.execute(
@@ -168,6 +180,7 @@ def index_document(document_id: int) -> dict:
             error = "document has no parsed sections"
             conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
             try:
+                vector_store = get_vector_store(settings)
                 vector_store.delete_document(document_id)
             except Exception as exc:
                 error = f"{error}; vector cleanup failed: {exc}"
@@ -178,6 +191,7 @@ def index_document(document_id: int) -> dict:
             return {"document_id": document_id, "chunks": 0, "embedded": 0, "status": "failed", "error": error}
         count = 0
         try:
+            vector_store = get_vector_store(settings)
             conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
             vector_store.delete_document(document_id)
             embedding_adapter = get_embedding_adapter(settings.embedding_model)
@@ -199,6 +213,7 @@ def index_document(document_id: int) -> dict:
                         "text": chunk,
                         "embedding": embedding,
                         "embedding_model": embedding_adapter.model_name,
+                        "vector_db_backend": settings.vector_db_backend,
                         "dimensions": len(embedding),
                     }
                     count += 1
@@ -213,10 +228,11 @@ def index_document(document_id: int) -> dict:
             return {"document_id": document_id, "chunks": count, "embedded": 1, "status": "indexed"}
         except Exception as exc:
             conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
-            try:
-                vector_store.delete_document(document_id)
-            except Exception:
-                pass
+            if vector_store is not None:
+                try:
+                    vector_store.delete_document(document_id)
+                except Exception:
+                    pass
             conn.execute(
                 "UPDATE documents SET index_status='failed', index_error=? WHERE id=?",
                 (str(exc), document_id),
@@ -226,7 +242,7 @@ def index_document(document_id: int) -> dict:
 
 def query(question: str, document_ids: list[int], top_k: int) -> dict:
     settings = get_settings()
-    vector_store = JsonVectorStore(settings.vector_db_path)
+    vector_store = get_vector_store(settings)
     question_terms = Counter(tokenize(question))
     vector_hits = vector_store.search(local_hash_embedding(question), document_ids, top_k)
     vector_hits = [

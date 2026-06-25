@@ -4,7 +4,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from app.frontend_api import request_json, request_json_status
+from app.frontend_api import reaction_review_rows, request_json, request_json_status
 
 
 API_BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000/api/v1").rstrip("/")
@@ -50,6 +50,18 @@ def flatten_crawl_job_rows(jobs: list[dict]) -> list[dict]:
     return rows
 
 
+def format_category_summary(paper: dict) -> str:
+    details = paper.get("category_details") or []
+    if details:
+        labels = []
+        for category in details:
+            confidence = category.get("confidence")
+            confidence_label = "-" if confidence is None else f"{confidence:.2f}"
+            labels.append(f"{category.get('slug')} · {category.get('method') or '-'} · {confidence_label}")
+        return ", ".join(labels)
+    return ", ".join(paper.get("categories") or []) or "-"
+
+
 st.set_page_config(page_title="paper-lab-agent", layout="wide")
 st.title("paper-lab-agent")
 
@@ -78,6 +90,11 @@ with st.sidebar:
     st.caption(f"API: {runtime.get('api_prefix', '/api/v1')}")
     st.caption(f"version: {runtime.get('version') or '-'}")
     st.caption(f"scheduler_enabled: {runtime.get('scheduler_enabled', False)}")
+    scheduler_jobs = runtime.get("scheduler_jobs") or []
+    if scheduler_jobs:
+        st.caption("scheduler_jobs:")
+        for job in scheduler_jobs:
+            st.caption(f"- {job.get('period')} · {job.get('id')} · {job.get('schedule')} {job.get('timezone')}")
     st.caption(f"DB: {status['database_path']}")
     external_capabilities = status.get("external_capabilities", {})
     st.subheader("外部能力")
@@ -86,6 +103,7 @@ with st.sidebar:
     st.caption(f"GROBID URL: {external_capabilities.get('grobid_url') or '-'}")
     st.caption(f"LLM key: {'已配置' if external_capabilities.get('llm_api_key') else '未配置'}")
     st.caption(f"Embedding: {external_capabilities.get('embedding_model') or '-'}")
+    st.caption(f"Vector DB: {external_capabilities.get('vector_db_backend') or '-'}")
     grobid = external_capabilities.get("grobid") or {}
     grobid_available = grobid.get("available")
     if grobid_available is True:
@@ -99,6 +117,36 @@ with st.sidebar:
         st.caption(f"GROBID status_code: {grobid.get('status_code')}")
     if grobid.get("error"):
         st.warning(f"GROBID error: {grobid.get('error')}")
+    storage_health = status.get("storage_health", {})
+    if storage_health:
+        st.subheader("存储健康")
+        for key in ["data_dir", "pdf_dir", "tei_dir", "translation_dir", "export_dir", "database", "vector_db"]:
+            health_entry = storage_health.get(key) or {}
+            exists_label = "exists" if health_entry.get("exists") else "missing"
+            writable_label = "writable" if health_entry.get("writable") else "not writable"
+            st.caption(f"{key}: {exists_label} · {writable_label} · {health_entry.get('path') or '-'}")
+            if key == "vector_db":
+                valid_json = health_entry.get("valid_json")
+                valid_json_label = "unchecked" if valid_json is None else ("valid_json" if valid_json else "invalid_json")
+                st.caption(f"vector_db valid_json: {valid_json_label}")
+            if health_entry.get("error"):
+                st.warning(f"{key} error: {health_entry['error']}")
+    status_counts = status.get("status_counts", {})
+    if status_counts:
+        st.subheader("状态分布")
+        status_count_rows = [
+            {"workflow": workflow, "status": state, "count": count}
+            for workflow in ["crawl_jobs", "document_parse", "document_index", "document_chemistry", "translations", "reaction_sets"]
+            for state, count in (status_counts.get(workflow) or {}).items()
+        ]
+        if status_count_rows:
+            st.dataframe(status_count_rows, use_container_width=True)
+            failed_workflow_rows = [row for row in status_count_rows if row["status"] == "failed" and row["count"]]
+            if failed_workflow_rows:
+                failed_summary = ", ".join(
+                    f"{row['workflow']}={row['count']}" for row in failed_workflow_rows
+                )
+                st.warning(f"failed workflow backlog: {failed_summary}")
     config_warnings = status.get("config_warnings") or []
     if config_warnings:
         st.subheader("配置提示")
@@ -111,7 +159,7 @@ with search_tab:
     st.caption("可先运行 `python scripts/import_fixtures.py` 导入离线样例。")
     journals = api_get("/journals", active=True, page_size=100)["items"]
     categories = api_get("/categories")["items"]
-    col1, col2, col3, col4, col5, col6 = st.columns([2, 1, 1, 1, 1, 1])
+    col1, col2, col3, col4, col5, col6, col7 = st.columns([2, 1, 1, 1, 1, 1, 1])
     q = col1.text_input("关键词", value="plasma")
     journal_names = ["全部"] + [j["name"] for j in journals]
     journal_choice = col2.selectbox("期刊", journal_names)
@@ -120,10 +168,16 @@ with search_tab:
     year_from = col4.number_input("year_from", min_value=0, max_value=2100, value=0)
     year_to = col5.number_input("year_to", min_value=0, max_value=2100, value=0)
     oa_only = col6.checkbox("OA only")
+    sort_choice = col7.selectbox("排序", ["date_desc", "relevance"])
+    page_col, page_size_col = st.columns(2)
+    search_page = page_col.number_input("page", min_value=1, value=1, key="search-page")
+    search_page_size = page_size_col.number_input("page_size", min_value=1, max_value=100, value=20, key="search-page-size")
     params = {
         "q": q or None,
-        "page_size": 20,
+        "page": int(search_page),
+        "page_size": int(search_page_size),
         "oa_only": oa_only,
+        "sort": sort_choice,
     }
     if journal_choice != "全部":
         params["journal_id"] = next(j["id"] for j in journals if j["name"] == journal_choice)
@@ -137,6 +191,10 @@ with search_tab:
         st.warning("year_from must be less than or equal to year_to")
         papers = {"items": [], "total": 0, "page": 1, "page_size": 20}
         search_error = None
+    elif sort_choice == "relevance" and not q.strip():
+        st.warning("sort=relevance requires q")
+        papers = {"items": [], "total": 0, "page": 1, "page_size": 20}
+        search_error = None
     else:
         try:
             papers = api_get("/papers", **{k: v for k, v in params.items() if v is not None})
@@ -146,6 +204,7 @@ with search_tab:
             search_error = exc
             st.warning(f"检索失败: {exc}")
     st.metric("结果", papers["total"])
+    st.caption(f"page {papers['page']} · page_size {papers['page_size']}")
     if not search_error and papers["total"] == 0:
         st.info("没有检索结果。")
     for paper in papers["items"]:
@@ -159,12 +218,11 @@ with search_tab:
                 f"has_doi={paper.get('has_doi')} · key={dedupe_label or '-'}"
             )
             st.write((paper.get("abstract") or "")[:400])
-            categories_text = ", ".join(paper.get("categories") or []) or "-"
-            st.caption(f"分类结果: {categories_text}")
+            st.caption(f"分类结果: {format_category_summary(paper)}")
             if st.button("触发分类", key=f"classify-paper-{paper['id']}"):
                 status_code, classified_paper = api_post(f"/papers/{paper['id']}/classify")
                 if status_code < 400:
-                    st.success(", ".join(classified_paper.get("categories") or []) or "无分类")
+                    st.success(format_category_summary(classified_paper))
                 else:
                     st.warning(classified_paper)
             if st.button("重新解析 OA", key=f"resolve-oa-{paper['id']}"):
@@ -195,7 +253,7 @@ with search_tab:
                         json={"category_ids": selected_category_ids, "method": "manual"},
                     )
                     if status_code < 400:
-                        st.success(", ".join(updated_paper.get("categories") or []) or "无分类")
+                        st.success(format_category_summary(updated_paper))
                     else:
                         st.warning(updated_paper)
             links = []
@@ -226,7 +284,22 @@ with search_tab:
         else:
             st.warning(crawl_payload)
         st.json(crawl_payload)
-    jobs = api_get("/crawl/jobs", page_size=10)["items"]
+    crawl_jobs_page_col, crawl_jobs_page_size_col = st.columns(2)
+    crawl_jobs_page = crawl_jobs_page_col.number_input("crawl_jobs_page", min_value=1, value=1, key="crawl-jobs-page")
+    crawl_jobs_page_size = crawl_jobs_page_size_col.number_input(
+        "crawl_jobs_page_size",
+        min_value=1,
+        max_value=100,
+        value=10,
+        key="crawl-jobs-page-size",
+    )
+    crawl_jobs_response = api_get("/crawl/jobs", page=int(crawl_jobs_page), page_size=int(crawl_jobs_page_size))
+    jobs = crawl_jobs_response["items"]
+    st.caption(
+        f"crawl jobs page {crawl_jobs_response['page']} · "
+        f"page_size {crawl_jobs_response['page_size']} · "
+        f"total {crawl_jobs_response['total']}"
+    )
     st.dataframe(flatten_crawl_job_rows(jobs), use_container_width=True)
     if not jobs:
         st.info("暂无抓取任务。")
@@ -249,12 +322,31 @@ with search_tab:
         st.json(job_detail)
 
 with config_tab:
-    journals_response = api_get("/journals", page_size=100)
+    config_journals_page_col, config_journals_page_size_col = st.columns(2)
+    config_journals_page = config_journals_page_col.number_input(
+        "config_journals_page",
+        min_value=1,
+        value=1,
+        key="config-journals-page",
+    )
+    config_journals_page_size = config_journals_page_size_col.number_input(
+        "config_journals_page_size",
+        min_value=1,
+        max_value=100,
+        value=100,
+        key="config-journals-page-size",
+    )
+    journals_response = api_get("/journals", page=int(config_journals_page), page_size=int(config_journals_page_size))
     categories_response = api_get("/categories")
     journals_all = journals_response["items"]
     categories_all = categories_response["items"]
 
     st.subheader("期刊白名单")
+    st.caption(
+        f"journals page {journals_response['page']} · "
+        f"page_size {journals_response['page_size']} · "
+        f"total {journals_response['total']}"
+    )
     journals_table = [
         {
             **journal,
@@ -276,29 +368,34 @@ with config_tab:
         issn_electronic = j4.text_input("issn_electronic", key="new-journal-issn-electronic")
         j5, j6 = st.columns(2)
         year_from = j5.number_input("year_from", min_value=1900, max_value=2100, value=1990, key="new-journal-year-from")
-        platform = j6.text_input("platform", key="new-journal-platform")
+        new_journal_year_to = j6.number_input("year_to", min_value=0, max_value=2100, value=0, key="new-journal-year-to")
+        platform = st.text_input("platform", key="new-journal-platform")
         url = st.text_input("url", key="new-journal-url")
         keywords_mode = st.selectbox("keywords_mode", ["or", "and"], key="new-journal-keywords-mode")
         keywords_terms = st.text_area("keywords_terms", key="new-journal-keywords-terms")
         create_journal = st.form_submit_button("新增期刊")
         if create_journal:
             terms = [term.strip() for term in keywords_terms.replace("\n", ",").split(",") if term.strip()]
-            payload = {
-                "name": journal_name,
-                "publisher": publisher or None,
-                "platform": platform or None,
-                "url": url or None,
-                "issn_print": issn_print or None,
-                "issn_electronic": issn_electronic or None,
-                "keywords": {"mode": keywords_mode, "terms": terms},
-                "year_from": int(year_from),
-            }
-            status_code, result = api_post("/journals", json=payload)
-            if status_code == 201:
-                st.success(f"journal #{result['id']}")
-                st.rerun()
+            if new_journal_year_to and year_from > new_journal_year_to:
+                st.warning("year_from must be less than or equal to year_to")
             else:
-                st.warning(result)
+                payload = {
+                    "name": journal_name,
+                    "publisher": publisher or None,
+                    "platform": platform or None,
+                    "url": url or None,
+                    "issn_print": issn_print or None,
+                    "issn_electronic": issn_electronic or None,
+                    "keywords": {"mode": keywords_mode, "terms": terms},
+                    "year_from": int(year_from),
+                    "year_to": int(new_journal_year_to) if new_journal_year_to else None,
+                }
+                status_code, result = api_post("/journals", json=payload)
+                if status_code == 201:
+                    st.success(f"journal #{result['id']}")
+                    st.rerun()
+                else:
+                    st.warning(result)
 
     if journals_all:
         selected_journal = st.selectbox(
@@ -307,6 +404,21 @@ with config_tab:
             format_func=lambda journal: f"#{journal['id']} {journal['name']} · active={journal.get('active')}",
         )
         active = st.checkbox("active", value=bool(selected_journal.get("active")), key=f"journal-active-{selected_journal['id']}")
+        jy1, jy2 = st.columns(2)
+        edit_year_from = jy1.number_input(
+            "year_from",
+            min_value=1900,
+            max_value=2100,
+            value=int(selected_journal.get("year_from") or 1990),
+            key=f"journal-year-from-{selected_journal['id']}",
+        )
+        edit_year_to = jy2.number_input(
+            "year_to",
+            min_value=0,
+            max_value=2100,
+            value=int(selected_journal.get("year_to") or 0),
+            key=f"journal-year-to-{selected_journal['id']}",
+        )
         edit_keywords_mode = st.selectbox(
             "keywords_mode",
             ["or", "and"],
@@ -323,14 +435,22 @@ with config_tab:
         )
         if st.button("更新期刊", key=f"update-journal-{selected_journal['id']}"):
             terms = [term.strip() for term in keywords_terms.replace("\n", ",").split(",") if term.strip()]
-            status_code, result = api_put(
-                f"/journals/{selected_journal['id']}",
-                json={"active": active, "keywords": {"mode": edit_keywords_mode, "terms": terms}},
-            )
-            if status_code < 400:
-                st.rerun()
+            if edit_year_to and edit_year_from > edit_year_to:
+                st.warning("year_from must be less than or equal to year_to")
             else:
-                st.warning(result)
+                status_code, result = api_put(
+                    f"/journals/{selected_journal['id']}",
+                    json={
+                        "active": active,
+                        "keywords": {"mode": edit_keywords_mode, "terms": terms},
+                        "year_from": int(edit_year_from),
+                        "year_to": int(edit_year_to) if edit_year_to else None,
+                    },
+                )
+                if status_code < 400:
+                    st.rerun()
+                else:
+                    st.warning(result)
         if st.button("停用期刊", key=f"delete-journal-{selected_journal['id']}"):
             status_code, result = api_delete(f"/journals/{selected_journal['id']}")
             if status_code < 400:
@@ -387,7 +507,22 @@ with documents_tab:
             st.json(duplicate_document)
         else:
             st.warning(payload)
-    docs = api_get("/documents", page_size=50)["items"]
+    documents_page_col, documents_page_size_col = st.columns(2)
+    documents_page = documents_page_col.number_input("documents_page", min_value=1, value=1, key="documents-page")
+    documents_page_size = documents_page_size_col.number_input(
+        "documents_page_size",
+        min_value=1,
+        max_value=100,
+        value=50,
+        key="documents-page-size",
+    )
+    documents_response = api_get("/documents", page=int(documents_page), page_size=int(documents_page_size))
+    docs = documents_response["items"]
+    st.caption(
+        f"documents page {documents_response['page']} · "
+        f"page_size {documents_response['page_size']} · "
+        f"total {documents_response['total']}"
+    )
     if not docs:
         st.info("暂无文档，请先上传 PDF。")
     else:
@@ -395,6 +530,28 @@ with documents_tab:
         document_detail = api_get(f"/documents/{selected['id']}")
         if document_detail.get("parse_error"):
             st.warning(f"parse_error: {document_detail['parse_error']}")
+        if document_detail.get("file_path"):
+            pdf_path = Path(document_detail.get("file_path"))
+            if pdf_path.exists():
+                st.download_button(
+                    "下载原始 PDF",
+                    data=pdf_path.read_bytes(),
+                    file_name=pdf_path.name,
+                    mime="application/pdf",
+                )
+            else:
+                st.warning(f"PDF 文件不存在: {pdf_path}")
+        if document_detail.get("tei_path"):
+            tei_path = Path(document_detail.get("tei_path"))
+            if tei_path.exists():
+                st.download_button(
+                    "下载 TEI XML",
+                    data=tei_path.read_text(encoding="utf-8"),
+                    file_name=tei_path.name,
+                    mime="application/xml",
+                )
+            else:
+                st.warning(f"TEI 文件不存在: {tei_path}")
         st.caption(f"chemistry_status: {document_detail.get('chemistry_status') or 'unknown'}")
         if document_detail.get("chemistry_error"):
             st.warning(f"chemistry_error: {document_detail['chemistry_error']}")
@@ -415,8 +572,16 @@ with documents_tab:
             else:
                 st.warning(parse_payload)
             st.json(parse_payload)
+        translation_target_lang = c2.text_input(
+            "target_lang",
+            value="zh",
+            key=f"translation-target-lang-{selected['id']}",
+        )
         if c2.button("翻译"):
-            status_code, translate_payload = api_post(f"/documents/{selected['id']}/translate", json={"target_lang": "zh"})
+            status_code, translate_payload = api_post(
+                f"/documents/{selected['id']}/translate",
+                json={"target_lang": translation_target_lang},
+            )
             if status_code < 400:
                 st.success("已创建翻译任务")
             else:
@@ -436,9 +601,36 @@ with documents_tab:
             else:
                 st.warning(extract_payload)
             st.json(extract_payload)
-        sections = api_get(f"/documents/{selected['id']}/sections")["items"]
-        chunks = api_get(f"/documents/{selected['id']}/chunks")
-        index_status = "indexed" if chunks["indexed"] else "not indexed"
+        sections_page_col, sections_page_size_col = st.columns(2)
+        sections_page = sections_page_col.number_input("sections_page", min_value=1, value=1, key=f"sections-page-{selected['id']}")
+        sections_page_size = sections_page_size_col.number_input(
+            "sections_page_size",
+            min_value=1,
+            max_value=100,
+            value=20,
+            key=f"sections-page-size-{selected['id']}",
+        )
+        chunks_page_col, chunks_page_size_col = st.columns(2)
+        chunks_page = chunks_page_col.number_input("chunks_page", min_value=1, value=1, key=f"chunks-page-{selected['id']}")
+        chunks_page_size = chunks_page_size_col.number_input(
+            "chunks_page_size",
+            min_value=1,
+            max_value=100,
+            value=20,
+            key=f"chunks-page-size-{selected['id']}",
+        )
+        sections_response = api_get(
+            f"/documents/{selected['id']}/sections",
+            page=int(sections_page),
+            page_size=int(sections_page_size),
+        )
+        sections = sections_response["items"]
+        chunks = api_get(
+            f"/documents/{selected['id']}/chunks",
+            page=int(chunks_page),
+            page_size=int(chunks_page_size),
+        )
+        index_status = chunks.get("index_status") or ("indexed" if chunks["indexed"] else "not_indexed")
         st.caption(f"index_status: {index_status} · chunks: {chunks['total']}")
         if chunks.get("index_error"):
             st.warning(f"index_error: {chunks['index_error']}")
@@ -452,6 +644,11 @@ with documents_tab:
                 )
                 st.markdown(f"### {section_preview.get('title') or 'Section'}")
                 st.write(section_preview.get("content") or "")
+            st.caption(
+                f"sections page {sections_response['page']} · "
+                f"page_size {sections_response['page_size']} · "
+                f"total {sections_response['total']}"
+            )
             st.dataframe(sections, use_container_width=True)
         with translation_tab:
             try:
@@ -461,16 +658,20 @@ with documents_tab:
                     translation_error = translation_preview.get("error") or "unknown error"
                     st.warning(f"translation failed: {translation_error}")
                     st.json(translation_preview)
-                elif translation_preview.get("output_path") and Path(translation_preview.get("output_path")).exists():
+                elif translation_preview.get("output_path"):
                     output_path = Path(translation_preview.get("output_path"))
-                    translation_text = output_path.read_text(encoding="utf-8")
-                    st.download_button(
-                        "下载双语翻译",
-                        data=translation_text,
-                        file_name=output_path.name,
-                        mime="text/markdown",
-                    )
-                    st.markdown(translation_text[:4000])
+                    if output_path.exists():
+                        translation_text = output_path.read_text(encoding="utf-8")
+                        st.download_button(
+                            "下载双语翻译",
+                            data=translation_text,
+                            file_name=output_path.name,
+                            mime="text/markdown",
+                        )
+                        st.markdown(translation_text[:4000])
+                    else:
+                        st.warning(f"翻译文件不存在: {output_path}")
+                        st.json(translation_preview)
                 else:
                     st.json(translation_preview)
             except Exception as exc:
@@ -484,15 +685,47 @@ with documents_tab:
                     format_func=lambda chunk: f"{chunk.get('vector_id') or chunk.get('id')} · {chunk.get('section_title') or '-'}",
                 )
                 st.code(chunk_preview.get("text") or "")
+            st.caption(f"chunks page {chunks['page']} · page_size {chunks['page_size']} · total {chunks['total']}")
             st.dataframe(chunks["items"], use_container_width=True)
 
 with rag_tab:
+    rag_documents_page_col, rag_documents_page_size_col = st.columns(2)
+    rag_documents_page = rag_documents_page_col.number_input("rag_documents_page", min_value=1, value=1, key="rag-documents-page")
+    rag_documents_page_size = rag_documents_page_size_col.number_input(
+        "rag_documents_page_size",
+        min_value=1,
+        max_value=100,
+        value=100,
+        key="rag-documents-page-size",
+    )
+    rag_documents_response = api_get("/documents", page=int(rag_documents_page), page_size=int(rag_documents_page_size))
+    rag_documents = rag_documents_response["items"]
+    st.caption(
+        f"RAG documents page {rag_documents_response['page']} · "
+        f"page_size {rag_documents_response['page_size']} · "
+        f"total {rag_documents_response['total']}"
+    )
+    if rag_documents:
+        selected_rag_documents = st.multiselect(
+            "限定文档",
+            rag_documents,
+            format_func=lambda document: (
+                f"#{document['id']} {document.get('original_name') or Path(document['file_path']).name} · "
+                f"{document.get('index_status') or 'not_indexed'}"
+            ),
+            key="rag-document-select",
+        )
+    else:
+        selected_rag_documents = []
+        st.info("暂无可选文档，请先上传并索引文档。")
     doc_ids = st.text_input("document_ids", value="")
     question = st.text_input("问题", value="plasma chemistry")
     top_k = st.number_input("top_k", min_value=1, max_value=20, value=6)
     if st.button("提问"):
         try:
-            ids = [int(part.strip()) for part in doc_ids.split(",") if part.strip()]
+            selected_document_ids = [int(document["id"]) for document in selected_rag_documents]
+            typed_document_ids = [int(part.strip()) for part in doc_ids.split(",") if part.strip()]
+            ids = list(dict.fromkeys(selected_document_ids + typed_document_ids))
             document_id_error = None
         except ValueError:
             ids = []
@@ -535,6 +768,8 @@ with rag_tab:
                             f"{source.get('section_title') or '-'}"
                         ),
                     )
+                    if source_preview.get("source_excerpt"):
+                        st.code(source_preview.get("source_excerpt"))
                     st.json(source_preview)
                 else:
                     st.info("没有可定位引用来源。")
@@ -542,10 +777,68 @@ with rag_tab:
                     st.json(rag_payload)
 
 with chemistry_tab:
-    chemistry_document_id = st.number_input("chemistry_document_id", min_value=1, value=1)
+    chemistry_documents_page_col, chemistry_documents_page_size_col = st.columns(2)
+    chemistry_documents_page = chemistry_documents_page_col.number_input(
+        "chemistry_documents_page",
+        min_value=1,
+        value=1,
+        key="chemistry-documents-page",
+    )
+    chemistry_documents_page_size = chemistry_documents_page_size_col.number_input(
+        "chemistry_documents_page_size",
+        min_value=1,
+        max_value=100,
+        value=100,
+        key="chemistry-documents-page-size",
+    )
+    chemistry_documents_response = api_get(
+        "/documents",
+        page=int(chemistry_documents_page),
+        page_size=int(chemistry_documents_page_size),
+    )
+    chemistry_documents = chemistry_documents_response["items"]
+    st.caption(
+        f"chemistry documents page {chemistry_documents_response['page']} · "
+        f"page_size {chemistry_documents_response['page_size']} · "
+        f"total {chemistry_documents_response['total']}"
+    )
+    if chemistry_documents:
+        chemistry_document_options = chemistry_documents
+        selected_chemistry_document = st.selectbox(
+            "化学库文档",
+            chemistry_document_options,
+            format_func=lambda document: (
+                f"#{document['id']} {document.get('original_name') or Path(document['file_path']).name} · "
+                f"{document.get('chemistry_status') or 'not_extracted'}"
+            ),
+            key="chemistry-document-select",
+        )
+        chemistry_document_id = int(selected_chemistry_document["id"])
+        st.caption(f"chemistry_document_id: {chemistry_document_id}")
+    else:
+        st.info("暂无可选文档，请先上传并抽取化学库。")
+        chemistry_document_id = st.number_input("手动 document_id", min_value=1, value=1)
+    reaction_sets_page_col, reaction_sets_page_size_col = st.columns(2)
+    reaction_sets_page = reaction_sets_page_col.number_input(
+        "reaction_sets_page",
+        min_value=1,
+        value=1,
+        key="reaction-sets-page",
+    )
+    reaction_sets_page_size = reaction_sets_page_size_col.number_input(
+        "reaction_sets_page_size",
+        min_value=1,
+        max_value=100,
+        value=20,
+        key="reaction-sets-page-size",
+    )
     if st.button("加载文档反应集"):
         try:
-            st.session_state["document_reaction_sets"] = api_get(f"/documents/{chemistry_document_id}/reaction-sets")
+            st.session_state["document_reaction_sets"] = api_get(
+                f"/documents/{chemistry_document_id}/reaction-sets",
+                page=int(reaction_sets_page),
+                page_size=int(reaction_sets_page_size),
+            )
         except Exception as exc:
             st.warning(exc)
             st.session_state["document_reaction_sets"] = None
@@ -554,6 +847,11 @@ with chemistry_tab:
     document_reaction_sets = st.session_state.get("document_reaction_sets")
     if document_reaction_sets:
         reaction_set_items = document_reaction_sets.get("items", [])
+        st.caption(
+            f"reaction sets page {document_reaction_sets['page']} · "
+            f"page_size {document_reaction_sets['page_size']} · "
+            f"total {document_reaction_sets['total']}"
+        )
         st.dataframe(reaction_set_items)
         if not reaction_set_items:
             st.info("该文档暂无反应集。")
@@ -581,10 +879,17 @@ with chemistry_tab:
             f"status: {detail.get('status')} · "
             f"reactions: {len(reactions)} · "
             f"未复核: {len(unverified_reactions)} · "
+            f"gas_mixture: {detail.get('gas_mixture') or '-'} · "
+            f"lxcat_db: {detail.get('lxcat_db') or '-'} · "
             f"verified_by: {detail.get('verified_by') or '-'} · "
             f"verified_at: {detail.get('verified_at') or '-'}"
         )
+        if detail.get("source_note"):
+            st.caption(f"source_note: {detail.get('source_note')}")
         show_only_unverified = st.checkbox("只显示未复核", value=False, key="show_only_unverified")
+        if unverified_reactions:
+            st.subheader("未复核反应")
+            st.dataframe(reaction_review_rows(reactions, only_unverified=True), use_container_width=True)
         no_reactions = not reactions
         export_blocked = no_reactions or bool(unverified_reactions)
         if no_reactions:
@@ -600,6 +905,12 @@ with chemistry_tab:
                 st.error(payload)
             else:
                 st.success(payload["output_path"])
+                st.caption(
+                    f'format: {payload.get("format")} · '
+                    f'mime_type: {payload.get("mime_type")} · '
+                    f'reactions: {payload.get("reaction_count")} · '
+                    f'audit_entries: {payload.get("audit_entry_count")}'
+                )
                 export_path = Path(payload["output_path"])
                 if export_path.exists():
                     export_text = export_path.read_text(encoding="utf-8")
@@ -609,6 +920,8 @@ with chemistry_tab:
                         file_name=export_path.name,
                         mime=payload.get("mime_type") or "text/plain",
                     )
+                else:
+                    st.warning(f"导出文件不存在: {export_path}")
                 st.json(payload)
         display_reactions = unverified_reactions if show_only_unverified else reactions
         for reaction in display_reactions:
@@ -617,17 +930,24 @@ with chemistry_tab:
                 source_section_title = reaction.get("source_section_title") or "-"
                 source_section_type = reaction.get("source_section_type") or "-"
                 source_section_seq = reaction.get("source_section_seq")
+                source_label = reaction.get("source_label") or "-"
                 st.caption(
                     f"verified: {bool(reaction.get('verified'))} · "
                     f"confidence: {reaction.get('confidence')} · "
                     f"source_section_id: {reaction.get('source_section_id')} · "
                     f"source_section_title: {source_section_title} · "
                     f"source_section_type: {source_section_type} · "
-                    f"source_section_seq: {source_section_seq if source_section_seq is not None else '-'}"
+                    f"source_section_seq: {source_section_seq if source_section_seq is not None else '-'} · "
+                    f"source_label: {source_label}"
                 )
                 source_excerpt = reaction.get("source_excerpt")
                 if source_excerpt:
                     st.code(source_excerpt)
+                st.caption(
+                    f"reactants: {reaction.get('reactants') or '-'} · "
+                    f"products: {reaction.get('products') or '-'} · "
+                    f"reference: {reaction.get('reference') or '-'}"
+                )
                 c1, c2, c3 = st.columns(3)
                 reaction_type_options = ["", "elastic", "excitation", "ionization", "attachment", "recombination"]
                 rate_type_options = ["", "cross_section", "arrhenius", "constant"]

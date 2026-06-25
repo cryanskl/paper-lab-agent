@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -20,10 +21,12 @@ STATUS_REQUIRED_KEYS = {
     "storage",
     "storage_health",
     "external_capabilities",
+    "status_counts",
     "counts",
 }
 CONFIG_WARNING_REQUIRED_KEYS = {"code", "capability", "message"}
-RUNTIME_REQUIRED_KEYS = {"api_prefix", "scheduler_enabled", "version"}
+RUNTIME_REQUIRED_KEYS = {"api_prefix", "scheduler_enabled", "scheduler_jobs", "version"}
+SCHEDULER_JOB_REQUIRED_KEYS = {"id", "period", "trigger", "schedule", "timezone"}
 STORAGE_REQUIRED_KEYS = {"data_dir", "pdf_dir", "tei_dir", "translation_dir", "export_dir", "vector_db_path"}
 STORAGE_HEALTH_REQUIRED_KEYS = {
     "data_dir",
@@ -31,6 +34,7 @@ STORAGE_HEALTH_REQUIRED_KEYS = {
     "tei_dir",
     "translation_dir",
     "export_dir",
+    "database",
     "database_parent",
     "vector_db_parent",
     "vector_db",
@@ -45,12 +49,14 @@ EXTERNAL_CAPABILITY_REQUIRED_KEYS = {
     "grobid",
     "llm_api_key",
     "embedding_model",
+    "vector_db_backend",
 }
 GROBID_REQUIRED_KEYS = {"url", "available", "status_code", "error"}
 COUNT_REQUIRED_KEYS = {
     "journals",
     "papers",
     "categories",
+    "paper_categories",
     "crawl_jobs",
     "documents",
     "sections",
@@ -58,7 +64,37 @@ COUNT_REQUIRED_KEYS = {
     "chunks",
     "reaction_sets",
     "reactions",
+    "reaction_audits",
 }
+STATUS_COUNT_REQUIRED_KEYS = {
+    "crawl_jobs",
+    "document_parse",
+    "document_index",
+    "document_chemistry",
+    "translations",
+    "reaction_sets",
+}
+ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def clean_env_value(value: str) -> str:
+    result = []
+    in_single = False
+    in_double = False
+    previous = ""
+    for char in value:
+        if char == "'" and not in_double:
+            in_single = not in_single
+        elif char == '"' and not in_single:
+            in_double = not in_double
+        elif char == "#" and not in_single and not in_double and (not result or previous.isspace()):
+            break
+        result.append(char)
+        previous = char
+    cleaned = "".join(result).strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {"'", '"'}:
+        return cleaned[1:-1]
+    return cleaned
 
 
 def load_env_file(path: Path = Path(".env")) -> None:
@@ -70,8 +106,10 @@ def load_env_file(path: Path = Path(".env")) -> None:
             continue
         key, value = line.split("=", 1)
         key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
+        if not ENV_KEY_PATTERN.fullmatch(key):
+            continue
+        value = clean_env_value(value)
+        if key not in os.environ:
             os.environ[key] = value
 
 
@@ -169,6 +207,24 @@ def validate_system_status(status: dict) -> list[str]:
             errors.append(f"runtime invalid values: {', '.join(sorted(invalid_runtime))}")
         if isinstance(runtime.get("api_prefix"), str) and runtime["api_prefix"] != EXPECTED_API_PREFIX:
             errors.append(f"runtime api_prefix must be {EXPECTED_API_PREFIX}")
+        scheduler_jobs = runtime.get("scheduler_jobs")
+        if not isinstance(scheduler_jobs, list):
+            errors.append("scheduler_jobs must be a list")
+        else:
+            invalid_scheduler_jobs = []
+            for index, job in enumerate(scheduler_jobs):
+                if not isinstance(job, dict):
+                    invalid_scheduler_jobs.append(str(index))
+                    continue
+                missing_job_keys = SCHEDULER_JOB_REQUIRED_KEYS - set(job)
+                invalid_scheduler_jobs.extend(f"{index}.{key}" for key in sorted(missing_job_keys))
+                invalid_scheduler_jobs.extend(
+                    f"{index}.{key}"
+                    for key in sorted(SCHEDULER_JOB_REQUIRED_KEYS & set(job))
+                    if not isinstance(job[key], str) or not job[key].strip()
+                )
+            if invalid_scheduler_jobs:
+                errors.append(f"scheduler_jobs invalid values: {', '.join(invalid_scheduler_jobs)}")
     storage = status.get("storage")
     if not isinstance(storage, dict):
         errors.append("storage must be an object")
@@ -199,13 +255,16 @@ def validate_system_status(status: dict) -> list[str]:
             if "path" in value and (not isinstance(value["path"], str) or not value["path"]):
                 invalid_storage_health.append(f"{key}.path")
             expected_path = storage.get(key) if isinstance(storage, dict) and key in STORAGE_HEALTH_PATH_KEYS else None
+            if key == "database":
+                expected_path = status.get("database_path")
             if (
                 isinstance(expected_path, str)
                 and expected_path
                 and isinstance(value.get("path"), str)
                 and value["path"] != expected_path
             ):
-                invalid_storage_health.append(f"{key}.path must match storage.{key}")
+                source = "database_path" if key == "database" else f"storage.{key}"
+                invalid_storage_health.append(f"{key}.path must match {source}")
             for entry_key in ("exists", "writable"):
                 if entry_key in value and not isinstance(value[entry_key], bool):
                     invalid_storage_health.append(f"{key}.{entry_key}")
@@ -250,7 +309,7 @@ def validate_system_status(status: dict) -> list[str]:
         for key in ("openalex_mailto", "unpaywall_email", "llm_api_key"):
             if key in external_capabilities and not isinstance(external_capabilities[key], bool):
                 invalid_capabilities.append(key)
-        for key in ("grobid_url", "embedding_model"):
+        for key in ("grobid_url", "embedding_model", "vector_db_backend"):
             if key in external_capabilities and (
                 not isinstance(external_capabilities[key], str) or not external_capabilities[key]
             ):
@@ -289,6 +348,73 @@ def validate_system_status(status: dict) -> list[str]:
         )
         if invalid_counts:
             errors.append(f"counts invalid values: {', '.join(invalid_counts)}")
+    status_counts = status.get("status_counts")
+    if not isinstance(status_counts, dict):
+        errors.append("status_counts must be an object")
+    else:
+        missing_status_counts = sorted(STATUS_COUNT_REQUIRED_KEYS - set(status_counts))
+        if missing_status_counts:
+            errors.append(f"status_counts missing keys: {', '.join(missing_status_counts)}")
+        invalid_status_counts = []
+        for section, section_counts in status_counts.items():
+            if not isinstance(section_counts, dict):
+                invalid_status_counts.append(section)
+                continue
+            for state, value in section_counts.items():
+                if not isinstance(state, str) or not state.strip() or isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                    invalid_status_counts.append(f"{section}.{state}")
+        if invalid_status_counts:
+            errors.append(f"status_counts invalid values: {', '.join(invalid_status_counts)}")
+    return errors
+
+
+def storage_writability_errors(status: dict) -> list[str]:
+    storage_health = status.get("storage_health")
+    if not isinstance(storage_health, dict):
+        return ["storage_health"]
+
+    errors: list[str] = []
+    required_writable = [
+        "data_dir",
+        "pdf_dir",
+        "tei_dir",
+        "translation_dir",
+        "export_dir",
+        "database_parent",
+        "vector_db_parent",
+    ]
+    for key in required_writable:
+        entry = storage_health.get(key)
+        if not isinstance(entry, dict):
+            errors.append(key)
+            continue
+        if entry.get("exists") is not True:
+            errors.append(f"{key}.exists")
+        if entry.get("writable") is not True:
+            errors.append(f"{key}.writable")
+
+    database = storage_health.get("database")
+    if isinstance(database, dict) and database.get("exists") is True and database.get("writable") is not True:
+        errors.append("database.writable")
+
+    vector_db = storage_health.get("vector_db")
+    if isinstance(vector_db, dict) and vector_db.get("exists") is True and vector_db.get("writable") is not True:
+        errors.append("vector_db.writable")
+
+    return errors
+
+
+def failed_workflow_errors(status: dict) -> list[str]:
+    status_counts = status.get("status_counts")
+    if not isinstance(status_counts, dict):
+        return ["status_counts"]
+    errors: list[str] = []
+    for workflow, counts in status_counts.items():
+        if not isinstance(counts, dict):
+            continue
+        failed = counts.get("failed")
+        if isinstance(failed, int) and not isinstance(failed, bool) and failed > 0:
+            errors.append(f"{workflow}.failed={failed}")
     return errors
 
 
@@ -300,6 +426,8 @@ def main() -> int:
     parser.add_argument("--frontend-url", default=default_frontend_url(), help="Streamlit base URL")
     parser.add_argument("--check-external", action="store_true", help="Also check configured external services")
     parser.add_argument("--require-grobid", action="store_true", help="Fail when GROBID is unavailable")
+    parser.add_argument("--require-storage-writable", action="store_true", help="Fail when local storage paths are missing or not writable")
+    parser.add_argument("--require-no-failed-workflows", action="store_true", help="Fail when workflow status counts include failed items")
     parser.add_argument("--compact", action="store_true", help="Print health JSON on one line")
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args()
@@ -336,6 +464,16 @@ def main() -> int:
     if status_errors:
         print(f"health_check failed: system status invalid ({'; '.join(status_errors)})", file=sys.stderr)
         return 1
+    if args.require_storage_writable:
+        storage_errors = storage_writability_errors(status)
+        if storage_errors:
+            print(f"health_check failed: storage is not writable ({'; '.join(storage_errors)})", file=sys.stderr)
+            return 1
+    if args.require_no_failed_workflows:
+        workflow_errors = failed_workflow_errors(status)
+        if workflow_errors:
+            print(f"health_check failed: failed workflows present ({'; '.join(workflow_errors)})", file=sys.stderr)
+            return 1
     if args.require_grobid:
         grobid = status["external_capabilities"]["grobid"]
         if grobid.get("available") is not True:

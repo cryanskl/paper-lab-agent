@@ -42,6 +42,150 @@ REQUIRED_INDEXES = [
 ]
 REQUIRED_TRIGGERS = ["papers_ai", "papers_ad", "papers_au"]
 SEED_COUNTS = {"journals": 6, "categories": 7}
+REQUIRED_COLUMNS = {
+    "journals": [
+        "id",
+        "name",
+        "publisher",
+        "platform",
+        "url",
+        "issn_print",
+        "issn_electronic",
+        "keywords",
+        "year_from",
+        "year_to",
+        "sci_zone",
+        "impact_factor",
+        "active",
+    ],
+    "papers": [
+        "id",
+        "doi",
+        "title",
+        "abstract",
+        "authors",
+        "journal_id",
+        "journal_name",
+        "published_date",
+        "published_year",
+        "landing_url",
+        "oa_status",
+        "oa_pdf_url",
+        "source_api",
+        "dedupe_key",
+        "raw_metadata",
+        "indexed_at",
+        "updated_at",
+    ],
+    "categories": [
+        "id",
+        "name",
+        "slug",
+        "description",
+        "parent_id",
+    ],
+    "paper_categories": [
+        "paper_id",
+        "category_id",
+        "confidence",
+        "method",
+        "created_at",
+    ],
+    "crawl_jobs": [
+        "id",
+        "journal_id",
+        "period",
+        "date_from",
+        "date_to",
+        "status",
+        "papers_found",
+        "papers_filtered",
+        "papers_new",
+        "error",
+        "started_at",
+        "finished_at",
+        "created_at",
+    ],
+    "documents": [
+        "id",
+        "paper_id",
+        "file_path",
+        "file_hash",
+        "original_name",
+        "parse_status",
+        "parse_error",
+        "index_status",
+        "index_error",
+        "chemistry_status",
+        "chemistry_error",
+        "tei_path",
+    ],
+    "sections": [
+        "id",
+        "document_id",
+        "parent_id",
+        "seq",
+        "title",
+        "content",
+        "section_type",
+    ],
+    "translations": [
+        "id",
+        "document_id",
+        "source_lang",
+        "target_lang",
+        "status",
+        "output_path",
+        "error",
+    ],
+    "chunks": [
+        "id",
+        "document_id",
+        "section_id",
+        "seq",
+        "text",
+        "token_count",
+        "vector_id",
+        "embedded",
+    ],
+    "reaction_sets": [
+        "id",
+        "document_id",
+        "name",
+        "gas_mixture",
+        "lxcat_db",
+        "source_note",
+        "status",
+        "verified_by",
+        "verified_at",
+    ],
+    "reactions": [
+        "id",
+        "reaction_set_id",
+        "reaction",
+        "reaction_type",
+        "reactants",
+        "products",
+        "rate_type",
+        "rate_value",
+        "threshold_ev",
+        "reference",
+        "cross_section_url",
+        "source_section_id",
+        "source_label",
+        "source_excerpt",
+        "confidence",
+        "verified",
+    ],
+    "reaction_audits": [
+        "id",
+        "reaction_id",
+        "action",
+        "changes",
+        "verified_by",
+        "created_at",
+    ],
+}
 
 
 def sqlite_names(conn: sqlite3.Connection, object_type: str) -> set[str]:
@@ -49,6 +193,10 @@ def sqlite_names(conn: sqlite3.Connection, object_type: str) -> set[str]:
         row[0]
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type=? ORDER BY name", (object_type,)).fetchall()
     }
+
+
+def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
 
 
 def validate_fts(conn: sqlite3.Connection) -> list[str]:
@@ -105,6 +253,13 @@ def validate_schema(schema_path: Path = DEFAULT_SCHEMA_PATH) -> list[str]:
             for trigger in REQUIRED_TRIGGERS:
                 if trigger not in triggers:
                     issues.append(f"missing trigger: {trigger}")
+            for table, columns in REQUIRED_COLUMNS.items():
+                if table not in tables:
+                    continue
+                existing_columns = table_columns(conn, table)
+                for column in columns:
+                    if column not in existing_columns:
+                        issues.append(f"missing column: {table}.{column}")
 
             for table, expected_count in SEED_COUNTS.items():
                 if table in tables:
