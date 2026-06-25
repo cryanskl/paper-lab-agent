@@ -9258,3 +9258,17 @@ def test_streamlit_config_tab_can_update_journal_year_range():
         "year_from must be less than or equal to year_to",
     ]:
         assert required in journals_section
+
+
+def test_streamlit_config_tab_can_create_journal_with_year_to():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    create_section = streamlit[streamlit.index('with st.form("create-journal-form")') : streamlit.index("if journals_all:")]
+
+    for required in [
+        "new_journal_year_to",
+        'key="new-journal-year-to"',
+        '"year_to": int(new_journal_year_to) if new_journal_year_to else None',
+        "year_from must be less than or equal to year_to",
+    ]:
+        assert required in create_section

@@ -293,29 +293,34 @@ with config_tab:
         issn_electronic = j4.text_input("issn_electronic", key="new-journal-issn-electronic")
         j5, j6 = st.columns(2)
         year_from = j5.number_input("year_from", min_value=1900, max_value=2100, value=1990, key="new-journal-year-from")
-        platform = j6.text_input("platform", key="new-journal-platform")
+        new_journal_year_to = j6.number_input("year_to", min_value=0, max_value=2100, value=0, key="new-journal-year-to")
+        platform = st.text_input("platform", key="new-journal-platform")
         url = st.text_input("url", key="new-journal-url")
         keywords_mode = st.selectbox("keywords_mode", ["or", "and"], key="new-journal-keywords-mode")
         keywords_terms = st.text_area("keywords_terms", key="new-journal-keywords-terms")
         create_journal = st.form_submit_button("新增期刊")
         if create_journal:
             terms = [term.strip() for term in keywords_terms.replace("\n", ",").split(",") if term.strip()]
-            payload = {
-                "name": journal_name,
-                "publisher": publisher or None,
-                "platform": platform or None,
-                "url": url or None,
-                "issn_print": issn_print or None,
-                "issn_electronic": issn_electronic or None,
-                "keywords": {"mode": keywords_mode, "terms": terms},
-                "year_from": int(year_from),
-            }
-            status_code, result = api_post("/journals", json=payload)
-            if status_code == 201:
-                st.success(f"journal #{result['id']}")
-                st.rerun()
+            if new_journal_year_to and year_from > new_journal_year_to:
+                st.warning("year_from must be less than or equal to year_to")
             else:
-                st.warning(result)
+                payload = {
+                    "name": journal_name,
+                    "publisher": publisher or None,
+                    "platform": platform or None,
+                    "url": url or None,
+                    "issn_print": issn_print or None,
+                    "issn_electronic": issn_electronic or None,
+                    "keywords": {"mode": keywords_mode, "terms": terms},
+                    "year_from": int(year_from),
+                    "year_to": int(new_journal_year_to) if new_journal_year_to else None,
+                }
+                status_code, result = api_post("/journals", json=payload)
+                if status_code == 201:
+                    st.success(f"journal #{result['id']}")
+                    st.rerun()
+                else:
+                    st.warning(result)
 
     if journals_all:
         selected_journal = st.selectbox(
