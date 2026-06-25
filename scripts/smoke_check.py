@@ -277,6 +277,7 @@ def run_smoke() -> dict:
         txt_content = txt_path.read_text(encoding="utf-8")
         bolsig_content = bolsig_path.read_text(encoding="utf-8")
         txt_contains_reaction = "e + Ar -> e + e + Ar+" in txt_content and "rate: original source value" in txt_content
+        txt_has_source_excerpt = "source_excerpt:" in txt_content and "e + Ar -> e + e + Ar+ ." in txt_content
         bolsig_contains_header = (
             "# BOLSIG+ / LXCat compatible reaction summary" in bolsig_content
             and "PROCESS 1" in bolsig_content
@@ -285,6 +286,7 @@ def run_smoke() -> dict:
         txt_has_verification_metadata = "verified_by: smoke-check" in txt_content and "verified_at:" in txt_content
         bolsig_has_verification_metadata = "# VERIFIED_BY: smoke-check" in bolsig_content and "# VERIFIED_AT:" in bolsig_content
         assert_ok(txt_contains_reaction, f"expected reaction and rate in txt export, got {txt_content!r}")
+        assert_ok(txt_has_source_excerpt, f"expected source excerpt in txt export, got {txt_content!r}")
         assert_ok(bolsig_contains_header, f"expected BOLSIG header and reaction, got {bolsig_content!r}")
         assert_ok(txt_has_verification_metadata, f"expected verification metadata in txt export, got {txt_content!r}")
         assert_ok(
@@ -337,6 +339,7 @@ def run_smoke() -> dict:
             "verified_export_text_files": len([txt_export["output_path"], bolsig_export["output_path"]]),
             "verified_export_bolsig_contains_header": bolsig_contains_header,
             "verified_export_txt_contains_reaction": txt_contains_reaction,
+            "verified_export_txt_has_source_excerpt": txt_has_source_excerpt,
             "verified_export_txt_has_verification_metadata": txt_has_verification_metadata,
             "verified_export_bolsig_has_verification_metadata": bolsig_has_verification_metadata,
             "runtime_version": runtime["version"],

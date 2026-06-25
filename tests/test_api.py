@@ -1132,6 +1132,7 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["verified_export_text_files"] == 2
     assert result["verified_export_bolsig_contains_header"] is True
     assert result["verified_export_txt_contains_reaction"] is True
+    assert result["verified_export_txt_has_source_excerpt"] is True
     assert result["rag_answer_has_citation"] is True
     assert result["rag_source_excerpts"] == 1
     assert result["verified_export_txt_has_verification_metadata"] is True
@@ -1169,6 +1170,7 @@ def test_smoke_check_script_outputs_json():
     assert payload["verified_export_text_files"] == 2
     assert payload["verified_export_bolsig_contains_header"] is True
     assert payload["verified_export_txt_contains_reaction"] is True
+    assert payload["verified_export_txt_has_source_excerpt"] is True
     assert payload["rag_answer_has_citation"] is True
     assert payload["rag_source_excerpts"] == 1
     assert payload["verified_export_txt_has_verification_metadata"] is True
@@ -5450,6 +5452,7 @@ def test_reaction_export_bolsig_text_and_rejects_unknown_format(tmp_path):
     assert f"source_section_title: {reaction['source_section_title']}" in txt
     assert f"source_section_type: {reaction['source_section_type']}" in txt
     assert f"source_section_seq: {reaction['source_section_seq']}" in txt
+    assert f"source_excerpt: {reaction['source_excerpt']}" in txt
     assert "verified_by: chemist-a" in txt
     assert "verified_at:" in txt
     assert "BOLSIG+" in Path(exported["output_path"]).read_text(encoding="utf-8")
@@ -5615,6 +5618,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "verified_export_text_files" in release_text
     assert "verified_export_bolsig_contains_header" in release_text
     assert "verified_export_txt_contains_reaction" in release_text
+    assert "verified_export_txt_has_source_excerpt" in release_text
     assert "rag_answer_has_citation" in release_text
     assert "rag_source_excerpts" in release_text
     assert "verified_export_txt_has_verification_metadata" in release_text
@@ -5636,6 +5640,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert '"verified_export_text_files"' in smoke_text
     assert '"verified_export_bolsig_contains_header"' in smoke_text
     assert '"verified_export_txt_contains_reaction"' in smoke_text
+    assert '"verified_export_txt_has_source_excerpt"' in smoke_text
     assert '"rag_answer_has_citation"' in smoke_text
     assert '"rag_source_excerpts"' in smoke_text
     assert '"verified_export_txt_has_verification_metadata"' in smoke_text

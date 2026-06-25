@@ -375,6 +375,8 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
                 lines.append(f"source_section_type: {reaction['source_section_type']}")
             if reaction.get("source_section_seq") is not None:
                 lines.append(f"source_section_seq: {reaction['source_section_seq']}")
+            if reaction.get("source_excerpt"):
+                lines.append(f"source_excerpt: {reaction['source_excerpt']}")
         out_path.write_text("\n".join(lines), encoding="utf-8")
         mime_type = "text/plain"
     return {"reaction_set_id": reaction_set_id, "format": fmt, "output_path": str(out_path), "mime_type": mime_type}

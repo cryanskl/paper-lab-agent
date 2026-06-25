@@ -86,6 +86,7 @@ expected = {
     "verified_export_text_files": 2,
     "verified_export_bolsig_contains_header": True,
     "verified_export_txt_contains_reaction": True,
+    "verified_export_txt_has_source_excerpt": True,
     "rag_answer_has_citation": True,
     "rag_source_excerpts": 1,
     "verified_export_txt_has_verification_metadata": True,
