@@ -647,7 +647,7 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
 
     assert "python scripts/doctor.py --compact" in readme
-    assert "python scripts/doctor.py --compact" in checklist
+    assert "python scripts/doctor.py --strict --compact" in checklist
     assert "scripts/doctor.py" in release_check
     assert "scripts/doctor.py --help" in release_check
     assert "scripts/doctor.py --strict --compact" in release_check
