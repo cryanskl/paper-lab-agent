@@ -6505,6 +6505,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "`frontend_ok`",
         "`grobid_available`",
         "`storage_errors`",
+        "python scripts/health_check.py --require-frontend",
         "python -m scripts.smoke_check",
         "bash scripts/release_check.sh",
         "PAPER_LAB_SCHEDULER_ENABLED=true",
@@ -9010,6 +9011,74 @@ def test_health_check_summary_only_includes_frontend_probe(monkeypatch, capsys):
     assert summary["frontend_status_code"] == 200
     assert summary["frontend_ok"] is True
     assert "frontend" not in summary
+
+
+def test_health_check_require_frontend_fails_when_streamlit_is_unhealthy(monkeypatch, capsys):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_require_frontend", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(version="0.1.0"),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "status_counts": health_check_status_counts(),
+        }
+
+    def fake_fetch_status(url: str, timeout: float) -> int:
+        assert url == "http://ui.test/_stcore/health"
+        return 503
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(health_check, "fetch_status", fake_fetch_status, raising=False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "health_check.py",
+            "--base-url",
+            "http://api.test",
+            "--frontend-url",
+            "http://ui.test",
+            "--require-frontend",
+        ],
+    )
+
+    assert health_check.main() == 1
+    captured = capsys.readouterr()
+    assert "frontend is required but unavailable" in captured.err
+    assert "status_code=503" in captured.err
 
 
 def test_health_check_summary_only_includes_external_grobid_probe(monkeypatch, capsys):

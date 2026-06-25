@@ -573,6 +573,7 @@ def main() -> int:
     parser.add_argument("--base-url", default=default_base_url(), help="FastAPI base URL without /api/v1")
     parser.add_argument("--check-frontend", action="store_true", help="Also check Streamlit frontend health")
     parser.add_argument("--frontend-url", default=default_frontend_url(), help="Streamlit base URL")
+    parser.add_argument("--require-frontend", action="store_true", help="Fail when Streamlit frontend is unavailable")
     parser.add_argument("--check-external", action="store_true", help="Also check configured external services")
     parser.add_argument("--require-grobid", action="store_true", help="Fail when GROBID is unavailable")
     parser.add_argument("--require-storage-writable", action="store_true", help="Fail when local storage paths are missing or not writable")
@@ -593,7 +594,7 @@ def main() -> int:
     except (OSError, URLError, json.JSONDecodeError) as exc:
         print(f"health_check failed: {exc}", file=sys.stderr)
         return 1
-    frontend = probe_frontend(args.frontend_url, args.timeout) if args.check_frontend else None
+    frontend = probe_frontend(args.frontend_url, args.timeout) if args.check_frontend or args.require_frontend else None
 
     config_warnings = status.get("config_warnings", []) if isinstance(status, dict) else []
     output = {"health": health, "status": status, "config_warnings": config_warnings}
@@ -642,6 +643,10 @@ def main() -> int:
         if demo_errors:
             print(f"health_check failed: demo data is incomplete ({'; '.join(demo_errors)})", file=sys.stderr)
             return 1
+    if args.require_frontend and isinstance(frontend, dict) and frontend.get("status_code") != 200:
+        detail = frontend.get("error") or f"status_code={frontend.get('status_code')}"
+        print(f"health_check failed: frontend is required but unavailable ({detail})", file=sys.stderr)
+        return 1
     if args.require_grobid:
         grobid = status["external_capabilities"]["grobid"]
         if grobid.get("available") is not True:
