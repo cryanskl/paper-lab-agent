@@ -108,7 +108,13 @@ class CrossrefClient:
         doi = value.strip().lower()
         if not doi:
             return None
-        return doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/").removeprefix("doi:")
+        return (
+            doi.removeprefix("https://doi.org/")
+            .removeprefix("http://doi.org/")
+            .removeprefix("https://dx.doi.org/")
+            .removeprefix("http://dx.doi.org/")
+            .removeprefix("doi:")
+        )
 
     def first_text(self, value: Any, default: Optional[str] = None) -> Optional[str]:
         if isinstance(value, str) and value.strip():
