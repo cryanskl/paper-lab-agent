@@ -513,6 +513,30 @@ def demo_data_errors(status: dict) -> list[str]:
     return errors
 
 
+def health_summary(health: dict, status: dict) -> dict:
+    safe_status = status if isinstance(status, dict) else {}
+    runtime = safe_status.get("runtime")
+    if not isinstance(runtime, dict):
+        runtime = {}
+    demo_data = safe_status.get("demo_data")
+    if not isinstance(demo_data, dict):
+        demo_data = {}
+    config_warnings = safe_status.get("config_warnings")
+    if not isinstance(config_warnings, list):
+        config_warnings = []
+    return {
+        "service": health.get("service") if isinstance(health, dict) else None,
+        "api_status": health.get("status") if isinstance(health, dict) else None,
+        "api_prefix": runtime.get("api_prefix"),
+        "version": runtime.get("version"),
+        "demo_data_ready": demo_data.get("ready") is True,
+        "demo_data_missing": demo_data_errors(safe_status),
+        "failed_workflows": failed_workflow_errors(safe_status),
+        "config_warning_count": len(config_warnings),
+        "storage_writable": storage_writability_errors(safe_status) == [],
+    }
+
+
 def main() -> int:
     load_env_file()
     parser = argparse.ArgumentParser(description="Check paper-lab-agent API health.")
@@ -526,6 +550,7 @@ def main() -> int:
     parser.add_argument("--require-no-config-warnings", action="store_true", help="Fail when system status reports configuration warnings")
     parser.add_argument("--require-demo-data", action="store_true", help="Fail when walking skeleton demo data is not loaded")
     parser.add_argument("--compact", action="store_true", help="Print health JSON on one line")
+    parser.add_argument("--summary-only", action="store_true", help="Print only release/demo readiness summary JSON")
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args()
 
@@ -544,7 +569,13 @@ def main() -> int:
     output = {"health": health, "status": status, "config_warnings": config_warnings}
     if frontend is not None:
         output["frontend"] = frontend
-    print(json.dumps(output, ensure_ascii=False, indent=None if args.compact else 2))
+    print(
+        json.dumps(
+            health_summary(health, status) if args.summary_only else output,
+            ensure_ascii=False,
+            indent=None if args.compact else 2,
+        )
+    )
     if not isinstance(health, dict):
         print("health_check failed: health response must be an object", file=sys.stderr)
         return 1
