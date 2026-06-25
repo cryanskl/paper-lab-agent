@@ -6490,7 +6490,10 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "curl http://127.0.0.1:8000/api/v1/system/status",
         "`config_warnings`",
         "`release_readiness`",
+        "`demo_data_missing`",
+        "`failed_workflows`",
         "`config_warning_codes`",
+        "`storage_errors`",
         "`translation_adapter`",
         "`llm_model`",
         "docker run --rm -p 8070:8070 lfoppiano/grobid",
@@ -9147,6 +9150,68 @@ def test_health_check_summary_prefers_api_release_readiness():
     assert summary["config_warning_codes"] == ["missing_llm_api_key"]
     assert summary["storage_writable"] is False
     assert summary["storage_errors"] == ["pdf_dir.writable"]
+
+
+def test_health_check_validates_release_readiness_shape():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_release_readiness_shape", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(version="0.1.0"),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": True,
+                "translation_adapter": "openai-compatible",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+            "demo_data": {
+                "ready": True,
+                "requirements": {"papers": 1},
+                "missing": [],
+                "counts": {"papers": 1},
+            },
+            "status_counts": health_check_status_counts(),
+            "release_readiness": {
+                "ready": "no",
+                "demo_data_missing": ["documents>=1", ""],
+                "config_warning_codes": "missing_llm_api_key",
+                "storage_errors": [False],
+            },
+        }
+    )
+
+    joined = "; ".join(errors)
+    assert "release_readiness missing keys: failed_workflows" in joined
+    assert "release_readiness invalid values" in joined
+    assert "ready" in joined
+    assert "demo_data_missing.1" in joined
+    assert "config_warning_codes" in joined
+    assert "storage_errors.0" in joined
 
 
 def test_health_check_summary_only_includes_storage_errors():

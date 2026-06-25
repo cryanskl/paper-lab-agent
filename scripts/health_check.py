@@ -88,6 +88,19 @@ DEMO_DATA_MIN_COUNTS = {
     "reactions": 1,
 }
 DEMO_DATA_REQUIRED_KEYS = {"ready", "requirements", "missing", "counts"}
+RELEASE_READINESS_REQUIRED_KEYS = {
+    "ready",
+    "demo_data_missing",
+    "failed_workflows",
+    "config_warning_codes",
+    "storage_errors",
+}
+RELEASE_READINESS_LIST_KEYS = {
+    "demo_data_missing",
+    "failed_workflows",
+    "config_warning_codes",
+    "storage_errors",
+}
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -412,6 +425,28 @@ def validate_system_status(status: dict) -> list[str]:
             )
         if invalid_demo_data:
             errors.append(f"demo_data invalid values: {', '.join(invalid_demo_data)}")
+    release_readiness = status.get("release_readiness")
+    if release_readiness is not None and not isinstance(release_readiness, dict):
+        errors.append("release_readiness must be an object")
+    elif isinstance(release_readiness, dict):
+        missing_release_readiness = sorted(RELEASE_READINESS_REQUIRED_KEYS - set(release_readiness))
+        if missing_release_readiness:
+            errors.append(f"release_readiness missing keys: {', '.join(missing_release_readiness)}")
+        invalid_release_readiness = []
+        if "ready" in release_readiness and not isinstance(release_readiness["ready"], bool):
+            invalid_release_readiness.append("ready")
+        for key in sorted(RELEASE_READINESS_LIST_KEYS & set(release_readiness)):
+            value = release_readiness[key]
+            if not isinstance(value, list):
+                invalid_release_readiness.append(key)
+                continue
+            invalid_release_readiness.extend(
+                f"{key}.{index}"
+                for index, item in enumerate(value)
+                if not isinstance(item, str) or not item.strip()
+            )
+        if invalid_release_readiness:
+            errors.append(f"release_readiness invalid values: {', '.join(invalid_release_readiness)}")
     status_counts = status.get("status_counts")
     if not isinstance(status_counts, dict):
         errors.append("status_counts must be an object")
