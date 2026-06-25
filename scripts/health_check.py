@@ -580,6 +580,11 @@ def main() -> int:
     parser.add_argument("--require-no-failed-workflows", action="store_true", help="Fail when workflow status counts include failed items")
     parser.add_argument("--require-no-config-warnings", action="store_true", help="Fail when system status reports configuration warnings")
     parser.add_argument("--require-demo-data", action="store_true", help="Fail when walking skeleton demo data is not loaded")
+    parser.add_argument(
+        "--require-release-ready",
+        action="store_true",
+        help="Fail unless storage, workflows, configuration, and demo data are release-ready",
+    )
     parser.add_argument("--compact", action="store_true", help="Print health JSON on one line")
     parser.add_argument("--summary-only", action="store_true", help="Print only release/demo readiness summary JSON")
     parser.add_argument("--timeout", type=float, default=5.0)
@@ -623,22 +628,22 @@ def main() -> int:
     if status_errors:
         print(f"health_check failed: system status invalid ({'; '.join(status_errors)})", file=sys.stderr)
         return 1
-    if args.require_storage_writable:
+    if args.require_storage_writable or args.require_release_ready:
         storage_errors = storage_writability_errors(status)
         if storage_errors:
             print(f"health_check failed: storage is not writable ({'; '.join(storage_errors)})", file=sys.stderr)
             return 1
-    if args.require_no_failed_workflows:
+    if args.require_no_failed_workflows or args.require_release_ready:
         workflow_errors = failed_workflow_errors(status)
         if workflow_errors:
             print(f"health_check failed: failed workflows present ({'; '.join(workflow_errors)})", file=sys.stderr)
             return 1
-    if args.require_no_config_warnings:
+    if args.require_no_config_warnings or args.require_release_ready:
         warning_errors = config_warning_errors(status)
         if warning_errors:
             print(f"health_check failed: config warnings present ({'; '.join(warning_errors)})", file=sys.stderr)
             return 1
-    if args.require_demo_data:
+    if args.require_demo_data or args.require_release_ready:
         demo_errors = demo_data_errors(status)
         if demo_errors:
             print(f"health_check failed: demo data is incomplete ({'; '.join(demo_errors)})", file=sys.stderr)

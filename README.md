@@ -31,6 +31,7 @@ python scripts/health_check.py --require-storage-writable
 python scripts/health_check.py --require-no-failed-workflows
 python scripts/health_check.py --require-no-config-warnings
 python scripts/health_check.py --require-demo-data
+python scripts/health_check.py --require-release-ready
 python scripts/health_check.py --check-frontend
 python scripts/health_check.py --require-frontend
 python scripts/health_check.py --check-frontend --frontend-url http://127.0.0.1:8501
@@ -108,6 +109,7 @@ bash scripts/release_check.sh
 `python scripts/health_check.py --require-no-failed-workflows` 会在抓取、解析、索引、翻译、化学抽取或反应集复核状态统计中存在 failed 项时返回非零，适合部署前确认没有已知失败积压。
 `python scripts/health_check.py --require-no-config-warnings` 会在 OpenAlex、Unpaywall、LLM、向量后端等配置告警存在时返回非零，适合正式演示或部署前确认外部能力已按预期配置。
 `python scripts/health_check.py --require-demo-data` 会在 live API 的 `counts` 缺少期刊、论文、文档、章节、chunk、反应集或反应样例时返回非零，适合正式演示前确认 walking skeleton 数据已准备好。
+`python scripts/health_check.py --require-release-ready` 会组合 storage writable、no failed workflows、no config warnings 和 demo data 四个门禁，适合发布或正式演示前一条命令预检；前端和 GROBID 仍用 `--require-frontend`、`--require-grobid` 按需单独强制。
 
 如需只跑离线 walking skeleton smoke：
 
