@@ -176,6 +176,53 @@ def python_script_option_refs(readme_path: Path) -> list[tuple[str, str]]:
     return refs
 
 
+def uvicorn_app_refs(readme_path: Path) -> list[str]:
+    refs: list[str] = []
+    for line in command_lines(readme_path):
+        tokens = strip_leading_env_assignments(split_command(line))
+        if not tokens:
+            continue
+        if tokens[0] == "uvicorn":
+            option_tokens = tokens[1:]
+        elif len(tokens) >= 4 and tokens[0] in {"python", "python3"} and tokens[1] == "-m" and tokens[2] == "uvicorn":
+            option_tokens = tokens[3:]
+        else:
+            continue
+        for token in option_tokens:
+            if token.startswith("-"):
+                continue
+            if ":" in token:
+                refs.append(token)
+            break
+    return refs
+
+
+def uvicorn_target_exists(target: str) -> bool:
+    if ":" not in target:
+        return False
+    module_name, attribute_path = target.rsplit(":", 1)
+    if not module_name or not attribute_path:
+        return False
+    try:
+        module = __import__(module_name, fromlist=["*"])
+    except Exception:
+        return False
+    current = module
+    for attribute in attribute_path.split("."):
+        if not hasattr(current, attribute):
+            return False
+        current = getattr(current, attribute)
+    return True
+
+
+def missing_uvicorn_targets(readme_path: Path) -> list[str]:
+    return [
+        f"README.md: uvicorn target missing: {target}"
+        for target in uvicorn_app_refs(readme_path)
+        if not uvicorn_target_exists(target)
+    ]
+
+
 def missing_python_script_options(repo: Path, readme_path: Path) -> list[str]:
     issues: list[str] = []
     help_cache: dict[str, str | None] = {}
@@ -208,6 +255,7 @@ def missing_command_targets(repo: Path) -> list[str]:
         if not (repo / target).exists():
             issues.append(f"README.md: command target missing: {target}")
     issues.extend(missing_python_script_options(repo, readme_path))
+    issues.extend(missing_uvicorn_targets(readme_path))
     actual_routes = app_routes()
     for method, path in documented_local_curl_routes(readme_path):
         if (method, path) not in actual_routes:
