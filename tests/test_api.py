@@ -9033,6 +9033,24 @@ def test_streamlit_documents_tab_shows_empty_state():
     assert "暂无文档，请先上传 PDF。" in documents_section
 
 
+def test_streamlit_documents_tab_exposes_pagination_controls():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    for required in [
+        'documents_page = documents_page_col.number_input("documents_page"',
+        "documents_page_size = documents_page_size_col.number_input(",
+        '"documents_page_size"',
+        'documents_response = api_get("/documents", page=int(documents_page), page_size=int(documents_page_size))',
+        'docs = documents_response["items"]',
+        "documents_response['page']",
+        "documents_response['page_size']",
+        "documents_response['total']",
+    ]:
+        assert required in documents_section
+
+
 def test_streamlit_sidebar_exposes_runtime_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

@@ -437,7 +437,22 @@ with documents_tab:
             st.json(duplicate_document)
         else:
             st.warning(payload)
-    docs = api_get("/documents", page_size=50)["items"]
+    documents_page_col, documents_page_size_col = st.columns(2)
+    documents_page = documents_page_col.number_input("documents_page", min_value=1, value=1, key="documents-page")
+    documents_page_size = documents_page_size_col.number_input(
+        "documents_page_size",
+        min_value=1,
+        max_value=100,
+        value=50,
+        key="documents-page-size",
+    )
+    documents_response = api_get("/documents", page=int(documents_page), page_size=int(documents_page_size))
+    docs = documents_response["items"]
+    st.caption(
+        f"documents page {documents_response['page']} · "
+        f"page_size {documents_response['page_size']} · "
+        f"total {documents_response['total']}"
+    )
     if not docs:
         st.info("暂无文档，请先上传 PDF。")
     else:
