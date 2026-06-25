@@ -514,6 +514,25 @@ def demo_data_errors(status: dict) -> list[str]:
     return errors
 
 
+def api_release_readiness(status: dict) -> Optional[dict]:
+    readiness = status.get("release_readiness")
+    if not isinstance(readiness, dict):
+        return None
+    return {
+        "ready": readiness.get("ready") is True,
+        "demo_data_missing": list_values(readiness.get("demo_data_missing")),
+        "failed_workflows": list_values(readiness.get("failed_workflows")),
+        "config_warning_codes": list_values(readiness.get("config_warning_codes")),
+        "storage_errors": list_values(readiness.get("storage_errors")),
+    }
+
+
+def list_values(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item).strip()]
+
+
 def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) -> dict:
     safe_status = status if isinstance(status, dict) else {}
     runtime = safe_status.get("runtime")
@@ -525,24 +544,33 @@ def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) 
     config_warnings = safe_status.get("config_warnings")
     if not isinstance(config_warnings, list):
         config_warnings = []
-    storage_errors = storage_writability_errors(safe_status)
-    demo_data_missing = demo_data_errors(safe_status)
-    failed_workflows = failed_workflow_errors(safe_status)
-    config_warning_codes = [
-        warning["code"].strip()
-        for warning in config_warnings
-        if isinstance(warning, dict) and isinstance(warning.get("code"), str) and warning["code"].strip()
-    ]
+    api_readiness = api_release_readiness(safe_status)
+    if api_readiness is not None:
+        storage_errors = api_readiness["storage_errors"]
+        demo_data_missing = api_readiness["demo_data_missing"]
+        failed_workflows = api_readiness["failed_workflows"]
+        config_warning_codes = api_readiness["config_warning_codes"]
+        release_ready = api_readiness["ready"]
+    else:
+        storage_errors = storage_writability_errors(safe_status)
+        demo_data_missing = demo_data_errors(safe_status)
+        failed_workflows = failed_workflow_errors(safe_status)
+        config_warning_codes = [
+            warning["code"].strip()
+            for warning in config_warnings
+            if isinstance(warning, dict) and isinstance(warning.get("code"), str) and warning["code"].strip()
+        ]
+        release_ready = not (storage_errors or failed_workflows or config_warning_codes or demo_data_missing)
     summary = {
         "service": health.get("service") if isinstance(health, dict) else None,
         "api_status": health.get("status") if isinstance(health, dict) else None,
         "api_prefix": runtime.get("api_prefix"),
         "version": runtime.get("version"),
-        "release_ready": not (storage_errors or failed_workflows or config_warning_codes or demo_data_missing),
+        "release_ready": release_ready,
         "demo_data_ready": demo_data.get("ready") is True,
         "demo_data_missing": demo_data_missing,
         "failed_workflows": failed_workflows,
-        "config_warning_count": len(config_warnings),
+        "config_warning_count": len(config_warning_codes),
         "config_warning_codes": config_warning_codes,
         "storage_writable": storage_errors == [],
         "storage_errors": storage_errors,

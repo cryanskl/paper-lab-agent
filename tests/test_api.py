@@ -6489,6 +6489,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py",
         "curl http://127.0.0.1:8000/api/v1/system/status",
         "`config_warnings`",
+        "`release_readiness`",
         "`config_warning_codes`",
         "`translation_adapter`",
         "`llm_model`",
@@ -9037,6 +9038,49 @@ def test_health_check_summary_only_reports_release_ready_when_gates_are_clean():
     assert summary["failed_workflows"] == []
     assert summary["config_warning_codes"] == []
     assert summary["storage_errors"] == []
+
+
+def test_health_check_summary_prefers_api_release_readiness():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_api_readiness", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [],
+        "storage_health": health_check_storage_health(),
+        "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+        "demo_data": {
+            "ready": True,
+            "requirements": {"papers": 1},
+            "missing": [],
+            "counts": {"papers": 1},
+        },
+        "status_counts": health_check_status_counts(),
+        "release_readiness": {
+            "ready": False,
+            "demo_data_missing": ["documents>=1"],
+            "failed_workflows": ["translations.failed=2"],
+            "config_warning_codes": ["missing_llm_api_key"],
+            "storage_errors": ["pdf_dir.writable"],
+        },
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
+    assert summary["release_ready"] is False
+    assert summary["demo_data_missing"] == ["documents>=1"]
+    assert summary["failed_workflows"] == ["translations.failed=2"]
+    assert summary["config_warning_count"] == 1
+    assert summary["config_warning_codes"] == ["missing_llm_api_key"]
+    assert summary["storage_writable"] is False
+    assert summary["storage_errors"] == ["pdf_dir.writable"]
 
 
 def test_health_check_summary_only_includes_storage_errors():
