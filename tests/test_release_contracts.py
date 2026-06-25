@@ -471,6 +471,28 @@ def test_schema_validator_reports_missing_required_reaction_column(tmp_path):
     assert "missing column: reactions.source_label" in issues
 
 
+def test_schema_validator_reports_missing_required_workflow_columns(tmp_path):
+    validate_schema = load_validate_schema()
+    repo = Path(__file__).resolve().parent.parent
+    schema_path = tmp_path / "schema.sql"
+    schema_text = (repo / "docs" / "schema.sql").read_text(encoding="utf-8")
+    schema_path.write_text(
+        schema_text.replace(
+            "    chemistry_status TEXT DEFAULT 'not_extracted', -- not_extracted/extracting/extracted/rejected/failed\n",
+            "",
+        ).replace(
+            "    verified_at   TEXT,\n",
+            "",
+        ),
+        encoding="utf-8",
+    )
+
+    issues = validate_schema.validate_schema(schema_path)
+
+    assert "missing column: documents.chemistry_status" in issues
+    assert "missing column: reaction_sets.verified_at" in issues
+
+
 def test_schema_validator_runs_as_release_script():
     import subprocess
     import sys
