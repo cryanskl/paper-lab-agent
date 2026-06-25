@@ -368,6 +368,42 @@ def validate_system_status(status: dict) -> list[str]:
     return errors
 
 
+def storage_writability_errors(status: dict) -> list[str]:
+    storage_health = status.get("storage_health")
+    if not isinstance(storage_health, dict):
+        return ["storage_health"]
+
+    errors: list[str] = []
+    required_writable = [
+        "data_dir",
+        "pdf_dir",
+        "tei_dir",
+        "translation_dir",
+        "export_dir",
+        "database_parent",
+        "vector_db_parent",
+    ]
+    for key in required_writable:
+        entry = storage_health.get(key)
+        if not isinstance(entry, dict):
+            errors.append(key)
+            continue
+        if entry.get("exists") is not True:
+            errors.append(f"{key}.exists")
+        if entry.get("writable") is not True:
+            errors.append(f"{key}.writable")
+
+    database = storage_health.get("database")
+    if isinstance(database, dict) and database.get("exists") is True and database.get("writable") is not True:
+        errors.append("database.writable")
+
+    vector_db = storage_health.get("vector_db")
+    if isinstance(vector_db, dict) and vector_db.get("exists") is True and vector_db.get("writable") is not True:
+        errors.append("vector_db.writable")
+
+    return errors
+
+
 def main() -> int:
     load_env_file()
     parser = argparse.ArgumentParser(description="Check paper-lab-agent API health.")
@@ -376,6 +412,7 @@ def main() -> int:
     parser.add_argument("--frontend-url", default=default_frontend_url(), help="Streamlit base URL")
     parser.add_argument("--check-external", action="store_true", help="Also check configured external services")
     parser.add_argument("--require-grobid", action="store_true", help="Fail when GROBID is unavailable")
+    parser.add_argument("--require-storage-writable", action="store_true", help="Fail when local storage paths are missing or not writable")
     parser.add_argument("--compact", action="store_true", help="Print health JSON on one line")
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args()
@@ -412,6 +449,11 @@ def main() -> int:
     if status_errors:
         print(f"health_check failed: system status invalid ({'; '.join(status_errors)})", file=sys.stderr)
         return 1
+    if args.require_storage_writable:
+        storage_errors = storage_writability_errors(status)
+        if storage_errors:
+            print(f"health_check failed: storage is not writable ({'; '.join(storage_errors)})", file=sys.stderr)
+            return 1
     if args.require_grobid:
         grobid = status["external_capabilities"]["grobid"]
         if grobid.get("available") is not True:

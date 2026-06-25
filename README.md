@@ -26,6 +26,7 @@ curl http://127.0.0.1:8000/api/v1/system/status
 curl 'http://127.0.0.1:8000/api/v1/journals?active=true'
 python scripts/health_check.py
 python scripts/health_check.py --compact
+python scripts/health_check.py --require-storage-writable
 python scripts/health_check.py --check-frontend
 python scripts/health_check.py --check-frontend --frontend-url http://127.0.0.1:8501
 API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
@@ -89,6 +90,7 @@ bash scripts/release_check.sh
 这条命令会执行与 CI 相同的离线发布检查：校验启动脚本语法、编译关键脚本、运行全量测试。
 
 `python scripts/health_check.py --check-frontend` 会额外探测 Streamlit `/_stcore/health`，用于确认 `scripts/dev.sh` 启动后的后端和前端都可访问。
+`python scripts/health_check.py --require-storage-writable` 会在数据目录、PDF/TEI/翻译/导出目录、数据库父目录或向量索引父目录不可写时返回非零，适合发布前预检本机运行环境。
 
 如需只跑离线 walking skeleton smoke：
 
