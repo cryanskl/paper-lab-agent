@@ -217,7 +217,19 @@ def document_reaction_sets(
     with get_conn() as conn:
         total = conn.execute("SELECT COUNT(*) AS n FROM reaction_sets WHERE document_id=?", (document_id,)).fetchone()["n"]
         rows = conn.execute(
-            "SELECT * FROM reaction_sets WHERE document_id=? ORDER BY id LIMIT ? OFFSET ?",
+            """
+            SELECT
+                reaction_sets.*,
+                COUNT(reactions.id) AS reaction_count,
+                COALESCE(SUM(CASE WHEN reactions.verified = 1 THEN 1 ELSE 0 END), 0) AS verified_count,
+                COALESCE(SUM(CASE WHEN reactions.verified = 0 THEN 1 ELSE 0 END), 0) AS unverified_count
+            FROM reaction_sets
+            LEFT JOIN reactions ON reactions.reaction_set_id = reaction_sets.id
+            WHERE reaction_sets.document_id=?
+            GROUP BY reaction_sets.id
+            ORDER BY reaction_sets.id
+            LIMIT ? OFFSET ?
+            """,
             (document_id, page_size, offset),
         ).fetchall()
     return page([dict_from_row(row) for row in rows], total, page_num, page_size)

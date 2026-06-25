@@ -1159,6 +1159,50 @@ def test_document_related_lists_use_page_query_and_metadata(tmp_path):
     assert reaction_sets["items"][0]["name"] == "Set 1"
 
 
+def test_document_reaction_sets_include_review_progress_counts(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            "INSERT INTO documents (file_path, file_hash, original_name) VALUES (?, ?, ?)",
+            (str(tmp_path / "reaction-sets.pdf"), "reaction-sets-progress", "reaction-sets.pdf"),
+        ).lastrowid
+        first_set_id = conn.execute(
+            "INSERT INTO reaction_sets (document_id, name, status) VALUES (?, ?, 'pending')",
+            (document_id, "Needs review"),
+        ).lastrowid
+        second_set_id = conn.execute(
+            "INSERT INTO reaction_sets (document_id, name, status) VALUES (?, ?, 'verified')",
+            (document_id, "Complete"),
+        ).lastrowid
+        conn.execute(
+            "INSERT INTO reactions (reaction_set_id, reaction, verified) VALUES (?, ?, ?)",
+            (first_set_id, "e + Ar -> e + Ar", 1),
+        )
+        conn.execute(
+            "INSERT INTO reactions (reaction_set_id, reaction, verified) VALUES (?, ?, ?)",
+            (first_set_id, "e + O2 -> O- + O", 0),
+        )
+        conn.execute(
+            "INSERT INTO reactions (reaction_set_id, reaction, verified) VALUES (?, ?, ?)",
+            (second_set_id, "e + N2 -> e + N2", 1),
+        )
+
+    response = client.get(f"/api/v1/documents/{document_id}/reaction-sets")
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert [
+        (item["name"], item["reaction_count"], item["verified_count"], item["unverified_count"])
+        for item in items
+    ] == [
+        ("Needs review", 2, 1, 1),
+        ("Complete", 1, 1, 0),
+    ]
+
+
 def test_document_responses_include_linked_paper_summary(tmp_path):
     client = make_client(tmp_path)
 
@@ -10224,6 +10268,11 @@ def test_streamlit_chemistry_tab_exposes_reaction_set_pagination_controls():
         "document_reaction_sets['page']",
         "document_reaction_sets['page_size']",
         "document_reaction_sets['total']",
+        "reaction_set_rows",
+        "reaction_count",
+        "verified_count",
+        "unverified_count",
+        "st.dataframe(reaction_set_rows",
     ]:
         assert required in chemistry_section
 

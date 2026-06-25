@@ -881,14 +881,30 @@ with chemistry_tab:
             f"page_size {document_reaction_sets['page_size']} · "
             f"total {document_reaction_sets['total']}"
         )
-        st.dataframe(reaction_set_items)
+        reaction_set_rows = [
+            {
+                "id": item.get("id"),
+                "name": item.get("name"),
+                "status": item.get("status"),
+                "reaction_count": item.get("reaction_count", 0),
+                "verified_count": item.get("verified_count", 0),
+                "unverified_count": item.get("unverified_count", 0),
+                "verified_by": item.get("verified_by"),
+                "verified_at": item.get("verified_at"),
+            }
+            for item in reaction_set_items
+        ]
+        st.dataframe(reaction_set_rows, use_container_width=True)
         if not reaction_set_items:
             st.info("该文档暂无反应集。")
         else:
             selected_reaction_set = st.selectbox(
                 "document_reaction_sets",
                 reaction_set_items,
-                format_func=lambda item: f"#{item['id']} · {item.get('status') or 'unknown'} · {item.get('name') or 'Reaction set'}",
+                format_func=lambda item: (
+                    f"#{item['id']} · {item.get('status') or 'unknown'} · "
+                    f"未复核 {item.get('unverified_count', 0)} · {item.get('name') or 'Reaction set'}"
+                ),
             )
             selected_reaction_set_id = selected_reaction_set["id"]
 
