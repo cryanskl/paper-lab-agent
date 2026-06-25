@@ -130,7 +130,7 @@ python -m pytest -q
 
 默认测试使用临时 SQLite 数据库和本地 fixture，不依赖外部网络、GROBID 或真实模型。
 
-CI 配置在 `.github/workflows/ci.yml`，默认跑同一条离线测试命令。
+CI 配置在 `.github/workflows/ci.yml`，默认跑同一条离线测试命令；GitHub Actions 也支持 `workflow_dispatch`，可在发布或演示前手动触发 release gate。
 
 ## Troubleshooting
 

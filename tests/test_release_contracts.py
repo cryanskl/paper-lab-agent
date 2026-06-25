@@ -499,6 +499,15 @@ def test_ci_workflow_runs_bounded_release_gate():
     assert "timeout-minutes: 15" in workflow
 
 
+def test_readme_documents_manual_ci_release_gate():
+    repo = Path(__file__).resolve().parent.parent
+    readme = (repo / "README.md").read_text(encoding="utf-8")
+
+    assert "workflow_dispatch" in readme
+    assert "GitHub Actions" in readme
+    assert "手动触发" in readme
+
+
 def test_release_check_derives_expected_runtime_version_from_app_version():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
