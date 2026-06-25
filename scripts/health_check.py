@@ -526,20 +526,24 @@ def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) 
     if not isinstance(config_warnings, list):
         config_warnings = []
     storage_errors = storage_writability_errors(safe_status)
+    demo_data_missing = demo_data_errors(safe_status)
+    failed_workflows = failed_workflow_errors(safe_status)
+    config_warning_codes = [
+        warning["code"].strip()
+        for warning in config_warnings
+        if isinstance(warning, dict) and isinstance(warning.get("code"), str) and warning["code"].strip()
+    ]
     summary = {
         "service": health.get("service") if isinstance(health, dict) else None,
         "api_status": health.get("status") if isinstance(health, dict) else None,
         "api_prefix": runtime.get("api_prefix"),
         "version": runtime.get("version"),
+        "release_ready": not (storage_errors or failed_workflows or config_warning_codes or demo_data_missing),
         "demo_data_ready": demo_data.get("ready") is True,
-        "demo_data_missing": demo_data_errors(safe_status),
-        "failed_workflows": failed_workflow_errors(safe_status),
+        "demo_data_missing": demo_data_missing,
+        "failed_workflows": failed_workflows,
         "config_warning_count": len(config_warnings),
-        "config_warning_codes": [
-            warning["code"].strip()
-            for warning in config_warnings
-            if isinstance(warning, dict) and isinstance(warning.get("code"), str) and warning["code"].strip()
-        ],
+        "config_warning_codes": config_warning_codes,
         "storage_writable": storage_errors == [],
         "storage_errors": storage_errors,
     }

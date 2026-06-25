@@ -6503,6 +6503,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "python scripts/prepare_demo_data.py --compact",
         "python scripts/prepare_demo_data.py --summary-only --compact",
         "`summary.ready`",
+        "`release_ready`",
         "`frontend_ok`",
         "`grobid_available`",
         "`storage_errors`",
@@ -8964,6 +8965,7 @@ def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
         "api_status": "ok",
         "api_prefix": "/api/v1",
         "version": "0.1.0",
+        "release_ready": False,
         "demo_data_ready": True,
         "demo_data_missing": [],
         "failed_workflows": ["document_parse.failed=1"],
@@ -8975,6 +8977,40 @@ def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
     assert "health" not in summary
     assert "status" not in summary
     assert captured.out.count("\n") == 1
+
+
+def test_health_check_summary_only_reports_release_ready_when_gates_are_clean():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_summary_release_ready", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [],
+        "storage_health": health_check_storage_health(),
+        "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+        "demo_data": {
+            "ready": True,
+            "requirements": {"papers": 1},
+            "missing": [],
+            "counts": {"papers": 1},
+        },
+        "status_counts": health_check_status_counts(),
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
+    assert summary["release_ready"] is True
+    assert summary["demo_data_missing"] == []
+    assert summary["failed_workflows"] == []
+    assert summary["config_warning_codes"] == []
+    assert summary["storage_errors"] == []
 
 
 def test_health_check_summary_only_includes_storage_errors():
