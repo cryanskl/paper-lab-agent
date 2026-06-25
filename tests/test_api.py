@@ -10245,11 +10245,13 @@ def test_streamlit_chemistry_tab_can_select_document_for_reaction_sets():
         'chemistry_documents = chemistry_documents_response["items"]',
         'selected_chemistry_document = st.selectbox(',
         "chemistry_document_options",
+        "format_func=document_option_label",
         "selected_chemistry_document[\"id\"]",
         "暂无可选文档",
         "手动 document_id",
     ]:
         assert required in chemistry_section
+    assert "format_func=lambda document" not in chemistry_section
 
 
 def test_streamlit_chemistry_tab_exposes_document_pagination_controls():

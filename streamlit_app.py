@@ -816,10 +816,7 @@ with chemistry_tab:
         selected_chemistry_document = st.selectbox(
             "化学库文档",
             chemistry_document_options,
-            format_func=lambda document: (
-                f"#{document['id']} {document.get('original_name') or Path(document['file_path']).name} · "
-                f"{document.get('chemistry_status') or 'not_extracted'}"
-            ),
+            format_func=document_option_label,
             key="chemistry-document-select",
         )
         chemistry_document_id = int(selected_chemistry_document["id"])
