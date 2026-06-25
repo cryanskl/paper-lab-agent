@@ -1354,6 +1354,52 @@ def test_fixture_import_script_runs_from_repo_root(tmp_path):
     assert Path(document["file_path"]).resolve().is_relative_to(tmp_path.resolve())
 
 
+def test_prepare_demo_data_script_populates_walking_skeleton(tmp_path):
+    import json
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(tmp_path)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    result = subprocess.run(
+        [sys.executable, "scripts/prepare_demo_data.py"],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    counts = payload["counts"]
+    assert counts["papers"] >= 2
+    assert counts["documents"] >= 1
+    assert counts["sections"] >= 1
+    assert counts["chunks"] >= 1
+    assert counts["translations"] >= 1
+    assert counts["reaction_sets"] >= 1
+    assert counts["reactions"] >= 1
+    assert counts["reaction_audits"] >= 1
+    assert payload["document"]["parse_status"] == "parsed"
+    assert payload["document"]["index_status"] == "indexed"
+    assert payload["document"]["chemistry_status"] == "extracted"
+    assert payload["translation"]["status"] == "done"
+    assert payload["reaction_set"]["status"] == "verified"
+    assert payload["exports"]["json"]["reaction_count"] >= 1
+    assert Path(payload["exports"]["json"]["output_path"]).exists()
+
+
 def test_smoke_check_covers_translation_and_chemistry_chain():
     from scripts.smoke_check import run_smoke
 
@@ -6222,6 +6268,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     env_script = repo / "scripts" / "env.sh"
     dev_script = repo / "scripts" / "dev.sh"
     release_check = repo / "scripts" / "release_check.sh"
+    prepare_demo_data = repo / "scripts" / "prepare_demo_data.py"
     smoke_check = repo / "scripts" / "smoke_check.py"
     validate_bug_docs = repo / "scripts" / "validate_bug_docs.py"
     validate_env_example = repo / "scripts" / "validate_env_example.py"
@@ -6271,6 +6318,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     for compiled_script in [
         "scripts/health_check.py",
         "scripts/import_fixtures.py",
+        "scripts/prepare_demo_data.py",
         "scripts/smoke_check.py",
         "scripts/validate_api_contract.py",
         "scripts/validate_bug_docs.py",
@@ -6284,6 +6332,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     ]:
         assert compiled_script in release_text
     assert "scripts/health_check.py --help" in release_text
+    assert "scripts/prepare_demo_data.py --help" in release_text
     assert "scripts/validate_api_contract.py" in release_text
     assert "scripts/validate_bug_docs.py" in release_text
     assert "scripts/validate_docs_links.py" in release_text
@@ -6296,6 +6345,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "VECTOR_DB_BACKEND" in release_text
     assert "TemporaryDirectory" in release_text
     assert "scripts/import_fixtures.py" in release_text
+    assert "scripts/prepare_demo_data.py" in release_text
     assert '"documents"' in release_text
     assert "-m scripts.smoke_check" in release_text
     assert "SMOKE_JSON" in release_text
@@ -6328,6 +6378,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "verified_export_txt_has_verification_metadata" in release_text
     assert "verified_export_bolsig_has_verification_metadata" in release_text
     assert "-m pytest -q" in release_text
+    assert prepare_demo_data.exists()
     assert smoke_check.exists()
     assert validate_bug_docs.exists()
     assert validate_env_example.exists()
@@ -6382,6 +6433,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "python scripts/health_check.py --require-no-config-warnings",
         "python scripts/health_check.py --require-demo-data",
         "python scripts/import_fixtures.py",
+        "python scripts/prepare_demo_data.py",
         "python -m scripts.smoke_check",
         "bash scripts/release_check.sh",
         "PAPER_LAB_SCHEDULER_ENABLED=true",

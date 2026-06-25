@@ -42,9 +42,13 @@ API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
 
 ```bash
 python scripts/import_fixtures.py
+python scripts/prepare_demo_data.py
+python scripts/health_check.py --require-demo-data
 curl 'http://127.0.0.1:8000/api/v1/papers?q=plasma'
 curl 'http://127.0.0.1:8000/api/v1/documents'
 ```
+
+`scripts/import_fixtures.py` 只导入论文和 PDF fixture；`scripts/prepare_demo_data.py` 会继续跑解析、索引、翻译、化学抽取、人工复核标记和三种导出，适合正式演示前一次性准备 walking skeleton 数据。
 
 启用定时抓取：
 
