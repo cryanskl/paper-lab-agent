@@ -46,6 +46,7 @@ REQUIRED_GITIGNORE_PATTERNS = [
 REQUIRED_CI_WORKFLOW = Path(".github/workflows/ci.yml")
 REQUIRED_CI_RELEASE_CHECK = "bash scripts/release_check.sh"
 REQUIRED_CI_TRIGGERS = ["push", "pull_request"]
+REQUIRED_CI_TIMEOUT = "timeout-minutes: 15"
 FORBIDDEN_TRACKED_PATTERNS = [
     ".DS_Store",
     "*/.DS_Store",
@@ -129,6 +130,8 @@ def missing_required_ci_release_gate(repo: Path) -> list[str]:
             missing.append(f"ci_{trigger}_trigger")
     if REQUIRED_CI_RELEASE_CHECK not in workflow_text:
         missing.append("ci_runs_release_check")
+    if REQUIRED_CI_TIMEOUT not in workflow_text:
+        missing.append("ci_timeout_minutes")
     return missing
 
 
