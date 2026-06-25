@@ -7760,7 +7760,7 @@ def test_health_check_uses_api_base_url_from_env_file(monkeypatch, tmp_path):
     health_check = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(health_check)
 
-    (tmp_path / ".env").write_text("API_BASE_URL=http://api.test:9001/api/v1\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("API_BASE_URL=http://api.test:9001/api/v1 # local health target\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     seen_urls = []
 
