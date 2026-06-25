@@ -6365,6 +6365,8 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py",
         "curl http://127.0.0.1:8000/api/v1/system/status",
         "`config_warnings`",
+        "`translation_adapter`",
+        "`llm_model`",
         "docker run --rm -p 8070:8070 lfoppiano/grobid",
         "`--check-external` 会主动检查 GROBID",
         "python scripts/health_check.py --require-grobid",

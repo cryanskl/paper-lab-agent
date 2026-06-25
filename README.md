@@ -35,6 +35,7 @@ API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
 ```
 
 `/api/v1/system/status` 会返回 `config_warnings`，用于提示 OpenAlex、Unpaywall、LLM 等可选外部能力是否还未配置；缺失不会阻断默认离线模式。
+同一响应里的 `translation_adapter` 和 `llm_model` 会说明当前翻译链路使用本地 `local-echo` 还是 `openai-compatible`，`python scripts/health_check.py` 会把这两个字段作为发布健康契约校验。
 
 导入离线样例论文和 PDF 文档：
 
