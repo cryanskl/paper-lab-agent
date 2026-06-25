@@ -16,6 +16,8 @@ REQUIRED_GITIGNORE_PATTERNS = [
     ".pytest_cache/",
     ".next/",
     "__pycache__/",
+    ".coverage",
+    "htmlcov/",
 ]
 REQUIRED_CI_WORKFLOW = Path(".github/workflows/ci.yml")
 REQUIRED_CI_RELEASE_CHECK = "bash scripts/release_check.sh"
@@ -37,7 +39,9 @@ FORBIDDEN_TRACKED_PATTERNS = [
     "*.pyc",
     ".pytest_cache/*",
     ".uv-cache/*",
+    ".coverage",
     "coverage/*",
+    "htmlcov/*",
     "test-results/*",
     "playwright-report/*",
 ]
