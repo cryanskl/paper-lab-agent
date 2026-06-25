@@ -678,6 +678,14 @@ def test_api_contract_app_routes_are_documented():
     assert undocumented == []
 
 
+def test_api_contract_documents_reaction_verify_reviewer_requirement():
+    repo = Path(__file__).resolve().parent.parent
+    contract_text = (repo / "docs" / "接口设计文档.md").read_text(encoding="utf-8")
+
+    assert "verified_by` 必填且不能为空" in contract_text
+    assert "缺失或空白返回 422 `validation_error`" in contract_text
+
+
 def test_api_contract_validator_runs_as_release_script():
     import subprocess
     import sys
