@@ -49,7 +49,7 @@ class OpenAlexClient:
                 if not isinstance(meta, dict):
                     meta = {}
                 next_cursor = meta.get("next_cursor")
-                if not next_cursor or next_cursor == params["cursor"]:
+                if not isinstance(next_cursor, str) or not next_cursor or next_cursor == params["cursor"]:
                     break
                 await self.wait_between_requests()
                 params["cursor"] = next_cursor

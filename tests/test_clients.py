@@ -822,6 +822,37 @@ async def test_openalex_tolerates_malformed_meta_payload():
 
 
 @pytest.mark.asyncio
+async def test_openalex_ignores_malformed_next_cursor():
+    calls = 0
+    sleep_calls = []
+
+    async def sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return json_response(
+            {
+                "results": [{"id": "https://openalex.org/W1", "title": "Valid work"}],
+                "meta": {"next_cursor": {"value": "malformed"}},
+            }
+        )
+
+    client = OpenAlexClient(
+        transport=httpx.MockTransport(handler),
+        request_interval_seconds=0.75,
+        sleep=sleep,
+    )
+
+    works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=2)
+
+    assert [work["title"] for work in works] == ["Valid work"]
+    assert calls == 1
+    assert sleep_calls == []
+
+
+@pytest.mark.asyncio
 async def test_openalex_tolerates_malformed_top_level_payload():
     def handler(request: httpx.Request) -> httpx.Response:
         return json_response(["not-a-response-object"])
@@ -925,6 +956,39 @@ async def test_crossref_tolerates_malformed_message_payload():
     works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=1)
 
     assert works == []
+
+
+@pytest.mark.asyncio
+async def test_crossref_ignores_malformed_next_cursor():
+    calls = 0
+    sleep_calls = []
+
+    async def sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return json_response(
+            {
+                "message": {
+                    "items": [{"DOI": "10.1/valid", "title": ["Valid work"]}],
+                    "next-cursor": ["malformed"],
+                }
+            }
+        )
+
+    client = CrossrefClient(
+        transport=httpx.MockTransport(handler),
+        request_interval_seconds=0.5,
+        sleep=sleep,
+    )
+
+    works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=2)
+
+    assert [work["title"] for work in works] == ["Valid work"]
+    assert calls == 1
+    assert sleep_calls == []
 
 
 @pytest.mark.asyncio

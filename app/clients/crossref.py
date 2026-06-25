@@ -53,7 +53,7 @@ class CrossrefClient:
                 if isinstance(items, list):
                     results.extend(self.normalize(item) for item in items if isinstance(item, dict))
                 next_cursor = message.get("next-cursor")
-                if not next_cursor or next_cursor == params["cursor"]:
+                if not isinstance(next_cursor, str) or not next_cursor or next_cursor == params["cursor"]:
                     break
                 await self.wait_between_requests()
                 params["cursor"] = next_cursor
