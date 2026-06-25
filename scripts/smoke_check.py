@@ -594,6 +594,7 @@ def run_smoke() -> dict:
         runtime = status["runtime"]
         config_warnings = status["config_warnings"]
         external_capabilities = status["external_capabilities"]
+        storage_health = status["storage_health"]
         assert_ok(runtime["version"], "expected runtime version")
         scheduler_job_ids = [job["id"] for job in runtime.get("scheduler_jobs") or []]
         assert_ok(
@@ -616,6 +617,16 @@ def run_smoke() -> dict:
         assert_ok(
             external_capabilities["grobid_url"] == "http://127.0.0.1:8070",
             f"expected default GROBID URL, got {external_capabilities}",
+        )
+        assert_ok(storage_health["data_dir"]["writable"] is True, f"expected writable data_dir, got {storage_health}")
+        assert_ok(
+            storage_health["database_parent"]["writable"] is True,
+            f"expected writable database parent, got {storage_health}",
+        )
+        assert_ok(storage_health["vector_db"]["exists"] is True, f"expected vector DB file, got {storage_health}")
+        assert_ok(
+            storage_health["vector_db"]["valid_json"] is True,
+            f"expected valid vector DB JSON, got {storage_health}",
         )
         counts = status["counts"]
         status_counts = status["status_counts"]
@@ -650,6 +661,10 @@ def run_smoke() -> dict:
             "system_embedding_model": external_capabilities["embedding_model"],
             "system_vector_db_backend": external_capabilities["vector_db_backend"],
             "system_grobid_url": external_capabilities["grobid_url"],
+            "system_storage_data_dir_writable": storage_health["data_dir"]["writable"],
+            "system_storage_database_parent_writable": storage_health["database_parent"]["writable"],
+            "system_storage_vector_db_exists": storage_health["vector_db"]["exists"],
+            "system_storage_vector_db_valid_json": storage_health["vector_db"]["valid_json"],
             "crawl_jobs": counts["crawl_jobs"],
             "crawl_job_status": crawl_diagnostics["status"],
             "crawl_job_found": crawl_diagnostics["papers_found"],

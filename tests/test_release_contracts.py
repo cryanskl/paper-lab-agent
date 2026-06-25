@@ -618,6 +618,16 @@ def test_release_check_requires_system_capability_smoke_metadata():
     assert '"system_grobid_url": "http://127.0.0.1:8070"' in release_text
 
 
+def test_release_check_requires_system_storage_health_smoke_metadata():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert '"system_storage_data_dir_writable": True' in release_text
+    assert '"system_storage_database_parent_writable": True' in release_text
+    assert '"system_storage_vector_db_exists": True' in release_text
+    assert '"system_storage_vector_db_valid_json": True' in release_text
+
+
 def test_dev_script_documents_help_mode_without_starting_services():
     repo = Path(__file__).resolve().parent.parent
     dev_script = (repo / "scripts" / "dev.sh").read_text(encoding="utf-8")
