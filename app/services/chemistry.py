@@ -18,6 +18,12 @@ THRESHOLD_EV_RE = re.compile(
     r"\bthreshold(?:\s+energy)?\s*(?:is|=|:)?\s*([0-9]+(?:\.[0-9]+)?)\s*eV\b",
     re.IGNORECASE,
 )
+RATE_VALUE_RE = re.compile(
+    r"\b(?:rate\s+(?:coefficient|constant)\s*(?:is|=|:)?|k\s*(?:=|:))\s*"
+    r"([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?\d+)?"
+    r"(?:\s*(?:cm\^?3/s|m\^?3/s|s\^-?1|s-1|1/s))?)\b",
+    re.IGNORECASE,
+)
 
 
 def split_species(side: str) -> list[str]:
@@ -70,6 +76,28 @@ def detect_threshold_ev(text: str, start: int, end: int, window: int = 120) -> O
             direction_priority = 2
             distance = 0
         candidates.append((direction_priority, distance, absolute_start, float(match.group(1))))
+    if candidates:
+        return min(candidates)[3]
+    return None
+
+
+def detect_rate_value(text: str, start: int, end: int, window: int = 120) -> Optional[str]:
+    left = max(0, start - window)
+    right = min(len(text), end + window)
+    candidates = []
+    for match in RATE_VALUE_RE.finditer(text[left:right]):
+        absolute_start = left + match.start()
+        absolute_end = left + match.end()
+        if absolute_start >= end:
+            direction_priority = 0
+            distance = absolute_start - end
+        elif absolute_end <= start:
+            direction_priority = 1
+            distance = start - absolute_end
+        else:
+            direction_priority = 2
+            distance = 0
+        candidates.append((direction_priority, distance, absolute_start, " ".join(match.group(1).split())))
     if candidates:
         return min(candidates)[3]
     return None
@@ -199,6 +227,8 @@ def extract_reactions(document_id: int) -> dict:
                         detect_cross_section_url(text, match.start(), match.end()) or section_cross_section_url
                     )
                     threshold_ev = detect_threshold_ev(text, match.start(), match.end())
+                    rate_value = detect_rate_value(text, match.start(), match.end())
+                    rate_type = "constant" if rate_value else "unknown"
                     conn.execute(
                         """
                         INSERT INTO reactions (
@@ -213,8 +243,8 @@ def extract_reactions(document_id: int) -> dict:
                             "unknown",
                             json.dumps(reactants, ensure_ascii=False),
                             json.dumps(products, ensure_ascii=False),
-                            "unknown",
-                            None,
+                            rate_type,
+                            rate_value,
                             threshold_ev,
                             section["title"],
                             cross_section_url,
