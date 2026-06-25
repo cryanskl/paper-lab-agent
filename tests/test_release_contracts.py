@@ -526,6 +526,18 @@ def test_release_check_requires_document_reaction_set_list_smoke_metadata():
     assert '"document_reaction_set_export_ready_after_verify": True' in release_text
 
 
+def test_release_check_requires_reaction_set_detail_smoke_metadata():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert '"reaction_set_detail_reaction_count_before_verify": 1' in release_text
+    assert '"reaction_set_detail_verified_count_before_verify": 0' in release_text
+    assert '"reaction_set_detail_unverified_count_before_verify": 1' in release_text
+    assert '"reaction_set_detail_export_ready_before_verify": False' in release_text
+    assert '"reaction_set_detail_export_ready_after_verify": True' in release_text
+    assert '"reaction_set_detail_audit_entries_after_verify": 1' in release_text
+
+
 def test_release_check_rejects_failed_smoke_status_counts():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")

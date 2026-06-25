@@ -385,6 +385,17 @@ def run_smoke() -> dict:
             "reaction set detail",
         )
         assert_ok(len(reaction_detail["reactions"]) == 1, "expected one extracted reaction")
+        assert_ok(
+            reaction_detail["reaction_count"] == 1
+            and reaction_detail["verified_count"] == 0
+            and reaction_detail["unverified_count"] == 1
+            and reaction_detail["export_ready"] is False,
+            f"expected reaction set detail to require review before export, got {reaction_detail}",
+        )
+        assert_ok(
+            isinstance(reaction_detail["reactions"][0].get("audit_log"), list),
+            f"expected reaction audit_log list in detail, got {reaction_detail['reactions'][0]}",
+        )
         reaction_id = reaction_detail["reactions"][0]["id"]
         blocked_export = client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=json")
         blocked_payload = assert_error_response(blocked_export, 409, "unverified reaction export")
@@ -417,6 +428,21 @@ def run_smoke() -> dict:
             and reaction_set_summary_after_verify["unverified_count"] == 0
             and reaction_set_summary_after_verify["export_ready"] is True,
             f"expected export_ready=true after review, got {reaction_set_summary_after_verify}",
+        )
+        reaction_detail_after_verify = assert_status(
+            client.get(f"/api/v1/reaction-sets/{reaction_set_id}"),
+            200,
+            "reaction set detail after verify",
+        )
+        reaction_detail_audit_entries_after_verify = sum(
+            len(reaction.get("audit_log") or []) for reaction in reaction_detail_after_verify["reactions"]
+        )
+        assert_ok(
+            reaction_detail_after_verify["verified_count"] == 1
+            and reaction_detail_after_verify["unverified_count"] == 0
+            and reaction_detail_after_verify["export_ready"] is True
+            and reaction_detail_audit_entries_after_verify == 1,
+            f"expected verified reaction set detail with audit log, got {reaction_detail_after_verify}",
         )
         verified_export = assert_status(
             client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=json"),
@@ -579,6 +605,12 @@ def run_smoke() -> dict:
             "document_reaction_set_unverified_count_before_verify": reaction_set_summary_before_verify["unverified_count"],
             "document_reaction_set_export_ready_before_verify": reaction_set_summary_before_verify["export_ready"],
             "document_reaction_set_export_ready_after_verify": reaction_set_summary_after_verify["export_ready"],
+            "reaction_set_detail_reaction_count_before_verify": reaction_detail["reaction_count"],
+            "reaction_set_detail_verified_count_before_verify": reaction_detail["verified_count"],
+            "reaction_set_detail_unverified_count_before_verify": reaction_detail["unverified_count"],
+            "reaction_set_detail_export_ready_before_verify": reaction_detail["export_ready"],
+            "reaction_set_detail_export_ready_after_verify": reaction_detail_after_verify["export_ready"],
+            "reaction_set_detail_audit_entries_after_verify": reaction_detail_audit_entries_after_verify,
             "blocked_export_status": blocked_export.status_code,
             "verified_export_format": verified_export["format"],
             "verified_export_formats": [verified_export["format"], txt_export["format"], bolsig_export["format"]],
