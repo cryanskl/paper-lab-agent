@@ -7821,6 +7821,39 @@ def test_health_check_env_value_parser_preserves_unquoted_hashes():
     assert health_check.clean_env_value('"sk-test#quoted" # inline comment') == "sk-test#quoted"
 
 
+def test_health_check_env_loader_ignores_invalid_key_names(monkeypatch, tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_env_key_parser", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "API_PORT=8001",
+                "BAD KEY=bad",
+                "1BAD=bad",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("API_PORT", raising=False)
+    monkeypatch.delenv("BAD KEY", raising=False)
+    monkeypatch.delenv("1BAD", raising=False)
+
+    health_check.load_env_file(env_file)
+
+    assert os.environ["API_PORT"] == "8001"
+    assert "BAD KEY" not in os.environ
+    assert "1BAD" not in os.environ
+
+
 def test_health_check_rejects_unexpected_api_prefix():
     import importlib.util
 

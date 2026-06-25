@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -73,6 +74,7 @@ STATUS_COUNT_REQUIRED_KEYS = {
     "translations",
     "reaction_sets",
 }
+ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def clean_env_value(value: str) -> str:
@@ -104,8 +106,10 @@ def load_env_file(path: Path = Path(".env")) -> None:
             continue
         key, value = line.split("=", 1)
         key = key.strip()
+        if not ENV_KEY_PATTERN.fullmatch(key):
+            continue
         value = clean_env_value(value)
-        if key and key not in os.environ:
+        if key not in os.environ:
             os.environ[key] = value
 
 
