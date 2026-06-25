@@ -314,6 +314,81 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
     ]
 
 
+def test_reaction_review_payload_normalizes_edit_form_values():
+    from app import frontend_api
+
+    payload = frontend_api.reaction_review_payload(
+        verified=True,
+        reaction_type=" ionization ",
+        rate_type=" cross_section ",
+        rate_value="  original table value  ",
+        include_threshold_ev=True,
+        threshold_ev=15.76,
+        cross_section_url=" https://nl.lxcat.net/data/set/example ",
+        verified_by=" engineer_a ",
+    )
+
+    assert payload == {
+        "verified": True,
+        "reaction_type": "ionization",
+        "rate_type": "cross_section",
+        "rate_value": "original table value",
+        "threshold_ev": 15.76,
+        "cross_section_url": "https://nl.lxcat.net/data/set/example",
+        "verified_by": "engineer_a",
+    }
+
+
+def test_reaction_review_payload_clears_disabled_and_blank_fields():
+    from app import frontend_api
+
+    payload = frontend_api.reaction_review_payload(
+        verified=False,
+        reaction_type="",
+        rate_type="",
+        rate_value="   ",
+        include_threshold_ev=False,
+        threshold_ev=15.76,
+        cross_section_url="",
+        verified_by=" streamlit ",
+    )
+
+    assert payload == {
+        "verified": False,
+        "reaction_type": None,
+        "rate_type": None,
+        "rate_value": None,
+        "threshold_ev": None,
+        "cross_section_url": None,
+        "verified_by": "streamlit",
+    }
+
+
+def test_reaction_export_rows_summarize_download_and_audit_metadata():
+    from app import frontend_api
+
+    rows = frontend_api.reaction_export_rows(
+        {
+            "reaction_set_id": 3,
+            "format": "bolsig",
+            "output_path": "/tmp/exports/reaction-set-3.bolsig.txt",
+            "mime_type": "text/plain",
+            "reaction_count": 4,
+            "audit_entry_count": 4,
+        }
+    )
+
+    assert rows == [
+        {"field": "reaction_set_id", "value": 3},
+        {"field": "format", "value": "bolsig"},
+        {"field": "output_path", "value": "/tmp/exports/reaction-set-3.bolsig.txt"},
+        {"field": "mime_type", "value": "text/plain"},
+        {"field": "reaction_count", "value": 4},
+        {"field": "audit_entry_count", "value": 4},
+        {"field": "download_label", "value": "bolsig · 4 reactions · 4 audit entries"},
+    ]
+
+
 def test_reaction_audit_rows_flatten_field_changes_for_review():
     from app import frontend_api
 

@@ -10262,8 +10262,7 @@ def test_streamlit_chemistry_export_surfaces_file_and_metadata_status():
         "export_path.exists()",
         "下载导出文件",
         "导出文件不存在",
-        'payload.get("reaction_count")',
-        'payload.get("audit_entry_count")',
+        "reaction_export_rows(payload)",
         'payload.get("mime_type")',
     ]:
         assert required in chemistry_section
@@ -10397,8 +10396,9 @@ def test_streamlit_chemistry_review_uses_controlled_type_options():
         'if rate_type_value == "unknown":',
         'c1.selectbox(',
         'c2.selectbox(',
-        '"reaction_type": reaction_type or None',
-        '"rate_type": rate_type or None',
+        "reaction_review_payload(",
+        "reaction_type=reaction_type",
+        "rate_type=rate_type",
     ]:
         assert required in chemistry_section
 
@@ -10415,7 +10415,8 @@ def test_streamlit_chemistry_review_can_preserve_zero_threshold():
         "threshold_ev_value = (",
         'float(reaction["threshold_ev"]) if reaction.get("threshold_ev") is not None else 0.0',
         'disabled=not include_threshold_ev',
-        '"threshold_ev": threshold_ev if include_threshold_ev else None',
+        "include_threshold_ev=include_threshold_ev",
+        "threshold_ev=threshold_ev",
     ]:
         assert required in chemistry_section
 

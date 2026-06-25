@@ -365,6 +365,51 @@ def reaction_set_rows(reaction_sets: list[dict[str, Any]]) -> list[dict[str, Any
     return rows
 
 
+def normalize_optional_text(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def reaction_review_payload(
+    *,
+    verified: bool,
+    reaction_type: Optional[str],
+    rate_type: Optional[str],
+    rate_value: Optional[str],
+    include_threshold_ev: bool,
+    threshold_ev: Optional[float],
+    cross_section_url: Optional[str],
+    verified_by: Optional[str],
+) -> dict[str, Any]:
+    return {
+        "verified": bool(verified),
+        "reaction_type": normalize_optional_text(reaction_type),
+        "rate_type": normalize_optional_text(rate_type),
+        "rate_value": normalize_optional_text(rate_value),
+        "threshold_ev": threshold_ev if include_threshold_ev else None,
+        "cross_section_url": normalize_optional_text(cross_section_url),
+        "verified_by": normalize_optional_text(verified_by),
+    }
+
+
+def reaction_export_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    export_format = payload.get("format") or "unknown"
+    reaction_count = int(payload.get("reaction_count") or 0)
+    audit_entry_count = int(payload.get("audit_entry_count") or 0)
+    rows = [
+        ("reaction_set_id", payload.get("reaction_set_id")),
+        ("format", export_format),
+        ("output_path", payload.get("output_path")),
+        ("mime_type", payload.get("mime_type")),
+        ("reaction_count", reaction_count),
+        ("audit_entry_count", audit_entry_count),
+        ("download_label", f"{export_format} · {reaction_count} reactions · {audit_entry_count} audit entries"),
+    ]
+    return [{"field": field, "value": value} for field, value in rows]
+
+
 def reaction_audit_rows(audit_log: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for audit in audit_log:

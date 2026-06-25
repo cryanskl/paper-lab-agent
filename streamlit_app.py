@@ -14,6 +14,8 @@ from app.frontend_api import (
     document_status_rows,
     rag_source_rows,
     reaction_audit_rows,
+    reaction_export_rows,
+    reaction_review_payload,
     reaction_review_rows,
     reaction_set_rows,
     request_json,
@@ -938,12 +940,7 @@ with chemistry_tab:
                 st.error(payload)
             else:
                 st.success(payload["output_path"])
-                st.caption(
-                    f'format: {payload.get("format")} · '
-                    f'mime_type: {payload.get("mime_type")} · '
-                    f'reactions: {payload.get("reaction_count")} · '
-                    f'audit_entries: {payload.get("audit_entry_count")}'
-                )
+                st.dataframe(reaction_export_rows(payload), use_container_width=True)
                 export_path = Path(payload["output_path"])
                 if export_path.exists():
                     export_text = export_path.read_text(encoding="utf-8")
@@ -1035,15 +1032,16 @@ with chemistry_tab:
                         st.dataframe(reaction_audit_rows(reaction["audit_log"]), use_container_width=True)
                         st.json(reaction["audit_log"])
                 if st.button("保存复核", key=f"verify-{reaction['id']}"):
-                    payload = {
-                        "verified": verified,
-                        "reaction_type": reaction_type or None,
-                        "rate_type": rate_type or None,
-                        "rate_value": rate_value or None,
-                        "threshold_ev": threshold_ev if include_threshold_ev else None,
-                        "cross_section_url": cross_section_url or None,
-                        "verified_by": verified_by or None,
-                    }
+                    payload = reaction_review_payload(
+                        verified=verified,
+                        reaction_type=reaction_type,
+                        rate_type=rate_type,
+                        rate_value=rate_value,
+                        include_threshold_ev=include_threshold_ev,
+                        threshold_ev=threshold_ev,
+                        cross_section_url=cross_section_url,
+                        verified_by=verified_by,
+                    )
                     status_code, result = api_put(f"/reactions/{reaction['id']}/verify", json=payload)
                     if status_code < 400:
                         st.session_state["reaction_set_detail"] = result
