@@ -131,12 +131,21 @@ class OpenAlexClient:
                 continue
             author = item.get("author") or {}
             if not isinstance(author, dict):
-                continue
-            name = author.get("display_name")
-            if isinstance(name, str) and name.strip():
+                author = {}
+            name = self.author_name(item, author)
+            if name:
                 affiliation = self.normalize_affiliations(item.get("institutions"))
-                authors.append({"name": name.strip(), "affiliation": affiliation})
+                authors.append({"name": name, "affiliation": affiliation})
         return authors
+
+    def author_name(self, item: dict[str, Any], author: dict[str, Any]) -> Optional[str]:
+        display_name = author.get("display_name")
+        if isinstance(display_name, str) and display_name.strip():
+            return display_name.strip()
+        raw_author_name = item.get("raw_author_name")
+        if isinstance(raw_author_name, str) and raw_author_name.strip():
+            return raw_author_name.strip()
+        return None
 
     def normalize_affiliations(self, value: Any) -> Optional[str]:
         if not isinstance(value, list):

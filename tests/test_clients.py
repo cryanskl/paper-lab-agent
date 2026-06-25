@@ -634,6 +634,31 @@ def test_openalex_strips_author_display_names():
     assert work["authors"] == [{"name": "Jane Doe", "affiliation": None}]
 
 
+def test_openalex_falls_back_to_raw_author_names():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "doi": "10.5555/openalex-raw-author",
+            "title": "OpenAlex raw author",
+            "authorships": [
+                {
+                    "author": {"display_name": {"value": "Malformed"}},
+                    "raw_author_name": "  Plasma Data Consortium  ",
+                    "institutions": [{"display_name": "  Community Plasma Lab  "}],
+                }
+            ],
+        }
+    )
+
+    assert work["authors"] == [
+        {
+            "name": "Plasma Data Consortium",
+            "affiliation": "Community Plasma Lab",
+        }
+    ]
+
+
 def test_openalex_preserves_author_institution_affiliations():
     client = OpenAlexClient()
 
