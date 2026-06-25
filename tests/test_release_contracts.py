@@ -568,10 +568,12 @@ def test_release_check_requires_smoke_error_response_coverage():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
 
-    assert '"error_response_count": 3' in release_text
+    assert '"error_response_count": 4' in release_text
     assert '"duplicate_upload_status": 409' in release_text
+    assert '"unsupported_document_status": 415' in release_text
     assert '"blocked_export_status": 409' in release_text
     assert '"unsupported_export_status": 400' in release_text
+    assert '"unsupported_document_type"' in release_text
     assert '"document_duplicate"' in release_text
     assert '"reaction_set_unverified"' in release_text
     assert '"unsupported_export_format"' in release_text

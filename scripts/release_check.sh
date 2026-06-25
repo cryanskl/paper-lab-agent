@@ -193,7 +193,8 @@ expected = {
     "document_detail_parse_status": "uploaded",
     "document_list_total": 1,
     "duplicate_upload_status": 409,
-    "error_response_count": 3,
+    "unsupported_document_status": 415,
+    "error_response_count": 4,
     "auto_classify_category_count": 1,
     "auto_classify_method": "auto",
     "journal_filter_search_hits": 1,
@@ -257,7 +258,12 @@ for key, value in expected.items():
     if payload.get(key) != value:
         print(f"release_check failed: smoke {key}={payload.get(key)!r}, expected {value!r}", file=sys.stderr)
         raise SystemExit(1)
-expected_error_codes = {"document_duplicate", "reaction_set_unverified", "unsupported_export_format"}
+expected_error_codes = {
+    "document_duplicate",
+    "reaction_set_unverified",
+    "unsupported_document_type",
+    "unsupported_export_format",
+}
 actual_error_codes = set(payload.get("error_response_codes") or [])
 missing_error_codes = sorted(expected_error_codes - actual_error_codes)
 if missing_error_codes:

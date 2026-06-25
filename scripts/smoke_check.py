@@ -292,6 +292,14 @@ def run_smoke() -> dict:
             document_detail.get("paper", {}).get("id") == crawled_paper_id,
             f"expected linked paper summary, got {document_detail}",
         )
+        unsupported_document = client.post(
+            "/api/v1/documents",
+            files={"file": ("notes.txt", b"plain text is not a pdf", "text/plain")},
+        )
+        unsupported_document_payload = assert_error_response(
+            unsupported_document, 415, "unsupported document upload"
+        )
+        error_responses.append(unsupported_document_payload["error"]["code"])
         duplicate_upload = client.post(
             "/api/v1/documents",
             files={"file": ("smoke-copy.pdf", smoke_pdf, "application/pdf")},
@@ -584,6 +592,7 @@ def run_smoke() -> dict:
             "document_detail_parse_status": document_detail["parse_status"],
             "document_list_total": document_list["total"],
             "duplicate_upload_status": duplicate_upload.status_code,
+            "unsupported_document_status": unsupported_document.status_code,
             "duplicate_document_id": duplicate_document["id"],
             "error_response_count": len(error_responses),
             "error_response_codes": error_responses,
