@@ -594,7 +594,22 @@ with documents_tab:
             st.dataframe(chunks["items"], use_container_width=True)
 
 with rag_tab:
-    rag_documents = api_get("/documents", page_size=100)["items"]
+    rag_documents_page_col, rag_documents_page_size_col = st.columns(2)
+    rag_documents_page = rag_documents_page_col.number_input("rag_documents_page", min_value=1, value=1, key="rag-documents-page")
+    rag_documents_page_size = rag_documents_page_size_col.number_input(
+        "rag_documents_page_size",
+        min_value=1,
+        max_value=100,
+        value=100,
+        key="rag-documents-page-size",
+    )
+    rag_documents_response = api_get("/documents", page=int(rag_documents_page), page_size=int(rag_documents_page_size))
+    rag_documents = rag_documents_response["items"]
+    st.caption(
+        f"RAG documents page {rag_documents_response['page']} · "
+        f"page_size {rag_documents_response['page_size']} · "
+        f"total {rag_documents_response['total']}"
+    )
     if rag_documents:
         selected_rag_documents = st.multiselect(
             "限定文档",

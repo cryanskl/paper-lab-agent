@@ -9001,12 +9001,30 @@ def test_streamlit_rag_tab_can_select_documents_for_query_scope():
     rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
 
     for required in [
-        'rag_documents = api_get("/documents", page_size=100)["items"]',
+        'rag_documents = rag_documents_response["items"]',
         "selected_rag_documents = st.multiselect(",
         "限定文档",
         "selected_document_ids",
         "ids = list(dict.fromkeys(selected_document_ids + typed_document_ids))",
         "暂无可选文档",
+    ]:
+        assert required in rag_section
+
+
+def test_streamlit_rag_tab_exposes_document_pagination_controls():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+
+    for required in [
+        'rag_documents_page = rag_documents_page_col.number_input("rag_documents_page"',
+        "rag_documents_page_size = rag_documents_page_size_col.number_input(",
+        '"rag_documents_page_size"',
+        'rag_documents_response = api_get("/documents", page=int(rag_documents_page), page_size=int(rag_documents_page_size))',
+        'rag_documents = rag_documents_response["items"]',
+        "rag_documents_response['page']",
+        "rag_documents_response['page_size']",
+        "rag_documents_response['total']",
     ]:
         assert required in rag_section
 
