@@ -460,8 +460,16 @@ with documents_tab:
             else:
                 st.warning(parse_payload)
             st.json(parse_payload)
+        translation_target_lang = c2.text_input(
+            "target_lang",
+            value="zh",
+            key=f"translation-target-lang-{selected['id']}",
+        )
         if c2.button("翻译"):
-            status_code, translate_payload = api_post(f"/documents/{selected['id']}/translate", json={"target_lang": "zh"})
+            status_code, translate_payload = api_post(
+                f"/documents/{selected['id']}/translate",
+                json={"target_lang": translation_target_lang},
+            )
             if status_code < 400:
                 st.success("已创建翻译任务")
             else:

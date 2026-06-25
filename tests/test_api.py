@@ -8831,7 +8831,9 @@ def test_streamlit_document_translate_surfaces_success_and_error_states():
     documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
 
     for required in [
-        'status_code, translate_payload = api_post(f"/documents/{selected[\'id\']}/translate", json={"target_lang": "zh"})',
+        "translation_target_lang",
+        'key=f"translation-target-lang-{selected[\'id\']}"',
+        'json={"target_lang": translation_target_lang}',
         "if status_code < 400:",
         "已创建翻译任务",
         "else:",
