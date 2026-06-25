@@ -39,7 +39,7 @@ API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
 ```
 
 `/api/v1/system/status` 会返回 `config_warnings`，用于提示 OpenAlex、Unpaywall、LLM 等可选外部能力是否还未配置；缺失不会阻断默认离线模式。
-同一响应里的 `release_readiness` 会汇总演示数据、失败工作流、配置 warning 和存储可写性，阻断原因分别放在 `demo_data_missing`、`failed_workflows`、`config_warning_codes` 和 `storage_errors`；`python scripts/health_check.py --summary-only --compact` 与 `--require-release-ready` 都会优先使用这个 API 聚合结果输出或阻断发布就绪状态。compact summary 会额外给出 `workflows_ok` 和 `config_ready`，便于快速判断是任务失败还是配置未完成。
+同一响应里的 `release_readiness` 会汇总演示数据、失败工作流、配置 warning 和存储可写性，阻断原因分别放在 `demo_data_missing`、`failed_workflows`、`config_warning_codes` 和 `storage_errors`；`python scripts/health_check.py --summary-only --compact` 与 `--require-release-ready` 都会优先使用这个 API 聚合结果输出或阻断发布就绪状态。compact summary 会额外给出 `workflows_ok`、`config_ready` 和 `release_blockers`，便于快速判断是任务失败、配置未完成还是存储/演示数据阻断。
 同一响应里的 `translation_adapter` 和 `llm_model` 会说明当前翻译链路使用本地 `local-echo` 还是 `openai-compatible`，`python scripts/health_check.py` 会把这两个字段作为发布健康契约校验。
 
 导入离线样例论文和 PDF 文档：
@@ -104,7 +104,7 @@ bash scripts/release_check.sh
 这条命令会执行与 CI 相同的离线发布检查：校验启动脚本语法、编译关键脚本、运行全量测试。
 
 `python scripts/health_check.py --check-frontend` 会额外探测 Streamlit `/_stcore/health`，用于确认 `scripts/dev.sh` 启动后的后端和前端都可访问。
-`python scripts/health_check.py --summary-only --compact` 会输出短摘要，包含 `release_ready`、`api_status`、`demo_data_ready`、`failed_workflows`、`config_warning_count`、`config_warning_codes`、`storage_writable` 和 `storage_errors`，适合发布或演示前快速确认 live 环境；搭配 `--check-frontend` 时还会返回 `frontend_ok`、`frontend_status_code` 和 `frontend_url`，搭配 `--check-external` 时还会返回 `grobid_available`、`grobid_status_code`、`grobid_url` 和 `grobid_error`。
+`python scripts/health_check.py --summary-only --compact` 会输出短摘要，包含 `release_ready`、`release_blockers`、`api_status`、`demo_data_ready`、`failed_workflows`、`workflows_ok`、`config_warning_count`、`config_ready`、`config_warning_codes`、`storage_writable` 和 `storage_errors`，适合发布或演示前快速确认 live 环境；搭配 `--check-frontend` 时还会返回 `frontend_ok`、`frontend_status_code` 和 `frontend_url`，搭配 `--check-external` 时还会返回 `grobid_available`、`grobid_status_code`、`grobid_url` 和 `grobid_error`。
 `python scripts/health_check.py --require-frontend` 会主动探测 Streamlit，并在前端健康探针不是 200 时返回非零，适合 `scripts/dev.sh` 启动后做发布或演示前门禁。
 `python scripts/health_check.py --require-storage-writable` 会在数据目录、PDF/TEI/翻译/导出目录、数据库父目录或向量索引父目录不可写，或已存在的本地向量索引 JSON 损坏时返回非零，适合发布前预检本机运行环境。
 `python scripts/health_check.py --require-no-failed-workflows` 会在抓取、解析、索引、翻译、化学抽取或反应集复核状态统计中存在 failed 项时返回非零，适合部署前确认没有已知失败积压。

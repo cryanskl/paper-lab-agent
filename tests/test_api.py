@@ -6698,6 +6698,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "`grobid_available`",
         "`workflows_ok`",
         "`config_ready`",
+        "`release_blockers`",
         "`storage_errors`",
         "python scripts/health_check.py --require-frontend",
         "python -m scripts.smoke_check",
@@ -9250,6 +9251,7 @@ def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
         "api_prefix": "/api/v1",
         "version": "0.1.0",
         "release_ready": False,
+        "release_blockers": ["failed_workflows:document_parse.failed=1", "config_warning_codes:missing_llm_api_key"],
         "demo_data_ready": True,
         "demo_data_missing": [],
         "workflows_ok": False,
@@ -9293,6 +9295,7 @@ def test_health_check_summary_only_reports_release_ready_when_gates_are_clean():
     summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
 
     assert summary["release_ready"] is True
+    assert summary["release_blockers"] == []
     assert summary["demo_data_missing"] == []
     assert summary["workflows_ok"] is True
     assert summary["failed_workflows"] == []
@@ -9336,6 +9339,12 @@ def test_health_check_summary_prefers_api_release_readiness():
     summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
 
     assert summary["release_ready"] is False
+    assert summary["release_blockers"] == [
+        "demo_data_missing:documents>=1",
+        "failed_workflows:translations.failed=2",
+        "config_warning_codes:missing_llm_api_key",
+        "storage_errors:pdf_dir.writable",
+    ]
     assert summary["demo_data_missing"] == ["documents>=1"]
     assert summary["workflows_ok"] is False
     assert summary["failed_workflows"] == ["translations.failed=2"]

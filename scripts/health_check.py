@@ -613,6 +613,15 @@ def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) 
         "api_prefix": runtime.get("api_prefix"),
         "version": runtime.get("version"),
         "release_ready": release_ready,
+        "release_blockers": release_readiness_blockers(
+            {
+                "ready": release_ready,
+                "demo_data_missing": demo_data_missing,
+                "failed_workflows": failed_workflows,
+                "config_warning_codes": config_warning_codes,
+                "storage_errors": storage_errors,
+            }
+        ),
         "demo_data_ready": demo_data.get("ready") is True,
         "demo_data_missing": demo_data_missing,
         "workflows_ok": failed_workflows == [],
