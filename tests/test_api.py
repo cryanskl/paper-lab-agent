@@ -8985,6 +8985,21 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
     assert 'type=["pdf", "txt"]' not in documents_section
 
 
+def test_streamlit_documents_tab_offers_tei_xml_download():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    for required in [
+        'document_detail.get("tei_path")',
+        'tei_path = Path(document_detail.get("tei_path"))',
+        "tei_path.exists()",
+        "下载 TEI XML",
+        "TEI 文件不存在",
+    ]:
+        assert required in documents_section
+
+
 def test_streamlit_documents_tab_exposes_section_and_chunk_pagination_controls():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

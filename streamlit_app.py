@@ -524,6 +524,17 @@ with documents_tab:
         document_detail = api_get(f"/documents/{selected['id']}")
         if document_detail.get("parse_error"):
             st.warning(f"parse_error: {document_detail['parse_error']}")
+        if document_detail.get("tei_path"):
+            tei_path = Path(document_detail.get("tei_path"))
+            if tei_path.exists():
+                st.download_button(
+                    "下载 TEI XML",
+                    data=tei_path.read_text(encoding="utf-8"),
+                    file_name=tei_path.name,
+                    mime="application/xml",
+                )
+            else:
+                st.warning(f"TEI 文件不存在: {tei_path}")
         st.caption(f"chemistry_status: {document_detail.get('chemistry_status') or 'unknown'}")
         if document_detail.get("chemistry_error"):
             st.warning(f"chemistry_error: {document_detail['chemistry_error']}")
