@@ -581,6 +581,48 @@ def test_release_checklist_documents_git_safety_checks():
         assert required in checklist
 
 
+def test_doctor_script_reports_missing_required_project_files(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "requirements.txt").write_text("fastapi==0.1\n", encoding="utf-8")
+    (tmp_path / ".env.example").write_text("DATABASE_PATH=\n", encoding="utf-8")
+
+    payload = doctor.run_checks(tmp_path)
+
+    assert payload["ok"] is False
+    missing = {
+        issue["path"]
+        for check in payload["checks"]
+        for issue in check.get("issues", [])
+        if issue.get("code") == "missing_required_file"
+    }
+    assert "docs/schema.sql" in missing
+    assert "scripts/dev.sh" in missing
+    assert "streamlit_app.py" in missing
+
+
+def test_doctor_preflight_is_documented_and_in_release_gate():
+    repo = Path(__file__).resolve().parent.parent
+    readme = (repo / "README.md").read_text(encoding="utf-8")
+    checklist = (repo / "docs" / "release-checklist.md").read_text(encoding="utf-8")
+    release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert "python scripts/doctor.py --compact" in readme
+    assert "python scripts/doctor.py --compact" in checklist
+    assert "scripts/doctor.py" in release_check
+    assert "scripts/doctor.py --help" in release_check
+
+
 def test_release_check_derives_expected_runtime_version_from_app_version():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")

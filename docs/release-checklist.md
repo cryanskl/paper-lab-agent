@@ -7,10 +7,11 @@ Use this checklist before publishing, demoing, or handing off `paper-lab-agent`.
 Run the same offline release gate used by CI:
 
 ```bash
+python scripts/doctor.py --compact
 bash scripts/release_check.sh
 ```
 
-This validates shell syntax, Python compilation, API/schema/docs/env/requirement hygiene, the unified dev startup path, fixture import, demo data preparation, smoke coverage, and the full test suite.
+The preflight doctor checks Python version and required project files before service startup. The release gate validates shell syntax, Python compilation, API/schema/docs/env/requirement hygiene, the unified dev startup path, fixture import, demo data preparation, smoke coverage, and the full test suite.
 
 ## 2. Demo Data
 
