@@ -144,6 +144,29 @@ def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
+def crawl_job_diagnostic_rows(job: dict[str, Any]) -> list[dict[str, Any]]:
+    diagnostics = job.get("diagnostics") or {}
+    journal = job.get("journal") or {}
+    fields = [
+        ("job_id", job.get("id") or job.get("job_id")),
+        ("status", diagnostics.get("status") or job.get("status")),
+        ("journal", journal.get("name") or diagnostics.get("journal_name") or job.get("journal_id")),
+        ("period", diagnostics.get("period") or job.get("period")),
+        ("date_from", diagnostics.get("date_from") or job.get("date_from")),
+        ("date_to", diagnostics.get("date_to") or job.get("date_to")),
+        ("papers_found", int(diagnostics.get("papers_found") or 0)),
+        ("papers_filtered", int(diagnostics.get("papers_filtered") or 0)),
+        ("papers_accepted", int(diagnostics.get("papers_accepted") or 0)),
+        ("papers_existing", int(diagnostics.get("papers_existing") or 0)),
+        ("papers_new", int(diagnostics.get("papers_new") or 0)),
+        ("outcome", diagnostics.get("outcome")),
+        ("keyword_mode", diagnostics.get("keyword_mode")),
+        ("keyword_terms", ", ".join(diagnostics.get("keyword_terms") or [])),
+        ("error", diagnostics.get("error") or job.get("error")),
+    ]
+    return [{"field": field, "value": value} for field, value in fields]
+
+
 def rag_source_rows(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for source in sources:

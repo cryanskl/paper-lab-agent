@@ -395,6 +395,54 @@ def test_crawl_job_rows_summarize_diagnostics_and_workflow_state():
     ]
 
 
+def test_crawl_job_diagnostic_rows_flatten_job_detail_for_review():
+    from app import frontend_api
+
+    rows = frontend_api.crawl_job_diagnostic_rows(
+        {
+            "id": 42,
+            "journal_id": 7,
+            "status": "failed",
+            "period": "manual",
+            "date_from": "2026-02-01",
+            "date_to": "2026-02-28",
+            "error": "Crossref returned 503",
+            "journal": {"name": "Journal of Physics D"},
+            "diagnostics": {
+                "status": "failed",
+                "journal_name": "Journal of Physics D",
+                "papers_found": 18,
+                "papers_filtered": 10,
+                "papers_accepted": 8,
+                "papers_existing": 6,
+                "papers_new": 2,
+                "outcome": "partial_failure",
+                "keyword_mode": "and",
+                "keyword_terms": ["plasma", "etching"],
+                "error": "Crossref returned 503",
+            },
+        }
+    )
+
+    assert rows == [
+        {"field": "job_id", "value": 42},
+        {"field": "status", "value": "failed"},
+        {"field": "journal", "value": "Journal of Physics D"},
+        {"field": "period", "value": "manual"},
+        {"field": "date_from", "value": "2026-02-01"},
+        {"field": "date_to", "value": "2026-02-28"},
+        {"field": "papers_found", "value": 18},
+        {"field": "papers_filtered", "value": 10},
+        {"field": "papers_accepted", "value": 8},
+        {"field": "papers_existing", "value": 6},
+        {"field": "papers_new", "value": 2},
+        {"field": "outcome", "value": "partial_failure"},
+        {"field": "keyword_mode", "value": "and"},
+        {"field": "keyword_terms", "value": "plasma, etching"},
+        {"field": "error", "value": "Crossref returned 503"},
+    ]
+
+
 def test_rag_source_rows_include_citation_and_location_labels():
     from app import frontend_api
 

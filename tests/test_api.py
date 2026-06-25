@@ -11469,6 +11469,8 @@ def test_streamlit_crawl_jobs_table_flattens_diagnostics():
     assert 'st.caption(f"outcome: {diagnostics.get(\'outcome\') or \'unknown\'}")' in search_section
     assert "crawl_job_rows(jobs)" in search_section
     assert "st.dataframe(crawl_job_rows(jobs), use_container_width=True)" in search_section
+    assert "crawl_job_diagnostic_rows(job_detail)" in search_section
+    assert "st.dataframe(crawl_job_diagnostic_rows(job_detail), use_container_width=True)" in search_section
 
 
 def test_streamlit_crawl_jobs_show_empty_state():

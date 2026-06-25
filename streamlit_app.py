@@ -4,7 +4,15 @@ from pathlib import Path
 
 import streamlit as st
 
-from app.frontend_api import crawl_job_rows, rag_source_rows, reaction_review_rows, reaction_set_rows, request_json, request_json_status
+from app.frontend_api import (
+    crawl_job_diagnostic_rows,
+    crawl_job_rows,
+    rag_source_rows,
+    reaction_review_rows,
+    reaction_set_rows,
+    request_json,
+    request_json_status,
+)
 
 
 API_BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000/api/v1").rstrip("/")
@@ -327,7 +335,7 @@ with search_tab:
         st.caption(f"outcome: {diagnostics.get('outcome') or 'unknown'}")
         if diagnostics.get("error"):
             st.warning(diagnostics["error"])
-        st.dataframe([diagnostics], use_container_width=True)
+        st.dataframe(crawl_job_diagnostic_rows(job_detail), use_container_width=True)
         st.json(job_detail)
 
 with config_tab:
