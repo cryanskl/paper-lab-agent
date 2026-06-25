@@ -11,6 +11,11 @@ BUG_FILENAME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$"
 REQUIRED_SECTIONS = ("现象", "原因", "修复", "验证")
 
 
+def has_title(text: str) -> bool:
+    match = re.search(r"^#\s+(.+?)\s*$", text, flags=re.MULTILINE)
+    return bool(match and match.group(1).strip())
+
+
 def section_body(text: str, section: str) -> str | None:
     match = re.search(rf"^## {re.escape(section)}\s*$", text, flags=re.MULTILINE)
     if match is None:
@@ -38,6 +43,8 @@ def bug_doc_issues(repo: Path) -> list[str]:
             issues.append(f"{rel}: filename must match YYYY-MM-DD-short-slug.md")
 
         text = path.read_text(encoding="utf-8")
+        if not has_title(text):
+            issues.append(f"{rel}: missing title")
         missing_sections = [
             section for section in REQUIRED_SECTIONS if section_body(text, section) is None
         ]
