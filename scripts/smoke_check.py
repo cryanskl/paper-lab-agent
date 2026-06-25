@@ -158,6 +158,15 @@ def run_smoke() -> dict:
             len(manual_category_details) == 1 and manual_category_details[0].get("method") == "manual",
             f"expected manual category method, got {manual_category_details}",
         )
+        manual_category_search = assert_status(
+            client.get("/api/v1/papers?q=smoke crawl&category=chemistry"),
+            200,
+            "manual category search",
+        )
+        assert_ok(
+            manual_category_search["total"] == 1,
+            f"expected manual category search to return one paper, got {manual_category_search}",
+        )
 
         original_paper_unpaywall_client = papers_router.UnpaywallClient
 
@@ -410,6 +419,7 @@ def run_smoke() -> dict:
             "crawled_papers": crawled_search["total"],
             "manual_category_count": len(manual_category_details),
             "manual_category_method": manual_category_details[0]["method"],
+            "manual_category_search_hits": manual_category_search["total"],
             "manual_resolve_oa_status": manual_resolve_oa["oa_status"],
             "manual_resolve_oa_pdf_url": manual_resolve_oa["oa_pdf_url"],
             "document_id": document_id,

@@ -192,6 +192,7 @@ expected = {
     "error_response_count": 2,
     "manual_category_count": 1,
     "manual_category_method": "manual",
+    "manual_category_search_hits": 1,
     "manual_resolve_oa_status": "green",
     "manual_resolve_oa_pdf_url": "https://example.test/manual-resolve-10.999-smoke-crawl.pdf",
     "papers": 2,

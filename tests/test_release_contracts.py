@@ -462,6 +462,7 @@ def test_release_check_requires_manual_category_override_smoke_path():
 
     assert '"manual_category_method": "manual"' in release_text
     assert '"manual_category_count": 1' in release_text
+    assert '"manual_category_search_hits": 1' in release_text
 
 
 def test_release_check_requires_export_confidence_smoke_metadata():
