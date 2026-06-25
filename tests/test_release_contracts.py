@@ -221,6 +221,8 @@ def test_release_hygiene_validator_reports_missing_gitignore_pattern(tmp_path):
     assert "*.db-shm" in missing
     assert "*.db-journal" in missing
     assert "*.sqlite-journal" in missing
+    assert ".mypy_cache/" in missing
+    assert ".ruff_cache/" in missing
     assert ".next/" in missing
 
 
@@ -239,6 +241,8 @@ def test_release_hygiene_validator_reports_tracked_generated_artifacts():
             "plasma.db-shm",
             "plasma.db-journal",
             "archive.sqlite-journal",
+            ".mypy_cache/3.11/app.meta.json",
+            ".ruff_cache/0.8.0/123456789",
             "data/plasma.db",
             "scripts/__pycache__/smoke_check.cpython-313.pyc",
             "coverage/index.html",
@@ -255,6 +259,8 @@ def test_release_hygiene_validator_reports_tracked_generated_artifacts():
         "plasma.db-shm",
         "plasma.db-journal",
         "archive.sqlite-journal",
+        ".mypy_cache/3.11/app.meta.json",
+        ".ruff_cache/0.8.0/123456789",
         "data/plasma.db",
         "scripts/__pycache__/smoke_check.cpython-313.pyc",
         "coverage/index.html",
