@@ -18,6 +18,14 @@ def test_crossref_normalizes_url_doi_to_bare_identifier():
     assert work["doi"] == "10.5555/abc.def"
 
 
+def test_crossref_normalizes_prefixed_doi_to_bare_identifier():
+    client = CrossrefClient()
+
+    work = client.normalize({"DOI": "doi:10.5555/ABC.Def", "title": ["Example"]})
+
+    assert work["doi"] == "10.5555/abc.def"
+
+
 def test_crossref_normalizes_scalar_title_fields():
     client = CrossrefClient()
 
@@ -246,6 +254,14 @@ def test_openalex_normalizes_url_doi_to_bare_identifier():
     client = OpenAlexClient()
 
     work = client.normalize({"doi": "https://doi.org/10.5555/ABC.Def", "title": "Example"})
+
+    assert work["doi"] == "10.5555/abc.def"
+
+
+def test_openalex_normalizes_prefixed_doi_to_bare_identifier():
+    client = OpenAlexClient()
+
+    work = client.normalize({"doi": "doi:10.5555/ABC.Def", "title": "Example"})
 
     assert work["doi"] == "10.5555/abc.def"
 

@@ -3140,7 +3140,7 @@ def test_crawl_job_resolves_oa_with_normalized_doi(tmp_path, monkeypatch):
         async def works_by_issn(self, *args, **kwargs):
             return [
                 {
-                    "doi": "https://doi.org/10.3/Match.Case",
+                    "doi": "doi:10.3/Match.Case",
                     "title": "Plasma chemistry model",
                     "abstract": "argon oxygen plasma chemistry",
                     "authors": [],

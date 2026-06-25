@@ -77,7 +77,7 @@ def normalize_doi(value: Any) -> Optional[str]:
     doi = normalize_text(optional_text(value))
     if not doi:
         return None
-    return doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/")
+    return doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/").removeprefix("doi:")
 
 
 def build_dedupe_key(journal: dict[str, Any], work: dict[str, Any]) -> Optional[str]:
