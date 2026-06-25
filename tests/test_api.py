@@ -8470,6 +8470,29 @@ def test_health_check_env_value_parser_preserves_unquoted_hashes():
     assert health_check.clean_env_value('"sk-test#quoted" # inline comment') == "sk-test#quoted"
 
 
+def test_readme_command_validator_checks_inline_command_targets(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_readme_commands.py"
+    spec = importlib.util.spec_from_file_location("readme_command_validator_inline", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+
+    (tmp_path / "README.md").write_text(
+        "Troubleshooting: `PYTHON=.venv/bin/python bash scripts/dev.sh` and `python scripts/missing.py`.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "dev.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    assert validator.missing_command_targets(tmp_path) == [
+        "README.md: command target missing: scripts/missing.py"
+    ]
+
+
 def test_health_check_env_loader_ignores_invalid_key_names(monkeypatch, tmp_path):
     import importlib.util
 

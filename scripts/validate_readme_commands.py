@@ -12,6 +12,8 @@ from urllib.parse import urlparse
 BASH_FENCE_RE = re.compile(r"^```(?:bash|sh|shell)\s*$")
 FENCE_RE = re.compile(r"^```")
 ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+INLINE_CODE_RE = re.compile(r"`([^`]+)`")
+LOCAL_COMMANDS = {"bash", "curl", "python", "python3", "pip", "source"}
 LOCAL_CURL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 HTTP_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH"}
 
@@ -36,6 +38,28 @@ def bash_command_lines(readme_path: Path) -> list[str]:
         if BASH_FENCE_RE.match(line):
             in_bash_block = True
     return lines
+
+
+def inline_command_lines(readme_path: Path) -> list[str]:
+    lines: list[str] = []
+    in_code_block = False
+    for raw_line in readme_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if FENCE_RE.match(line):
+            in_code_block = not in_code_block
+            continue
+        if in_code_block:
+            continue
+        for match in INLINE_CODE_RE.finditer(raw_line):
+            candidate = match.group(1).strip()
+            tokens = strip_leading_env_assignments(split_command(candidate))
+            if tokens and (tokens[0] in LOCAL_COMMANDS or tokens[0].startswith("scripts/")):
+                lines.append(candidate)
+    return lines
+
+
+def command_lines(readme_path: Path) -> list[str]:
+    return [*bash_command_lines(readme_path), *inline_command_lines(readme_path)]
 
 
 def split_command(line: str) -> list[str]:
@@ -95,7 +119,7 @@ def curl_url(tokens: list[str]) -> str | None:
 
 def documented_local_curl_routes(readme_path: Path) -> list[tuple[str, str]]:
     routes: list[tuple[str, str]] = []
-    for line in bash_command_lines(readme_path):
+    for line in command_lines(readme_path):
         tokens = strip_leading_env_assignments(split_command(line))
         if not tokens or tokens[0] != "curl":
             continue
@@ -111,7 +135,7 @@ def documented_local_curl_routes(readme_path: Path) -> list[tuple[str, str]]:
 
 def command_targets(readme_path: Path) -> list[str]:
     targets: list[str] = []
-    for line in bash_command_lines(readme_path):
+    for line in command_lines(readme_path):
         tokens = strip_leading_env_assignments(split_command(line))
         for index, token in enumerate(tokens):
             if token.startswith("scripts/") and token.endswith((".py", ".sh")):
