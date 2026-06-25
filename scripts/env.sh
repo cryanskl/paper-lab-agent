@@ -67,6 +67,16 @@ resolve_connect_host() {
   fi
 }
 
+format_url_host() {
+  local host="$1"
+
+  if [[ "${host}" == *:* && "${host}" != \[* ]]; then
+    printf "[%s]" "${host}"
+  else
+    printf "%s" "${host}"
+  fi
+}
+
 resolve_api_base_url() {
   local user_api_base_url="$1"
   local user_api_host_set="$2"
@@ -77,7 +87,7 @@ resolve_api_base_url() {
     printf "%s" "${user_api_base_url}"
   elif [[ -n "${user_api_host_set}" || -n "${user_api_port_set}" ]]; then
     api_connect_host="$(resolve_connect_host "${API_HOST}")"
-    printf "http://%s:%s/api/v1" "${api_connect_host}" "${API_PORT}"
+    printf "http://%s:%s/api/v1" "$(format_url_host "${api_connect_host}")" "${API_PORT}"
   else
     printf "%s" "${API_BASE_URL:-http://${API_HOST}:${API_PORT}/api/v1}"
   fi

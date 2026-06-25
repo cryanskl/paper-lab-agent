@@ -6088,12 +6088,16 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "-m uvicorn app.main:app" in dev_text
     assert "DEV_READY_TIMEOUT" in dev_text
     assert "/api/v1/health" in dev_text
+    assert 'API_URL_HOST="$(format_url_host "${API_CONNECT_HOST}")"' in dev_text
+    assert 'STREAMLIT_URL_HOST="$(format_url_host "${STREAMLIT_CONNECT_HOST}")"' in dev_text
+    assert '"http://${API_URL_HOST}:${API_PORT}/api/v1/health"' in dev_text
     assert "API failed to become ready" in dev_text
     assert "API process exited before becoming ready" in dev_text
     assert "wait_for_api" in dev_text
     assert '"${API_PID}"' in dev_text
     assert "-m streamlit run streamlit_app.py" in dev_text
     assert "/_stcore/health" in dev_text
+    assert '"http://${STREAMLIT_URL_HOST}:${STREAMLIT_PORT}/_stcore/health"' in dev_text
     assert "Streamlit failed to become ready" in dev_text
     assert "Streamlit process exited before becoming ready" in dev_text
     assert '"${STREAMLIT_PID}"' in dev_text
@@ -6339,6 +6343,28 @@ def test_env_example_validator_cli_rejects_runtime_url_drift(tmp_path):
     assert "API_BASE_URL expected http://127.0.0.1:9000/api/v1" in result.stderr
 
 
+def test_health_check_brackets_ipv6_loopback_hosts(monkeypatch):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_ipv6_hosts", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    monkeypatch.delenv("API_BASE_URL", raising=False)
+    monkeypatch.delenv("FRONTEND_URL", raising=False)
+    monkeypatch.setenv("API_HOST", "::1")
+    monkeypatch.setenv("API_PORT", "9000")
+    monkeypatch.setenv("STREAMLIT_HOST", "::1")
+    monkeypatch.setenv("STREAMLIT_PORT", "9501")
+
+    assert health_check.default_base_url() == "http://[::1]:9000"
+    assert health_check.default_frontend_url() == "http://[::1]:9501"
+
+
 def test_env_loader_preserves_existing_environment_values(tmp_path):
     import subprocess
 
@@ -6451,6 +6477,38 @@ def test_dev_api_base_url_uses_loopback_for_wildcard_bind_host(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert result.stdout == "http://127.0.0.1:9000/api/v1"
+
+
+def test_dev_api_base_url_brackets_ipv6_bind_host(tmp_path):
+    import subprocess
+
+    repo = Path(__file__).resolve().parent.parent
+    env_script = repo / "scripts" / "env.sh"
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                "set -euo pipefail; "
+                f"source {env_script}; "
+                "export API_HOST=::1; "
+                "export API_PORT=9000; "
+                'USER_API_BASE_URL="${API_BASE_URL:-}"; '
+                'USER_API_HOST_SET="${API_HOST+x}"; '
+                'USER_API_PORT_SET="${API_PORT+x}"; '
+                'API_BASE_URL="$(resolve_api_base_url "$USER_API_BASE_URL" "$USER_API_HOST_SET" "$USER_API_PORT_SET")"; '
+                'printf "%s" "$API_BASE_URL"'
+            ),
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "http://[::1]:9000/api/v1"
 
 
 def test_system_status_contract_documents_operational_counts():
