@@ -107,6 +107,15 @@ def make_client(tmp_path):
     return TestClient(app)
 
 
+def test_crawl_service_strips_space_after_doi_prefix_for_dedupe():
+    from app.services.crawl import build_dedupe_key, normalize_doi
+
+    work = {"doi": "DOI: 10.5555/ABC.Def", "title": "Example"}
+
+    assert normalize_doi(work["doi"]) == "10.5555/abc.def"
+    assert build_dedupe_key({"id": 2}, work) == "doi:10.5555/abc.def"
+
+
 def test_health_seed_and_search(tmp_path):
     client = make_client(tmp_path)
     assert client.get("/health").json()["status"] == "ok"

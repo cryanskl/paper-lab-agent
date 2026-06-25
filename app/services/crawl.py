@@ -83,7 +83,7 @@ def normalize_doi(value: Any) -> Optional[str]:
         .removeprefix("https://dx.doi.org/")
         .removeprefix("http://dx.doi.org/")
         .removeprefix("doi:")
-    )
+    ).strip()
 
 
 def build_dedupe_key(journal: dict[str, Any], work: dict[str, Any]) -> Optional[str]:
