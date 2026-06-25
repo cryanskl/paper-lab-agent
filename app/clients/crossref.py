@@ -3,6 +3,7 @@ import html
 import re
 from datetime import date
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
 
@@ -127,7 +128,10 @@ class CrossrefClient:
 
     def normalize_url(self, value: Any) -> Optional[str]:
         if isinstance(value, str) and value.strip():
-            return value
+            text = value.strip()
+            parsed = urlparse(text)
+            if parsed.scheme in {"http", "https"} and parsed.netloc:
+                return text
         return None
 
     def normalize_date_parts(self, value: Any) -> tuple[Optional[str], Optional[int]]:

@@ -167,6 +167,28 @@ def test_crossref_tolerates_malformed_landing_url_field():
     assert work["landing_url"] is None
 
 
+def test_crossref_rejects_unsafe_landing_url():
+    client = CrossrefClient()
+
+    unsafe_scheme = client.normalize(
+        {
+            "DOI": "10.5555/unsafe-url",
+            "title": ["Unsafe landing URL"],
+            "URL": "javascript:alert(1)",
+        }
+    )
+    missing_host = client.normalize(
+        {
+            "DOI": "10.5555/missing-host-url",
+            "title": ["Missing host landing URL"],
+            "URL": "https:article",
+        }
+    )
+
+    assert unsafe_scheme["landing_url"] is None
+    assert missing_host["landing_url"] is None
+
+
 def test_openalex_normalizes_url_doi_to_bare_identifier():
     client = OpenAlexClient()
 
@@ -259,6 +281,28 @@ def test_openalex_tolerates_malformed_landing_url_fields():
 
     assert malformed_primary_url["landing_url"] == "https://openalex.org/W-safe-fallback"
     assert malformed_primary_and_id["landing_url"] is None
+
+
+def test_openalex_rejects_unsafe_landing_url():
+    client = OpenAlexClient()
+
+    unsafe_primary_url = client.normalize(
+        {
+            "id": "https://openalex.org/W-unsafe-primary",
+            "title": "Unsafe primary landing URL",
+            "primary_location": {"landing_page_url": "javascript:alert(1)"},
+        }
+    )
+    missing_host_id = client.normalize(
+        {
+            "id": "https:openalex-work",
+            "title": "Missing host fallback URL",
+            "primary_location": {"landing_page_url": ["malformed"]},
+        }
+    )
+
+    assert unsafe_primary_url["landing_url"] == "https://openalex.org/W-unsafe-primary"
+    assert missing_host_id["landing_url"] is None
 
 
 def test_openalex_tolerates_malformed_source_display_name():

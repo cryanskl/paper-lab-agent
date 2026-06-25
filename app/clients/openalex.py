@@ -1,6 +1,7 @@
 import asyncio
 from datetime import date
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
 
@@ -150,6 +151,15 @@ class OpenAlexClient:
             return value
         return None
 
+    def normalize_url(self, value: Any) -> Optional[str]:
+        text = self.normalize_optional_text(value)
+        if not text:
+            return None
+        parsed = urlparse(text)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return None
+        return text
+
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         doi = self.normalize_doi(item.get("doi"))
         primary_location = item.get("primary_location") or {}
@@ -168,8 +178,7 @@ class OpenAlexClient:
             "journal_name": self.normalize_optional_text(source.get("display_name")),
             "published_date": self.normalize_publication_date(item.get("publication_date")),
             "published_year": self.normalize_publication_year(item.get("publication_year")),
-            "landing_url": self.normalize_optional_text(primary_location.get("landing_page_url"))
-            or self.normalize_optional_text(item.get("id")),
+            "landing_url": self.normalize_url(primary_location.get("landing_page_url")) or self.normalize_url(item.get("id")),
             "source_api": "openalex",
             "raw_metadata": item,
         }
