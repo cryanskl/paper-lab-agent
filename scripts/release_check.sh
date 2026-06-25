@@ -104,6 +104,8 @@ expected = {
     "verified_export_bolsig_has_verification_metadata": True,
     "verified_export_txt_has_confidence": True,
     "verified_export_bolsig_has_confidence": True,
+    "verified_export_txt_has_source_label": True,
+    "verified_export_bolsig_has_source_label": True,
 }
 for key, value in expected.items():
     if payload.get(key) != value:

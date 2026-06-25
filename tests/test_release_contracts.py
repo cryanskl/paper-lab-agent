@@ -375,6 +375,14 @@ def test_release_check_requires_export_confidence_smoke_metadata():
     assert '"verified_export_bolsig_has_confidence": True' in release_text
 
 
+def test_release_check_requires_export_source_label_smoke_metadata():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert '"verified_export_txt_has_source_label": True' in release_text
+    assert '"verified_export_bolsig_has_source_label": True' in release_text
+
+
 def test_api_contract_documented_endpoints_exist_in_app():
     validate_api_contract = load_validate_api_contract()
     repo = Path(__file__).resolve().parent.parent
