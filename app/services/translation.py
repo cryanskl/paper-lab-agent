@@ -80,9 +80,16 @@ def unmask_formulas(text: str, formulas: dict[str, str]) -> str:
     return text
 
 
+def validate_formula_placeholders(translated: str, formulas: dict[str, str]) -> None:
+    for key in formulas:
+        if key not in translated:
+            raise ValueError(f"translation response missing formula placeholder {key}")
+
+
 def translate_text_preserving_formulas(text: str, translator: Translator, target_lang: str) -> str:
     masked, formulas = mask_formulas(text)
     translated = translator.translate(masked, target_lang)
+    validate_formula_placeholders(translated, formulas)
     return unmask_formulas(translated, formulas)
 
 

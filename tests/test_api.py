@@ -5128,6 +5128,20 @@ def test_translation_adapter_preserves_formula_masks():
     assert "<EQ_" not in translated
 
 
+def test_translation_adapter_reports_missing_formula_placeholder():
+    import pytest
+
+    from app.services.translation import translate_text_preserving_formulas
+
+    class DroppingTranslator:
+        def translate(self, text, target_lang):
+            assert "<EQ_000>" in text
+            return "译文没有公式占位符"
+
+    with pytest.raises(ValueError, match="translation response missing formula placeholder <EQ_000>"):
+        translate_text_preserving_formulas("The rate is $k_1$.", DroppingTranslator(), "zh")
+
+
 def test_openai_translation_adapter_uses_compatible_chat_completions_payload():
     import json
 
