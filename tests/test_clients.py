@@ -33,6 +33,21 @@ def test_crossref_normalizes_scalar_title_fields():
     assert work["journal_name"] == "Scalar journal"
 
 
+def test_crossref_strips_text_fields():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/stripped-text",
+            "title": ["  Trimmed title  "],
+            "container-title": ["  Trimmed journal  "],
+        }
+    )
+
+    assert work["title"] == "Trimmed title"
+    assert work["journal_name"] == "Trimmed journal"
+
+
 def test_crossref_skips_malformed_text_list_items():
     client = CrossrefClient()
 
@@ -205,6 +220,21 @@ def test_openalex_tolerates_malformed_title_fields():
 
     assert list_title["title"] == "Untitled"
     assert object_title["title"] == "Untitled"
+
+
+def test_openalex_strips_text_fields():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-stripped-text",
+            "title": "  Trimmed title  ",
+            "primary_location": {"source": {"display_name": "  Trimmed journal  "}},
+        }
+    )
+
+    assert work["title"] == "Trimmed title"
+    assert work["journal_name"] == "Trimmed journal"
 
 
 def test_openalex_tolerates_malformed_publication_fields():

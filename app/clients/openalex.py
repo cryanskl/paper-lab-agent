@@ -128,7 +128,7 @@ class OpenAlexClient:
 
     def normalize_title(self, value: Any) -> str:
         if isinstance(value, str) and value.strip():
-            return value
+            return value.strip()
         return "Untitled"
 
     def normalize_publication_date(self, value: Any) -> Optional[str]:
@@ -148,7 +148,7 @@ class OpenAlexClient:
 
     def normalize_optional_text(self, value: Any) -> Optional[str]:
         if isinstance(value, str) and value.strip():
-            return value
+            return value.strip()
         return None
 
     def normalize_url(self, value: Any) -> Optional[str]:
