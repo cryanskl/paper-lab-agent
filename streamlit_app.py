@@ -44,6 +44,7 @@ def flatten_crawl_job_rows(jobs: list[dict]) -> list[dict]:
                 "accepted": diagnostics.get("papers_accepted", 0),
                 "existing": diagnostics.get("papers_existing", 0),
                 "new": diagnostics.get("papers_new", 0),
+                "outcome": diagnostics.get("outcome"),
                 "error": diagnostics.get("error") or job.get("error"),
             }
         )
@@ -337,6 +338,7 @@ with search_tab:
         j2.metric("filtered", diagnostics.get("papers_filtered", 0))
         j3.metric("accepted", diagnostics.get("papers_accepted", 0))
         j4.metric("new", diagnostics.get("papers_new", 0))
+        st.caption(f"outcome: {diagnostics.get('outcome') or 'unknown'}")
         if diagnostics.get("error"):
             st.warning(diagnostics["error"])
         st.dataframe([diagnostics], use_container_width=True)

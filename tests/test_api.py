@@ -640,6 +640,7 @@ def test_crawl_job_detail_includes_journal_and_diagnostics(tmp_path):
         "papers_new": 3,
         "papers_accepted": 7,
         "papers_existing": 4,
+        "outcome": "failed",
         "error": "OpenAlex timeout",
     }
 
@@ -678,8 +679,43 @@ def test_crawl_job_list_includes_journal_and_diagnostics(tmp_path):
         "papers_new": 4,
         "papers_accepted": 6,
         "papers_existing": 2,
+        "outcome": "new_papers",
         "error": "Crossref fallback",
     }
+
+
+def test_crawl_job_diagnostics_outcome_distinguishes_no_new_papers(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    scenarios = [
+        ("success", 0, 0, 0, "no_source_results"),
+        ("success", 5, 5, 0, "all_filtered"),
+        ("success", 5, 1, 0, "accepted_existing_only"),
+        ("running", 5, 0, 0, "running"),
+    ]
+    with get_conn() as conn:
+        for status, found, filtered, new_count, _outcome in scenarios:
+            conn.execute(
+                """
+                INSERT INTO crawl_jobs (
+                    journal_id, period, date_from, date_to, status,
+                    papers_found, papers_filtered, papers_new
+                ) VALUES (?, 'manual', '2026-06-01', '2026-06-02', ?, ?, ?, ?)
+                """,
+                (2, status, found, filtered, new_count),
+            )
+
+    response = client.get("/api/v1/crawl/jobs", params={"page_size": 10})
+
+    assert response.status_code == 200
+    outcomes_by_status_and_found = {
+        (item["status"], item["papers_found"], item["papers_filtered"]): item["diagnostics"]["outcome"]
+        for item in response.json()["items"]
+    }
+    for status, found, filtered, _new_count, outcome in scenarios:
+        assert outcomes_by_status_and_found[(status, found, filtered)] == outcome
 
 
 def test_journal_crud_accepts_keyword_config_and_soft_deletes(tmp_path):
@@ -11281,8 +11317,10 @@ def test_streamlit_crawl_jobs_table_flattens_diagnostics():
         "papers_accepted",
         "papers_existing",
         "papers_new",
+        "outcome",
     ]:
         assert required in flatten_helper
+    assert 'st.caption(f"outcome: {diagnostics.get(\'outcome\') or \'unknown\'}")' in search_section
     assert "flatten_crawl_job_rows(jobs)" in search_section
     assert 'st.dataframe(flatten_crawl_job_rows(jobs), use_container_width=True)' in search_section
 

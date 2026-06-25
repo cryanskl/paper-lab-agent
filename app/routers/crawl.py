@@ -14,6 +14,20 @@ router = APIRouter(prefix="/crawl", tags=["crawl"])
 ALLOWED_PERIODS = {"manual", "daily", "weekly", "monthly"}
 
 
+def crawl_job_outcome(status: Optional[str], papers_found: int, papers_filtered: int, papers_new: int) -> str:
+    normalized_status = (status or "").strip().lower()
+    if normalized_status in {"pending", "running", "failed"}:
+        return normalized_status
+    papers_accepted = max(papers_found - papers_filtered, 0)
+    if papers_found == 0:
+        return "no_source_results"
+    if papers_accepted == 0:
+        return "all_filtered"
+    if papers_new > 0:
+        return "new_papers"
+    return "accepted_existing_only"
+
+
 def serialize_job_detail(job: dict, journal: Optional[dict]) -> dict:
     journal_summary = None
     if journal:
@@ -26,6 +40,8 @@ def serialize_job_detail(job: dict, journal: Optional[dict]) -> dict:
         }
     papers_accepted = max((job.get("papers_found") or 0) - (job.get("papers_filtered") or 0), 0)
     papers_new = job.get("papers_new") or 0
+    papers_found = job.get("papers_found") or 0
+    papers_filtered = job.get("papers_filtered") or 0
     diagnostics = {
         "journal_id": job.get("journal_id"),
         "journal_name": journal.get("name") if journal else None,
@@ -33,11 +49,12 @@ def serialize_job_detail(job: dict, journal: Optional[dict]) -> dict:
         "date_from": job.get("date_from"),
         "date_to": job.get("date_to"),
         "status": job.get("status"),
-        "papers_found": job.get("papers_found") or 0,
-        "papers_filtered": job.get("papers_filtered") or 0,
+        "papers_found": papers_found,
+        "papers_filtered": papers_filtered,
         "papers_new": papers_new,
         "papers_accepted": papers_accepted,
         "papers_existing": max(papers_accepted - papers_new, 0),
+        "outcome": crawl_job_outcome(job.get("status"), papers_found, papers_filtered, papers_new),
         "error": job.get("error"),
     }
     return job | {"journal": journal_summary, "diagnostics": diagnostics}
