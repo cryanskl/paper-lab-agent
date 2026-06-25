@@ -185,6 +185,17 @@ class OpenAlexClient:
             return None
         return text
 
+    def first_location_landing_url(self, value: Any) -> Optional[str]:
+        if not isinstance(value, list):
+            return None
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            url = self.normalize_url(item.get("landing_page_url"))
+            if url:
+                return url
+        return None
+
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         doi = self.normalize_doi(item.get("doi"))
         primary_location = item.get("primary_location") or {}
@@ -203,7 +214,9 @@ class OpenAlexClient:
             "journal_name": self.normalize_optional_text(source.get("display_name")),
             "published_date": self.normalize_publication_date(item.get("publication_date")),
             "published_year": self.normalize_publication_year(item.get("publication_year")),
-            "landing_url": self.normalize_url(primary_location.get("landing_page_url")) or self.normalize_url(item.get("id")),
+            "landing_url": self.normalize_url(primary_location.get("landing_page_url"))
+            or self.first_location_landing_url(item.get("locations"))
+            or self.normalize_url(item.get("id")),
             "source_api": "openalex",
             "raw_metadata": item,
         }

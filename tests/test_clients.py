@@ -469,6 +469,25 @@ def test_openalex_strips_landing_url_whitespace():
     assert work["landing_url"] == "https://publisher.example/article"
 
 
+def test_openalex_falls_back_to_locations_landing_url():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-locations-url",
+            "title": "Locations landing URL",
+            "primary_location": {"landing_page_url": "javascript:alert(1)"},
+            "locations": [
+                "malformed-location",
+                {"landing_page_url": "https:missing-host"},
+                {"landing_page_url": "  https://publisher.example/article  "},
+            ],
+        }
+    )
+
+    assert work["landing_url"] == "https://publisher.example/article"
+
+
 def test_openalex_tolerates_malformed_source_display_name():
     client = OpenAlexClient()
 
