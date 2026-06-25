@@ -508,6 +508,24 @@ def test_readme_documents_manual_ci_release_gate():
     assert "手动触发" in readme
 
 
+def test_release_checklist_documents_publish_gates():
+    repo = Path(__file__).resolve().parent.parent
+    readme = (repo / "README.md").read_text(encoding="utf-8")
+    checklist_path = repo / "docs" / "release-checklist.md"
+
+    assert "[docs/release-checklist.md](docs/release-checklist.md)" in readme
+    checklist = checklist_path.read_text(encoding="utf-8")
+    for required in [
+        "bash scripts/release_check.sh",
+        "python scripts/prepare_demo_data.py --summary-only --compact",
+        "python scripts/health_check.py --require-release-ready",
+        "python scripts/health_check.py --require-frontend",
+        "python scripts/health_check.py --require-grobid",
+        "workflow_dispatch",
+    ]:
+        assert required in checklist
+
+
 def test_release_check_derives_expected_runtime_version_from_app_version():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
