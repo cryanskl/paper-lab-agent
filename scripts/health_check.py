@@ -14,6 +14,7 @@ STATUS_PATH = "/api/v1/system/status"
 EXTERNAL_STATUS_PATH = "/api/v1/system/status?check_external=true"
 EXPECTED_API_PREFIX = "/api/v1"
 EXPECTED_SERVICE = "paper-lab-agent"
+SUPPORTED_TRANSLATION_ADAPTERS = {"local-echo", "openai-compatible"}
 STATUS_REQUIRED_KEYS = {
     "database_path",
     "runtime",
@@ -322,6 +323,12 @@ def validate_system_status(status: dict) -> list[str]:
                 not isinstance(external_capabilities[key], str) or not external_capabilities[key]
             ):
                 invalid_capabilities.append(key)
+        if "translation_adapter" in external_capabilities and external_capabilities["translation_adapter"] not in SUPPORTED_TRANSLATION_ADAPTERS:
+            invalid_capabilities.append("translation_adapter")
+        if "llm_model" in external_capabilities and (
+            not isinstance(external_capabilities["llm_model"], str) or not external_capabilities["llm_model"]
+        ):
+            invalid_capabilities.append("llm_model")
         if invalid_capabilities:
             errors.append(f"external_capabilities invalid values: {', '.join(sorted(invalid_capabilities))}")
         grobid = external_capabilities.get("grobid")

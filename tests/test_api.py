@@ -7253,6 +7253,8 @@ def test_health_check_fails_when_external_capability_values_are_invalid(monkeypa
                 "grobid_url": "",
                 "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
                 "llm_api_key": "false",
+                "translation_adapter": "custom-adapter",
+                "llm_model": "",
                 "embedding_model": 123,
                 "vector_db_backend": 456,
             },
@@ -7269,6 +7271,8 @@ def test_health_check_fails_when_external_capability_values_are_invalid(monkeypa
     assert "openalex_mailto" in captured.err
     assert "grobid_url" in captured.err
     assert "llm_api_key" in captured.err
+    assert "translation_adapter" in captured.err
+    assert "llm_model" in captured.err
     assert "embedding_model" in captured.err
     assert "vector_db_backend" in captured.err
 
