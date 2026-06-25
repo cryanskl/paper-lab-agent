@@ -98,6 +98,30 @@ def run_smoke() -> dict:
                         "source_api": "openalex",
                         "raw_metadata": {"source": "smoke"},
                     },
+                    {
+                        "doi": None,
+                        "title": "No DOI smoke crawl plasma chemistry paper",
+                        "abstract": "offline crawl verifies no DOI plasma dedupe metadata",
+                        "authors": [{"name": "No DOI", "affiliation": None}],
+                        "journal_name": "Plasma Sources Science and Technology",
+                        "published_date": "2026-01-17",
+                        "published_year": 2026,
+                        "landing_url": "https://example.test/no-doi-smoke-crawl",
+                        "source_api": "openalex",
+                        "raw_metadata": {"source": "smoke-no-doi"},
+                    },
+                    {
+                        "doi": None,
+                        "title": "No DOI smoke crawl plasma chemistry paper",
+                        "abstract": "offline crawl verifies no DOI plasma dedupe metadata update",
+                        "authors": [{"name": "No DOI", "affiliation": None}],
+                        "journal_name": "Plasma Sources Science and Technology",
+                        "published_date": "2026-01-17",
+                        "published_year": 2026,
+                        "landing_url": "https://example.test/no-doi-smoke-crawl",
+                        "source_api": "openalex",
+                        "raw_metadata": {"source": "smoke-no-doi-duplicate"},
+                    },
                 ]
 
         class OfflineUnpaywallClient:
@@ -146,12 +170,12 @@ def run_smoke() -> dict:
         )
         crawl_diagnostics = crawl_job["diagnostics"]
         assert_ok(crawl_diagnostics["status"] == "success", f"expected crawl job success, got {crawl_diagnostics}")
-        assert_ok(crawl_diagnostics["papers_found"] == 2, f"expected crawl papers_found=2, got {crawl_diagnostics}")
+        assert_ok(crawl_diagnostics["papers_found"] == 4, f"expected crawl papers_found=4, got {crawl_diagnostics}")
         assert_ok(crawl_diagnostics["papers_filtered"] == 1, f"expected crawl papers_filtered=1, got {crawl_diagnostics}")
-        assert_ok(crawl_diagnostics["papers_new"] == 1, f"expected crawl papers_new=1, got {crawl_diagnostics}")
+        assert_ok(crawl_diagnostics["papers_new"] == 2, f"expected crawl papers_new=2, got {crawl_diagnostics}")
         assert_ok(crawl_diagnostics["outcome"] == "new_papers", f"expected crawl outcome=new_papers, got {crawl_diagnostics}")
-        assert_ok(crawl_diagnostics["papers_accepted"] == 1, f"expected crawl papers_accepted=1, got {crawl_diagnostics}")
-        crawled_search = assert_status(client.get("/api/v1/papers?q=smoke crawl"), 200, "crawled paper search")
+        assert_ok(crawl_diagnostics["papers_accepted"] == 3, f"expected crawl papers_accepted=3, got {crawl_diagnostics}")
+        crawled_search = assert_status(client.get("/api/v1/papers?q=argon smoke crawl"), 200, "crawled paper search")
         assert_ok(crawled_search["total"] >= 1, f"expected crawled paper to be searchable, got {crawled_search}")
         crawled_paper_id = crawled_search["items"][0]["id"]
         paper_detail = assert_status(client.get(f"/api/v1/papers/{crawled_paper_id}"), 200, "paper detail")
@@ -160,6 +184,15 @@ def run_smoke() -> dict:
             paper_detail.get("raw_metadata", {}).get("source") == "smoke",
             f"expected paper detail raw metadata, got {paper_detail}",
         )
+        no_doi_search = assert_status(client.get("/api/v1/papers?q=no doi smoke crawl"), 200, "no DOI paper search")
+        assert_ok(no_doi_search["total"] == 1, f"expected no DOI crawl duplicate to dedupe, got {no_doi_search}")
+        no_doi_paper = no_doi_search["items"][0]
+        assert_ok(no_doi_paper["has_doi"] is False, f"expected no DOI paper, got {no_doi_paper}")
+        assert_ok(
+            no_doi_paper["dedupe_strategy"] == "no_doi_fingerprint",
+            f"expected no DOI fingerprint dedupe strategy, got {no_doi_paper}",
+        )
+        assert_ok(bool(no_doi_paper.get("dedupe_key")), f"expected no DOI dedupe key, got {no_doi_paper}")
 
         categories = assert_status(client.get("/api/v1/categories"), 200, "category list")
         chemistry_category = next(
@@ -193,7 +226,7 @@ def run_smoke() -> dict:
             f"expected manual category method, got {manual_category_details}",
         )
         manual_category_search = assert_status(
-            client.get("/api/v1/papers?q=smoke crawl&category=chemistry"),
+            client.get("/api/v1/papers?q=argon smoke crawl&category=chemistry"),
             200,
             "manual category search",
         )
@@ -202,7 +235,7 @@ def run_smoke() -> dict:
             f"expected manual category search to return one paper, got {manual_category_search}",
         )
         journal_filter_search = assert_status(
-            client.get("/api/v1/papers?q=smoke crawl&journal_id=2"),
+            client.get("/api/v1/papers?q=argon smoke crawl&journal_id=2"),
             200,
             "journal-filtered paper search",
         )
@@ -211,7 +244,7 @@ def run_smoke() -> dict:
             f"expected journal-filtered search to return one paper, got {journal_filter_search}",
         )
         relevance_sort_search = assert_status(
-            client.get("/api/v1/papers?q=smoke crawl&sort=relevance"),
+            client.get("/api/v1/papers?q=argon smoke crawl&sort=relevance"),
             200,
             "relevance-sorted paper search",
         )
@@ -260,7 +293,7 @@ def run_smoke() -> dict:
             f"expected oa-only search to return one paper, got {oa_only_search}",
         )
         year_filter_search = assert_status(
-            client.get("/api/v1/papers?q=smoke crawl&year_from=2026&year_to=2026"),
+            client.get("/api/v1/papers?q=argon smoke crawl&year_from=2026&year_to=2026"),
             200,
             "year-filtered paper search",
         )
@@ -600,6 +633,10 @@ def run_smoke() -> dict:
             "crawl_job_detail_diagnostics_outcome": crawl_diagnostics["outcome"],
             "crawl_job_detail_diagnostics_papers_accepted": crawl_diagnostics["papers_accepted"],
             "crawled_papers": crawled_search["total"],
+            "no_doi_search_hits": no_doi_search["total"],
+            "no_doi_paper_has_doi": no_doi_paper["has_doi"],
+            "no_doi_paper_dedupe_strategy": no_doi_paper["dedupe_strategy"],
+            "no_doi_paper_has_dedupe_key": bool(no_doi_paper.get("dedupe_key")),
             "auto_classify_category_count": len(auto_classify_details),
             "auto_classify_method": auto_classify_details[0]["method"],
             "journal_filter_search_hits": journal_filter_search["total"],

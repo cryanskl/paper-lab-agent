@@ -470,7 +470,19 @@ def test_release_check_requires_crawl_job_observability_smoke_path():
     assert '"crawl_job_detail_status": "success"' in release_text
     assert '"crawl_job_detail_journal_name": "Plasma Sources Science and Technology"' in release_text
     assert '"crawl_job_detail_diagnostics_outcome": "new_papers"' in release_text
-    assert '"crawl_job_detail_diagnostics_papers_accepted": 1' in release_text
+    assert '"crawl_job_detail_diagnostics_papers_accepted": 3' in release_text
+
+
+def test_release_check_requires_no_doi_dedupe_smoke_path():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert '"crawl_job_found": 4' in release_text
+    assert '"crawl_job_new": 2' in release_text
+    assert '"no_doi_search_hits": 1' in release_text
+    assert '"no_doi_paper_has_doi": False' in release_text
+    assert '"no_doi_paper_dedupe_strategy": "no_doi_fingerprint"' in release_text
+    assert '"no_doi_paper_has_dedupe_key": True' in release_text
 
 
 def test_release_check_requires_document_list_and_detail_smoke_paths():

@@ -1603,7 +1603,7 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["crawl_job_new"] >= 1
     assert result["crawled_papers"] >= 1
     assert result["papers"] == 2
-    assert result["paper_categories"] == 1
+    assert result["paper_categories"] == 2
     assert result["duplicate_upload_status"] == 409
     assert result["duplicate_document_id"] == result["document_id"]
     assert result["translation_status"] == "done"
@@ -1662,7 +1662,7 @@ def test_smoke_check_script_outputs_json():
     assert payload["crawl_job_status"] == "success"
     assert payload["crawled_papers"] >= 1
     assert payload["papers"] == 2
-    assert payload["paper_categories"] == 1
+    assert payload["paper_categories"] == 2
     assert payload["duplicate_upload_status"] == 409
     assert payload["translation_status"] == "done"
     assert payload["sections"] == 1
@@ -6605,7 +6605,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "crawl_job_status" in release_text
     assert "crawled_papers" in release_text
     assert '"papers": 2' in release_text
-    assert '"paper_categories": 1' in release_text
+    assert '"paper_categories": 2' in release_text
     assert '"reaction_sets": 1' in release_text
     assert '"reactions": 1' in release_text
     assert "status_counts" in release_text
