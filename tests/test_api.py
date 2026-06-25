@@ -5062,6 +5062,9 @@ def test_rag_sources_include_section_locator_fields(tmp_path):
     assert rag["sources"][0]["section_id"] == section_id
     assert rag["sources"][0]["section_seq"] == 7
     assert rag["sources"][0]["section_type"] == "body"
+    assert f"section_id={section_id}" in rag["answer"]
+    assert "section_seq=7" in rag["answer"]
+    assert "section_type=body" in rag["answer"]
 
 
 def test_rag_query_treats_local_hash_collision_as_insufficient_evidence(tmp_path):

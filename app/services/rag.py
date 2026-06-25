@@ -72,7 +72,10 @@ def source_excerpt(text: str, max_chars: int = SOURCE_EXCERPT_MAX_CHARS) -> str:
 def source_citation(item: dict) -> str:
     paper_id = item.get("_paper_id") if "_paper_id" in item else item.get("paper_id")
     paper_title = item.get("_paper_title") or item.get("paper_title")
+    section_id = item.get("_section_id") if "_section_id" in item else item.get("section_id")
+    section_seq = item.get("_section_seq") if "_section_seq" in item else item.get("section_seq")
     section_title = item.get("_section_title") or item.get("section_title")
+    section_type = item.get("_section_type") or item.get("section_type")
     chunk_id = item.get("_chunk_id") or item.get("id") or item.get("chunk_id")
     parts = []
     if paper_id is not None:
@@ -83,6 +86,12 @@ def source_citation(item: dict) -> str:
         parts.append(f"title={paper_title}")
     if section_title:
         parts.append(f"section={section_title}")
+    if section_id is not None:
+        parts.append(f"section_id={section_id}")
+    if section_seq is not None:
+        parts.append(f"section_seq={section_seq}")
+    if section_type:
+        parts.append(f"section_type={section_type}")
     if chunk_id is not None:
         parts.append(f"chunk_id={chunk_id}")
     return "Source: " + "; ".join(parts)
