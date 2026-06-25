@@ -4925,6 +4925,49 @@ def test_sections_from_tei_extracts_biblfull_references():
     ]
 
 
+def test_sections_from_tei_extracts_biblstruct_reference_identifiers():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <back>
+          <listBibl>
+            <biblStruct>
+              <analytic>
+                <author><persName><surname>Doe</surname><forename>A.</forename></persName></author>
+                <title level="a">Electron impact ionization in argon plasmas</title>
+              </analytic>
+              <monogr>
+                <title level="j">Plasma Chemistry and Plasma Processing</title>
+                <imprint><date when="2026">2026</date></imprint>
+              </monogr>
+              <idno type="DOI">10.1234/plasma.2026.001</idno>
+              <ptr target="https://doi.org/10.1234/plasma.2026.001"/>
+            </biblStruct>
+          </listBibl>
+        </back>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Reference 1",
+            "content": (
+                "Doe A. Electron impact ionization in argon plasmas "
+                "Plasma Chemistry and Plasma Processing 2026 "
+                "DOI: 10.1234/plasma.2026.001 "
+                "URL: https://doi.org/10.1234/plasma.2026.001"
+            ),
+            "section_type": "reference",
+        }
+    ]
+
+
 def test_translation_adapter_preserves_formula_masks():
     from app.services.translation import translate_text_preserving_formulas
 

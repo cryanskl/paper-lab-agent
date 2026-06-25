@@ -137,6 +137,29 @@ def sections_from_tei(tei: str) -> list[dict]:
     def local_name(node: ET.Element) -> str:
         return node.tag.rsplit("}", 1)[-1]
 
+    def reference_text(bibl: ET.Element) -> str:
+        id_nodes = findall(bibl, ".//tei:idno")
+        text = clean_text(content_without_children(bibl, id_nodes))
+        parts = [text] if text else []
+        seen_values = {text} if text else set()
+        for id_node in id_nodes:
+            value = clean_text(" ".join(id_node.itertext()))
+            if not value or value in seen_values:
+                continue
+            id_type = clean_text(id_node.get("type") or "").upper()
+            label = id_type or "ID"
+            parts.append(f"{label}: {value}")
+            seen_values.add(value)
+        for node in bibl.iter():
+            if local_name(node) not in {"ptr", "ref"}:
+                continue
+            target = clean_text(node.get("target") or "")
+            if not target or target in seen_values:
+                continue
+            parts.append(f"URL: {target}")
+            seen_values.add(target)
+        return clean_text(" ".join(parts))
+
     abstract_nodes = [
         *findall(root, ".//tei:teiHeader//tei:profileDesc//tei:abstract"),
         *findall(root, ".//tei:text//tei:front//tei:abstract"),
@@ -255,7 +278,7 @@ def sections_from_tei(tei: str) -> list[dict]:
         for bibl in list(list_bibl):
             if local_name(bibl) not in {"biblStruct", "biblFull", "bibl"}:
                 continue
-            append_section(f"Reference {reference_index}", " ".join(bibl.itertext()), "reference")
+            append_section(f"Reference {reference_index}", reference_text(bibl), "reference")
             reference_index += 1
     return sections
 
