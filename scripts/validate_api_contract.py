@@ -14,6 +14,8 @@ DEFAULT_CONTRACT_PATH = REPO_ROOT / "docs" / "接口设计文档.md"
 HTTP_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH"}
 PAGINATION_QUERY_PARAMS = ("page", "page_size")
 PAGINATION_RESPONSE_FIELDS = ("items", "total", "page", "page_size")
+ERROR_RESPONSE_FIELDS = ("error",)
+ERROR_DETAIL_FIELDS = ("code", "message")
 PAGINATED_GET_PATHS = {
     "/api/v1/journals",
     "/api/v1/crawl/jobs",
@@ -154,15 +156,22 @@ def resolve_openapi_ref(schema: dict, openapi: dict) -> dict:
     return current if isinstance(current, dict) else schema
 
 
-def response_schema(spec: dict, openapi: dict | None = None) -> dict:
+def response_schema(spec: dict, openapi: dict | None = None, status_code: str = "200") -> dict:
     schema = (
         spec.get("responses", {})
-        .get("200", {})
+        .get(status_code, {})
         .get("content", {})
         .get("application/json", {})
         .get("schema", {})
     )
     return resolve_openapi_ref(schema, openapi or {})
+
+
+def schema_declares_fields(schema: dict, fields: tuple[str, ...]) -> bool:
+    properties = set(schema.get("properties", {}).keys())
+    required = set(schema.get("required", []))
+    present = properties | required
+    return all(field in present for field in fields)
 
 
 def pagination_contract_issues(
@@ -185,6 +194,29 @@ def pagination_contract_issues(
         missing = [name for name in PAGINATION_QUERY_PARAMS if name not in query_params]
         if missing:
             issues.append(f"{method} {display} missing query parameters: {', '.join(missing)}")
+    return issues
+
+
+def error_response_contract_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    issues: list[str] = []
+    for path, methods in source_openapi.get("paths", {}).items():
+        if not str(path).startswith("/api/v1"):
+            continue
+        for method, spec in methods.items():
+            method_upper = method.upper()
+            if method_upper not in HTTP_METHODS:
+                continue
+            for status_code, response in spec.get("responses", {}).items():
+                if not str(status_code).isdigit() or int(status_code) < 400:
+                    continue
+                schema = response_schema({"responses": {str(status_code): response}}, source_openapi, str(status_code))
+                error_schema = resolve_openapi_ref(schema.get("properties", {}).get("error", {}), source_openapi)
+                if not schema_declares_fields(schema, ERROR_RESPONSE_FIELDS) or not schema_declares_fields(
+                    error_schema,
+                    ERROR_DETAIL_FIELDS,
+                ):
+                    issues.append(f"{method_upper} {path} {status_code} response must use unified error schema")
     return issues
 
 
@@ -240,8 +272,9 @@ def main() -> int:
     undocumented = undocumented_app_routes(Path(args.contract_path))
     pagination_issues = pagination_contract_issues(Path(args.contract_path))
     pagination_response_issues = pagination_response_contract_issues(Path(args.contract_path))
+    error_response_issues = error_response_contract_issues()
     async_issues = async_response_contract_issues(Path(args.contract_path))
-    if missing or undocumented or pagination_issues or pagination_response_issues or async_issues:
+    if missing or undocumented or pagination_issues or pagination_response_issues or error_response_issues or async_issues:
         if missing:
             print("api contract missing routes:", file=sys.stderr)
             for route in missing:
@@ -257,6 +290,10 @@ def main() -> int:
         if pagination_response_issues:
             print("api contract pagination response issues:", file=sys.stderr)
             for issue in pagination_response_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if error_response_issues:
+            print("api contract error response issues:", file=sys.stderr)
+            for issue in error_response_issues:
                 print(f"- {issue}", file=sys.stderr)
         if async_issues:
             print("api contract async response issues:", file=sys.stderr)

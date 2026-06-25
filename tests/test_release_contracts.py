@@ -1020,6 +1020,44 @@ def test_api_contract_async_routes_expose_accepted_response():
     assert issues == []
 
 
+def test_api_contract_error_responses_expose_unified_shape():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.error_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_default_fastapi_validation_error_schema():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "components": {
+            "schemas": {
+                "HTTPValidationError": {"type": "object", "properties": {"detail": {"type": "array"}}}
+            }
+        },
+        "paths": {
+            "/api/v1/things": {
+                "post": {
+                    "responses": {
+                        "422": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/HTTPValidationError"}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+    issues = validate_api_contract.error_response_contract_issues(openapi=openapi)
+
+    assert issues == ["POST /api/v1/things 422 response must use unified error schema"]
+
+
 def test_api_contract_validator_reports_missing_accepted_response_on_async_route(tmp_path):
     validate_api_contract = load_validate_api_contract()
     contract_path = tmp_path / "接口设计文档.md"

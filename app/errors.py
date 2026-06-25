@@ -4,6 +4,7 @@ import logging
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
@@ -23,6 +24,15 @@ class AppError(HTTPException):
         super().__init__(status_code=status_code, detail=detail)
 
 
+class ErrorDetail(BaseModel):
+    code: str
+    message: str
+
+
+class ErrorResponse(BaseModel):
+    error: ErrorDetail
+
+
 class PageResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -30,6 +40,49 @@ class PageResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+def install_openapi_error_schema(app: FastAPI) -> None:
+    def custom_openapi() -> dict:
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+        schemas = schema.setdefault("components", {}).setdefault("schemas", {})
+        schemas["ErrorDetail"] = {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+                "code": {"type": "string", "title": "Code"},
+                "message": {"type": "string", "title": "Message"},
+            },
+            "title": "ErrorDetail",
+        }
+        schemas["ErrorResponse"] = {
+            "type": "object",
+            "required": ["error"],
+            "properties": {"error": {"$ref": "#/components/schemas/ErrorDetail"}},
+            "title": "ErrorResponse",
+        }
+        for path, methods in schema.get("paths", {}).items():
+            if not str(path).startswith("/api/v1"):
+                continue
+            for operation in methods.values():
+                responses = operation.get("responses", {})
+                for status_code, response in list(responses.items()):
+                    if not str(status_code).isdigit() or int(status_code) < 400:
+                        continue
+                    responses[status_code] = {
+                        "description": response.get("description") or "Error response",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/ErrorResponse"},
+                            }
+                        },
+                    }
+        app.openapi_schema = schema
+        return app.openapi_schema
+
+    app.openapi = custom_openapi
 
 
 def install_error_handlers(app: FastAPI) -> None:
