@@ -11594,6 +11594,8 @@ def test_streamlit_search_results_can_resolve_oa_manually():
         'resolved_paper.get("oa_status")',
         'resolved_paper.get("oa_pdf_url")',
         'key=f"resolve-oa-{paper[\'id\']}"',
+        'disabled=not paper.get("doi")',
+        'help="需要 DOI 才能通过 Unpaywall 解析 OA 链接"',
     ]:
         assert required in search_section
 

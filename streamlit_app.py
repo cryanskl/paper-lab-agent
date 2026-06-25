@@ -245,7 +245,12 @@ with search_tab:
                     st.success(format_category_summary(classified_paper))
                 else:
                     st.warning(classified_paper)
-            if st.button("重新解析 OA", key=f"resolve-oa-{paper['id']}"):
+            if st.button(
+                "重新解析 OA",
+                key=f"resolve-oa-{paper['id']}",
+                disabled=not paper.get("doi"),
+                help="需要 DOI 才能通过 Unpaywall 解析 OA 链接",
+            ):
                 status_code, resolved_paper = api_post(f"/papers/{paper['id']}/resolve-oa")
                 if status_code < 400:
                     resolved_oa_status = resolved_paper.get("oa_status") or "unknown"
