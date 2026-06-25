@@ -8977,6 +8977,22 @@ def test_streamlit_rag_tab_exposes_top_k_control():
         assert required in rag_section
 
 
+def test_streamlit_rag_tab_can_select_documents_for_query_scope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+
+    for required in [
+        'rag_documents = api_get("/documents", page_size=100)["items"]',
+        "selected_rag_documents = st.multiselect(",
+        "限定文档",
+        "selected_document_ids",
+        "ids = list(dict.fromkeys(selected_document_ids + typed_document_ids))",
+        "暂无可选文档",
+    ]:
+        assert required in rag_section
+
+
 def test_streamlit_document_upload_shows_duplicate_result():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

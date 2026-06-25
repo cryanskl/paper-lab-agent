@@ -532,12 +532,28 @@ with documents_tab:
             st.dataframe(chunks["items"], use_container_width=True)
 
 with rag_tab:
+    rag_documents = api_get("/documents", page_size=100)["items"]
+    if rag_documents:
+        selected_rag_documents = st.multiselect(
+            "限定文档",
+            rag_documents,
+            format_func=lambda document: (
+                f"#{document['id']} {document.get('original_name') or Path(document['file_path']).name} · "
+                f"{document.get('index_status') or 'not_indexed'}"
+            ),
+            key="rag-document-select",
+        )
+    else:
+        selected_rag_documents = []
+        st.info("暂无可选文档，请先上传并索引文档。")
     doc_ids = st.text_input("document_ids", value="")
     question = st.text_input("问题", value="plasma chemistry")
     top_k = st.number_input("top_k", min_value=1, max_value=20, value=6)
     if st.button("提问"):
         try:
-            ids = [int(part.strip()) for part in doc_ids.split(",") if part.strip()]
+            selected_document_ids = [int(document["id"]) for document in selected_rag_documents]
+            typed_document_ids = [int(part.strip()) for part in doc_ids.split(",") if part.strip()]
+            ids = list(dict.fromkeys(selected_document_ids + typed_document_ids))
             document_id_error = None
         except ValueError:
             ids = []
