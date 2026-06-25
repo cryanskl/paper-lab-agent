@@ -1029,12 +1029,27 @@ def test_categories_list_includes_total_and_direct_children(tmp_path):
     categories = client.get("/api/v1/categories").json()
     assert categories["total"] == 9
     assert categories["page"] == 1
-    assert categories["page_size"] == 9
+    assert categories["page_size"] == 20
+    assert len(categories["items"]) == 9
 
     parent_item = next(item for item in categories["items"] if item["id"] == parent["id"])
     assert parent_item["children"] == [child]
     child_item = next(item for item in categories["items"] if item["id"] == child["id"])
     assert child_item["children"] == []
+
+
+def test_categories_list_supports_pagination_query(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.get("/api/v1/categories", params={"page": 2, "page_size": 3})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 7
+    assert payload["page"] == 2
+    assert payload["page_size"] == 3
+    assert len(payload["items"]) == 3
+    assert [item["id"] for item in payload["items"]] == [4, 5, 6]
 
 
 def test_create_category_rejects_blank_name_and_slug(tmp_path):

@@ -1,7 +1,7 @@
 import re
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, field_validator
 
 from app.db import dict_from_row, get_conn
@@ -51,11 +51,16 @@ def serialize_categories(rows) -> list[dict]:
 
 
 @router.get("")
-def list_categories() -> dict:
+def list_categories(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> dict:
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM categories ORDER BY id").fetchall()
-    items = serialize_categories(rows)
-    return {"items": items, "total": len(items), "page": 1, "page_size": len(items)}
+    all_items = serialize_categories(rows)
+    offset = (page - 1) * page_size
+    items = all_items[offset : offset + page_size]
+    return {"items": items, "total": len(all_items), "page": page, "page_size": page_size}
 
 
 @router.post("", status_code=201)
