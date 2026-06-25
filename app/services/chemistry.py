@@ -56,6 +56,7 @@ def normalize_reaction(reaction: str) -> tuple[str, list[str], list[str]]:
 def infer_reaction_type(reactants: list[str], products: list[str]) -> str:
     reactant_electrons = sum(1 for species in reactants if species == "e")
     product_electrons = sum(1 for species in products if species == "e")
+    consumes_positive_ion = any(species.endswith("+") for species in reactants)
     produces_positive_ion = any(species.endswith("+") for species in products)
     produces_negative_ion = any(species.endswith("-") or species.endswith("⁻") for species in products)
     produces_excited_species = any(species.endswith("*") for species in products)
@@ -65,6 +66,8 @@ def infer_reaction_type(reactants: list[str], products: list[str]) -> str:
         return "attachment"
     if reactant_electrons >= 1 and produces_excited_species:
         return "excitation"
+    if reactant_electrons >= 1 and consumes_positive_ion and product_electrons == 0 and not produces_positive_ion:
+        return "recombination"
     return "unknown"
 
 

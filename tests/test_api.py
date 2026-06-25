@@ -6069,6 +6069,26 @@ def test_extract_chemistry_infers_excitation_for_starred_product(tmp_path):
     assert reaction["products"] == ["e", "Ar*"]
 
 
+def test_extract_chemistry_infers_recombination_for_positive_ion_reactant(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("recombination.pdf", pdf_bytes(b"e + Ar+ -> Ar ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar+ -> Ar"
+    assert reaction["reaction_type"] == "recombination"
+    assert reaction["reactants"] == ["e", "Ar+"]
+    assert reaction["products"] == ["Ar"]
+
+
 def test_extract_chemistry_handles_compact_reaction_species_separators(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
