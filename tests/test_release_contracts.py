@@ -471,6 +471,9 @@ def test_release_check_requires_crawl_job_observability_smoke_path():
     assert '"crawl_job_detail_journal_name": "Plasma Sources Science and Technology"' in release_text
     assert '"crawl_job_detail_diagnostics_outcome": "new_papers"' in release_text
     assert '"crawl_job_detail_diagnostics_papers_accepted": 3' in release_text
+    assert '"crawl_job_detail_keyword_mode": "or"' in release_text
+    assert '"crawl_job_detail_has_keyword_terms": True' in release_text
+    assert '"crawl_job_detail_keyword_terms_include_plasma_chemistry": True' in release_text
 
 
 def test_release_check_requires_no_doi_dedupe_smoke_path():

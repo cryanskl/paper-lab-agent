@@ -175,6 +175,13 @@ def run_smoke() -> dict:
         assert_ok(crawl_diagnostics["papers_new"] == 2, f"expected crawl papers_new=2, got {crawl_diagnostics}")
         assert_ok(crawl_diagnostics["outcome"] == "new_papers", f"expected crawl outcome=new_papers, got {crawl_diagnostics}")
         assert_ok(crawl_diagnostics["papers_accepted"] == 3, f"expected crawl papers_accepted=3, got {crawl_diagnostics}")
+        crawl_keyword_terms = crawl_diagnostics.get("keyword_terms") or []
+        assert_ok(crawl_diagnostics["keyword_mode"] == "or", f"expected crawl keyword_mode=or, got {crawl_diagnostics}")
+        assert_ok(bool(crawl_keyword_terms), f"expected crawl keyword terms, got {crawl_diagnostics}")
+        assert_ok(
+            "plasma chemistry" in crawl_keyword_terms,
+            f"expected plasma chemistry keyword term, got {crawl_diagnostics}",
+        )
         crawled_search = assert_status(client.get("/api/v1/papers?q=argon smoke crawl"), 200, "crawled paper search")
         assert_ok(crawled_search["total"] >= 1, f"expected crawled paper to be searchable, got {crawled_search}")
         crawled_paper_id = crawled_search["items"][0]["id"]
@@ -632,6 +639,9 @@ def run_smoke() -> dict:
             "crawl_job_detail_journal_name": crawl_job["journal"]["name"],
             "crawl_job_detail_diagnostics_outcome": crawl_diagnostics["outcome"],
             "crawl_job_detail_diagnostics_papers_accepted": crawl_diagnostics["papers_accepted"],
+            "crawl_job_detail_keyword_mode": crawl_diagnostics["keyword_mode"],
+            "crawl_job_detail_has_keyword_terms": bool(crawl_keyword_terms),
+            "crawl_job_detail_keyword_terms_include_plasma_chemistry": "plasma chemistry" in crawl_keyword_terms,
             "crawled_papers": crawled_search["total"],
             "no_doi_search_hits": no_doi_search["total"],
             "no_doi_paper_has_doi": no_doi_paper["has_doi"],
