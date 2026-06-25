@@ -137,6 +137,12 @@ def run_smoke() -> dict:
         crawled_search = assert_status(client.get("/api/v1/papers?q=smoke crawl"), 200, "crawled paper search")
         assert_ok(crawled_search["total"] >= 1, f"expected crawled paper to be searchable, got {crawled_search}")
         crawled_paper_id = crawled_search["items"][0]["id"]
+        paper_detail = assert_status(client.get(f"/api/v1/papers/{crawled_paper_id}"), 200, "paper detail")
+        assert_ok(paper_detail["doi"] == "10.999/smoke-crawl", f"expected smoke crawl DOI, got {paper_detail}")
+        assert_ok(
+            paper_detail.get("raw_metadata", {}).get("source") == "smoke",
+            f"expected paper detail raw metadata, got {paper_detail}",
+        )
 
         categories = assert_status(client.get("/api/v1/categories"), 200, "category list")
         chemistry_category = next(
@@ -461,6 +467,8 @@ def run_smoke() -> dict:
             "manual_resolve_oa_status": manual_resolve_oa["oa_status"],
             "manual_resolve_oa_pdf_url": manual_resolve_oa["oa_pdf_url"],
             "oa_only_search_hits": oa_only_search["total"],
+            "paper_detail_doi": paper_detail["doi"],
+            "paper_detail_has_raw_metadata": paper_detail.get("raw_metadata", {}).get("source") == "smoke",
             "year_filter_search_hits": year_filter_search["total"],
             "document_id": document_id,
             "duplicate_upload_status": duplicate_upload.status_code,

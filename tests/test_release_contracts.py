@@ -454,6 +454,8 @@ def test_release_check_requires_manual_resolve_oa_smoke_path():
 
     assert '"manual_resolve_oa_status": "green"' in release_text
     assert '"manual_resolve_oa_pdf_url"' in release_text
+    assert '"paper_detail_has_raw_metadata": True' in release_text
+    assert '"paper_detail_doi": "10.999/smoke-crawl"' in release_text
     assert '"journal_filter_search_hits": 1' in release_text
     assert '"oa_only_search_hits": 1' in release_text
     assert '"relevance_sort_search_hits": 1' in release_text
