@@ -342,6 +342,8 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
             )
             if reaction.get("threshold_ev") is not None:
                 lines.append(f"THRESHOLD_EV: {reaction['threshold_ev']}")
+            if reaction.get("confidence") is not None:
+                lines.append(f"CONFIDENCE: {reaction['confidence']}")
             if reaction.get("rate_value"):
                 lines.append(f"RATE_VALUE: {reaction['rate_value']}")
             if reaction.get("cross_section_url"):
@@ -369,6 +371,8 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
             lines.append(f"verified_at: {detail['verified_at']}")
         for reaction in detail["reactions"]:
             lines.append(reaction["reaction"])
+            if reaction.get("confidence") is not None:
+                lines.append(f"confidence: {reaction['confidence']}")
             if reaction.get("rate_value"):
                 lines.append(f"rate: {reaction['rate_value']}")
             if reaction.get("source_section_title"):

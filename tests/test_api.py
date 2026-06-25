@@ -5590,6 +5590,7 @@ def test_reaction_export_bolsig_text_and_rejects_unknown_format(tmp_path):
     assert "TYPE: ionization" in text
     assert "RATE_TYPE: cross_section" in text
     assert "THRESHOLD_EV: 15.76" in text
+    assert f"CONFIDENCE: {reaction['confidence']}" in text
     assert "CROSS_SECTION_URL: https://nl.lxcat.net/data/set/example" in text
     assert f"SOURCE_SECTION_TITLE: {reaction['source_section_title']}" in text
     assert f"SOURCE_SECTION_TYPE: {reaction['source_section_type']}" in text
@@ -5600,6 +5601,7 @@ def test_reaction_export_bolsig_text_and_rejects_unknown_format(tmp_path):
     exported_txt = client.post(f"/api/v1/reaction-sets/{reaction_set['id']}/export?format=txt").json()
     assert exported_txt["output_path"] != exported["output_path"]
     txt = Path(exported_txt["output_path"]).read_text(encoding="utf-8")
+    assert f"confidence: {reaction['confidence']}" in txt
     assert f"source_section_title: {reaction['source_section_title']}" in txt
     assert f"source_section_type: {reaction['source_section_type']}" in txt
     assert f"source_section_seq: {reaction['source_section_seq']}" in txt
