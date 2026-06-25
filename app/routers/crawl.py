@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Query
 from pydantic import BaseModel, field_validator, model_validator
 
 from app.db import dict_from_row, get_conn
-from app.errors import AppError, page
+from app.errors import AppError, PageResponse, page
 from app.services.crawl import create_jobs, normalize_keyword_config, run_crawl_job
 from app.utils import json_loads
 
@@ -129,7 +129,7 @@ def run_crawl(background_tasks: BackgroundTasks, body: Optional[CrawlRunIn] = No
     }
 
 
-@router.get("/jobs")
+@router.get("/jobs", response_model=PageResponse)
 def list_jobs(page_num: int = Query(1, alias="page", ge=1), page_size: int = Query(20, ge=1, le=100)) -> dict:
     offset = (page_num - 1) * page_size
     with get_conn() as conn:

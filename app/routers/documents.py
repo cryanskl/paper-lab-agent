@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, Query, UploadFile
 from pydantic import BaseModel, field_validator
 
 from app.db import dict_from_row, get_conn
-from app.errors import AppError, page
+from app.errors import AppError, PageResponse, page
 from app.services.chemistry import extract_reactions, mark_chemistry_queued
 from app.services.documents import mark_parse_queued, parse_document, save_upload
 from app.services.rag import index_document, mark_index_queued
@@ -87,7 +87,7 @@ async def upload_document(file: UploadFile = File(...), paper_id: Optional[int] 
     return document
 
 
-@router.get("")
+@router.get("", response_model=PageResponse)
 def list_documents(
     page_num: int = Query(1, alias="page", ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -113,7 +113,7 @@ def parse(document_id: int, background_tasks: BackgroundTasks) -> dict:
     return {"job_id": document_id, "document_id": document_id, "parse_status": "parsing", "status": "pending"}
 
 
-@router.get("/{document_id}/sections")
+@router.get("/{document_id}/sections", response_model=PageResponse)
 def list_sections(
     document_id: int,
     page_num: int = Query(1, alias="page", ge=1),
@@ -130,7 +130,7 @@ def list_sections(
     return page([dict_from_row(row) for row in rows], total, page_num, page_size)
 
 
-@router.get("/{document_id}/chunks")
+@router.get("/{document_id}/chunks", response_model=PageResponse)
 def list_chunks(
     document_id: int,
     page_num: int = Query(1, alias="page", ge=1),
@@ -206,7 +206,7 @@ def extract_chemistry(document_id: int, background_tasks: BackgroundTasks) -> di
     return {"job_id": document_id, "document_id": document_id, "chemistry_status": "extracting", "status": "pending"}
 
 
-@router.get("/{document_id}/reaction-sets")
+@router.get("/{document_id}/reaction-sets", response_model=PageResponse)
 def document_reaction_sets(
     document_id: int,
     page_num: int = Query(1, alias="page", ge=1),

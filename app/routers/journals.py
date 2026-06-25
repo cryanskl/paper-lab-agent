@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.db import dict_from_row, get_conn
-from app.errors import AppError, page
+from app.errors import AppError, PageResponse, page
 from app.utils import json_dumps, json_loads, to_int
 
 router = APIRouter(prefix="/journals", tags=["journals"])
@@ -132,7 +132,7 @@ def serialize(row: dict) -> dict:
     return row
 
 
-@router.get("")
+@router.get("", response_model=PageResponse)
 def list_journals(
     active: Optional[bool] = None,
     page_num: int = Query(1, alias="page", ge=1),

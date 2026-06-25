@@ -950,6 +950,48 @@ def test_api_contract_paginated_get_routes_expose_page_parameters():
     assert issues == []
 
 
+def test_api_contract_paginated_get_routes_expose_response_shape():
+    validate_api_contract = load_validate_api_contract()
+    repo = Path(__file__).resolve().parent.parent
+
+    issues = validate_api_contract.pagination_response_contract_issues(repo / "docs" / "接口设计文档.md")
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_paginated_response_field(tmp_path):
+    validate_api_contract = load_validate_api_contract()
+    contract_path = tmp_path / "接口设计文档.md"
+    contract_path.write_text("| GET | `/things` | 列出测试资源 |\n", encoding="utf-8")
+    openapi_paths = {
+        "/api/v1/things": {
+            "get": {
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["items", "total", "page"],
+                                    "properties": {
+                                        "items": {"type": "array", "items": {"type": "object"}},
+                                        "total": {"type": "integer"},
+                                        "page": {"type": "integer"},
+                                    },
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.pagination_response_contract_issues(contract_path, openapi_paths=openapi_paths)
+
+    assert issues == ["GET /api/v1/things missing response fields: page_size"]
+
+
 def test_api_contract_validator_reports_missing_page_size_on_documented_list_route(tmp_path):
     validate_api_contract = load_validate_api_contract()
     contract_path = tmp_path / "接口设计文档.md"

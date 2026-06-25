@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, field_validator
 
 from app.db import dict_from_row, get_conn
-from app.errors import AppError
+from app.errors import AppError, PageResponse
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -50,7 +50,7 @@ def serialize_categories(rows) -> list[dict]:
     return categories
 
 
-@router.get("")
+@router.get("", response_model=PageResponse)
 def list_categories(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),

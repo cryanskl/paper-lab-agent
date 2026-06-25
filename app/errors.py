@@ -1,10 +1,11 @@
-from typing import Optional
+from typing import Any, Optional
 
 import logging
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict
 
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,15 @@ class AppError(HTTPException):
         if extra:
             detail.update(extra)
         super().__init__(status_code=status_code, detail=detail)
+
+
+class PageResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    items: list[dict[str, Any]]
+    total: int
+    page: int
+    page_size: int
 
 
 def install_error_handlers(app: FastAPI) -> None:
