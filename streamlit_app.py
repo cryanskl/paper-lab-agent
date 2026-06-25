@@ -86,6 +86,16 @@ with st.sidebar:
     st.metric("期刊", status["counts"]["journals"])
     st.metric("论文", status["counts"]["papers"])
     st.metric("文档", status["counts"]["documents"])
+    release_readiness = status.get("release_readiness") or {}
+    st.subheader("发布就绪")
+    if release_readiness.get("ready"):
+        st.success("release ready")
+    else:
+        blockers = []
+        for key in ["demo_data_missing", "failed_workflows", "config_warning_codes", "storage_errors"]:
+            blockers.extend(str(item) for item in release_readiness.get(key) or [] if str(item).strip())
+        blocker_label = ", ".join(blockers) if blockers else "unknown"
+        st.warning(f"release blockers: {blocker_label}")
     demo_data = status.get("demo_data") or {}
     st.subheader("演示数据")
     if demo_data.get("ready"):

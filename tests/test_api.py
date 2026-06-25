@@ -9816,6 +9816,24 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         assert required in chemistry_section
 
 
+def test_streamlit_sidebar_surfaces_release_readiness():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+
+    for required in [
+        "release_readiness",
+        "发布就绪",
+        "release ready",
+        "release blockers",
+        "demo_data_missing",
+        "failed_workflows",
+        "config_warning_codes",
+        "storage_errors",
+    ]:
+        assert required in sidebar_section
+
+
 def test_streamlit_chemistry_export_surfaces_file_and_metadata_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
