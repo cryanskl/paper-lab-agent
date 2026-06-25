@@ -77,6 +77,15 @@ STATUS_COUNT_REQUIRED_KEYS = {
     "translations",
     "reaction_sets",
 }
+DEMO_DATA_MIN_COUNTS = {
+    "journals": 6,
+    "papers": 1,
+    "documents": 1,
+    "sections": 1,
+    "chunks": 1,
+    "reaction_sets": 1,
+    "reactions": 1,
+}
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -448,6 +457,18 @@ def config_warning_errors(status: dict) -> list[str]:
     return errors
 
 
+def demo_data_errors(status: dict) -> list[str]:
+    counts = status.get("counts")
+    if not isinstance(counts, dict):
+        return ["counts"]
+    errors: list[str] = []
+    for key, minimum in DEMO_DATA_MIN_COUNTS.items():
+        value = counts.get(key)
+        if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+            errors.append(f"{key}>={minimum}")
+    return errors
+
+
 def main() -> int:
     load_env_file()
     parser = argparse.ArgumentParser(description="Check paper-lab-agent API health.")
@@ -459,6 +480,7 @@ def main() -> int:
     parser.add_argument("--require-storage-writable", action="store_true", help="Fail when local storage paths are missing or not writable")
     parser.add_argument("--require-no-failed-workflows", action="store_true", help="Fail when workflow status counts include failed items")
     parser.add_argument("--require-no-config-warnings", action="store_true", help="Fail when system status reports configuration warnings")
+    parser.add_argument("--require-demo-data", action="store_true", help="Fail when walking skeleton demo data is not loaded")
     parser.add_argument("--compact", action="store_true", help="Print health JSON on one line")
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args()
@@ -509,6 +531,11 @@ def main() -> int:
         warning_errors = config_warning_errors(status)
         if warning_errors:
             print(f"health_check failed: config warnings present ({'; '.join(warning_errors)})", file=sys.stderr)
+            return 1
+    if args.require_demo_data:
+        demo_errors = demo_data_errors(status)
+        if demo_errors:
+            print(f"health_check failed: demo data is incomplete ({'; '.join(demo_errors)})", file=sys.stderr)
             return 1
     if args.require_grobid:
         grobid = status["external_capabilities"]["grobid"]
