@@ -5643,6 +5643,37 @@ def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
     assert audit["field_changes"]["verified"] == {"before": False, "after": True}
 
 
+def test_reaction_verify_does_not_add_audit_for_unchanged_review(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("unchanged-review.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+    reaction_id = detail["reactions"][0]["id"]
+    payload = {
+        "verified": True,
+        "reaction_type": "ionization",
+        "rate_type": "cross_section",
+        "rate_value": "LXCat original table",
+        "threshold_ev": 15.76,
+        "cross_section_url": "https://nl.lxcat.net/data/set/example",
+        "verified_by": "chemist-a",
+    }
+
+    first = client.put(f"/api/v1/reactions/{reaction_id}/verify", json=payload).json()
+    second = client.put(f"/api/v1/reactions/{reaction_id}/verify", json=payload).json()
+
+    assert first["status"] == "verified"
+    assert second["status"] == "verified"
+    assert len(first["reactions"][0]["audit_log"]) == 1
+    assert len(second["reactions"][0]["audit_log"]) == 1
+
+
 def test_reaction_verify_can_clear_optional_review_fields(tmp_path):
     client = make_client(tmp_path)
     response = client.post(

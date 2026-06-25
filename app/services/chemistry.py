@@ -242,6 +242,9 @@ def verify_reaction(
     cross_section_url: Optional[str] = None,
     clear_fields: Optional[set[str]] = None,
 ) -> dict:
+    def audit_value(field: str, value):
+        return bool(value) if field == "verified" else value
+
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM reactions WHERE id=?", (reaction_id,)).fetchone()
         if not row:
@@ -261,18 +264,23 @@ def verify_reaction(
                 updates[key] = value
             elif key in clear_fields:
                 updates[key] = None
-        assignments = ", ".join(f"{key}=?" for key in updates)
+        changed_updates = {
+            key: value
+            for key, value in updates.items()
+            if audit_value(key, before[key]) != audit_value(key, value)
+        }
+        reaction_set_id = row["reaction_set_id"]
+        if not changed_updates:
+            rs = conn.execute("SELECT * FROM reaction_sets WHERE id=?", (reaction_set_id,)).fetchone()
+            return reaction_set_detail(dict_from_row(rs), conn)
+        assignments = ", ".join(f"{key}=?" for key in changed_updates)
         conn.execute(
             f"UPDATE reactions SET {assignments} WHERE id=?",
-            tuple(updates.values()) + (reaction_id,),
+            tuple(changed_updates.values()) + (reaction_id,),
         )
-        audit_changes = dict(optional_updates)
-        audit_changes["verified"] = verified
-        audit_changes = {
-            key: value for key, value in audit_changes.items() if value is not None or key in clear_fields
-        }
+        audit_changes = {key: value for key, value in changed_updates.items()}
         audit_changes["_field_changes"] = {
-            key: {"before": bool(before[key]) if key == "verified" else before[key], "after": value}
+            key: {"before": audit_value(key, before[key]), "after": audit_value(key, value)}
             for key, value in audit_changes.items()
         }
         conn.execute(
@@ -282,7 +290,6 @@ def verify_reaction(
             """,
             (reaction_id, "verify" if verified else "unverify", json.dumps(audit_changes, ensure_ascii=False), verified_by),
         )
-        reaction_set_id = row["reaction_set_id"]
         remaining = conn.execute(
             "SELECT COUNT(*) AS n FROM reactions WHERE reaction_set_id=? AND verified=0",
             (reaction_set_id,),
