@@ -5256,6 +5256,52 @@ def test_openai_classifier_reports_invalid_chat_completion_shape():
         )
 
 
+def test_openai_classifier_reports_invalid_json_content():
+    import httpx
+    import pytest
+
+    from app.services.classification import OpenAICompatibleClassifier
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": "not json"}}]})
+
+    classifier = OpenAICompatibleClassifier(
+        "test-key",
+        "http://llm.test/v1",
+        "classify-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match="classifier response content is not valid JSON"):
+        classifier.classify(
+            "argon oxygen plasma chemistry",
+            [{"id": 2, "slug": "chemistry", "name": "Plasma chemistry"}],
+        )
+
+
+def test_openai_classifier_reports_non_object_json_content():
+    import httpx
+    import pytest
+
+    from app.services.classification import OpenAICompatibleClassifier
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": "[]"}}]})
+
+    classifier = OpenAICompatibleClassifier(
+        "test-key",
+        "http://llm.test/v1",
+        "classify-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match="classifier response content must be a JSON object"):
+        classifier.classify(
+            "argon oxygen plasma chemistry",
+            [{"id": 2, "slug": "chemistry", "name": "Plasma chemistry"}],
+        )
+
+
 def test_translate_document_preserves_table_and_reference_sections(tmp_path, monkeypatch):
     make_client(tmp_path)
 

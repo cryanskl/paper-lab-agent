@@ -95,7 +95,7 @@ class OpenAICompatibleClassifier:
             )
         response.raise_for_status()
         content = chat_completion_content(response.json())
-        data = json.loads(strip_json_fence(content))
+        data = parse_classifier_response_content(content)
         raw_items = data.get("categories") or []
         if not isinstance(raw_items, list):
             raw_items = []
@@ -112,6 +112,16 @@ def strip_json_fence(value: str) -> str:
             lines = lines[:-1]
         text = "\n".join(lines).strip()
     return text
+
+
+def parse_classifier_response_content(content: str) -> dict[str, Any]:
+    try:
+        data = json.loads(strip_json_fence(content))
+    except json.JSONDecodeError as exc:
+        raise ValueError("classifier response content is not valid JSON") from exc
+    if not isinstance(data, dict):
+        raise ValueError("classifier response content must be a JSON object")
+    return data
 
 
 def get_classifier(settings: Settings) -> Classifier:
