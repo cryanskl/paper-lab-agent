@@ -711,6 +711,33 @@ def test_journal_crud_accepts_keyword_config_and_soft_deletes(tmp_path):
     assert missing.json()["error"]["code"] == "journal_not_found"
 
 
+def test_journal_keyword_terms_collapse_internal_whitespace(tmp_path):
+    client = make_client(tmp_path)
+
+    created = client.post(
+        "/api/v1/journals",
+        json={
+            "name": "Keyword Whitespace Journal",
+            "issn_print": "1111-2222",
+            "keywords": {"mode": "and", "terms": [" low   temperature plasma ", "argon\n discharge"]},
+        },
+    )
+
+    assert created.status_code == 201
+    assert created.json()["keywords"] == {
+        "mode": "and",
+        "terms": ["low temperature plasma", "argon discharge"],
+    }
+
+    updated = client.put(
+        f"/api/v1/journals/{created.json()['id']}",
+        json={"keywords": [" plasma   chemistry ", "surface\nkinetics"]},
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["keywords"] == ["plasma chemistry", "surface kinetics"]
+
+
 def test_journal_normalizes_issn_fields_for_crawl_lookup(tmp_path):
     client = make_client(tmp_path)
 
