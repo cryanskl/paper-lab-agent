@@ -549,6 +549,32 @@ async def test_openalex_tolerates_malformed_top_level_payload():
 
 
 @pytest.mark.asyncio
+async def test_openalex_does_not_retry_permanent_http_errors():
+    calls = 0
+    sleep_calls = []
+
+    async def sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(400, json={"error": "bad filter"}, request=request)
+
+    client = OpenAlexClient(
+        transport=httpx.MockTransport(handler),
+        max_retries=3,
+        sleep=sleep,
+    )
+
+    with pytest.raises(RuntimeError, match="OpenAlex request failed"):
+        await client.works_by_issn("bad issn", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert calls == 1
+    assert sleep_calls == []
+
+
+@pytest.mark.asyncio
 async def test_crossref_waits_between_paginated_requests():
     sleep_calls = []
     seen_cursors = []
@@ -629,6 +655,32 @@ async def test_crossref_tolerates_malformed_top_level_payload():
 
 
 @pytest.mark.asyncio
+async def test_crossref_does_not_retry_permanent_http_errors():
+    calls = 0
+    sleep_calls = []
+
+    async def sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(404, json={"message": "unknown journal"}, request=request)
+
+    client = CrossrefClient(
+        transport=httpx.MockTransport(handler),
+        max_retries=3,
+        sleep=sleep,
+    )
+
+    with pytest.raises(RuntimeError, match="Crossref request failed"):
+        await client.works_by_issn("0000-0000", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert calls == 1
+    assert sleep_calls == []
+
+
+@pytest.mark.asyncio
 async def test_crossref_includes_mailto_in_request_params_and_user_agent():
     captured = {}
 
@@ -676,6 +728,33 @@ async def test_unpaywall_waits_after_successful_resolution():
     assert result["oa_status"] == "gold"
     assert result["oa_pdf_url"] == "https://example.test/paper.pdf"
     assert sleep_calls == [0.25]
+
+
+@pytest.mark.asyncio
+async def test_unpaywall_does_not_retry_permanent_http_errors():
+    calls = 0
+    sleep_calls = []
+
+    async def sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(404, json={"error": "unknown doi"}, request=request)
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+        max_retries=3,
+        sleep=sleep,
+    )
+
+    with pytest.raises(RuntimeError, match="Unpaywall request failed"):
+        await client.resolve("10.1/missing")
+
+    assert calls == 1
+    assert sleep_calls == []
 
 
 @pytest.mark.asyncio

@@ -55,6 +55,8 @@ class UnpaywallClient:
                 return payload
             except httpx.HTTPStatusError as exc:
                 last_error = exc
+                if not self.should_retry_response(exc.response):
+                    break
                 if attempt < self.max_retries - 1:
                     await self.sleep(self.retry_delay(attempt, exc.response))
             except (httpx.HTTPError, ValueError) as exc:
@@ -62,6 +64,9 @@ class UnpaywallClient:
                 if attempt < self.max_retries - 1:
                     await self.sleep(self.retry_delay(attempt))
         raise RuntimeError(f"Unpaywall request failed: {last_error}")
+
+    def should_retry_response(self, response: httpx.Response) -> bool:
+        return response.status_code == 429 or response.status_code >= 500
 
     async def wait_after_successful_request(self) -> None:
         if self.request_interval_seconds > 0:
