@@ -286,6 +286,38 @@ def reaction_set_rows(reaction_sets: list[dict[str, Any]]) -> list[dict[str, Any
     return rows
 
 
+def reaction_audit_rows(audit_log: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for audit in audit_log:
+        field_changes = audit.get("field_changes") or {}
+        if not field_changes:
+            rows.append(
+                {
+                    "audit_id": audit.get("id"),
+                    "reaction_id": audit.get("reaction_id"),
+                    "field": "-",
+                    "before": None,
+                    "after": None,
+                    "verified_by": audit.get("verified_by"),
+                    "verified_at": audit.get("verified_at"),
+                }
+            )
+            continue
+        for field, change in field_changes.items():
+            rows.append(
+                {
+                    "audit_id": audit.get("id"),
+                    "reaction_id": audit.get("reaction_id"),
+                    "field": field,
+                    "before": change.get("before"),
+                    "after": change.get("after"),
+                    "verified_by": audit.get("verified_by"),
+                    "verified_at": audit.get("verified_at"),
+                }
+            )
+    return rows
+
+
 def reaction_review_rows(reactions: list[dict[str, Any]], *, only_unverified: bool = False) -> list[dict[str, Any]]:
     rows = []
     for reaction in reactions:

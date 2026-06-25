@@ -314,6 +314,62 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
     ]
 
 
+def test_reaction_audit_rows_flatten_field_changes_for_review():
+    from app import frontend_api
+
+    rows = frontend_api.reaction_audit_rows(
+        [
+            {
+                "id": 31,
+                "reaction_id": 7,
+                "verified_by": "engineer_a",
+                "verified_at": "2026-06-25T10:00:00",
+                "field_changes": {
+                    "reaction_type": {"before": "unknown", "after": "ionization"},
+                    "rate_value": {"before": None, "after": "1.2e-8 cm3/s"},
+                },
+            },
+            {
+                "id": 32,
+                "reaction_id": 7,
+                "verified_by": "engineer_b",
+                "verified_at": "2026-06-26T11:00:00",
+                "field_changes": {},
+            },
+        ]
+    )
+
+    assert rows == [
+        {
+            "audit_id": 31,
+            "reaction_id": 7,
+            "field": "reaction_type",
+            "before": "unknown",
+            "after": "ionization",
+            "verified_by": "engineer_a",
+            "verified_at": "2026-06-25T10:00:00",
+        },
+        {
+            "audit_id": 31,
+            "reaction_id": 7,
+            "field": "rate_value",
+            "before": None,
+            "after": "1.2e-8 cm3/s",
+            "verified_by": "engineer_a",
+            "verified_at": "2026-06-25T10:00:00",
+        },
+        {
+            "audit_id": 32,
+            "reaction_id": 7,
+            "field": "-",
+            "before": None,
+            "after": None,
+            "verified_by": "engineer_b",
+            "verified_at": "2026-06-26T11:00:00",
+        },
+    ]
+
+
 def test_crawl_job_rows_summarize_diagnostics_and_workflow_state():
     from app import frontend_api
 

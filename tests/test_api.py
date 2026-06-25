@@ -10308,12 +10308,9 @@ def test_streamlit_chemistry_audit_log_surfaces_field_changes():
     chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
 
     for required in [
-        "field_changes",
-        "field_change_rows",
-        '"field"',
-        '"before"',
-        '"after"',
-        "st.dataframe(field_change_rows",
+        "reaction_audit_rows(reaction[\"audit_log\"])",
+        "st.dataframe(reaction_audit_rows(reaction[\"audit_log\"])",
+        "st.json(reaction[\"audit_log\"])",
     ]:
         assert required in chemistry_section
 
