@@ -188,6 +188,23 @@ def document_option_label(document: dict[str, Any]) -> str:
     )
 
 
+def document_status_rows(document: dict[str, Any], chunks: Optional[dict[str, Any]] = None) -> list[dict[str, Any]]:
+    chunks = chunks or {}
+    index_status = chunks.get("index_status") or document.get("index_status") or "unknown"
+    index_error = chunks.get("index_error") or document.get("index_error")
+    rows = [
+        ("document_id", document.get("id")),
+        ("parse_status", document.get("parse_status") or "unknown"),
+        ("parse_error", document.get("parse_error")),
+        ("index_status", index_status),
+        ("index_error", index_error),
+        ("chunks_total", int(chunks.get("total") or 0)),
+        ("chemistry_status", document.get("chemistry_status") or "unknown"),
+        ("chemistry_error", document.get("chemistry_error")),
+    ]
+    return [{"field": field, "value": value} for field, value in rows]
+
+
 def rag_source_rows(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for source in sources:

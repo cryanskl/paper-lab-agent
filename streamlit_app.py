@@ -9,6 +9,7 @@ from app.frontend_api import (
     crawl_job_rows,
     crawl_journal_options,
     document_option_label,
+    document_status_rows,
     rag_source_rows,
     reaction_review_rows,
     reaction_set_rows,
@@ -656,6 +657,7 @@ with documents_tab:
         )
         index_status = chunks.get("index_status") or ("indexed" if chunks["indexed"] else "not_indexed")
         st.caption(f"index_status: {index_status} · chunks: {chunks['total']}")
+        st.dataframe(document_status_rows(document_detail, chunks), use_container_width=True)
         if chunks.get("index_error"):
             st.warning(f"index_error: {chunks['index_error']}")
         section_tab, translation_tab, chunks_tab = st.tabs(["章节", "翻译预览", "索引"])

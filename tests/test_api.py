@@ -10994,6 +10994,7 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
         "chemistry_status",
         "chemistry_error",
         "document_option_label",
+        "document_status_rows(document_detail, chunks)",
         "section_preview",
         "parse_error",
         "vector_id",

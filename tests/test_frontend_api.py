@@ -498,6 +498,34 @@ def test_document_option_label_falls_back_to_file_name_and_unknown_states():
     assert label == "#10 · no-name.pdf · parse=unknown · index=unknown · chemistry=unknown"
 
 
+def test_document_status_rows_summarize_document_workflow_and_errors():
+    from app import frontend_api
+
+    rows = frontend_api.document_status_rows(
+        {
+            "id": 12,
+            "parse_status": "failed",
+            "parse_error": "GROBID timeout",
+            "index_status": "not_indexed",
+            "index_error": None,
+            "chemistry_status": "failed",
+            "chemistry_error": "no parsed sections",
+        },
+        {"index_status": "failed", "index_error": "embedding unavailable", "total": 3},
+    )
+
+    assert rows == [
+        {"field": "document_id", "value": 12},
+        {"field": "parse_status", "value": "failed"},
+        {"field": "parse_error", "value": "GROBID timeout"},
+        {"field": "index_status", "value": "failed"},
+        {"field": "index_error", "value": "embedding unavailable"},
+        {"field": "chunks_total", "value": 3},
+        {"field": "chemistry_status", "value": "failed"},
+        {"field": "chemistry_error", "value": "no parsed sections"},
+    ]
+
+
 def test_rag_source_rows_include_citation_and_location_labels():
     from app import frontend_api
 
