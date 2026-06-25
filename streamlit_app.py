@@ -50,6 +50,18 @@ def flatten_crawl_job_rows(jobs: list[dict]) -> list[dict]:
     return rows
 
 
+def format_category_summary(paper: dict) -> str:
+    details = paper.get("category_details") or []
+    if details:
+        labels = []
+        for category in details:
+            confidence = category.get("confidence")
+            confidence_label = "-" if confidence is None else f"{confidence:.2f}"
+            labels.append(f"{category.get('slug')} · {category.get('method') or '-'} · {confidence_label}")
+        return ", ".join(labels)
+    return ", ".join(paper.get("categories") or []) or "-"
+
+
 st.set_page_config(page_title="paper-lab-agent", layout="wide")
 st.title("paper-lab-agent")
 
@@ -165,12 +177,11 @@ with search_tab:
                 f"has_doi={paper.get('has_doi')} · key={dedupe_label or '-'}"
             )
             st.write((paper.get("abstract") or "")[:400])
-            categories_text = ", ".join(paper.get("categories") or []) or "-"
-            st.caption(f"分类结果: {categories_text}")
+            st.caption(f"分类结果: {format_category_summary(paper)}")
             if st.button("触发分类", key=f"classify-paper-{paper['id']}"):
                 status_code, classified_paper = api_post(f"/papers/{paper['id']}/classify")
                 if status_code < 400:
-                    st.success(", ".join(classified_paper.get("categories") or []) or "无分类")
+                    st.success(format_category_summary(classified_paper))
                 else:
                     st.warning(classified_paper)
             if st.button("重新解析 OA", key=f"resolve-oa-{paper['id']}"):
@@ -201,7 +212,7 @@ with search_tab:
                         json={"category_ids": selected_category_ids, "method": "manual"},
                     )
                     if status_code < 400:
-                        st.success(", ".join(updated_paper.get("categories") or []) or "无分类")
+                        st.success(format_category_summary(updated_paper))
                     else:
                         st.warning(updated_paper)
             links = []

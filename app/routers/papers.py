@@ -32,17 +32,27 @@ class CategoryOverrideIn(BaseModel):
         return normalized
 
 
-def categories_for(conn, paper_id: int) -> list[str]:
+def category_details_for(conn, paper_id: int) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT c.slug FROM paper_categories pc
+        SELECT c.id, c.slug, c.name, pc.confidence, pc.method
+        FROM paper_categories pc
         JOIN categories c ON c.id = pc.category_id
         WHERE pc.paper_id=?
         ORDER BY c.slug
         """,
         (paper_id,),
     ).fetchall()
-    return [row["slug"] for row in rows]
+    return [
+        {
+            "id": row["id"],
+            "slug": row["slug"],
+            "name": row["name"],
+            "confidence": row["confidence"],
+            "method": row["method"],
+        }
+        for row in rows
+    ]
 
 
 def fts_query(value: str) -> str:
@@ -59,7 +69,8 @@ def dedupe_strategy(row: dict) -> str:
     return "none"
 
 
-def serialize_paper(row: dict, categories: list[str]) -> dict:
+def serialize_paper(row: dict, category_details: list[dict]) -> dict:
+    categories = [category["slug"] for category in category_details]
     return {
         "id": row["id"],
         "doi": row["doi"],
@@ -78,6 +89,7 @@ def serialize_paper(row: dict, categories: list[str]) -> dict:
         "has_doi": bool(row.get("doi")),
         "dedupe_strategy": dedupe_strategy(row),
         "categories": categories,
+        "category_details": category_details,
     }
 
 
@@ -138,7 +150,7 @@ def list_papers(
         items = []
         for row in rows:
             paper = dict_from_row(row)
-            items.append(serialize_paper(paper, categories_for(conn, paper["id"])))
+            items.append(serialize_paper(paper, category_details_for(conn, paper["id"])))
     return page(items, total, page_num, page_size)
 
 
@@ -149,7 +161,9 @@ def get_paper(paper_id: int) -> dict:
         if not row:
             raise AppError(404, "paper_not_found", "Paper not found")
         paper = dict_from_row(row)
-        return serialize_paper(paper, categories_for(conn, paper_id)) | {"raw_metadata": json_loads(paper.get("raw_metadata"), {})}
+        return serialize_paper(paper, category_details_for(conn, paper_id)) | {
+            "raw_metadata": json_loads(paper.get("raw_metadata"), {})
+        }
 
 
 @router.post("/{paper_id}/resolve-oa")

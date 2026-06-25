@@ -173,6 +173,22 @@ def test_health_seed_and_search(tmp_path):
         json={"category_ids": [2, 6], "method": "manual"},
     ).json()
     assert set(overridden["categories"]) == {"chemistry", "methods"}
+    assert overridden["category_details"] == [
+        {
+            "id": 2,
+            "slug": "chemistry",
+            "name": "等离子体化学",
+            "confidence": 1.0,
+            "method": "manual",
+        },
+        {
+            "id": 6,
+            "slug": "methods",
+            "name": "仿真方法",
+            "confidence": 1.0,
+            "method": "manual",
+        },
+    ]
 
 
 def test_paper_category_override_deduplicates_category_ids(tmp_path):
@@ -285,6 +301,15 @@ def test_classify_paper_records_classifier_confidence(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["categories"] == ["chemistry"]
+    assert response.json()["category_details"] == [
+        {
+            "id": 2,
+            "slug": "chemistry",
+            "name": "等离子体化学",
+            "confidence": 0.91,
+            "method": "auto",
+        }
+    ]
     with get_conn() as conn:
         row = conn.execute(
             "SELECT confidence, method FROM paper_categories WHERE paper_id=? AND category_id=2",
@@ -8971,7 +8996,7 @@ def test_streamlit_search_results_can_trigger_classification():
         "分类结果",
         "触发分类",
         'api_post(f"/papers/{paper[\'id\']}/classify")',
-        'classified_paper.get("categories")',
+        "format_category_summary(classified_paper)",
         'key=f"classify-paper-{paper[\'id\']}"',
     ]:
         assert required in search_section
