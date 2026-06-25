@@ -792,6 +792,13 @@ def test_api_contract_validator_reports_missing_page_size_on_documented_list_rou
     assert issues == ["GET /api/v1/things missing query parameters: page_size"]
 
 
+def test_streamlit_requests_full_category_page_for_manual_selection():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit_source = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+
+    assert 'api_get("/categories", page=1, page_size=100)' in streamlit_source
+
+
 def test_schema_validator_accepts_schema_truth_source():
     validate_schema = load_validate_schema()
     repo = Path(__file__).resolve().parent.parent

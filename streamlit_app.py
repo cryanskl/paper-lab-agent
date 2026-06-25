@@ -377,7 +377,7 @@ with config_tab:
         key="config-journals-page-size",
     )
     journals_response = api_get("/journals", page=int(config_journals_page), page_size=int(config_journals_page_size))
-    categories_response = api_get("/categories")
+    categories_response = api_get("/categories", page=1, page_size=100)
     journals_all = journals_response["items"]
     categories_all = categories_response["items"]
 
