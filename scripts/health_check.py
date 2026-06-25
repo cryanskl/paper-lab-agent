@@ -533,6 +533,15 @@ def list_values(value) -> list[str]:
     return [str(item) for item in value if str(item).strip()]
 
 
+def release_readiness_blockers(readiness: dict) -> list[str]:
+    if readiness.get("ready") is True:
+        return []
+    blockers: list[str] = []
+    for key in ("demo_data_missing", "failed_workflows", "config_warning_codes", "storage_errors"):
+        blockers.extend(f"{key}:{value}" for value in readiness.get(key, []))
+    return blockers or ["ready=false"]
+
+
 def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) -> dict:
     safe_status = status if isinstance(status, dict) else {}
     runtime = safe_status.get("runtime")
@@ -660,22 +669,28 @@ def main() -> int:
     if status_errors:
         print(f"health_check failed: system status invalid ({'; '.join(status_errors)})", file=sys.stderr)
         return 1
-    if args.require_storage_writable or args.require_release_ready:
+    api_readiness = api_release_readiness(status)
+    if args.require_release_ready and api_readiness is not None:
+        readiness_errors = release_readiness_blockers(api_readiness)
+        if readiness_errors:
+            print(f"health_check failed: release readiness blockers present ({'; '.join(readiness_errors)})", file=sys.stderr)
+            return 1
+    if args.require_storage_writable or (args.require_release_ready and api_readiness is None):
         storage_errors = storage_writability_errors(status)
         if storage_errors:
             print(f"health_check failed: storage is not writable ({'; '.join(storage_errors)})", file=sys.stderr)
             return 1
-    if args.require_no_failed_workflows or args.require_release_ready:
+    if args.require_no_failed_workflows or (args.require_release_ready and api_readiness is None):
         workflow_errors = failed_workflow_errors(status)
         if workflow_errors:
             print(f"health_check failed: failed workflows present ({'; '.join(workflow_errors)})", file=sys.stderr)
             return 1
-    if args.require_no_config_warnings or args.require_release_ready:
+    if args.require_no_config_warnings or (args.require_release_ready and api_readiness is None):
         warning_errors = config_warning_errors(status)
         if warning_errors:
             print(f"health_check failed: config warnings present ({'; '.join(warning_errors)})", file=sys.stderr)
             return 1
-    if args.require_demo_data or args.require_release_ready:
+    if args.require_demo_data or (args.require_release_ready and api_readiness is None):
         demo_errors = demo_data_errors(status)
         if demo_errors:
             print(f"health_check failed: demo data is incomplete ({'; '.join(demo_errors)})", file=sys.stderr)

@@ -8743,6 +8743,72 @@ def test_health_check_require_release_ready_runs_combined_gates(monkeypatch, cap
     assert "missing_llm_api_key" in captured.err
 
 
+def test_health_check_require_release_ready_prefers_api_release_readiness(monkeypatch, capsys):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_api_release_ready_gate", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": True,
+                "translation_adapter": "openai-compatible",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+            "demo_data": {
+                "ready": True,
+                "requirements": {"papers": 1},
+                "missing": [],
+                "counts": {"papers": 2},
+            },
+            "status_counts": health_check_status_counts(),
+            "release_readiness": {
+                "ready": False,
+                "demo_data_missing": [],
+                "failed_workflows": ["translations.failed=2"],
+                "config_warning_codes": ["missing_llm_api_key"],
+                "storage_errors": [],
+            },
+        }
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(sys, "argv", ["health_check.py", "--base-url", "http://api.test", "--require-release-ready"])
+
+    assert health_check.main() == 1
+    captured = capsys.readouterr()
+    assert "release readiness blockers present" in captured.err
+    assert "failed_workflows:translations.failed=2" in captured.err
+    assert "config_warning_codes:missing_llm_api_key" in captured.err
+
+
 def test_health_check_require_no_failed_workflows_fails_on_failed_status_counts(monkeypatch, capsys):
     import importlib.util
     import sys
