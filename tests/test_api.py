@@ -10061,14 +10061,16 @@ def test_bug_docs_validator_checks_naming_and_required_sections(tmp_path):
     bug_dir.mkdir(parents=True)
     (bug_dir / "README.md").write_text("# Bug 记录约定\n", encoding="utf-8")
     (bug_dir / "bad-name.md").write_text("# Bad\n\n## 现象\n", encoding="utf-8")
-    (bug_dir / "2026-06-25-good-bug.md").write_text(
+    (bug_dir / "2026-06-25-empty-bug.md").write_text(
         "# Good\n\n## 现象\n\n## 原因\n\n## 修复\n\n## 验证\n",
         encoding="utf-8",
     )
 
     assert validator.bug_doc_issues(tmp_path) == [
+        "docs/bug/2026-06-25-empty-bug.md: empty sections: 现象, 原因, 修复, 验证",
         "docs/bug/bad-name.md: filename must match YYYY-MM-DD-short-slug.md",
         "docs/bug/bad-name.md: missing sections: 原因, 修复, 验证",
+        "docs/bug/bad-name.md: empty sections: 现象",
     ]
 
 

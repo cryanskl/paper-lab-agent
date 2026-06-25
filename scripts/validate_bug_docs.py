@@ -11,6 +11,15 @@ BUG_FILENAME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$"
 REQUIRED_SECTIONS = ("现象", "原因", "修复", "验证")
 
 
+def section_body(text: str, section: str) -> str | None:
+    match = re.search(rf"^## {re.escape(section)}\s*$", text, flags=re.MULTILINE)
+    if match is None:
+        return None
+    next_match = re.search(r"^##\s+", text[match.end() :], flags=re.MULTILINE)
+    end = match.end() + next_match.start() if next_match else len(text)
+    return text[match.end() : end].strip()
+
+
 def bug_doc_issues(repo: Path) -> list[str]:
     repo = repo.resolve()
     bug_dir = repo / "docs" / "bug"
@@ -30,10 +39,15 @@ def bug_doc_issues(repo: Path) -> list[str]:
 
         text = path.read_text(encoding="utf-8")
         missing_sections = [
-            section for section in REQUIRED_SECTIONS if f"## {section}" not in text
+            section for section in REQUIRED_SECTIONS if section_body(text, section) is None
         ]
         if missing_sections:
             issues.append(f"{rel}: missing sections: {', '.join(missing_sections)}")
+        empty_sections = [
+            section for section in REQUIRED_SECTIONS if section_body(text, section) == ""
+        ]
+        if empty_sections:
+            issues.append(f"{rel}: empty sections: {', '.join(empty_sections)}")
 
     return issues
 
