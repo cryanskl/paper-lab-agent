@@ -138,6 +138,21 @@ def test_crossref_rejects_out_of_range_date_parts():
     assert work["published_year"] is None
 
 
+def test_crossref_rejects_overlong_date_parts():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/overlong-date-parts",
+            "title": ["Overlong date parts"],
+            "issued": {"date-parts": [[2026, 7, 15, 9]]},
+        }
+    )
+
+    assert work["published_date"] is None
+    assert work["published_year"] is None
+
+
 def test_crossref_tolerates_malformed_landing_url_field():
     client = CrossrefClient()
 

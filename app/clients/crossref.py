@@ -134,7 +134,7 @@ class CrossrefClient:
         if not isinstance(value, list) or not value or not isinstance(value[0], list):
             return None, None
         parts = value[0]
-        if not parts or any(isinstance(part, bool) or not isinstance(part, int) for part in parts):
+        if not parts or len(parts) > 3 or any(isinstance(part, bool) or not isinstance(part, int) for part in parts):
             return None, None
         try:
             date(parts[0], parts[1] if len(parts) > 1 else 1, parts[2] if len(parts) > 2 else 1)
