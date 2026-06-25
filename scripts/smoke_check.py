@@ -176,6 +176,15 @@ def run_smoke() -> dict:
             journal_filter_search["total"] == 1,
             f"expected journal-filtered search to return one paper, got {journal_filter_search}",
         )
+        relevance_sort_search = assert_status(
+            client.get("/api/v1/papers?q=smoke crawl&sort=relevance"),
+            200,
+            "relevance-sorted paper search",
+        )
+        assert_ok(
+            relevance_sort_search["total"] == 1,
+            f"expected relevance-sorted search to return one paper, got {relevance_sort_search}",
+        )
 
         original_paper_unpaywall_client = papers_router.UnpaywallClient
 
@@ -448,6 +457,7 @@ def run_smoke() -> dict:
             "manual_category_count": len(manual_category_details),
             "manual_category_method": manual_category_details[0]["method"],
             "manual_category_search_hits": manual_category_search["total"],
+            "relevance_sort_search_hits": relevance_sort_search["total"],
             "manual_resolve_oa_status": manual_resolve_oa["oa_status"],
             "manual_resolve_oa_pdf_url": manual_resolve_oa["oa_pdf_url"],
             "oa_only_search_hits": oa_only_search["total"],
