@@ -754,9 +754,27 @@ with chemistry_tab:
     else:
         st.info("暂无可选文档，请先上传并抽取化学库。")
         chemistry_document_id = st.number_input("手动 document_id", min_value=1, value=1)
+    reaction_sets_page_col, reaction_sets_page_size_col = st.columns(2)
+    reaction_sets_page = reaction_sets_page_col.number_input(
+        "reaction_sets_page",
+        min_value=1,
+        value=1,
+        key="reaction-sets-page",
+    )
+    reaction_sets_page_size = reaction_sets_page_size_col.number_input(
+        "reaction_sets_page_size",
+        min_value=1,
+        max_value=100,
+        value=20,
+        key="reaction-sets-page-size",
+    )
     if st.button("加载文档反应集"):
         try:
-            st.session_state["document_reaction_sets"] = api_get(f"/documents/{chemistry_document_id}/reaction-sets")
+            st.session_state["document_reaction_sets"] = api_get(
+                f"/documents/{chemistry_document_id}/reaction-sets",
+                page=int(reaction_sets_page),
+                page_size=int(reaction_sets_page_size),
+            )
         except Exception as exc:
             st.warning(exc)
             st.session_state["document_reaction_sets"] = None
@@ -765,6 +783,11 @@ with chemistry_tab:
     document_reaction_sets = st.session_state.get("document_reaction_sets")
     if document_reaction_sets:
         reaction_set_items = document_reaction_sets.get("items", [])
+        st.caption(
+            f"reaction sets page {document_reaction_sets['page']} · "
+            f"page_size {document_reaction_sets['page_size']} · "
+            f"total {document_reaction_sets['total']}"
+        )
         st.dataframe(reaction_set_items)
         if not reaction_set_items:
             st.info("该文档暂无反应集。")

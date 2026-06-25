@@ -8145,6 +8145,27 @@ def test_streamlit_chemistry_tab_exposes_document_pagination_controls():
         assert required in chemistry_section
 
 
+def test_streamlit_chemistry_tab_exposes_reaction_set_pagination_controls():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    for required in [
+        "reaction_sets_page = reaction_sets_page_col.number_input(",
+        '"reaction_sets_page"',
+        "reaction_sets_page_size = reaction_sets_page_size_col.number_input(",
+        '"reaction_sets_page_size"',
+        'st.session_state["document_reaction_sets"] = api_get(',
+        'f"/documents/{chemistry_document_id}/reaction-sets"',
+        "page=int(reaction_sets_page)",
+        "page_size=int(reaction_sets_page_size)",
+        "document_reaction_sets['page']",
+        "document_reaction_sets['page_size']",
+        "document_reaction_sets['total']",
+    ]:
+        assert required in chemistry_section
+
+
 def test_streamlit_chemistry_audit_log_surfaces_field_changes():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
