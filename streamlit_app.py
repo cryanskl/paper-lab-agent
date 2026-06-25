@@ -141,6 +141,12 @@ with st.sidebar:
         ]
         if status_count_rows:
             st.dataframe(status_count_rows, use_container_width=True)
+            failed_workflow_rows = [row for row in status_count_rows if row["status"] == "failed" and row["count"]]
+            if failed_workflow_rows:
+                failed_summary = ", ".join(
+                    f"{row['workflow']}={row['count']}" for row in failed_workflow_rows
+                )
+                st.warning(f"failed workflow backlog: {failed_summary}")
     config_warnings = status.get("config_warnings") or []
     if config_warnings:
         st.subheader("配置提示")

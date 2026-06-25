@@ -9233,6 +9233,21 @@ def test_streamlit_translation_preview_warns_when_output_file_is_missing():
         assert required in translation_section
 
 
+def test_streamlit_sidebar_warns_about_failed_workflow_counts():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+
+    for required in [
+        "failed_workflow_rows",
+        'row["status"] == "failed"',
+        "failed workflow backlog",
+        "st.warning",
+        "status_count_rows",
+    ]:
+        assert required in sidebar_section
+
+
 def test_streamlit_rag_tab_separates_answer_and_sources():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
