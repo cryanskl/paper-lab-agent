@@ -144,6 +144,30 @@ def test_crossref_strips_author_name_parts():
     assert work["authors"] == [{"name": "Jane Doe", "affiliation": None}]
 
 
+def test_crossref_preserves_single_field_author_names():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/group-author",
+            "title": ["Group author"],
+            "author": [
+                {
+                    "name": "  Plasma Data Consortium  ",
+                    "affiliation": [{"name": "  Community Plasma Lab  "}],
+                }
+            ],
+        }
+    )
+
+    assert work["authors"] == [
+        {
+            "name": "Plasma Data Consortium",
+            "affiliation": "Community Plasma Lab",
+        }
+    ]
+
+
 def test_crossref_preserves_author_affiliations():
     client = CrossrefClient()
 

@@ -132,16 +132,25 @@ class CrossrefClient:
         for item in value:
             if not isinstance(item, dict):
                 continue
-            name_parts = [
-                value.strip()
-                for value in [item.get("given"), item.get("family")]
-                if isinstance(value, str) and value.strip()
-            ]
-            name = " ".join(name_parts)
+            name = self.author_name(item)
             if name:
                 affiliation = self.normalize_affiliations(item.get("affiliation"))
                 authors.append({"name": name, "affiliation": affiliation})
         return authors
+
+    def author_name(self, item: dict[str, Any]) -> Optional[str]:
+        name_parts = [
+            value.strip()
+            for value in [item.get("given"), item.get("family")]
+            if isinstance(value, str) and value.strip()
+        ]
+        name = " ".join(name_parts)
+        if name:
+            return name
+        single_name = item.get("name")
+        if isinstance(single_name, str) and single_name.strip():
+            return single_name.strip()
+        return None
 
     def normalize_affiliations(self, value: Any) -> Optional[str]:
         if not isinstance(value, list):
