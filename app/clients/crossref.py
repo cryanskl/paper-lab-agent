@@ -150,11 +150,14 @@ class CrossrefClient:
         parts = value[0]
         if not parts or len(parts) > 3 or any(isinstance(part, bool) or not isinstance(part, int) for part in parts):
             return None, None
+        year = parts[0]
+        month = parts[1] if len(parts) > 1 else 1
+        day = parts[2] if len(parts) > 2 else 1
         try:
-            date(parts[0], parts[1] if len(parts) > 1 else 1, parts[2] if len(parts) > 2 else 1)
+            parsed = date(year, month, day)
         except ValueError:
             return None, None
-        return "-".join(str(part).zfill(2) for part in parts), parts[0]
+        return parsed.isoformat(), year
 
     def normalize(self, item: dict[str, Any]) -> dict[str, Any]:
         published = item.get("published-print") or item.get("published-online") or item.get("issued") or {}

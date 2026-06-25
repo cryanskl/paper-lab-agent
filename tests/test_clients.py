@@ -182,6 +182,30 @@ def test_crossref_rejects_overlong_date_parts():
     assert work["published_year"] is None
 
 
+def test_crossref_expands_partial_date_parts_to_iso_dates():
+    client = CrossrefClient()
+
+    year_only = client.normalize(
+        {
+            "DOI": "10.5555/year-only",
+            "title": ["Year only date parts"],
+            "issued": {"date-parts": [[2026]]},
+        }
+    )
+    year_month = client.normalize(
+        {
+            "DOI": "10.5555/year-month",
+            "title": ["Year and month date parts"],
+            "issued": {"date-parts": [[2026, 7]]},
+        }
+    )
+
+    assert year_only["published_date"] == "2026-01-01"
+    assert year_only["published_year"] == 2026
+    assert year_month["published_date"] == "2026-07-01"
+    assert year_month["published_year"] == 2026
+
+
 def test_crossref_tolerates_malformed_landing_url_field():
     client = CrossrefClient()
 
