@@ -544,6 +544,19 @@ def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) 
                 "frontend_ok": frontend.get("status_code") == 200,
             }
         )
+    external_capabilities = safe_status.get("external_capabilities")
+    grobid = external_capabilities.get("grobid") if isinstance(external_capabilities, dict) else None
+    if isinstance(grobid, dict) and any(
+        grobid.get(key) is not None for key in ("available", "status_code", "error")
+    ):
+        summary.update(
+            {
+                "grobid_url": grobid.get("url"),
+                "grobid_available": grobid.get("available"),
+                "grobid_status_code": grobid.get("status_code"),
+                "grobid_error": grobid.get("error"),
+            }
+        )
     return summary
 
 
