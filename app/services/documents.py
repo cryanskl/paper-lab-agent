@@ -128,9 +128,16 @@ def sections_from_tei(tei: str) -> list[dict]:
         *findall(root, ".//tei:teiHeader//tei:profileDesc//tei:abstract"),
         *findall(root, ".//tei:text//tei:front//tei:abstract"),
     ]
+    seen_abstracts = set()
     for abstract in abstract_nodes:
         head = find(abstract, "tei:head")
-        append_section("Abstract", content_without_children(abstract, [head]) if head is not None else " ".join(abstract.itertext()), "abstract")
+        abstract_content = clean_text(
+            content_without_children(abstract, [head]) if head is not None else " ".join(abstract.itertext())
+        )
+        if not abstract_content or abstract_content in seen_abstracts:
+            continue
+        seen_abstracts.add(abstract_content)
+        append_section("Abstract", abstract_content, "abstract")
 
     def append_body_div(div: ET.Element) -> None:
         head = find(div, "tei:head")

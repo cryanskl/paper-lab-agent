@@ -85,3 +85,35 @@ def test_sections_from_tei_reads_header_profile_abstract():
 
     assert by_type["abstract"][0]["content"] == "Low temperature plasma kinetics from the TEI header."
     assert by_type["body"][0]["title"] == "Introduction"
+
+
+def test_sections_from_tei_deduplicates_repeated_header_and_front_abstracts():
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <teiHeader>
+        <profileDesc>
+          <abstract>
+            <p>Repeated plasma abstract.</p>
+          </abstract>
+        </profileDesc>
+      </teiHeader>
+      <text>
+        <front>
+          <abstract>
+            <p>Repeated plasma abstract.</p>
+          </abstract>
+        </front>
+        <body>
+          <div>
+            <head>Introduction</head>
+            <p>The body section remains available.</p>
+          </div>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+    abstracts = [section for section in sections if section["section_type"] == "abstract"]
+
+    assert [abstract["content"] for abstract in abstracts] == ["Repeated plasma abstract."]
