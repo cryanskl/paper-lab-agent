@@ -161,6 +161,31 @@ def documented_default_mismatches(path: Path, config_path: Path = SETTINGS_CONFI
     return mismatches
 
 
+def connect_host(host: str) -> str:
+    return "127.0.0.1" if host == "0.0.0.0" else host
+
+
+def script_runtime_default_mismatches(path: Path) -> list[str]:
+    values = parse_env_values(path)
+    mismatches: list[str] = []
+    api_host = values.get("API_HOST")
+    api_port = values.get("API_PORT")
+    api_base_url = values.get("API_BASE_URL")
+    if api_host and api_port and api_base_url:
+        expected_api_base_url = f"http://{connect_host(api_host)}:{api_port}/api/v1"
+        if api_base_url != expected_api_base_url:
+            mismatches.append(f"API_BASE_URL expected {expected_api_base_url}, got {api_base_url}")
+
+    streamlit_host = values.get("STREAMLIT_HOST")
+    streamlit_port = values.get("STREAMLIT_PORT")
+    frontend_url = values.get("FRONTEND_URL")
+    if streamlit_host and streamlit_port and frontend_url:
+        expected_frontend_url = f"http://{connect_host(streamlit_host)}:{streamlit_port}"
+        if frontend_url != expected_frontend_url:
+            mismatches.append(f"FRONTEND_URL expected {expected_frontend_url}, got {frontend_url}")
+    return mismatches
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate required keys in .env.example")
     parser.add_argument("path", nargs="?", default=".env.example", help="Path to env example file")
@@ -182,6 +207,10 @@ def main() -> int:
     mismatches = documented_default_mismatches(path)
     if mismatches:
         print(f"env example defaults drifted: {', '.join(mismatches)}", file=sys.stderr)
+        return 1
+    runtime_mismatches = script_runtime_default_mismatches(path)
+    if runtime_mismatches:
+        print(f"env example runtime defaults drifted: {', '.join(runtime_mismatches)}", file=sys.stderr)
         return 1
     return 0
 

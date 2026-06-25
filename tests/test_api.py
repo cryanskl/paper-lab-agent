@@ -6249,6 +6249,96 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert 'alias="UNPAYWALL_API_TIMEOUT_SECONDS"' in config_text
 
 
+def test_env_example_validator_checks_runtime_url_defaults(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_env_example.py"
+    spec = importlib.util.spec_from_file_location("env_example_validator_runtime_urls", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+
+    env_example = tmp_path / ".env.example"
+    env_example.write_text(
+        "\n".join(
+            [
+                "API_HOST=0.0.0.0",
+                "API_PORT=9000",
+                "API_BASE_URL=http://0.0.0.0:8000/api/v1",
+                "STREAMLIT_HOST=0.0.0.0",
+                "STREAMLIT_PORT=9501",
+                "FRONTEND_URL=http://0.0.0.0:8501",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert validator.script_runtime_default_mismatches(env_example) == [
+        "API_BASE_URL expected http://127.0.0.1:9000/api/v1, got http://0.0.0.0:8000/api/v1",
+        "FRONTEND_URL expected http://127.0.0.1:9501, got http://0.0.0.0:8501",
+    ]
+
+
+def test_env_example_validator_cli_rejects_runtime_url_drift(tmp_path):
+    import subprocess
+
+    repo = Path(__file__).resolve().parent.parent
+    env_example = tmp_path / ".env.example"
+    env_example.write_text(
+        "\n".join(
+            [
+                "OPENALEX_MAILTO=",
+                "UNPAYWALL_EMAIL=",
+                "GROBID_URL=http://127.0.0.1:8070",
+                "LLM_API_KEY=",
+                "EMBEDDING_MODEL=local-hash",
+                "PAPER_LAB_DATA_DIR=./data",
+                "VECTOR_DB_PATH=./data/vector-index.json",
+                "VECTOR_DB_BACKEND=local-json",
+                "DATABASE_PATH=./data/plasma.db",
+                "PAPER_LAB_PDF_DIR=./data/pdfs",
+                "PAPER_LAB_TEI_DIR=./data/tei",
+                "PAPER_LAB_TRANSLATION_DIR=./data/translations",
+                "PAPER_LAB_EXPORT_DIR=./data/exports",
+                "PAPER_LAB_SCHEDULER_ENABLED=false",
+                "LLM_BASE_URL=https://api.openai.com/v1",
+                "LLM_MODEL=gpt-4o-mini",
+                "ACADEMIC_API_MAX_PAGES=3",
+                "ACADEMIC_API_MAX_RETRIES=3",
+                "ACADEMIC_API_RETRY_BACKOFF_SECONDS=0.25",
+                "ACADEMIC_API_REQUEST_INTERVAL_SECONDS=0",
+                "ACADEMIC_API_TIMEOUT_SECONDS=20",
+                "UNPAYWALL_API_MAX_RETRIES=3",
+                "UNPAYWALL_API_RETRY_BACKOFF_SECONDS=0.25",
+                "UNPAYWALL_API_REQUEST_INTERVAL_SECONDS=0",
+                "UNPAYWALL_API_TIMEOUT_SECONDS=20",
+                "API_HOST=127.0.0.1",
+                "API_PORT=9000",
+                "API_BASE_URL=http://127.0.0.1:8000/api/v1",
+                "STREAMLIT_HOST=127.0.0.1",
+                "STREAMLIT_PORT=8501",
+                "FRONTEND_URL=http://127.0.0.1:8501",
+                "DEV_READY_TIMEOUT=30",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [".venv/bin/python", "scripts/validate_env_example.py", str(env_example)],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "env example runtime defaults drifted" in result.stderr
+    assert "API_BASE_URL expected http://127.0.0.1:9000/api/v1" in result.stderr
+
+
 def test_env_loader_preserves_existing_environment_values(tmp_path):
     import subprocess
 
