@@ -6489,6 +6489,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py",
         "curl http://127.0.0.1:8000/api/v1/system/status",
         "`config_warnings`",
+        "`config_warning_codes`",
         "`translation_adapter`",
         "`llm_model`",
         "docker run --rm -p 8070:8070 lfoppiano/grobid",
@@ -8900,6 +8901,7 @@ def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
         "demo_data_missing": [],
         "failed_workflows": ["document_parse.failed=1"],
         "config_warning_count": 1,
+        "config_warning_codes": ["missing_llm_api_key"],
         "storage_writable": True,
     }
     assert "health" not in summary

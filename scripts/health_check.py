@@ -534,6 +534,11 @@ def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) 
         "demo_data_missing": demo_data_errors(safe_status),
         "failed_workflows": failed_workflow_errors(safe_status),
         "config_warning_count": len(config_warnings),
+        "config_warning_codes": [
+            warning["code"].strip()
+            for warning in config_warnings
+            if isinstance(warning, dict) and isinstance(warning.get("code"), str) and warning["code"].strip()
+        ],
         "storage_writable": storage_writability_errors(safe_status) == [],
     }
     if frontend is not None:
