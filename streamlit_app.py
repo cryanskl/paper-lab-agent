@@ -4,7 +4,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from app.frontend_api import request_json, request_json_status
+from app.frontend_api import reaction_review_rows, request_json, request_json_status
 
 
 API_BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000/api/v1").rstrip("/")
@@ -591,6 +591,9 @@ with chemistry_tab:
             f"verified_at: {detail.get('verified_at') or '-'}"
         )
         show_only_unverified = st.checkbox("只显示未复核", value=False, key="show_only_unverified")
+        if unverified_reactions:
+            st.subheader("未复核反应")
+            st.dataframe(reaction_review_rows(reactions, only_unverified=True), use_container_width=True)
         no_reactions = not reactions
         export_blocked = no_reactions or bool(unverified_reactions)
         if no_reactions:
