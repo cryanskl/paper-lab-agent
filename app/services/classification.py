@@ -96,9 +96,7 @@ class OpenAICompatibleClassifier:
         response.raise_for_status()
         content = chat_completion_content(response.json())
         data = parse_classifier_response_content(content)
-        raw_items = data.get("categories") or []
-        if not isinstance(raw_items, list):
-            raw_items = []
+        raw_items = data["categories"]
         return normalize_classifier_results(raw_items, categories)
 
 
@@ -121,6 +119,8 @@ def parse_classifier_response_content(content: str) -> dict[str, Any]:
         raise ValueError("classifier response content is not valid JSON") from exc
     if not isinstance(data, dict):
         raise ValueError("classifier response content must be a JSON object")
+    if not isinstance(data.get("categories"), list):
+        raise ValueError("classifier response content missing categories list")
     return data
 
 

@@ -5302,6 +5302,54 @@ def test_openai_classifier_reports_non_object_json_content():
         )
 
 
+def test_openai_classifier_reports_missing_categories_field():
+    import httpx
+    import pytest
+
+    from app.services.classification import OpenAICompatibleClassifier
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+    classifier = OpenAICompatibleClassifier(
+        "test-key",
+        "http://llm.test/v1",
+        "classify-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match="classifier response content missing categories list"):
+        classifier.classify(
+            "argon oxygen plasma chemistry",
+            [{"id": 2, "slug": "chemistry", "name": "Plasma chemistry"}],
+        )
+
+
+def test_openai_classifier_reports_non_list_categories_field():
+    import json
+
+    import httpx
+    import pytest
+
+    from app.services.classification import OpenAICompatibleClassifier
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps({"categories": {}})}}]})
+
+    classifier = OpenAICompatibleClassifier(
+        "test-key",
+        "http://llm.test/v1",
+        "classify-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match="classifier response content missing categories list"):
+        classifier.classify(
+            "argon oxygen plasma chemistry",
+            [{"id": 2, "slug": "chemistry", "name": "Plasma chemistry"}],
+        )
+
+
 def test_translate_document_preserves_table_and_reference_sections(tmp_path, monkeypatch):
     make_client(tmp_path)
 
