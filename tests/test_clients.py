@@ -800,6 +800,30 @@ async def test_unpaywall_rejects_non_web_pdf_url_scheme():
 
 
 @pytest.mark.asyncio
+async def test_unpaywall_falls_back_to_pdf_url_when_url_for_pdf_is_invalid():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "oa_status": "green",
+                "best_oa_location": {
+                    "url_for_pdf": "javascript:alert(1)",
+                    "url": "https://repository.example/paper.pdf",
+                },
+            }
+        )
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.resolve("10.1/pdf-url-fallback")
+
+    assert result["oa_status"] == "green"
+    assert result["oa_pdf_url"] == "https://repository.example/paper.pdf"
+
+
+@pytest.mark.asyncio
 async def test_unpaywall_rejects_web_pdf_url_without_host():
     def handler(request: httpx.Request) -> httpx.Response:
         return json_response(

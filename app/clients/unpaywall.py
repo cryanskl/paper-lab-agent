@@ -88,7 +88,9 @@ def best_pdf_url(location: Any) -> Optional[str]:
         return None
     url_for_pdf = location.get("url_for_pdf")
     if url_for_pdf:
-        return web_url(url_for_pdf)
+        pdf_url = web_url(url_for_pdf)
+        if pdf_url:
+            return pdf_url
     url = location.get("url")
     if not url:
         return None
