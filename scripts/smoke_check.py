@@ -260,12 +260,21 @@ def run_smoke() -> dict:
         upload = assert_status(
             client.post(
                 "/api/v1/documents",
+                data={"paper_id": str(crawled_paper_id)},
                 files={"file": ("smoke.pdf", smoke_pdf, "application/pdf")},
             ),
             201,
             "document upload",
         )
         document_id = upload["id"]
+        document_list = assert_status(client.get("/api/v1/documents"), 200, "document list")
+        assert_ok(document_list["total"] == 1, f"expected one document in list, got {document_list}")
+        document_detail = assert_status(client.get(f"/api/v1/documents/{document_id}"), 200, "document detail")
+        assert_ok(document_detail["parse_status"] == "uploaded", f"expected uploaded document, got {document_detail}")
+        assert_ok(
+            document_detail.get("paper", {}).get("id") == crawled_paper_id,
+            f"expected linked paper summary, got {document_detail}",
+        )
         duplicate_upload = client.post(
             "/api/v1/documents",
             files={"file": ("smoke-copy.pdf", smoke_pdf, "application/pdf")},
@@ -484,6 +493,9 @@ def run_smoke() -> dict:
             "paper_detail_has_raw_metadata": paper_detail.get("raw_metadata", {}).get("source") == "smoke",
             "year_filter_search_hits": year_filter_search["total"],
             "document_id": document_id,
+            "document_detail_has_paper": document_detail.get("paper", {}).get("id") == crawled_paper_id,
+            "document_detail_parse_status": document_detail["parse_status"],
+            "document_list_total": document_list["total"],
             "duplicate_upload_status": duplicate_upload.status_code,
             "duplicate_document_id": duplicate_document["id"],
             "error_response_count": len(error_responses),
