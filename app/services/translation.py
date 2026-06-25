@@ -10,6 +10,7 @@ from app.services.llm import chat_completion_content
 
 
 FORMULA_RE = re.compile(r"(\$\$.*?\$\$|\$.*?\$)", re.DOTALL)
+FORMULA_PLACEHOLDER_RE = re.compile(r"<EQ_\d{3}>")
 PRESERVE_SECTION_TYPES = {"table", "reference"}
 MAX_TARGET_LANG_SLUG_LENGTH = 80
 
@@ -84,6 +85,10 @@ def validate_formula_placeholders(translated: str, formulas: dict[str, str]) -> 
     for key in formulas:
         if key not in translated:
             raise ValueError(f"translation response missing formula placeholder {key}")
+    expected = set(formulas)
+    for key in FORMULA_PLACEHOLDER_RE.findall(translated):
+        if key not in expected:
+            raise ValueError(f"translation response unexpected formula placeholder {key}")
 
 
 def translate_text_preserving_formulas(text: str, translator: Translator, target_lang: str) -> str:

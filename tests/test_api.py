@@ -5142,6 +5142,20 @@ def test_translation_adapter_reports_missing_formula_placeholder():
         translate_text_preserving_formulas("The rate is $k_1$.", DroppingTranslator(), "zh")
 
 
+def test_translation_adapter_reports_unexpected_formula_placeholder():
+    import pytest
+
+    from app.services.translation import translate_text_preserving_formulas
+
+    class InjectingTranslator:
+        def translate(self, text, target_lang):
+            assert "<EQ_000>" in text
+            return f"译文: {text} plus <EQ_999>"
+
+    with pytest.raises(ValueError, match="translation response unexpected formula placeholder <EQ_999>"):
+        translate_text_preserving_formulas("The rate is $k_1$.", InjectingTranslator(), "zh")
+
+
 def test_openai_translation_adapter_uses_compatible_chat_completions_payload():
     import json
 
