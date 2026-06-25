@@ -84,7 +84,7 @@ class UnpaywallClient:
 
 def oa_status(value: Any) -> str:
     if isinstance(value, str) and value.strip():
-        return value.strip()
+        return value.strip().lower()
     return "unknown"
 
 

@@ -1205,6 +1205,27 @@ async def test_unpaywall_tolerates_malformed_oa_status():
 
 
 @pytest.mark.asyncio
+async def test_unpaywall_normalizes_oa_status_case_and_whitespace():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "oa_status": " Green ",
+                "best_oa_location": {"url_for_pdf": "https://example.test/paper.pdf"},
+            }
+        )
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.resolve("10.1/status-case")
+
+    assert result["oa_status"] == "green"
+    assert result["oa_pdf_url"] == "https://example.test/paper.pdf"
+
+
+@pytest.mark.asyncio
 async def test_unpaywall_rejects_non_web_pdf_url_scheme():
     def handler(request: httpx.Request) -> httpx.Response:
         return json_response(
