@@ -1398,6 +1398,18 @@ def test_prepare_demo_data_script_populates_walking_skeleton(tmp_path):
     assert payload["reaction_set"]["status"] == "verified"
     assert payload["demo_data"]["ready"] is True
     assert payload["demo_data"]["missing"] == []
+    assert payload["summary"]["ready"] is True
+    assert payload["summary"]["missing"] == []
+    assert payload["summary"]["document_id"] == payload["document"]["id"]
+    assert payload["summary"]["parse_status"] == "parsed"
+    assert payload["summary"]["index_status"] == "indexed"
+    assert payload["summary"]["chemistry_status"] == "extracted"
+    assert payload["summary"]["translation_status"] == "done"
+    assert payload["summary"]["reaction_set_id"] == payload["reaction_set"]["id"]
+    assert payload["summary"]["reaction_set_status"] == "verified"
+    assert payload["summary"]["reaction_count"] == payload["reaction_set"]["reaction_count"]
+    assert payload["summary"]["export_formats"] == ["json", "txt", "bolsig"]
+    assert payload["summary"]["counts"] == payload["counts"]
     assert payload["exports"]["json"]["reaction_count"] >= 1
     assert Path(payload["exports"]["json"]["output_path"]).exists()
 
@@ -6351,6 +6363,10 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "PREPARE_DEMO_JSON" in release_text
     assert "prepare_demo_data.py --compact" in release_text
     assert 'demo_data.ready' in release_text
+    assert 'summary.ready' in release_text
+    assert 'summary.export_formats' in release_text
+    assert 'summary.reaction_set_status' in release_text
+    assert '"export_formats"' in release_text
     assert '"json", "txt", "bolsig"' in release_text
     assert '"documents"' in release_text
     assert "-m scripts.smoke_check" in release_text
@@ -6440,6 +6456,8 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "python scripts/health_check.py --require-demo-data",
         "python scripts/import_fixtures.py",
         "python scripts/prepare_demo_data.py",
+        "python scripts/prepare_demo_data.py --compact",
+        "`summary.ready`",
         "python -m scripts.smoke_check",
         "bash scripts/release_check.sh",
         "PAPER_LAB_SCHEDULER_ENABLED=true",

@@ -83,6 +83,30 @@ def verify_all_reactions(reaction_set: dict, verified_by: str) -> dict:
     return current
 
 
+def demo_summary(
+    document: dict,
+    translation: dict,
+    reaction_set: dict,
+    exports: dict,
+    counts: dict[str, int],
+    demo_data: dict,
+) -> dict:
+    return {
+        "ready": demo_data.get("ready") is True,
+        "missing": demo_data.get("missing") or [],
+        "document_id": document.get("id"),
+        "parse_status": document.get("parse_status"),
+        "index_status": document.get("index_status"),
+        "chemistry_status": document.get("chemistry_status"),
+        "translation_status": translation.get("status"),
+        "reaction_set_id": reaction_set.get("id"),
+        "reaction_set_status": reaction_set.get("status"),
+        "reaction_count": reaction_set.get("reaction_count", 0),
+        "export_formats": list(exports),
+        "counts": counts,
+    }
+
+
 def prepare_demo_data(target_lang: str = "zh", verified_by: str = "prepare-demo-data") -> dict:
     configure_storage_defaults()
 
@@ -133,20 +157,24 @@ def prepare_demo_data(target_lang: str = "zh", verified_by: str = "prepare-demo-
     with get_conn() as conn:
         document_row = conn.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
         counts = resource_counts(conn)
+    document_payload = dict_from_row(document_row)
+    reaction_set_payload = {
+        "id": verified_reaction_set.get("id"),
+        "status": verified_reaction_set.get("status"),
+        "reaction_count": len(verified_reaction_set.get("reactions") or []),
+    }
+    demo_data = demo_data_status(counts)
 
     return {
         "fixtures": fixtures,
-        "document": dict_from_row(document_row),
+        "document": document_payload,
         "index": index_result,
         "translation": translation,
-        "reaction_set": {
-            "id": verified_reaction_set.get("id"),
-            "status": verified_reaction_set.get("status"),
-            "reaction_count": len(verified_reaction_set.get("reactions") or []),
-        },
+        "reaction_set": reaction_set_payload,
         "exports": exports,
         "counts": counts,
-        "demo_data": demo_data_status(counts),
+        "demo_data": demo_data,
+        "summary": demo_summary(document_payload, translation, reaction_set_payload, exports, counts, demo_data),
     }
 
 

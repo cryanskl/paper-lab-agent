@@ -106,6 +106,14 @@ if payload.get("demo_data", {}).get("ready") is not True:
         file=sys.stderr,
     )
     raise SystemExit(1)
+summary = payload.get("summary") or {}
+if summary.get("ready") is not True:
+    print(
+        f"release_check failed: prepare_demo_data summary.ready={summary.get('ready')!r}, "
+        f"missing={summary.get('missing')!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 expected_counts = {
     "papers": 2,
     "documents": 1,
@@ -129,8 +137,18 @@ if sorted(payload.get("exports", {})) != sorted(expected_export_formats):
         file=sys.stderr,
     )
     raise SystemExit(1)
+if summary.get("export_formats") != expected_export_formats:
+    print(
+        f"release_check failed: prepare_demo_data summary.export_formats={summary.get('export_formats')!r}, "
+        f"expected {expected_export_formats!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 if payload.get("reaction_set", {}).get("status") != "verified":
     print(f"release_check failed: prepare_demo_data reaction_set.status={payload.get('reaction_set', {}).get('status')!r}, expected 'verified'", file=sys.stderr)
+    raise SystemExit(1)
+if summary.get("reaction_set_status") != "verified":
+    print(f"release_check failed: prepare_demo_data summary.reaction_set_status={summary.get('reaction_set_status')!r}, expected 'verified'", file=sys.stderr)
     raise SystemExit(1)
 print(json.dumps(payload, ensure_ascii=False))
 PY
