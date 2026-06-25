@@ -6,6 +6,7 @@ import httpx
 from app.config import Settings
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
+from app.services.llm import chat_completion_content
 
 
 FORMULA_RE = re.compile(r"(\$\$.*?\$\$|\$.*?\$)", re.DOTALL)
@@ -53,7 +54,7 @@ class OpenAICompatibleTranslator:
             )
         response.raise_for_status()
         data = response.json()
-        return data["choices"][0]["message"]["content"]
+        return chat_completion_content(data)
 
 
 def get_translator(settings: Settings) -> Translator:

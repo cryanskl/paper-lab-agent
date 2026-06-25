@@ -4,6 +4,7 @@ from typing import Any, Optional, Protocol
 import httpx
 
 from app.config import Settings
+from app.services.llm import chat_completion_content
 
 
 class Classifier(Protocol):
@@ -93,7 +94,7 @@ class OpenAICompatibleClassifier:
                 json=payload,
             )
         response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
+        content = chat_completion_content(response.json())
         data = json.loads(strip_json_fence(content))
         raw_items = data.get("categories") or []
         if not isinstance(raw_items, list):

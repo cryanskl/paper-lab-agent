@@ -5163,6 +5163,26 @@ def test_openai_translation_adapter_uses_compatible_chat_completions_payload():
     assert requests[0].headers["authorization"] == "Bearer test-key"
 
 
+def test_openai_translation_adapter_reports_invalid_chat_completion_shape():
+    import httpx
+    import pytest
+
+    from app.services.translation import OpenAICompatibleTranslator
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": []})
+
+    translator = OpenAICompatibleTranslator(
+        "test-key",
+        "http://llm.test/v1",
+        "translate-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match="chat completion response missing choices\\[0\\].message.content"):
+        translator.translate("The rate is <EQ_000>.", "zh")
+
+
 def test_openai_classifier_keeps_only_registered_taxonomy_slugs():
     import json
 
@@ -5211,6 +5231,29 @@ def test_openai_classifier_keeps_only_registered_taxonomy_slugs():
 
     assert result == [{"category_id": 2, "slug": "chemistry", "confidence": 0.91, "method": "auto"}]
     assert requests[0].headers["authorization"] == "Bearer test-key"
+
+
+def test_openai_classifier_reports_invalid_chat_completion_shape():
+    import httpx
+    import pytest
+
+    from app.services.classification import OpenAICompatibleClassifier
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{}]})
+
+    classifier = OpenAICompatibleClassifier(
+        "test-key",
+        "http://llm.test/v1",
+        "classify-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match="chat completion response missing choices\\[0\\].message.content"):
+        classifier.classify(
+            "argon oxygen plasma chemistry",
+            [{"id": 2, "slug": "chemistry", "name": "Plasma chemistry"}],
+        )
 
 
 def test_translate_document_preserves_table_and_reference_sections(tmp_path, monkeypatch):
