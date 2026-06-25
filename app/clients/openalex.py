@@ -37,7 +37,10 @@ class OpenAlexClient:
         if self.mailto:
             params["mailto"] = self.mailto
         results: list[dict[str, Any]] = []
-        async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as client:
+        headers = {}
+        if self.mailto:
+            headers["User-Agent"] = f"paper-lab-agent (mailto:{self.mailto})"
+        async with httpx.AsyncClient(timeout=self.timeout, headers=headers, transport=self.transport) as client:
             for page_index in range(max_pages):
                 payload = await self._get_json(client, f"{self.base_url}/works", params)
                 if not isinstance(payload, dict):
