@@ -3307,6 +3307,8 @@ def test_document_rag_chemistry_export_gate(tmp_path):
     assert verified["status"] == "verified"
     exported = client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=json").json()
     assert Path(exported["output_path"]).exists()
+    assert exported["reaction_count"] == 1
+    assert exported["audit_entry_count"] == 1
 
 
 def test_system_status_can_check_grobid_health(tmp_path, monkeypatch):

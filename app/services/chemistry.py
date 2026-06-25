@@ -309,6 +309,8 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
         if remaining:
             raise PermissionError("reaction set has unverified reactions")
         detail = reaction_set_detail(dict_from_row(rs), conn)
+    reaction_count = len(detail["reactions"])
+    audit_entry_count = sum(len(reaction.get("audit_log") or []) for reaction in detail["reactions"])
     suffix_by_format = {"json": "json", "txt": "txt", "bolsig": "bolsig.txt"}
     out_path = settings.export_dir / f"reaction-set-{reaction_set_id}.{suffix_by_format[fmt]}"
     if fmt == "json":
@@ -379,4 +381,11 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
                 lines.append(f"source_excerpt: {reaction['source_excerpt']}")
         out_path.write_text("\n".join(lines), encoding="utf-8")
         mime_type = "text/plain"
-    return {"reaction_set_id": reaction_set_id, "format": fmt, "output_path": str(out_path), "mime_type": mime_type}
+    return {
+        "reaction_set_id": reaction_set_id,
+        "format": fmt,
+        "output_path": str(out_path),
+        "mime_type": mime_type,
+        "reaction_count": reaction_count,
+        "audit_entry_count": audit_entry_count,
+    }
