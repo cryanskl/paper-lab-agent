@@ -10,7 +10,7 @@ from app.services.llm import chat_completion_content
 
 
 FORMULA_RE = re.compile(r"(\$\$.*?\$\$|\$.*?\$)", re.DOTALL)
-FORMULA_PLACEHOLDER_RE = re.compile(r"<EQ_\d{3}>")
+FORMULA_PLACEHOLDER_RE = re.compile(r"<EQ_\d+>")
 PRESERVE_SECTION_TYPES = {"table", "reference"}
 MAX_TARGET_LANG_SLUG_LENGTH = 80
 
