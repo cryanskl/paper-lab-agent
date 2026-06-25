@@ -1,4 +1,5 @@
 import asyncio
+from datetime import date
 from typing import Any, Optional
 
 import httpx
@@ -131,7 +132,12 @@ class OpenAlexClient:
 
     def normalize_publication_date(self, value: Any) -> Optional[str]:
         if isinstance(value, str) and value.strip():
-            return value
+            text = value.strip()
+            try:
+                date.fromisoformat(text)
+            except ValueError:
+                return None
+            return text
         return None
 
     def normalize_publication_year(self, value: Any) -> Optional[int]:
