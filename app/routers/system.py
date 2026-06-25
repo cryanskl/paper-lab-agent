@@ -188,6 +188,8 @@ def storage_readiness_errors(health: dict) -> list[str]:
     vector_db = health.get("vector_db")
     if isinstance(vector_db, dict) and vector_db.get("exists") is True and vector_db.get("writable") is not True:
         errors.append("vector_db.writable")
+    if isinstance(vector_db, dict) and vector_db.get("exists") is True and vector_db.get("valid_json") is not True:
+        errors.append("vector_db.valid_json")
 
     return errors
 

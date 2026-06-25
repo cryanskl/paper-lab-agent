@@ -4066,6 +4066,7 @@ def test_system_status_reports_corrupt_vector_store_health(tmp_path):
     assert vector_db["readable"] is True
     assert vector_db["valid_json"] is False
     assert "Expecting property name enclosed in double quotes" in vector_db["error"]
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
 
 
 def test_system_status_reports_vector_db_backend(tmp_path):
@@ -9416,6 +9417,14 @@ def test_health_check_summary_only_includes_storage_errors():
         "storage_health": health_check_storage_health(
             pdf_dir={"path": "/tmp/data/pdfs", "exists": True, "writable": False},
             database_parent={"path": "/tmp", "exists": False, "writable": False},
+            vector_db={
+                "path": "/tmp/data/vector-index.json",
+                "exists": True,
+                "readable": True,
+                "writable": True,
+                "valid_json": False,
+                "error": "Expecting property name enclosed in double quotes",
+            },
         ),
         "counts": health_check_counts(),
         "status_counts": health_check_status_counts(),
@@ -9424,7 +9433,12 @@ def test_health_check_summary_only_includes_storage_errors():
     summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
 
     assert summary["storage_writable"] is False
-    assert summary["storage_errors"] == ["pdf_dir.writable", "database_parent.exists", "database_parent.writable"]
+    assert summary["storage_errors"] == [
+        "pdf_dir.writable",
+        "database_parent.exists",
+        "database_parent.writable",
+        "vector_db.valid_json",
+    ]
 
 
 def test_health_check_summary_only_includes_frontend_probe(monkeypatch, capsys):
