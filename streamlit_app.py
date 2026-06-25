@@ -86,6 +86,15 @@ with st.sidebar:
     st.metric("期刊", status["counts"]["journals"])
     st.metric("论文", status["counts"]["papers"])
     st.metric("文档", status["counts"]["documents"])
+    demo_data = status.get("demo_data") or {}
+    st.subheader("演示数据")
+    if demo_data.get("ready"):
+        st.success("walking skeleton ready")
+    else:
+        missing_demo_data = demo_data.get("missing") or []
+        missing_label = ", ".join(missing_demo_data) if missing_demo_data else "unknown"
+        st.warning(f"walking skeleton missing: {missing_label}")
+        st.caption("run: python scripts/prepare_demo_data.py")
     runtime = status.get("runtime", {})
     st.caption(f"API: {runtime.get('api_prefix', '/api/v1')}")
     st.caption(f"version: {runtime.get('version') or '-'}")

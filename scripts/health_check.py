@@ -86,6 +86,7 @@ DEMO_DATA_MIN_COUNTS = {
     "reaction_sets": 1,
     "reactions": 1,
 }
+DEMO_DATA_REQUIRED_KEYS = {"ready", "requirements", "missing", "counts"}
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -374,6 +375,42 @@ def validate_system_status(status: dict) -> list[str]:
         )
         if invalid_counts:
             errors.append(f"counts invalid values: {', '.join(invalid_counts)}")
+    demo_data = status.get("demo_data")
+    if demo_data is not None and not isinstance(demo_data, dict):
+        errors.append("demo_data must be an object")
+    elif isinstance(demo_data, dict):
+        missing_demo_keys = sorted(DEMO_DATA_REQUIRED_KEYS - set(demo_data))
+        if missing_demo_keys:
+            errors.append(f"demo_data missing keys: {', '.join(missing_demo_keys)}")
+        invalid_demo_data = []
+        if "ready" in demo_data and not isinstance(demo_data["ready"], bool):
+            invalid_demo_data.append("ready")
+        if "missing" in demo_data and not isinstance(demo_data["missing"], list):
+            invalid_demo_data.append("missing")
+        elif isinstance(demo_data.get("missing"), list):
+            invalid_demo_data.extend(
+                f"missing.{index}"
+                for index, item in enumerate(demo_data["missing"])
+                if not isinstance(item, str) or not item.strip()
+            )
+        for key in ("requirements", "counts"):
+            value = demo_data.get(key)
+            if not isinstance(value, dict):
+                invalid_demo_data.append(key)
+                continue
+            invalid_demo_data.extend(
+                f"{key}.{item_key}"
+                for item_key, item_value in value.items()
+                if (
+                    not isinstance(item_key, str)
+                    or not item_key.strip()
+                    or isinstance(item_value, bool)
+                    or not isinstance(item_value, int)
+                    or item_value < 0
+                )
+            )
+        if invalid_demo_data:
+            errors.append(f"demo_data invalid values: {', '.join(invalid_demo_data)}")
     status_counts = status.get("status_counts")
     if not isinstance(status_counts, dict):
         errors.append("status_counts must be an object")
@@ -458,6 +495,13 @@ def config_warning_errors(status: dict) -> list[str]:
 
 
 def demo_data_errors(status: dict) -> list[str]:
+    demo_data = status.get("demo_data")
+    if isinstance(demo_data, dict):
+        missing = demo_data.get("missing")
+        if isinstance(missing, list):
+            return [str(item) for item in missing if str(item).strip()]
+        if demo_data.get("ready") is True:
+            return []
     counts = status.get("counts")
     if not isinstance(counts, dict):
         return ["counts"]

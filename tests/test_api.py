@@ -6773,8 +6773,74 @@ def test_system_status_contract_documents_operational_counts():
         "reaction_sets",
         "reactions",
         "reaction_audits",
+        "demo_data",
+        "ready",
+        "missing",
     ]:
         assert required in system_section
+
+
+def test_system_status_reports_demo_data_readiness(tmp_path):
+    client = make_client(tmp_path)
+
+    initial = client.get("/api/v1/system/status").json()["demo_data"]
+    assert initial["ready"] is False
+    assert initial["requirements"]["journals"] == 6
+    assert "papers>=1" in initial["missing"]
+    assert "documents>=1" in initial["missing"]
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        paper_id = conn.execute(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, ?, '[]', 'status-test', '{}')
+            """,
+            ("10.999/demo-ready", "Demo ready paper", "argon plasma chemistry"),
+        ).lastrowid
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (
+                paper_id, file_path, file_hash, original_name,
+                parse_status, index_status, chemistry_status
+            ) VALUES (?, ?, ?, ?, 'parsed', 'indexed', 'extracted')
+            """,
+            (paper_id, str(tmp_path / "demo.pdf"), "demo-ready", "demo.pdf"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Demo section', 'e + Ar -> e + e + Ar+', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, vector_id, embedded)
+            VALUES (?, ?, 1, 'argon plasma chemistry', 'demo-vector', 1)
+            """,
+            (document_id, section_id),
+        )
+        reaction_set_id = conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, status)
+            VALUES (?, 'Demo reaction set', 'verified')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO reactions (reaction_set_id, reaction, verified)
+            VALUES (?, 'e + Ar -> e + e + Ar+', 1)
+            """,
+            (reaction_set_id,),
+        )
+
+    ready = client.get("/api/v1/system/status").json()["demo_data"]
+    assert ready["ready"] is True
+    assert ready["missing"] == []
+    assert ready["counts"]["documents"] == 1
 
 
 def test_system_status_counts_reaction_audits(tmp_path):
@@ -8485,6 +8551,31 @@ def test_health_check_require_demo_data_fails_when_walking_skeleton_counts_are_m
     assert "demo data is incomplete" in captured.err
     assert "documents>=1" in captured.err
     assert "sections>=1" in captured.err
+
+
+def test_health_check_require_demo_data_uses_system_demo_data_status():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_demo_data_status", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.demo_data_errors(
+        {
+            "counts": health_check_counts(documents=1, sections=1),
+            "demo_data": {
+                "ready": False,
+                "missing": ["chunks>=1"],
+                "requirements": {"chunks": 1},
+            },
+        }
+    )
+
+    assert errors == ["chunks>=1"]
 
 
 def test_health_check_require_no_failed_workflows_fails_on_failed_status_counts(monkeypatch, capsys):
@@ -10400,6 +10491,21 @@ def test_streamlit_sidebar_surfaces_workflow_status_counts():
         "reaction_sets",
         "status_count_rows",
         "st.dataframe(status_count_rows",
+    ]:
+        assert required in sidebar_section
+
+
+def test_streamlit_sidebar_surfaces_demo_data_readiness():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+
+    for required in [
+        "演示数据",
+        "demo_data",
+        'demo_data.get("ready")',
+        'demo_data.get("missing")',
+        "prepare_demo_data.py",
     ]:
         assert required in sidebar_section
 

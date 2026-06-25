@@ -13,6 +13,16 @@ from app.services.rag import SUPPORTED_EMBEDDING_MODELS, SUPPORTED_VECTOR_DB_BAC
 
 router = APIRouter(prefix="/system", tags=["system"])
 
+DEMO_DATA_MIN_COUNTS = {
+    "journals": 6,
+    "papers": 1,
+    "documents": 1,
+    "sections": 1,
+    "chunks": 1,
+    "reaction_sets": 1,
+    "reactions": 1,
+}
+
 
 def normalize_grobid_status(detail: dict, fallback_url: str) -> dict:
     return {
@@ -39,6 +49,20 @@ def status_count(table: str, column: str) -> dict:
             """
         ).fetchall()
     return {row["status"]: row["n"] for row in rows}
+
+
+def demo_data_status(counts: dict[str, int]) -> dict:
+    missing = [
+        f"{key}>={minimum}"
+        for key, minimum in DEMO_DATA_MIN_COUNTS.items()
+        if counts.get(key, 0) < minimum
+    ]
+    return {
+        "ready": not missing,
+        "requirements": DEMO_DATA_MIN_COUNTS,
+        "missing": missing,
+        "counts": {key: counts.get(key, 0) for key in DEMO_DATA_MIN_COUNTS},
+    }
 
 
 def storage_path_health(path: Path) -> dict:
@@ -141,6 +165,20 @@ async def status(check_external: bool = False) -> dict:
     grobid = normalize_grobid_status({}, settings.grobid_url)
     if check_external:
         grobid = normalize_grobid_status(await GrobidClient(settings.grobid_url).health_detail(), settings.grobid_url)
+    counts = {
+        "journals": table_count("journals"),
+        "papers": table_count("papers"),
+        "categories": table_count("categories"),
+        "paper_categories": table_count("paper_categories"),
+        "crawl_jobs": table_count("crawl_jobs"),
+        "documents": table_count("documents"),
+        "sections": table_count("sections"),
+        "translations": table_count("translations"),
+        "chunks": table_count("chunks"),
+        "reaction_sets": table_count("reaction_sets"),
+        "reactions": table_count("reactions"),
+        "reaction_audits": table_count("reaction_audits"),
+    }
     return {
         "database_path": str(settings.database_path),
         "runtime": {
@@ -178,18 +216,6 @@ async def status(check_external: bool = False) -> dict:
             "translations": status_count("translations", "status"),
             "reaction_sets": status_count("reaction_sets", "status"),
         },
-        "counts": {
-            "journals": table_count("journals"),
-            "papers": table_count("papers"),
-            "categories": table_count("categories"),
-            "paper_categories": table_count("paper_categories"),
-            "crawl_jobs": table_count("crawl_jobs"),
-            "documents": table_count("documents"),
-            "sections": table_count("sections"),
-            "translations": table_count("translations"),
-            "chunks": table_count("chunks"),
-            "reaction_sets": table_count("reaction_sets"),
-            "reactions": table_count("reactions"),
-            "reaction_audits": table_count("reaction_audits"),
-        },
+        "counts": counts,
+        "demo_data": demo_data_status(counts),
     }
