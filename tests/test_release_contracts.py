@@ -741,6 +741,26 @@ def test_docs_links_validator_reports_missing_markdown_link(tmp_path):
     assert issues == ["README.md: missing link target docs/missing.md"]
 
 
+def test_docs_links_validator_reports_missing_markdown_anchor(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (tmp_path / "README.md").write_text("[Guide](docs/guide.md#missing-section)\n", encoding="utf-8")
+    (docs_dir / "guide.md").write_text("# Existing Section\n", encoding="utf-8")
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["README.md: missing anchor target docs/guide.md#missing-section"]
+
+
+def test_docs_links_validator_ignores_external_markdown_anchors(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+
+    (tmp_path / "README.md").write_text("[External](https://example.test/docs#section)\n", encoding="utf-8")
+
+    assert validate_docs_links.broken_doc_links(tmp_path) == []
+
+
 def test_docs_links_validator_reports_missing_backtick_reference(tmp_path):
     validate_docs_links = load_validate_docs_links()
     docs_dir = tmp_path / "docs"
