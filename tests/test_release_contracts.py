@@ -181,6 +181,18 @@ def test_env_example_validator_reports_default_drift(tmp_path):
     assert mismatches == ["LLM_MODEL expected gpt-4o-mini, got legacy-model"]
 
 
+def test_env_example_validator_reports_dev_ready_timeout_drift(tmp_path):
+    validate_env_example = load_validate_env_example()
+    repo = Path(__file__).resolve().parent.parent
+    env_path = tmp_path / ".env.example"
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_path.write_text(env_text.replace("DEV_READY_TIMEOUT=30\n", "DEV_READY_TIMEOUT=10\n"), encoding="utf-8")
+
+    mismatches = validate_env_example.script_runtime_default_mismatches(env_path)
+
+    assert mismatches == ["DEV_READY_TIMEOUT expected 30, got 10"]
+
+
 def test_env_example_validator_reports_filled_secret_like_values(tmp_path):
     validate_env_example = load_validate_env_example()
     repo = Path(__file__).resolve().parent.parent
