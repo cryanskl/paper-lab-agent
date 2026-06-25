@@ -475,6 +475,11 @@ def run_smoke() -> dict:
             extracted_reaction_type == "ionization",
             f"expected inferred ionization reaction type before review, got {reaction_detail['reactions'][0]}",
         )
+        extracted_rate_type = reaction_detail["reactions"][0].get("rate_type")
+        assert_ok(
+            extracted_rate_type == "cross_section",
+            f"expected inferred cross_section rate type before review, got {reaction_detail['reactions'][0]}",
+        )
         reaction_id = reaction_detail["reactions"][0]["id"]
         blocked_export = client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=json")
         blocked_payload = assert_error_response(blocked_export, 409, "unverified reaction export")
@@ -536,6 +541,11 @@ def run_smoke() -> dict:
         assert_ok(
             verified_export_reaction_type == "ionization",
             f"expected ionization reaction type in JSON export, got {exported_reactions[0]}",
+        )
+        verified_export_rate_type = exported_reactions[0].get("rate_type")
+        assert_ok(
+            verified_export_rate_type == "cross_section",
+            f"expected cross_section rate type in JSON export, got {exported_reactions[0]}",
         )
         export_audit_entries = [
             audit
@@ -749,6 +759,7 @@ def run_smoke() -> dict:
             "reaction_set_detail_unverified_count_before_verify": reaction_detail["unverified_count"],
             "reaction_set_detail_export_ready_before_verify": reaction_detail["export_ready"],
             "extracted_reaction_type": extracted_reaction_type,
+            "extracted_rate_type": extracted_rate_type,
             "reaction_set_detail_export_ready_after_verify": reaction_detail_after_verify["export_ready"],
             "reaction_set_detail_audit_entries_after_verify": reaction_detail_audit_entries_after_verify,
             "blocked_export_status": blocked_export.status_code,
@@ -760,6 +771,7 @@ def run_smoke() -> dict:
             "verified_export_response_audit_entries": verified_export["audit_entry_count"],
             "verified_export_reactions": len(exported_reactions),
             "verified_export_reaction_type": verified_export_reaction_type,
+            "verified_export_rate_type": verified_export_rate_type,
             "verified_export_audit_entries": len(export_audit_entries),
             "verified_export_source_sections": len(export_source_sections),
             "verified_export_text_files": len([txt_export["output_path"], bolsig_export["output_path"]]),

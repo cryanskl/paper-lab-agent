@@ -575,6 +575,14 @@ def test_release_check_requires_reaction_type_smoke_metadata():
     assert '"verified_export_reaction_type": "ionization"' in release_text
 
 
+def test_release_check_requires_rate_type_smoke_metadata():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert '"extracted_rate_type": "cross_section"' in release_text
+    assert '"verified_export_rate_type": "cross_section"' in release_text
+
+
 def test_release_check_rejects_failed_smoke_status_counts():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
