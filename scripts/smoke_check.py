@@ -290,6 +290,9 @@ def run_smoke() -> dict:
         assert_status(client.post(f"/api/v1/documents/{document_id}/parse"), 202, "document parse")
         sections = assert_status(client.get(f"/api/v1/documents/{document_id}/sections"), 200, "document sections")
         assert_ok(sections["total"] >= 1, "expected parsed document sections")
+        first_section = sections["items"][0]
+        assert_ok(first_section["section_type"] == "body", f"expected body section, got {first_section}")
+        assert_ok(bool(first_section.get("content")), f"expected section content, got {first_section}")
 
         assert_status(client.post(f"/api/v1/documents/{document_id}/index"), 202, "document index")
         chunks = assert_status(client.get(f"/api/v1/documents/{document_id}/chunks"), 200, "document chunks")
@@ -501,6 +504,8 @@ def run_smoke() -> dict:
             "error_response_count": len(error_responses),
             "error_response_codes": error_responses,
             "sections": counts["sections"],
+            "section_list_first_type": first_section["section_type"],
+            "section_list_has_content": bool(first_section.get("content")),
             "chunks": counts["chunks"],
             "rag_sources": len(rag["sources"]),
             "rag_answer_has_citation": rag_answer_has_citation,

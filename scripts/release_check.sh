@@ -209,6 +209,8 @@ expected = {
     "relevance_sort_search_hits": 1,
     "year_filter_search_hits": 1,
     "sections": 1,
+    "section_list_first_type": "body",
+    "section_list_has_content": True,
     "chunks": 1,
     "rag_sources": 1,
     "reaction_sets": 1,

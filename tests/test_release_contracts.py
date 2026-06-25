@@ -469,6 +469,8 @@ def test_release_check_requires_document_list_and_detail_smoke_paths():
     assert '"document_list_total": 1' in release_text
     assert '"document_detail_parse_status": "uploaded"' in release_text
     assert '"document_detail_has_paper": True' in release_text
+    assert '"section_list_first_type": "body"' in release_text
+    assert '"section_list_has_content": True' in release_text
 
 
 def test_release_check_requires_manual_category_override_smoke_path():
