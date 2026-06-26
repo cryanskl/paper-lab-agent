@@ -114,6 +114,30 @@ class ChunkListResponse(BaseModel):
     index_error: Optional[str] = None
 
 
+class ReactionSetListItemResponse(BaseModel):
+    id: int
+    document_id: Optional[int] = None
+    name: Optional[str] = None
+    gas_mixture: Optional[str] = None
+    lxcat_db: Optional[str] = None
+    source_note: Optional[str] = None
+    status: str
+    verified_by: Optional[str] = None
+    verified_at: Optional[str] = None
+    created_at: str
+    reaction_count: int
+    verified_count: int
+    unverified_count: int
+    export_ready: bool
+
+
+class ReactionSetListResponse(BaseModel):
+    items: list[ReactionSetListItemResponse]
+    total: int
+    page: int
+    page_size: int
+
+
 async def ensure_pdf_upload(file: UploadFile) -> None:
     suffix = Path(file.filename or "").suffix.lower()
     header = await file.read(5)
@@ -298,7 +322,7 @@ def extract_chemistry(document_id: int, background_tasks: BackgroundTasks) -> di
     return {"job_id": document_id, "document_id": document_id, "chemistry_status": "extracting", "status": "pending"}
 
 
-@router.get("/{document_id}/reaction-sets", response_model=PageResponse)
+@router.get("/{document_id}/reaction-sets", response_model=ReactionSetListResponse)
 def document_reaction_sets(
     document_id: int,
     page_num: int = Query(1, alias="page", ge=1),

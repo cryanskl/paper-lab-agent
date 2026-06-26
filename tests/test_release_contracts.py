@@ -1322,6 +1322,83 @@ def test_api_contract_export_response_exposes_delivery_metadata():
     assert issues == []
 
 
+def test_api_contract_reaction_set_list_response_exposes_typed_review_items():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.reaction_set_list_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_reaction_set_list_item_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/documents/{document_id}/reaction-sets": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "document_id",
+                                                        "name",
+                                                        "gas_mixture",
+                                                        "lxcat_db",
+                                                        "source_note",
+                                                        "status",
+                                                        "verified_by",
+                                                        "verified_at",
+                                                        "created_at",
+                                                        "reaction_count",
+                                                        "verified_count",
+                                                        "unverified_count",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "document_id": {"type": "integer"},
+                                                        "name": {"type": "string"},
+                                                        "gas_mixture": {"type": "string"},
+                                                        "lxcat_db": {"type": "string"},
+                                                        "source_note": {"type": "string"},
+                                                        "status": {"type": "string"},
+                                                        "verified_by": {"type": "string"},
+                                                        "verified_at": {"type": "string"},
+                                                        "created_at": {"type": "string"},
+                                                        "reaction_count": {"type": "integer"},
+                                                        "verified_count": {"type": "integer"},
+                                                        "unverified_count": {"type": "integer"},
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.reaction_set_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/documents/{}/reaction-sets item fields missing: export_ready"]
+
+
 def test_api_contract_document_responses_expose_associated_paper_summary():
     validate_api_contract = load_validate_api_contract()
 

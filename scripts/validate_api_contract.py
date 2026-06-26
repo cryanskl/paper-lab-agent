@@ -131,6 +131,7 @@ SYSTEM_STATUS_NESTED_FIELDS = {
     ),
 }
 REACTION_SET_DETAIL_RESPONSE_ROUTE = ("GET", "/api/v1/reaction-sets/{}")
+REACTION_SET_LIST_RESPONSE_ROUTE = ("GET", "/api/v1/documents/{}/reaction-sets")
 REACTION_SET_DETAIL_RESPONSE_FIELDS = (
     "id",
     "document_id",
@@ -141,6 +142,22 @@ REACTION_SET_DETAIL_RESPONSE_FIELDS = (
     "status",
     "created_at",
     "reactions",
+    "reaction_count",
+    "verified_count",
+    "unverified_count",
+    "export_ready",
+)
+REACTION_SET_LIST_ITEM_FIELDS = (
+    "id",
+    "document_id",
+    "name",
+    "gas_mixture",
+    "lxcat_db",
+    "source_note",
+    "status",
+    "verified_by",
+    "verified_at",
+    "created_at",
     "reaction_count",
     "verified_count",
     "unverified_count",
@@ -633,6 +650,28 @@ def reaction_set_detail_response_contract_issues(openapi: dict | None = None) ->
     return []
 
 
+def reaction_set_list_response_contract_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    specs = normalized_openapi_specs(source_openapi.get("paths", {}))
+    spec = specs.get(REACTION_SET_LIST_RESPONSE_ROUTE)
+    if spec is None:
+        return []
+    schema = response_schema(spec, source_openapi)
+    method, path = REACTION_SET_LIST_RESPONSE_ROUTE
+    missing_page = [field for field in PAGINATION_RESPONSE_FIELDS if not schema_declares_fields(schema, (field,))]
+    if missing_page:
+        return [f"{method} {path} missing response fields: {', '.join(missing_page)}"]
+
+    items_schema = schema_property(schema, "items", source_openapi)
+    item_schema = effective_schema(items_schema.get("items", {}), source_openapi)
+    missing_item = [
+        field for field in REACTION_SET_LIST_ITEM_FIELDS if not schema_declares_fields(item_schema, (field,))
+    ]
+    if missing_item:
+        return [f"{method} {path} item fields missing: {', '.join(missing_item)}"]
+    return []
+
+
 def document_response_contract_issues(openapi: dict | None = None) -> list[str]:
     source_openapi = openapi if openapi is not None else app_openapi()
     specs = normalized_openapi_specs(source_openapi.get("paths", {}))
@@ -971,6 +1010,7 @@ def main() -> int:
     rag_response_issues = rag_response_contract_issues()
     system_status_response_issues = system_status_response_contract_issues()
     reaction_set_detail_response_issues = reaction_set_detail_response_contract_issues()
+    reaction_set_list_response_issues = reaction_set_list_response_contract_issues()
     document_response_issues = document_response_contract_issues()
     document_list_response_issues = document_list_response_contract_issues()
     section_list_response_issues = section_list_response_contract_issues()
@@ -996,6 +1036,7 @@ def main() -> int:
         or rag_response_issues
         or system_status_response_issues
         or reaction_set_detail_response_issues
+        or reaction_set_list_response_issues
         or document_response_issues
         or document_list_response_issues
         or section_list_response_issues
@@ -1056,6 +1097,10 @@ def main() -> int:
         if reaction_set_detail_response_issues:
             print("api contract reaction set detail response issues:", file=sys.stderr)
             for issue in reaction_set_detail_response_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if reaction_set_list_response_issues:
+            print("api contract reaction set list response issues:", file=sys.stderr)
+            for issue in reaction_set_list_response_issues:
                 print(f"- {issue}", file=sys.stderr)
         if document_response_issues:
             print("api contract document response issues:", file=sys.stderr)
