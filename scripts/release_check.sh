@@ -191,6 +191,25 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-demo-") as demo_dir:
         env=env,
     )
     summary_payload = json.loads(summary_result.stdout)
+    summary_output_path = os.path.join(demo_dir, "out", "demo-summary.json")
+    summary_output_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/prepare_demo_data.py",
+            "--summary-only",
+            "--compact",
+            "--output",
+            summary_output_path,
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+    if summary_output_result.stdout:
+        print("release_check failed: prepare_demo_data --output should not write JSON to stdout", file=sys.stderr)
+        raise SystemExit(1)
+    summary_output_payload = json.loads(open(summary_output_path, encoding="utf-8").read())
     for name, export_payload in payload.get("exports", {}).items():
         path = export_payload.get("output_path")
         if not path or not os.path.exists(path):
@@ -214,8 +233,14 @@ if summary.get("ready") is not True:
 if summary_payload != summary:
     print("release_check failed: prepare_demo_data --summary-only output does not match payload.summary", file=sys.stderr)
     raise SystemExit(1)
+if summary_output_payload != summary:
+    print("release_check failed: prepare_demo_data --output summary does not match payload.summary", file=sys.stderr)
+    raise SystemExit(1)
 if any(key in summary_payload for key in ("document", "exports")):
     print("release_check failed: prepare_demo_data --summary-only leaked full payload keys", file=sys.stderr)
+    raise SystemExit(1)
+if any(key in summary_output_payload for key in ("document", "exports")):
+    print("release_check failed: prepare_demo_data --output summary leaked full payload keys", file=sys.stderr)
     raise SystemExit(1)
 expected_counts = {
     "papers": 2,

@@ -19,9 +19,10 @@ Prepare and inspect walking skeleton data:
 
 ```bash
 python scripts/prepare_demo_data.py --summary-only --compact
+python scripts/prepare_demo_data.py --summary-only --compact --output out/demo-summary.json
 ```
 
-The compact summary should report `ready: true`, parsed/indexed/extracted/done statuses, a verified reaction set, and `json`, `txt`, `bolsig` export formats.
+The compact summary should report `ready: true`, parsed/indexed/extracted/done statuses, a verified reaction set, and `json`, `txt`, `bolsig` export formats. Use `--output out/demo-summary.json` when you need a handoff artifact alongside the OpenAPI export.
 
 ## 3. API Contract Handoff
 

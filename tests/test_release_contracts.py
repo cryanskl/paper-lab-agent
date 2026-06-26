@@ -1180,6 +1180,20 @@ def test_release_check_validates_openapi_export_script():
     assert "scripts/export_openapi.py --help" in release_check
 
 
+def test_release_check_validates_prepare_demo_data_output_artifact():
+    repo = Path(__file__).resolve().parent.parent
+    release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+    readme = (repo / "README.md").read_text(encoding="utf-8")
+    checklist = (repo / "docs" / "release-checklist.md").read_text(encoding="utf-8")
+
+    assert '"--summary-only"' in release_check
+    assert '"--compact"' in release_check
+    assert '"--output"' in release_check
+    assert "summary_output_payload != summary" in release_check
+    assert "python scripts/prepare_demo_data.py --summary-only --compact --output out/demo-summary.json" in readme
+    assert "python scripts/prepare_demo_data.py --summary-only --compact --output out/demo-summary.json" in checklist
+
+
 def test_export_openapi_script_writes_publishable_schema(tmp_path):
     export_openapi = load_export_openapi()
     output_path = tmp_path / "openapi.json"
