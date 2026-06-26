@@ -40,6 +40,15 @@ REQUIRED_SEMANTIC_ERROR_RESPONSES = {
     ("POST", "/api/v1/documents"): ("409", "415"),
     ("POST", "/api/v1/reaction-sets/{}/export"): ("400", "409"),
 }
+EXPORT_RESPONSE_FIELDS = (
+    "reaction_set_id",
+    "format",
+    "output_path",
+    "mime_type",
+    "reaction_count",
+    "audit_entry_count",
+)
+EXPORT_RESPONSE_ROUTE = ("POST", "/api/v1/reaction-sets/{}/export")
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -241,6 +250,20 @@ def semantic_error_status_contract_issues(openapi: dict | None = None) -> list[s
     return issues
 
 
+def export_response_contract_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    specs = normalized_openapi_specs(source_openapi.get("paths", {}))
+    spec = specs.get(EXPORT_RESPONSE_ROUTE)
+    if spec is None:
+        return []
+    schema = response_schema(spec, source_openapi)
+    missing = [field for field in EXPORT_RESPONSE_FIELDS if not schema_declares_fields(schema, (field,))]
+    if not missing:
+        return []
+    method, path = EXPORT_RESPONSE_ROUTE
+    return [f"{method} {path} missing response fields: {', '.join(missing)}"]
+
+
 def pagination_response_contract_issues(
     contract_path: Path = DEFAULT_CONTRACT_PATH,
     openapi_paths: dict | None = None,
@@ -328,6 +351,7 @@ def main() -> int:
     pagination_response_issues = pagination_response_contract_issues(Path(args.contract_path))
     error_response_issues = error_response_contract_issues()
     semantic_error_status_issues = semantic_error_status_contract_issues()
+    export_response_issues = export_response_contract_issues()
     async_issues = async_response_contract_issues(Path(args.contract_path))
     async_body_issues = async_response_body_contract_issues(Path(args.contract_path))
     if (
@@ -337,6 +361,7 @@ def main() -> int:
         or pagination_response_issues
         or error_response_issues
         or semantic_error_status_issues
+        or export_response_issues
         or async_issues
         or async_body_issues
     ):
@@ -363,6 +388,10 @@ def main() -> int:
         if semantic_error_status_issues:
             print("api contract semantic error status issues:", file=sys.stderr)
             for issue in semantic_error_status_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if export_response_issues:
+            print("api contract export response issues:", file=sys.stderr)
+            for issue in export_response_issues:
                 print(f"- {issue}", file=sys.stderr)
         if async_issues:
             print("api contract async response issues:", file=sys.stderr)

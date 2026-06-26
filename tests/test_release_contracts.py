@@ -1074,6 +1074,49 @@ def test_api_contract_semantic_error_statuses_are_documented():
     assert issues == []
 
 
+def test_api_contract_export_response_exposes_delivery_metadata():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.export_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_export_response_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/reaction-sets/{reaction_set_id}/export": {
+                "post": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["reaction_set_id", "format"],
+                                        "properties": {
+                                            "reaction_set_id": {"type": "integer"},
+                                            "format": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.export_response_contract_issues(openapi=openapi)
+
+    assert issues == [
+        "POST /api/v1/reaction-sets/{}/export missing response fields: "
+        "output_path, mime_type, reaction_count, audit_entry_count"
+    ]
+
+
 def test_api_contract_validator_reports_missing_semantic_error_status():
     validate_api_contract = load_validate_api_contract()
     openapi = {

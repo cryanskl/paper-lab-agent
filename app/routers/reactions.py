@@ -82,6 +82,15 @@ class VerifyIn(BaseModel):
         return self
 
 
+class ExportResponse(BaseModel):
+    reaction_set_id: int
+    format: str
+    output_path: str
+    mime_type: str
+    reaction_count: int
+    audit_entry_count: int
+
+
 @router.get("/reaction-sets/{reaction_set_id}")
 def get_reaction_set(reaction_set_id: int) -> dict:
     with get_conn() as conn:
@@ -118,6 +127,7 @@ def verify(reaction_id: int, body: VerifyIn) -> dict:
 
 @router.post(
     "/reaction-sets/{reaction_set_id}/export",
+    response_model=ExportResponse,
     responses={
         400: {"description": "Unsupported export format"},
         409: {"description": "Reaction set is not fully verified"},
