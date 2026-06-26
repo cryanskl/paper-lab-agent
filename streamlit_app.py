@@ -5,6 +5,7 @@ from pathlib import Path
 import streamlit as st
 
 from app.frontend_api import (
+    api_docs_links,
     crawl_job_diagnostic_rows,
     crawl_job_rows,
     crawl_journal_options,
@@ -112,6 +113,9 @@ with st.sidebar:
     runtime = status.get("runtime", {})
     st.caption(f"API: {runtime.get('api_prefix', '/api/v1')}")
     st.caption(f"version: {runtime.get('version') or '-'}")
+    st.subheader("API 文档")
+    for label, url in api_docs_links(API_BASE).items():
+        st.link_button(label, url)
     st.caption(f"scheduler_enabled: {runtime.get('scheduler_enabled', False)}")
     scheduler_jobs = runtime.get("scheduler_jobs") or []
     if scheduler_jobs:

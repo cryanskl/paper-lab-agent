@@ -858,3 +858,27 @@ def test_rag_source_rows_include_citation_and_location_labels():
             "score": None,
         },
     ]
+
+
+def test_api_docs_links_use_service_root_when_api_base_includes_version_prefix():
+    from app import frontend_api
+
+    links = frontend_api.api_docs_links("http://127.0.0.1:8000/api/v1")
+
+    assert links == {
+        "OpenAPI JSON": "http://127.0.0.1:8000/openapi.json",
+        "Swagger UI": "http://127.0.0.1:8000/docs",
+        "ReDoc": "http://127.0.0.1:8000/redoc",
+    }
+
+
+def test_api_docs_links_preserve_custom_api_base_without_version_prefix():
+    from app import frontend_api
+
+    links = frontend_api.api_docs_links("https://paper-lab.example.test/custom-api/")
+
+    assert links == {
+        "OpenAPI JSON": "https://paper-lab.example.test/custom-api/openapi.json",
+        "Swagger UI": "https://paper-lab.example.test/custom-api/docs",
+        "ReDoc": "https://paper-lab.example.test/custom-api/redoc",
+    }

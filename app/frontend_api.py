@@ -21,6 +21,17 @@ def normalize_path(path: str) -> str:
     return f"/{path.lstrip('/')}"
 
 
+def api_docs_links(base_url: str) -> dict[str, str]:
+    root = normalize_base_url(base_url)
+    if root.endswith("/api/v1"):
+        root = root[: -len("/api/v1")]
+    return {
+        "OpenAPI JSON": f"{root}/openapi.json",
+        "Swagger UI": f"{root}/docs",
+        "ReDoc": f"{root}/redoc",
+    }
+
+
 def summarize_text(text: str, limit: int = ERROR_TEXT_LIMIT) -> str:
     value = " ".join((text or "").split())
     if len(value) <= limit:
