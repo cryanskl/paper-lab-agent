@@ -90,7 +90,9 @@ def is_iso8601_timestamp(value: Any) -> bool:
 def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool = False) -> dict[str, Any]:
     artifact_dir = artifact_dir.resolve()
     issues: list[str] = []
-    if artifact_dir.exists():
+    if artifact_dir.exists() and not artifact_dir.is_dir():
+        issues.append(f"release artifact directory is not a directory: {artifact_dir}")
+    elif artifact_dir.exists():
         unexpected_files = sorted(
             path.name
             for path in artifact_dir.iterdir()
