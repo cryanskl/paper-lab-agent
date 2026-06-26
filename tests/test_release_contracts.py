@@ -1749,6 +1749,19 @@ def test_validate_release_artifacts_reports_unreadable_required_artifact(tmp_pat
     assert any(issue.startswith("OpenAPI artifact unreadable:") for issue in report["issues"])
 
 
+def test_validate_release_artifacts_reports_non_utf8_required_artifact(tmp_path):
+    validate_release_artifacts = load_validate_release_artifacts()
+    artifact_dir = tmp_path / "release"
+    artifact_dir.mkdir()
+    (artifact_dir / "openapi.json").write_bytes(b"\xff\xfe\x00")
+    (artifact_dir / "demo-summary.json").write_text("{}", encoding="utf-8")
+    (artifact_dir / "release-manifest.json").write_text("{}", encoding="utf-8")
+
+    report = validate_release_artifacts.validate_release_artifacts(artifact_dir)
+
+    assert any(issue.startswith("OpenAPI artifact unreadable:") for issue in report["issues"])
+
+
 def test_validate_release_artifacts_script_rejects_tampered_artifact(tmp_path):
     import os
     import subprocess
