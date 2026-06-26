@@ -1,3 +1,4 @@
+import json
 import re
 from pathlib import Path
 
@@ -104,6 +105,19 @@ def load_smoke_check():
     smoke_check = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(smoke_check)
     return smoke_check
+
+
+def load_export_openapi():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "export_openapi.py"
+    spec = importlib.util.spec_from_file_location("export_openapi_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    export_openapi = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(export_openapi)
+    return export_openapi
 
 
 def test_env_example_contains_required_external_dependency_keys():
@@ -533,6 +547,14 @@ def test_readme_documents_current_runtime_version():
     assert f"当前版本：`{namespace['__version__']}`" in readme
 
 
+def test_readme_documents_openapi_export_command():
+    repo = Path(__file__).resolve().parent.parent
+    readme = (repo / "README.md").read_text(encoding="utf-8")
+
+    assert "python scripts/export_openapi.py --output out/openapi.json" in readme
+    assert "不启动服务" in readme
+
+
 def test_ci_workflow_runs_bounded_release_gate():
     repo = Path(__file__).resolve().parent.parent
     workflow = (repo / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
@@ -563,6 +585,7 @@ def test_release_checklist_documents_publish_gates():
         "python scripts/health_check.py --require-release-ready",
         "python scripts/health_check.py --require-frontend",
         "python scripts/health_check.py --require-grobid",
+        "python scripts/export_openapi.py --output out/openapi.json",
         "workflow_dispatch",
     ]:
         assert required in checklist
@@ -660,6 +683,49 @@ def test_release_check_compiles_application_package():
 
     assert "-m compileall" in release_check
     assert " app " in release_check or " app\n" in release_check
+
+
+def test_release_check_validates_openapi_export_script():
+    repo = Path(__file__).resolve().parent.parent
+    release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert "scripts/export_openapi.py" in release_check
+    assert "scripts/export_openapi.py --help" in release_check
+
+
+def test_export_openapi_script_writes_publishable_schema(tmp_path):
+    export_openapi = load_export_openapi()
+    output_path = tmp_path / "openapi.json"
+
+    export_openapi.write_openapi(output_path)
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    tag_names = {tag["name"] for tag in payload["tags"]}
+    assert payload["info"]["title"] == "paper-lab-agent"
+    assert payload["info"]["version"] == "0.1.0"
+    assert "/api/v1/health" in payload["paths"]
+    assert "system" in tag_names
+    assert payload["components"]["schemas"]["ErrorResponse"]
+
+
+def test_export_openapi_script_runs_as_file(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    output_path = tmp_path / "openapi.json"
+
+    result = subprocess.run(
+        [sys.executable, "scripts/export_openapi.py", "--output", str(output_path), "--compact"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["info"]["title"] == "paper-lab-agent"
 
 
 def test_release_check_derives_expected_runtime_version_from_app_version():

@@ -14,9 +14,10 @@ fi
 bash -n scripts/env.sh
 bash -n scripts/dev.sh
 "${PYTHON_CMD[@]}" -m compileall -q app scripts tests streamlit_app.py
-"${PYTHON_CMD[@]}" -m py_compile scripts/doctor.py scripts/health_check.py scripts/import_fixtures.py scripts/prepare_demo_data.py scripts/smoke_check.py scripts/validate_api_contract.py scripts/validate_bug_docs.py scripts/validate_docs_links.py scripts/validate_env_example.py scripts/validate_readme_commands.py scripts/validate_release_hygiene.py scripts/validate_requirements.py scripts/validate_schema.py streamlit_app.py
+"${PYTHON_CMD[@]}" -m py_compile scripts/doctor.py scripts/export_openapi.py scripts/health_check.py scripts/import_fixtures.py scripts/prepare_demo_data.py scripts/smoke_check.py scripts/validate_api_contract.py scripts/validate_bug_docs.py scripts/validate_docs_links.py scripts/validate_env_example.py scripts/validate_readme_commands.py scripts/validate_release_hygiene.py scripts/validate_requirements.py scripts/validate_schema.py streamlit_app.py
 "${PYTHON_CMD[@]}" scripts/doctor.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact
+"${PYTHON_CMD[@]}" scripts/export_openapi.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/health_check.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/prepare_demo_data.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/validate_api_contract.py
@@ -27,6 +28,25 @@ bash -n scripts/dev.sh
 "${PYTHON_CMD[@]}" scripts/validate_release_hygiene.py
 "${PYTHON_CMD[@]}" scripts/validate_requirements.py
 "${PYTHON_CMD[@]}" scripts/validate_schema.py
+OPENAPI_JSON="$(mktemp)"
+"${PYTHON_CMD[@]}" scripts/export_openapi.py --output "${OPENAPI_JSON}" --compact
+OPENAPI_JSON="${OPENAPI_JSON}" "${PYTHON_CMD[@]}" - <<'PY'
+import json
+import os
+from pathlib import Path
+
+payload = json.loads(Path(os.environ["OPENAPI_JSON"]).read_text(encoding="utf-8"))
+tag_names = {tag.get("name") for tag in payload.get("tags", [])}
+if payload.get("info", {}).get("title") != "paper-lab-agent":
+    raise SystemExit("release_check failed: OpenAPI title mismatch")
+if "/api/v1/health" not in payload.get("paths", {}):
+    raise SystemExit("release_check failed: OpenAPI missing /api/v1/health")
+if "system" not in tag_names:
+    raise SystemExit("release_check failed: OpenAPI missing system tag metadata")
+if "ErrorResponse" not in payload.get("components", {}).get("schemas", {}):
+    raise SystemExit("release_check failed: OpenAPI missing ErrorResponse schema")
+PY
+rm -f "${OPENAPI_JSON}"
 DEV_CHECK_JSON="$("${PYTHON_CMD[@]}" - <<'PY'
 import json
 import os
