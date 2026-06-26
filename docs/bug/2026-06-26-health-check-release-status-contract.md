@@ -15,3 +15,5 @@
 ## 验证
 
 新增 `test_health_check_requires_release_readiness_and_demo_data_keys` 覆盖基础契约；完整验证以 `bash scripts/release_check.sh` 为准。
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。

@@ -15,3 +15,5 @@ GROBID TEI 的 `biblStruct` 参考文献可能把 DOI 写在 `idno` 中，把链
 ## 验证
 
 新增 `test_sections_from_tei_extracts_biblstruct_reference_identifiers` 覆盖 `biblStruct` 中 DOI 与 URL 的解析。完整验证以 `bash scripts/release_check.sh` 为准。
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。

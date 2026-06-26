@@ -1,5 +1,5 @@
 import re
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, field_validator
@@ -7,7 +7,7 @@ from pydantic import BaseModel, field_validator
 from app.clients.unpaywall import UnpaywallClient, oa_status, web_url
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
-from app.errors import AppError, PageResponse, page
+from app.errors import AppError, page
 from app.services.classification import get_classifier
 from app.services.crawl import normalize_doi, unpaywall_client_options
 from app.utils import json_dumps, json_loads
@@ -30,6 +30,64 @@ class CategoryOverrideIn(BaseModel):
         if normalized != "manual":
             raise ValueError("method must be manual")
         return normalized
+
+
+class CategoryDetailResponse(BaseModel):
+    id: int
+    slug: str
+    name: str
+    confidence: Optional[float] = None
+    method: str
+
+
+class PaperDetailResponse(BaseModel):
+    id: int
+    doi: Optional[str] = None
+    title: str
+    abstract: Optional[str] = None
+    authors: list[dict[str, Any]]
+    journal_id: Optional[int] = None
+    journal_name: Optional[str] = None
+    published_date: Optional[str] = None
+    published_year: Optional[int] = None
+    oa_status: Optional[str] = None
+    oa_pdf_url: Optional[str] = None
+    landing_url: Optional[str] = None
+    source_api: Optional[str] = None
+    dedupe_key: Optional[str] = None
+    has_doi: bool
+    dedupe_strategy: str
+    categories: list[str]
+    category_details: list[CategoryDetailResponse]
+    raw_metadata: dict[str, Any]
+
+
+class PaperListItemResponse(BaseModel):
+    id: int
+    doi: Optional[str] = None
+    title: str
+    abstract: Optional[str] = None
+    authors: list[dict[str, Any]]
+    journal_id: Optional[int] = None
+    journal_name: Optional[str] = None
+    published_date: Optional[str] = None
+    published_year: Optional[int] = None
+    oa_status: Optional[str] = None
+    oa_pdf_url: Optional[str] = None
+    landing_url: Optional[str] = None
+    source_api: Optional[str] = None
+    dedupe_key: Optional[str] = None
+    has_doi: bool
+    dedupe_strategy: str
+    categories: list[str]
+    category_details: list[CategoryDetailResponse]
+
+
+class PaperListResponse(BaseModel):
+    items: list[PaperListItemResponse]
+    total: int
+    page: int
+    page_size: int
 
 
 def category_details_for(conn, paper_id: int) -> list[dict]:
@@ -93,7 +151,7 @@ def serialize_paper(row: dict, category_details: list[dict]) -> dict:
     }
 
 
-@router.get("", response_model=PageResponse)
+@router.get("", response_model=PaperListResponse)
 def list_papers(
     q: Optional[str] = None,
     category: Optional[str] = None,
@@ -154,7 +212,7 @@ def list_papers(
     return page(items, total, page_num, page_size)
 
 
-@router.get("/{paper_id}")
+@router.get("/{paper_id}", response_model=PaperDetailResponse)
 def get_paper(paper_id: int) -> dict:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM papers WHERE id=?", (paper_id,)).fetchone()
@@ -166,7 +224,7 @@ def get_paper(paper_id: int) -> dict:
         }
 
 
-@router.post("/{paper_id}/resolve-oa")
+@router.post("/{paper_id}/resolve-oa", response_model=PaperDetailResponse)
 async def resolve_oa(paper_id: int) -> dict:
     settings = get_settings()
     with get_conn() as conn:
@@ -199,7 +257,7 @@ async def resolve_oa(paper_id: int) -> dict:
     return get_paper(paper_id)
 
 
-@router.post("/{paper_id}/classify")
+@router.post("/{paper_id}/classify", response_model=PaperDetailResponse)
 def classify_paper(paper_id: int) -> dict:
     settings = get_settings()
     with get_conn() as conn:
@@ -227,7 +285,7 @@ def classify_paper(paper_id: int) -> dict:
     return get_paper(paper_id)
 
 
-@router.put("/{paper_id}/categories")
+@router.put("/{paper_id}/categories", response_model=PaperDetailResponse)
 def override_categories(paper_id: int, body: CategoryOverrideIn) -> dict:
     category_ids = list(dict.fromkeys(body.category_ids))
     with get_conn() as conn:

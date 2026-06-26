@@ -15,3 +15,5 @@
 ## 验证
 
 新增 `test_crawl_run_accepts_missing_body_with_default_all_active_journals` 覆盖空请求体默认抓取；完整验证以 `bash scripts/release_check.sh` 为准。
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。

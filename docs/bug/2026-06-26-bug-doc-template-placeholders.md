@@ -20,3 +20,5 @@ validator 只检查标题、必需章节和空章节，没有检查模板中的�
 python -m pytest tests/test_release_contracts.py::test_bug_doc_validator_reports_missing_title tests/test_release_contracts.py::test_bug_doc_validator_reports_unresolved_template_placeholders -q
 python scripts/validate_bug_docs.py
 ```
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。

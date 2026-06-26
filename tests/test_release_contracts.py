@@ -1,4 +1,7 @@
+import json
 import re
+import string
+import zipfile
 from pathlib import Path
 
 
@@ -13,6 +16,19 @@ def load_validate_env_example():
     validate_env_example = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(validate_env_example)
     return validate_env_example
+
+
+def load_doctor():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+    return doctor
 
 
 def load_validate_release_hygiene():
@@ -104,6 +120,32 @@ def load_smoke_check():
     smoke_check = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(smoke_check)
     return smoke_check
+
+
+def load_export_openapi():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "export_openapi.py"
+    spec = importlib.util.spec_from_file_location("export_openapi_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    export_openapi = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(export_openapi)
+    return export_openapi
+
+
+def load_export_release_artifacts():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "export_release_artifacts.py"
+    spec = importlib.util.spec_from_file_location("export_release_artifacts_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    export_release_artifacts = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(export_release_artifacts)
+    return export_release_artifacts
 
 
 def test_env_example_contains_required_external_dependency_keys():
@@ -334,6 +376,113 @@ def test_bug_doc_validator_reports_unresolved_template_placeholders(tmp_path):
     ) in issues
 
 
+def test_bug_doc_validator_reports_pending_release_gate_evidence(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_bug_docs.py"
+    spec = importlib.util.spec_from_file_location("validate_bug_docs_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_bug_docs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_bug_docs)
+
+    bug_dir = tmp_path / "docs" / "bug"
+    bug_dir.mkdir(parents=True)
+    (bug_dir / "README.md").write_text("# Bug 记录约定\n", encoding="utf-8")
+    (bug_dir / "2026-06-26-pending-gate.md").write_text(
+        "# Pending gate\n\n"
+        "## 现象\n\n"
+        "- observed\n\n"
+        "## 原因\n\n"
+        "- reason\n\n"
+        "## 修复\n\n"
+        "- fix\n\n"
+        "## 验证\n\n"
+        "- RED 证据：failed first\n"
+        "- GREEN 证据：target test passed\n"
+        "- 完整 gate：待运行 `bash scripts/release_check.sh`。\n",
+        encoding="utf-8",
+    )
+
+    issues = validate_bug_docs.bug_doc_issues(tmp_path)
+
+    assert (
+        "docs/bug/2026-06-26-pending-gate.md: pending release gate evidence"
+    ) in issues
+
+
+def test_bug_doc_validator_reports_release_gate_without_passed_count(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_bug_docs.py"
+    spec = importlib.util.spec_from_file_location("validate_bug_docs_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_bug_docs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_bug_docs)
+
+    bug_dir = tmp_path / "docs" / "bug"
+    bug_dir.mkdir(parents=True)
+    (bug_dir / "README.md").write_text("# Bug 记录约定\n", encoding="utf-8")
+    (bug_dir / "2026-06-26-no-gate-count.md").write_text(
+        "# Missing gate count\n\n"
+        "## 现象\n\n"
+        "- observed\n\n"
+        "## 原因\n\n"
+        "- reason\n\n"
+        "## 修复\n\n"
+        "- fix\n\n"
+        "## 验证\n\n"
+        "- RED 证据：failed first\n"
+        "- GREEN 证据：target test passed\n"
+        "- 完整 gate：`bash scripts/release_check.sh`\n",
+        encoding="utf-8",
+    )
+
+    issues = validate_bug_docs.bug_doc_issues(tmp_path)
+
+    assert (
+        "docs/bug/2026-06-26-no-gate-count.md: incomplete release gate evidence"
+    ) in issues
+
+
+def test_bug_doc_validator_reports_missing_release_gate_evidence(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_bug_docs.py"
+    spec = importlib.util.spec_from_file_location("validate_bug_docs_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_bug_docs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_bug_docs)
+
+    bug_dir = tmp_path / "docs" / "bug"
+    bug_dir.mkdir(parents=True)
+    (bug_dir / "README.md").write_text("# Bug 记录约定\n", encoding="utf-8")
+    (bug_dir / "2026-06-26-missing-gate.md").write_text(
+        "# Missing gate evidence\n\n"
+        "## 现象\n\n"
+        "- observed\n\n"
+        "## 原因\n\n"
+        "- reason\n\n"
+        "## 修复\n\n"
+        "- fix\n\n"
+        "## 验证\n\n"
+        "- RED 证据：failed first\n"
+        "- GREEN 证据：target test passed\n",
+        encoding="utf-8",
+    )
+
+    issues = validate_bug_docs.bug_doc_issues(tmp_path)
+
+    assert (
+        "docs/bug/2026-06-26-missing-gate.md: missing release gate evidence"
+    ) in issues
+
+
 def test_release_hygiene_validator_reports_tracked_generated_artifacts():
     validate_release_hygiene = load_validate_release_hygiene()
 
@@ -446,6 +595,99 @@ def test_release_hygiene_validator_reports_missing_ci_timeout(tmp_path):
     assert "ci_timeout_minutes" in missing
 
 
+def test_release_hygiene_validator_reports_missing_ci_requirements_install(tmp_path):
+    validate_release_hygiene = load_validate_release_hygiene()
+    workflow_dir = tmp_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "ci.yml").write_text(
+        "name: ci\n"
+        "on: [push, pull_request, workflow_dispatch]\n"
+        "jobs:\n"
+        "  test:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    timeout-minutes: 15\n"
+        "    steps:\n"
+        "      - uses: actions/checkout@v4\n"
+        "      - run: bash scripts/release_check.sh\n",
+        encoding="utf-8",
+    )
+
+    missing = validate_release_hygiene.missing_required_ci_release_gate(tmp_path)
+
+    assert "ci_installs_requirements" in missing
+
+
+def test_release_hygiene_validator_reports_missing_ci_python_setup(tmp_path):
+    validate_release_hygiene = load_validate_release_hygiene()
+    workflow_dir = tmp_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "ci.yml").write_text(
+        "name: ci\n"
+        "on: [push, pull_request, workflow_dispatch]\n"
+        "jobs:\n"
+        "  test:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    timeout-minutes: 15\n"
+        "    steps:\n"
+        "      - uses: actions/checkout@v4\n"
+        "      - run: python -m pip install -r requirements.txt\n"
+        "      - run: bash scripts/release_check.sh\n",
+        encoding="utf-8",
+    )
+
+    missing = validate_release_hygiene.missing_required_ci_release_gate(tmp_path)
+
+    assert "ci_sets_up_python" in missing
+
+
+def test_release_hygiene_validator_reports_missing_ci_python_version(tmp_path):
+    validate_release_hygiene = load_validate_release_hygiene()
+    workflow_dir = tmp_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "ci.yml").write_text(
+        "name: ci\n"
+        "on: [push, pull_request, workflow_dispatch]\n"
+        "jobs:\n"
+        "  test:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    timeout-minutes: 15\n"
+        "    steps:\n"
+        "      - uses: actions/setup-python@v5\n"
+        "      - run: python -m pip install -r requirements.txt\n"
+        "      - run: bash scripts/release_check.sh\n",
+        encoding="utf-8",
+    )
+
+    missing = validate_release_hygiene.missing_required_ci_release_gate(tmp_path)
+
+    assert "ci_python_version" in missing
+
+
+def test_release_hygiene_validator_reports_missing_ci_checkout(tmp_path):
+    validate_release_hygiene = load_validate_release_hygiene()
+    workflow_dir = tmp_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "ci.yml").write_text(
+        "name: ci\n"
+        "on: [push, pull_request, workflow_dispatch]\n"
+        "jobs:\n"
+        "  test:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    timeout-minutes: 15\n"
+        "    steps:\n"
+        "      - uses: actions/setup-python@v5\n"
+        "        with:\n"
+        "          python-version: \"3.11\"\n"
+        "      - run: python -m pip install -r requirements.txt\n"
+        "      - run: bash scripts/release_check.sh\n",
+        encoding="utf-8",
+    )
+
+    missing = validate_release_hygiene.missing_required_ci_release_gate(tmp_path)
+
+    assert "ci_checks_out_repo" in missing
+
+
 def test_release_hygiene_validator_requires_ci_push_and_pull_request_triggers():
     validate_release_hygiene = load_validate_release_hygiene()
     repo = Path(__file__).resolve().parent.parent
@@ -460,7 +702,19 @@ def test_release_hygiene_validator_accepts_inline_ci_triggers(tmp_path):
     workflow_dir = tmp_path / ".github" / "workflows"
     workflow_dir.mkdir(parents=True)
     (workflow_dir / "ci.yml").write_text(
-        "name: ci\non: [push, pull_request, workflow_dispatch]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n    steps:\n      - run: bash scripts/release_check.sh\n",
+        "name: ci\n"
+        "on: [push, pull_request, workflow_dispatch]\n"
+        "jobs:\n"
+        "  test:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    timeout-minutes: 15\n"
+        "    steps:\n"
+        "      - uses: actions/checkout@v4\n"
+        "      - uses: actions/setup-python@v5\n"
+        "        with:\n"
+        "          python-version: \"3.11\"\n"
+        "      - run: python -m pip install -r requirements.txt\n"
+        "      - run: bash scripts/release_check.sh\n",
         encoding="utf-8",
     )
 
@@ -533,6 +787,14 @@ def test_readme_documents_current_runtime_version():
     assert f"当前版本：`{namespace['__version__']}`" in readme
 
 
+def test_readme_documents_openapi_export_command():
+    repo = Path(__file__).resolve().parent.parent
+    readme = (repo / "README.md").read_text(encoding="utf-8")
+
+    assert "python scripts/export_openapi.py --output out/openapi.json" in readme
+    assert "不启动服务" in readme
+
+
 def test_ci_workflow_runs_bounded_release_gate():
     repo = Path(__file__).resolve().parent.parent
     workflow = (repo / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
@@ -560,9 +822,12 @@ def test_release_checklist_documents_publish_gates():
     for required in [
         "bash scripts/release_check.sh",
         "python scripts/prepare_demo_data.py --summary-only --compact",
+        "python scripts/health_check.py --summary-only --compact",
         "python scripts/health_check.py --require-release-ready",
         "python scripts/health_check.py --require-frontend",
         "python scripts/health_check.py --require-grobid",
+        "python scripts/export_openapi.py --output out/openapi.json",
+        "python scripts/export_release_artifacts.py --output-dir out/release --compact",
         "workflow_dispatch",
     ]:
         assert required in checklist
@@ -611,6 +876,145 @@ def test_doctor_script_reports_missing_required_project_files(tmp_path):
     assert "streamlit_app.py" in missing
 
 
+def test_doctor_env_example_check_matches_required_runtime_keys(tmp_path):
+    doctor = load_doctor()
+    validate_env_example = load_validate_env_example()
+    repo = Path(__file__).resolve().parent.parent
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_path = tmp_path / ".env.example"
+
+    for key in validate_env_example.required_env_keys():
+        env_path.write_text(
+            re.sub(rf"^{re.escape(key)}=.*\n?", "", env_text, flags=re.MULTILINE),
+            encoding="utf-8",
+        )
+
+        check = doctor.check_env_example(tmp_path)
+
+        assert {
+            "code": "missing_env_example_key",
+            "key": key,
+            "message": f".env.example must document {key}",
+        } in check["issues"]
+
+
+def test_doctor_env_example_check_ignores_comments_and_similar_key_names(tmp_path):
+    doctor = load_doctor()
+    repo = Path(__file__).resolve().parent.parent
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_text = re.sub(
+        r"^OPENALEX_MAILTO=.*$",
+        "MY_OPENALEX_MAILTO=lab@example.test",
+        env_text,
+        flags=re.MULTILINE,
+    )
+    env_text = re.sub(
+        r"^UNPAYWALL_EMAIL=.*$",
+        "# UNPAYWALL_EMAIL=ops@example.test",
+        env_text,
+        flags=re.MULTILINE,
+    )
+    (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
+
+    check = doctor.check_env_example(tmp_path)
+    missing_keys = [issue.get("key") for issue in check["issues"]]
+
+    assert missing_keys == ["OPENALEX_MAILTO", "UNPAYWALL_EMAIL"]
+
+
+def test_doctor_env_example_check_rejects_secret_like_values(tmp_path):
+    doctor = load_doctor()
+    repo = Path(__file__).resolve().parent.parent
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_text = env_text.replace("LLM_API_KEY=\n", "LLM_API_KEY=sk-test\n")
+    (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
+
+    check = doctor.check_env_example(tmp_path)
+
+    assert {
+        "code": "non_empty_env_example_secret",
+        "key": "LLM_API_KEY",
+        "message": ".env.example must leave LLM_API_KEY blank",
+    } in check["issues"]
+
+
+def test_doctor_env_example_check_rejects_settings_default_drift(tmp_path):
+    doctor = load_doctor()
+    repo = Path(__file__).resolve().parent.parent
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_text = env_text.replace("LLM_MODEL=gpt-4o-mini\n", "LLM_MODEL=legacy-model\n")
+    (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
+
+    check = doctor.check_env_example(tmp_path)
+
+    assert {
+        "code": "env_example_default_drift",
+        "key": "LLM_MODEL",
+        "expected": "gpt-4o-mini",
+        "actual": "legacy-model",
+        "message": ".env.example LLM_MODEL must match default gpt-4o-mini",
+    } in check["issues"]
+
+
+def test_doctor_env_example_check_rejects_api_base_url_runtime_drift(tmp_path):
+    doctor = load_doctor()
+    repo = Path(__file__).resolve().parent.parent
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_text = env_text.replace("API_PORT=8000\n", "API_PORT=9000\n")
+    (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
+
+    check = doctor.check_env_example(tmp_path)
+
+    assert {
+        "code": "env_example_runtime_default_drift",
+        "key": "API_BASE_URL",
+        "expected": "http://127.0.0.1:9000/api/v1",
+        "actual": "http://127.0.0.1:8000/api/v1",
+        "message": ".env.example API_BASE_URL must match runtime default http://127.0.0.1:9000/api/v1",
+    } in check["issues"]
+
+
+def test_doctor_env_example_check_rejects_frontend_url_runtime_drift(tmp_path):
+    doctor = load_doctor()
+    repo = Path(__file__).resolve().parent.parent
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_text = env_text.replace("STREAMLIT_PORT=8501\n", "STREAMLIT_PORT=9501\n")
+    (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
+
+    check = doctor.check_env_example(tmp_path)
+
+    assert {
+        "code": "env_example_runtime_default_drift",
+        "key": "FRONTEND_URL",
+        "expected": "http://127.0.0.1:9501",
+        "actual": "http://127.0.0.1:8501",
+        "message": ".env.example FRONTEND_URL must match runtime default http://127.0.0.1:9501",
+    } in check["issues"]
+
+
+def test_doctor_env_example_check_rejects_dev_ready_timeout_runtime_drift(tmp_path):
+    doctor = load_doctor()
+    repo = Path(__file__).resolve().parent.parent
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_text = env_text.replace("DEV_READY_TIMEOUT=30\n", "DEV_READY_TIMEOUT=10\n")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "dev.sh").write_text(
+        'DEV_READY_TIMEOUT="${DEV_READY_TIMEOUT:-30}"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
+
+    check = doctor.check_env_example(tmp_path)
+
+    assert {
+        "code": "env_example_runtime_default_drift",
+        "key": "DEV_READY_TIMEOUT",
+        "expected": "30",
+        "actual": "10",
+        "message": ".env.example DEV_READY_TIMEOUT must match runtime default 30",
+    } in check["issues"]
+
+
 def test_doctor_script_reports_missing_python_dependencies(monkeypatch):
     import importlib.util
 
@@ -640,6 +1044,124 @@ def test_doctor_script_reports_missing_python_dependencies(monkeypatch):
     } in check["issues"]
 
 
+def test_doctor_script_reports_local_storage_preflight_paths(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+
+    project = tmp_path / "project"
+    project.mkdir()
+    data_dir = tmp_path / "local-data"
+
+    check = doctor.check_local_storage(project, env={"PAPER_LAB_DATA_DIR": str(data_dir)})
+
+    assert check["name"] == "local_storage"
+    assert check["status"] == "pass"
+    assert check["issues"] == []
+    assert check["paths"]["data_dir"] == str(data_dir)
+    assert check["paths"]["database_parent"] == str(data_dir)
+    assert check["paths"]["pdf_dir"] == str(data_dir / "pdfs")
+    assert check["paths"]["vector_db_parent"] == str(data_dir)
+    assert data_dir.exists()
+
+
+def test_doctor_script_reports_storage_parent_that_is_not_directory(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+
+    blocked_parent = tmp_path / "not-a-directory"
+    blocked_parent.write_text("file blocks database parent", encoding="utf-8")
+
+    check = doctor.check_local_storage(
+        repo,
+        env={
+            "PAPER_LAB_DATA_DIR": str(tmp_path / "data"),
+            "DATABASE_PATH": str(blocked_parent / "plasma.db"),
+        },
+    )
+
+    assert check["status"] == "fail"
+    assert {
+        "code": "storage_path_not_directory",
+        "key": "database_parent",
+        "path": str(blocked_parent),
+        "message": f"database_parent must be a writable directory: {blocked_parent}",
+    } in check["issues"]
+
+
+def test_doctor_script_local_storage_preflight_reads_env_file(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+
+    project = tmp_path / "project"
+    project.mkdir()
+    blocked_parent = project / "not-a-directory"
+    blocked_parent.write_text("file blocks database parent", encoding="utf-8")
+    (project / ".env").write_text(
+        "\n".join(
+            [
+                "PAPER_LAB_DATA_DIR=env-data",
+                f"DATABASE_PATH={blocked_parent}/plasma.db",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    check = doctor.check_local_storage(project, env={})
+
+    assert check["status"] == "fail"
+    assert check["paths"]["data_dir"] == str(project / "env-data")
+    assert any(
+        issue.get("code") == "storage_path_not_directory"
+        and issue.get("key") == "database_parent"
+        and issue.get("path") == str(blocked_parent)
+        for issue in check["issues"]
+    )
+
+
+def test_doctor_script_local_storage_preflight_keeps_environment_override(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".env").write_text("PAPER_LAB_DATA_DIR=env-data\n", encoding="utf-8")
+    override_data_dir = tmp_path / "override-data"
+
+    check = doctor.check_local_storage(project, env={"PAPER_LAB_DATA_DIR": str(override_data_dir)})
+
+    assert check["status"] == "pass"
+    assert check["paths"]["data_dir"] == str(override_data_dir)
+    assert check["paths"]["pdf_dir"] == str(override_data_dir / "pdfs")
+
+
 def test_doctor_preflight_is_documented_and_in_release_gate():
     repo = Path(__file__).resolve().parent.parent
     readme = (repo / "README.md").read_text(encoding="utf-8")
@@ -648,7 +1170,11 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
 
     assert "python scripts/doctor.py --compact" in readme
     assert "python scripts/doctor.py --strict --compact" in readme
+    assert "本地存储目录可创建和可写" in readme
+    assert "读取 `.env`" in readme
     assert "python scripts/doctor.py --strict --compact" in checklist
+    assert "local storage paths are creatable and writable" in checklist
+    assert "reads `.env`" in checklist
     assert "scripts/doctor.py" in release_check
     assert "scripts/doctor.py --help" in release_check
     assert "scripts/doctor.py --strict --compact" in release_check
@@ -660,6 +1186,540 @@ def test_release_check_compiles_application_package():
 
     assert "-m compileall" in release_check
     assert " app " in release_check or " app\n" in release_check
+
+
+def test_release_check_validates_openapi_export_script():
+    repo = Path(__file__).resolve().parent.parent
+    release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert "scripts/export_openapi.py" in release_check
+    assert "scripts/export_openapi.py --help" in release_check
+
+
+def test_release_check_validates_release_artifact_bundle():
+    repo = Path(__file__).resolve().parent.parent
+    release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+    readme = (repo / "README.md").read_text(encoding="utf-8")
+    checklist = (repo / "docs" / "release-checklist.md").read_text(encoding="utf-8")
+
+    assert "scripts/export_release_artifacts.py" in release_check
+    assert "scripts/export_release_artifacts.py --help" in release_check
+    assert "scripts/package_release_artifacts.py" in release_check
+    assert "scripts/package_release_artifacts.py --help" in release_check
+    assert "scripts/validate_release_package.py" in release_check
+    assert "scripts/validate_release_package.py --help" in release_check
+    assert "scripts/validate_release_artifacts.py" in release_check
+    assert "scripts/validate_release_artifacts.py --help" in release_check
+    assert "RELEASE_ARTIFACTS_JSON" in release_check
+    assert "release-manifest.json" in release_check
+    assert "demo-summary.json" in release_check
+    assert "openapi.json" in release_check
+    assert "release manifest version does not match OpenAPI version" in release_check
+    assert "checksums" in release_check
+    assert "git_dirty" in release_check
+    assert "python scripts/export_release_artifacts.py --output-dir out/release --compact" in readme
+    assert "python scripts/validate_release_artifacts.py --artifact-dir out/release --compact" in readme
+    assert "--require-clean-source" in readme
+    assert "python scripts/package_release_artifacts.py --artifact-dir out/release --output out/paper-lab-agent-release.zip --compact" in readme
+    assert "python scripts/validate_release_package.py --package out/paper-lab-agent-release.zip --compact" in readme
+    assert "python scripts/export_release_artifacts.py --output-dir out/release --compact" in checklist
+    assert "python scripts/validate_release_artifacts.py --artifact-dir out/release --compact" in checklist
+    assert "python scripts/package_release_artifacts.py --artifact-dir out/release --output out/paper-lab-agent-release.zip --compact" in checklist
+    assert "python scripts/validate_release_package.py --package out/paper-lab-agent-release.zip --compact" in checklist
+    assert "--require-clean-source" in checklist
+
+
+def test_release_check_validates_prepare_demo_data_output_artifact():
+    repo = Path(__file__).resolve().parent.parent
+    release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+    readme = (repo / "README.md").read_text(encoding="utf-8")
+    checklist = (repo / "docs" / "release-checklist.md").read_text(encoding="utf-8")
+
+    assert '"--summary-only"' in release_check
+    assert '"--compact"' in release_check
+    assert '"--output"' in release_check
+    assert "summary_output_payload != summary" in release_check
+    assert "python scripts/prepare_demo_data.py --summary-only --compact --output out/demo-summary.json" in readme
+    assert "python scripts/prepare_demo_data.py --summary-only --compact --output out/demo-summary.json" in checklist
+
+
+def test_export_openapi_script_writes_publishable_schema(tmp_path):
+    export_openapi = load_export_openapi()
+    output_path = tmp_path / "openapi.json"
+
+    export_openapi.write_openapi(output_path)
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    tag_names = {tag["name"] for tag in payload["tags"]}
+    assert payload["info"]["title"] == "paper-lab-agent"
+    assert payload["info"]["version"] == "0.1.0"
+    assert "/api/v1/health" in payload["paths"]
+    assert "system" in tag_names
+    assert payload["components"]["schemas"]["ErrorResponse"]
+
+
+def test_export_openapi_script_runs_as_file(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    output_path = tmp_path / "openapi.json"
+
+    result = subprocess.run(
+        [sys.executable, "scripts/export_openapi.py", "--output", str(output_path), "--compact"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["info"]["title"] == "paper-lab-agent"
+
+
+def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    stdout_manifest = json.loads(result.stdout)
+    manifest = json.loads((output_dir / "release-manifest.json").read_text(encoding="utf-8"))
+    demo_summary = json.loads((output_dir / "demo-summary.json").read_text(encoding="utf-8"))
+    openapi = json.loads((output_dir / "openapi.json").read_text(encoding="utf-8"))
+
+    assert stdout_manifest == manifest
+    assert manifest["service"] == "paper-lab-agent"
+    assert manifest["version"] == openapi["info"]["version"]
+    assert manifest["artifacts"]["openapi"] == "openapi.json"
+    assert manifest["artifacts"]["demo_summary"] == "demo-summary.json"
+    expected_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    expected_branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    expected_dirty = bool(
+        subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    )
+    assert manifest["source"]["git_commit"] == expected_commit
+    assert manifest["source"]["git_branch"] == expected_branch
+    assert manifest["source"]["git_dirty"] is expected_dirty
+    assert set(manifest["checksums"]) == {"openapi.json", "demo-summary.json", "release-manifest.json"}
+    assert all(
+        len(value) == 64 and all(character in string.hexdigits for character in value)
+        for value in manifest["checksums"].values()
+    )
+    assert demo_summary["ready"] is True
+    assert demo_summary["export_formats"] == ["json", "txt", "bolsig"]
+    assert "/api/v1/health" in openapi["paths"]
+
+
+def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    export_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert export_result.returncode == 0, export_result.stderr
+
+    validate_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_artifacts.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert validate_result.returncode == 0, validate_result.stderr
+    payload = json.loads(validate_result.stdout)
+    assert payload["ok"] is True
+    assert payload["artifact_dir"] == str(output_dir)
+    assert payload["service"] == "paper-lab-agent"
+    assert payload["version"] == "0.1.0"
+    assert payload["source"]["git_commit"]
+    assert payload["source"]["git_branch"] == subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert isinstance(payload["source"]["git_dirty"], bool)
+    assert payload["demo_ready"] is True
+    assert payload["demo_export_formats"] == ["json", "txt", "bolsig"]
+    assert payload["openapi_path_count"] == 28
+
+
+def test_validate_release_artifacts_script_rejects_tampered_artifact(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    export_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert export_result.returncode == 0, export_result.stderr
+
+    demo_summary_path = output_dir / "demo-summary.json"
+    demo_summary = json.loads(demo_summary_path.read_text(encoding="utf-8"))
+    demo_summary["ready"] = False
+    demo_summary_path.write_text(json.dumps(demo_summary, ensure_ascii=False), encoding="utf-8")
+
+    validate_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_artifacts.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert validate_result.returncode == 1
+    payload = json.loads(validate_result.stdout)
+    assert payload["ok"] is False
+    assert any("checksum mismatch: demo-summary.json" in issue for issue in payload["issues"])
+
+
+def test_validate_release_artifacts_script_can_require_clean_source(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    export_release_artifacts = load_export_release_artifacts()
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    export_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert export_result.returncode == 0, export_result.stderr
+
+    manifest_path = output_dir / "release-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["source"]["git_dirty"] = True
+    manifest["checksums"]["release-manifest.json"] = export_release_artifacts.manifest_checksum(manifest)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+    validate_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_artifacts.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--require-clean-source",
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert validate_result.returncode == 1
+    payload = json.loads(validate_result.stdout)
+    assert payload["ok"] is False
+    assert "release manifest source.git_dirty must be false for clean-source validation" in payload["issues"]
+
+
+def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    package_path = tmp_path / "paper-lab-agent-release.zip"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    export_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert export_result.returncode == 0, export_result.stderr
+
+    package_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/package_release_artifacts.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--output",
+            str(package_path),
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert package_result.returncode == 0, package_result.stderr
+    payload = json.loads(package_result.stdout)
+    assert payload["ok"] is True
+    assert payload["package_path"] == str(package_path)
+    assert payload["artifact_count"] == 3
+    assert len(payload["package_sha256"]) == 64
+    assert payload["source"]["git_commit"]
+    assert package_path.exists()
+    with zipfile.ZipFile(package_path) as archive:
+        assert sorted(archive.namelist()) == [
+            "demo-summary.json",
+            "openapi.json",
+            "release-manifest.json",
+        ]
+
+    validate_package_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_package.py",
+            "--package",
+            str(package_path),
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert validate_package_result.returncode == 0, validate_package_result.stderr
+    validate_payload = json.loads(validate_package_result.stdout)
+    assert validate_payload["ok"] is True
+    assert validate_payload["package_path"] == str(package_path)
+    assert validate_payload["artifact_count"] == 3
+    assert validate_payload["artifact_names"] == [
+        "demo-summary.json",
+        "openapi.json",
+        "release-manifest.json",
+    ]
+    assert validate_payload["source"]["git_commit"]
+
+
+def test_validate_release_package_script_rejects_tampered_zip_artifact(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    package_path = tmp_path / "paper-lab-agent-release.zip"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    export_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert export_result.returncode == 0, export_result.stderr
+
+    with zipfile.ZipFile(package_path, mode="w") as archive:
+        for artifact_path in sorted(output_dir.iterdir()):
+            payload = artifact_path.read_bytes()
+            if artifact_path.name == "demo-summary.json":
+                demo_summary = json.loads(payload.decode("utf-8"))
+                demo_summary["ready"] = False
+                payload = json.dumps(demo_summary, ensure_ascii=False).encode("utf-8")
+            archive.writestr(artifact_path.name, payload)
+
+    validate_package_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_package.py",
+            "--package",
+            str(package_path),
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert validate_package_result.returncode == 1
+    payload = json.loads(validate_package_result.stdout)
+    assert payload["ok"] is False
+    assert any("checksum mismatch: demo-summary.json" in issue for issue in payload["issues"])
 
 
 def test_release_check_derives_expected_runtime_version_from_app_version():
@@ -714,10 +1774,13 @@ def test_release_check_requires_no_doi_dedupe_smoke_path():
 def test_release_check_requires_document_list_and_detail_smoke_paths():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+    smoke_text = (repo / "scripts" / "smoke_check.py").read_text(encoding="utf-8")
 
     assert '"document_list_total": 1' in release_text
     assert '"document_detail_parse_status": "uploaded"' in release_text
     assert '"document_detail_has_paper": True' in release_text
+    assert '"duplicate_document_matches_original": True' in release_text
+    assert '"duplicate_document_matches_original"' in smoke_text
     assert '"section_list_first_type": "body"' in release_text
     assert '"section_list_has_content": True' in release_text
     assert '"chunk_list_index_status": "indexed"' in release_text
@@ -764,6 +1827,15 @@ def test_release_check_requires_export_source_label_smoke_metadata():
 
     assert '"verified_export_txt_has_source_label": True' in release_text
     assert '"verified_export_bolsig_has_source_label": True' in release_text
+
+
+def test_release_check_requires_json_export_reviewer_audit_metadata():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+    smoke_text = (repo / "scripts" / "smoke_check.py").read_text(encoding="utf-8")
+
+    assert '"verified_export_has_smoke_check_audit": True' in release_text
+    assert '"verified_export_has_smoke_check_audit"' in smoke_text
 
 
 def test_release_check_requires_document_reaction_set_list_smoke_metadata():
@@ -879,6 +1951,10 @@ def test_dev_script_documents_help_mode_without_starting_services():
         "DEV_READY_TIMEOUT",
         "PAPER_LAB_SCHEDULER_ENABLED",
         "python scripts/health_check.py --require-frontend",
+        "python scripts/health_check.py --require-openapi",
+        "/openapi.json",
+        "/docs",
+        "/redoc",
     ]:
         assert required in dev_script
 
@@ -899,6 +1975,37 @@ def test_api_contract_app_routes_are_documented():
     undocumented = validate_api_contract.undocumented_app_routes(repo / "docs" / "接口设计文档.md")
 
     assert undocumented == []
+
+
+def test_api_contract_validator_reports_duplicate_documented_routes(tmp_path):
+    validate_api_contract = load_validate_api_contract()
+    repo = Path(__file__).resolve().parent.parent
+    contract_path = tmp_path / "接口设计文档.md"
+    contract_text = (repo / "docs" / "接口设计文档.md").read_text(encoding="utf-8")
+    contract_path.write_text(
+        contract_text + "\n| GET | `/health` | duplicate row |\n",
+        encoding="utf-8",
+    )
+
+    duplicates = validate_api_contract.duplicate_documented_routes(contract_path)
+
+    assert duplicates == ["GET /api/v1/health documented 2 times"]
+
+
+def test_api_contract_app_routes_expose_openapi_tags():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.untagged_api_route_issues()
+
+    assert issues == []
+
+
+def test_api_contract_openapi_tags_have_metadata_descriptions():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.openapi_tag_metadata_issues()
+
+    assert issues == []
 
 
 def test_api_contract_documents_reaction_verify_reviewer_requirement():
@@ -1029,6 +2136,167 @@ def test_api_contract_async_routes_expose_pending_response_shape():
     assert issues == []
 
 
+def test_api_contract_success_responses_do_not_use_empty_generic_schema():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.empty_success_response_schema_issues()
+
+    assert issues == []
+
+
+def test_api_contract_success_responses_do_not_use_bare_dict_schema():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.bare_success_response_schema_issues()
+
+    assert issues == []
+
+
+def test_api_contract_success_responses_use_named_component_schemas():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.named_success_response_schema_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_empty_success_response_schema():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/crawl/run": {
+                "post": {
+                    "responses": {
+                        "202": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {},
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.empty_success_response_schema_issues(openapi=openapi)
+
+    assert issues == ["POST /api/v1/crawl/run 202 response must declare a non-empty schema"]
+
+
+def test_api_contract_validator_reports_bare_success_response_schema():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/things": {
+                "post": {
+                    "responses": {
+                        "201": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "additionalProperties": True,
+                                    },
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.bare_success_response_schema_issues(openapi=openapi)
+
+    assert issues == ["POST /api/v1/things 201 response must not use a bare dict schema"]
+
+
+def test_api_contract_validator_reports_inline_success_response_schema():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/things": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["id"],
+                                        "properties": {"id": {"type": "integer"}},
+                                    },
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.named_success_response_schema_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/things 200 response must use a named component schema"]
+
+
+def test_api_contract_validator_reports_untagged_api_route():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/things": {
+                "get": {
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.untagged_api_route_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/things missing OpenAPI tags"]
+
+
+def test_api_contract_validator_reports_missing_openapi_tag_metadata():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/things": {
+                "get": {
+                    "tags": ["things"],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+        "tags": [],
+    }
+
+    issues = validate_api_contract.openapi_tag_metadata_issues(openapi=openapi)
+
+    assert issues == ["OpenAPI tag metadata missing: things"]
+
+
+def test_api_contract_validator_reports_openapi_tag_metadata_missing_description():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/things": {
+                "get": {
+                    "tags": ["things"],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+        "tags": [{"name": "things"}],
+    }
+
+    issues = validate_api_contract.openapi_tag_metadata_issues(openapi=openapi)
+
+    assert issues == ["OpenAPI tag metadata missing descriptions: things"]
+
+
 def test_api_contract_validator_reports_missing_async_response_field(tmp_path):
     validate_api_contract = load_validate_api_contract()
     contract_path = tmp_path / "接口设计文档.md"
@@ -1074,6 +2342,360 @@ def test_api_contract_semantic_error_statuses_are_documented():
     assert issues == []
 
 
+def test_api_contract_health_response_exposes_probe_metadata():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.health_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_health_response_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/health": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["status"],
+                                        "properties": {"status": {"type": "string"}},
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.health_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/health missing response fields: service"]
+
+
+def test_api_contract_journal_list_response_exposes_typed_whitelist_items():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.journal_list_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_journal_crud_responses_expose_typed_whitelist_items():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.journal_crud_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_category_list_response_exposes_typed_tree_items():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.category_list_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_category_create_response_exposes_typed_tree_item():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.category_create_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_category_list_item_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/categories": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "name",
+                                                        "slug",
+                                                        "description",
+                                                        "parent_id",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "name": {"type": "string"},
+                                                        "slug": {"type": "string"},
+                                                        "description": {"type": "string"},
+                                                        "parent_id": {"type": "integer"},
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.category_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/categories item fields missing: children"]
+
+
+def test_api_contract_validator_reports_missing_category_child_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/categories": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "name",
+                                                        "slug",
+                                                        "description",
+                                                        "parent_id",
+                                                        "children",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "name": {"type": "string"},
+                                                        "slug": {"type": "string"},
+                                                        "description": {"type": "string"},
+                                                        "parent_id": {"type": "integer"},
+                                                        "children": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "required": ["id", "name", "slug", "description"],
+                                                                "properties": {
+                                                                    "id": {"type": "integer"},
+                                                                    "name": {"type": "string"},
+                                                                    "slug": {"type": "string"},
+                                                                    "description": {"type": "string"},
+                                                                },
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.category_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/categories item child fields missing: parent_id, children"]
+
+
+def test_api_contract_validator_reports_missing_category_create_response_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/categories": {
+                "post": {
+                    "responses": {
+                        "201": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["id", "name", "slug", "description", "parent_id"],
+                                        "properties": {
+                                            "id": {"type": "integer"},
+                                            "name": {"type": "string"},
+                                            "slug": {"type": "string"},
+                                            "description": {"type": "string"},
+                                            "parent_id": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.category_create_response_contract_issues(openapi=openapi)
+
+    assert issues == ["POST /api/v1/categories missing response fields: children"]
+
+
+def test_api_contract_validator_reports_missing_journal_list_item_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/journals": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "name",
+                                                        "publisher",
+                                                        "platform",
+                                                        "url",
+                                                        "issn_print",
+                                                        "issn_electronic",
+                                                        "keywords",
+                                                        "year_from",
+                                                        "year_to",
+                                                        "sci_zone",
+                                                        "impact_factor",
+                                                        "active",
+                                                        "created_at",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "name": {"type": "string"},
+                                                        "publisher": {"type": "string"},
+                                                        "platform": {"type": "string"},
+                                                        "url": {"type": "string"},
+                                                        "issn_print": {"type": "string"},
+                                                        "issn_electronic": {"type": "string"},
+                                                        "keywords": {"type": "array"},
+                                                        "year_from": {"type": "integer"},
+                                                        "year_to": {"type": "integer"},
+                                                        "sci_zone": {"type": "string"},
+                                                        "impact_factor": {"type": "number"},
+                                                        "active": {"type": "boolean"},
+                                                        "created_at": {"type": "string"},
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.journal_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/journals item fields missing: updated_at"]
+
+
+def test_api_contract_validator_reports_missing_journal_crud_response_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/journals/{journal_id}": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "id",
+                                            "name",
+                                            "publisher",
+                                            "platform",
+                                            "url",
+                                            "issn_print",
+                                            "issn_electronic",
+                                            "keywords",
+                                            "year_from",
+                                            "year_to",
+                                            "sci_zone",
+                                            "impact_factor",
+                                            "active",
+                                            "created_at",
+                                        ],
+                                        "properties": {
+                                            "id": {"type": "integer"},
+                                            "name": {"type": "string"},
+                                            "publisher": {"type": "string"},
+                                            "platform": {"type": "string"},
+                                            "url": {"type": "string"},
+                                            "issn_print": {"type": "string"},
+                                            "issn_electronic": {"type": "string"},
+                                            "keywords": {"type": "array"},
+                                            "year_from": {"type": "integer"},
+                                            "year_to": {"type": "integer"},
+                                            "sci_zone": {"type": "string"},
+                                            "impact_factor": {"type": "number"},
+                                            "active": {"type": "boolean"},
+                                            "created_at": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.journal_crud_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/journals/{} missing response fields: updated_at"]
+
+
 def test_api_contract_export_response_exposes_delivery_metadata():
     validate_api_contract = load_validate_api_contract()
 
@@ -1082,12 +2704,1141 @@ def test_api_contract_export_response_exposes_delivery_metadata():
     assert issues == []
 
 
+def test_api_contract_reaction_set_list_response_exposes_typed_review_items():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.reaction_set_list_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_reaction_set_list_item_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/documents/{document_id}/reaction-sets": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "document_id",
+                                                        "name",
+                                                        "gas_mixture",
+                                                        "lxcat_db",
+                                                        "source_note",
+                                                        "status",
+                                                        "verified_by",
+                                                        "verified_at",
+                                                        "created_at",
+                                                        "reaction_count",
+                                                        "verified_count",
+                                                        "unverified_count",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "document_id": {"type": "integer"},
+                                                        "name": {"type": "string"},
+                                                        "gas_mixture": {"type": "string"},
+                                                        "lxcat_db": {"type": "string"},
+                                                        "source_note": {"type": "string"},
+                                                        "status": {"type": "string"},
+                                                        "verified_by": {"type": "string"},
+                                                        "verified_at": {"type": "string"},
+                                                        "created_at": {"type": "string"},
+                                                        "reaction_count": {"type": "integer"},
+                                                        "verified_count": {"type": "integer"},
+                                                        "unverified_count": {"type": "integer"},
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.reaction_set_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/documents/{}/reaction-sets item fields missing: export_ready"]
+
+
 def test_api_contract_document_responses_expose_associated_paper_summary():
     validate_api_contract = load_validate_api_contract()
 
     issues = validate_api_contract.document_response_contract_issues()
 
     assert issues == []
+
+
+def test_api_contract_document_list_response_exposes_typed_document_items():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.document_list_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_section_list_response_exposes_typed_section_items():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.section_list_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_chunk_list_response_exposes_typed_index_items():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.chunk_list_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_chunk_list_response_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/documents/{document_id}/chunks": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "items",
+                                            "total",
+                                            "page",
+                                            "page_size",
+                                            "indexed",
+                                            "index_status",
+                                        ],
+                                        "properties": {
+                                            "items": {"type": "array", "items": {"type": "object"}},
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                            "indexed": {"type": "boolean"},
+                                            "index_status": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.chunk_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/documents/{}/chunks missing response fields: index_error"]
+
+
+def test_api_contract_validator_reports_missing_chunk_list_item_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/documents/{document_id}/chunks": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "items",
+                                            "total",
+                                            "page",
+                                            "page_size",
+                                            "indexed",
+                                            "index_status",
+                                            "index_error",
+                                        ],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "document_id",
+                                                        "section_id",
+                                                        "seq",
+                                                        "text",
+                                                        "token_count",
+                                                        "vector_id",
+                                                        "embedded",
+                                                        "created_at",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "document_id": {"type": "integer"},
+                                                        "section_id": {"type": "integer"},
+                                                        "seq": {"type": "integer"},
+                                                        "text": {"type": "string"},
+                                                        "token_count": {"type": "integer"},
+                                                        "vector_id": {"type": "string"},
+                                                        "embedded": {"type": "boolean"},
+                                                        "created_at": {"type": "string"},
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                            "indexed": {"type": "boolean"},
+                                            "index_status": {"type": "string"},
+                                            "index_error": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.chunk_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/documents/{}/chunks item fields missing: section_title"]
+
+
+def test_api_contract_validator_reports_missing_section_list_item_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/documents/{document_id}/sections": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "document_id",
+                                                        "parent_id",
+                                                        "seq",
+                                                        "title",
+                                                        "content",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "document_id": {"type": "integer"},
+                                                        "parent_id": {"type": "integer"},
+                                                        "seq": {"type": "integer"},
+                                                        "title": {"type": "string"},
+                                                        "content": {"type": "string"},
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.section_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/documents/{}/sections item fields missing: section_type"]
+
+
+def test_api_contract_validator_reports_missing_document_list_item_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/documents": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "paper_id",
+                                                        "file_path",
+                                                        "file_hash",
+                                                        "original_name",
+                                                        "num_pages",
+                                                        "parse_status",
+                                                        "parse_error",
+                                                        "index_status",
+                                                        "index_error",
+                                                        "chemistry_status",
+                                                        "chemistry_error",
+                                                        "tei_path",
+                                                        "created_at",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "paper_id": {"type": "integer"},
+                                                        "file_path": {"type": "string"},
+                                                        "file_hash": {"type": "string"},
+                                                        "original_name": {"type": "string"},
+                                                        "num_pages": {"type": "integer"},
+                                                        "parse_status": {"type": "string"},
+                                                        "parse_error": {"type": "string"},
+                                                        "index_status": {"type": "string"},
+                                                        "index_error": {"type": "string"},
+                                                        "chemistry_status": {"type": "string"},
+                                                        "chemistry_error": {"type": "string"},
+                                                        "tei_path": {"type": "string"},
+                                                        "created_at": {"type": "string"},
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.document_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/documents item fields missing: paper"]
+
+
+def test_api_contract_validator_reports_missing_document_list_paper_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/documents": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "paper_id",
+                                                        "file_path",
+                                                        "file_hash",
+                                                        "original_name",
+                                                        "num_pages",
+                                                        "parse_status",
+                                                        "parse_error",
+                                                        "index_status",
+                                                        "index_error",
+                                                        "chemistry_status",
+                                                        "chemistry_error",
+                                                        "tei_path",
+                                                        "created_at",
+                                                        "paper",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "paper_id": {"type": "integer"},
+                                                        "file_path": {"type": "string"},
+                                                        "file_hash": {"type": "string"},
+                                                        "original_name": {"type": "string"},
+                                                        "num_pages": {"type": "integer"},
+                                                        "parse_status": {"type": "string"},
+                                                        "parse_error": {"type": "string"},
+                                                        "index_status": {"type": "string"},
+                                                        "index_error": {"type": "string"},
+                                                        "chemistry_status": {"type": "string"},
+                                                        "chemistry_error": {"type": "string"},
+                                                        "tei_path": {"type": "string"},
+                                                        "created_at": {"type": "string"},
+                                                        "paper": {
+                                                            "type": "object",
+                                                            "required": ["id", "doi", "title", "journal_name"],
+                                                            "properties": {
+                                                                "id": {"type": "integer"},
+                                                                "doi": {"type": "string"},
+                                                                "title": {"type": "string"},
+                                                                "journal_name": {"type": "string"},
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.document_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/documents item paper fields missing: published_date"]
+
+
+def test_api_contract_translation_response_exposes_status_and_output_path():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.translation_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_paper_detail_response_exposes_metadata_and_categories():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.paper_detail_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_paper_mutation_responses_expose_metadata_and_categories():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.paper_mutation_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_paper_list_response_exposes_typed_search_items():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.paper_list_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_paper_list_item_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/papers": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "doi",
+                                                        "title",
+                                                        "abstract",
+                                                        "authors",
+                                                        "journal_id",
+                                                        "journal_name",
+                                                        "published_date",
+                                                        "published_year",
+                                                        "oa_status",
+                                                        "oa_pdf_url",
+                                                        "landing_url",
+                                                        "source_api",
+                                                        "dedupe_key",
+                                                        "has_doi",
+                                                        "dedupe_strategy",
+                                                        "categories",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "doi": {"type": "string"},
+                                                        "title": {"type": "string"},
+                                                        "abstract": {"type": "string"},
+                                                        "authors": {"type": "array"},
+                                                        "journal_id": {"type": "integer"},
+                                                        "journal_name": {"type": "string"},
+                                                        "published_date": {"type": "string"},
+                                                        "published_year": {"type": "integer"},
+                                                        "oa_status": {"type": "string"},
+                                                        "oa_pdf_url": {"type": "string"},
+                                                        "landing_url": {"type": "string"},
+                                                        "source_api": {"type": "string"},
+                                                        "dedupe_key": {"type": "string"},
+                                                        "has_doi": {"type": "boolean"},
+                                                        "dedupe_strategy": {"type": "string"},
+                                                        "categories": {"type": "array"},
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.paper_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/papers item fields missing: category_details"]
+
+
+def test_api_contract_validator_reports_missing_paper_list_category_detail_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/papers": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "doi",
+                                                        "title",
+                                                        "abstract",
+                                                        "authors",
+                                                        "journal_id",
+                                                        "journal_name",
+                                                        "published_date",
+                                                        "published_year",
+                                                        "oa_status",
+                                                        "oa_pdf_url",
+                                                        "landing_url",
+                                                        "source_api",
+                                                        "dedupe_key",
+                                                        "has_doi",
+                                                        "dedupe_strategy",
+                                                        "categories",
+                                                        "category_details",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "doi": {"type": "string"},
+                                                        "title": {"type": "string"},
+                                                        "abstract": {"type": "string"},
+                                                        "authors": {"type": "array"},
+                                                        "journal_id": {"type": "integer"},
+                                                        "journal_name": {"type": "string"},
+                                                        "published_date": {"type": "string"},
+                                                        "published_year": {"type": "integer"},
+                                                        "oa_status": {"type": "string"},
+                                                        "oa_pdf_url": {"type": "string"},
+                                                        "landing_url": {"type": "string"},
+                                                        "source_api": {"type": "string"},
+                                                        "dedupe_key": {"type": "string"},
+                                                        "has_doi": {"type": "boolean"},
+                                                        "dedupe_strategy": {"type": "string"},
+                                                        "categories": {"type": "array"},
+                                                        "category_details": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "required": ["id", "slug", "name", "confidence"],
+                                                                "properties": {
+                                                                    "id": {"type": "integer"},
+                                                                    "slug": {"type": "string"},
+                                                                    "name": {"type": "string"},
+                                                                    "confidence": {"type": "number"},
+                                                                },
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.paper_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/papers item category detail fields missing: method"]
+
+
+def test_api_contract_crawl_job_detail_response_exposes_diagnostics():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.crawl_job_detail_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_crawl_job_list_response_exposes_typed_diagnostic_items():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.crawl_job_list_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_crawl_job_list_item_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/crawl/jobs": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "journal_id",
+                                                        "period",
+                                                        "date_from",
+                                                        "date_to",
+                                                        "status",
+                                                        "papers_found",
+                                                        "papers_filtered",
+                                                        "papers_new",
+                                                        "error",
+                                                        "started_at",
+                                                        "finished_at",
+                                                        "created_at",
+                                                        "journal",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "journal_id": {"type": "integer"},
+                                                        "period": {"type": "string"},
+                                                        "date_from": {"type": "string"},
+                                                        "date_to": {"type": "string"},
+                                                        "status": {"type": "string"},
+                                                        "papers_found": {"type": "integer"},
+                                                        "papers_filtered": {"type": "integer"},
+                                                        "papers_new": {"type": "integer"},
+                                                        "error": {"type": "string"},
+                                                        "started_at": {"type": "string"},
+                                                        "finished_at": {"type": "string"},
+                                                        "created_at": {"type": "string"},
+                                                        "journal": {"type": "object"},
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.crawl_job_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/crawl/jobs item fields missing: diagnostics"]
+
+
+def test_api_contract_validator_reports_missing_crawl_job_detail_response_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/crawl/jobs/{job_id}": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "id",
+                                            "journal_id",
+                                            "period",
+                                            "date_from",
+                                            "date_to",
+                                            "status",
+                                            "papers_found",
+                                            "papers_filtered",
+                                            "papers_new",
+                                            "error",
+                                            "started_at",
+                                            "finished_at",
+                                            "created_at",
+                                            "journal",
+                                        ],
+                                        "properties": {
+                                            "id": {"type": "integer"},
+                                            "journal_id": {"type": "integer"},
+                                            "period": {"type": "string"},
+                                            "date_from": {"type": "string"},
+                                            "date_to": {"type": "string"},
+                                            "status": {"type": "string"},
+                                            "papers_found": {"type": "integer"},
+                                            "papers_filtered": {"type": "integer"},
+                                            "papers_new": {"type": "integer"},
+                                            "error": {"type": "string"},
+                                            "started_at": {"type": "string"},
+                                            "finished_at": {"type": "string"},
+                                            "created_at": {"type": "string"},
+                                            "journal": {
+                                                "type": "object",
+                                                "required": [
+                                                    "id",
+                                                    "name",
+                                                    "issn_print",
+                                                    "issn_electronic",
+                                                    "active",
+                                                ],
+                                                "properties": {
+                                                    "id": {"type": "integer"},
+                                                    "name": {"type": "string"},
+                                                    "issn_print": {"type": "string"},
+                                                    "issn_electronic": {"type": "string"},
+                                                    "active": {"type": "boolean"},
+                                                },
+                                            },
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.crawl_job_detail_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/crawl/jobs/{} missing response fields: diagnostics"]
+
+
+def test_api_contract_validator_reports_missing_crawl_job_diagnostic_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/crawl/jobs/{job_id}": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "id",
+                                            "journal_id",
+                                            "period",
+                                            "date_from",
+                                            "date_to",
+                                            "status",
+                                            "papers_found",
+                                            "papers_filtered",
+                                            "papers_new",
+                                            "error",
+                                            "started_at",
+                                            "finished_at",
+                                            "created_at",
+                                            "journal",
+                                            "diagnostics",
+                                        ],
+                                        "properties": {
+                                            "id": {"type": "integer"},
+                                            "journal_id": {"type": "integer"},
+                                            "period": {"type": "string"},
+                                            "date_from": {"type": "string"},
+                                            "date_to": {"type": "string"},
+                                            "status": {"type": "string"},
+                                            "papers_found": {"type": "integer"},
+                                            "papers_filtered": {"type": "integer"},
+                                            "papers_new": {"type": "integer"},
+                                            "error": {"type": "string"},
+                                            "started_at": {"type": "string"},
+                                            "finished_at": {"type": "string"},
+                                            "created_at": {"type": "string"},
+                                            "journal": {
+                                                "type": "object",
+                                                "required": [
+                                                    "id",
+                                                    "name",
+                                                    "issn_print",
+                                                    "issn_electronic",
+                                                    "active",
+                                                ],
+                                                "properties": {
+                                                    "id": {"type": "integer"},
+                                                    "name": {"type": "string"},
+                                                    "issn_print": {"type": "string"},
+                                                    "issn_electronic": {"type": "string"},
+                                                    "active": {"type": "boolean"},
+                                                },
+                                            },
+                                            "diagnostics": {
+                                                "type": "object",
+                                                "required": [
+                                                    "journal_id",
+                                                    "journal_name",
+                                                    "period",
+                                                    "date_from",
+                                                    "date_to",
+                                                    "status",
+                                                    "papers_found",
+                                                    "papers_filtered",
+                                                    "papers_new",
+                                                    "papers_accepted",
+                                                    "papers_existing",
+                                                    "outcome",
+                                                    "keyword_mode",
+                                                    "error",
+                                                ],
+                                                "properties": {
+                                                    "journal_id": {"type": "integer"},
+                                                    "journal_name": {"type": "string"},
+                                                    "period": {"type": "string"},
+                                                    "date_from": {"type": "string"},
+                                                    "date_to": {"type": "string"},
+                                                    "status": {"type": "string"},
+                                                    "papers_found": {"type": "integer"},
+                                                    "papers_filtered": {"type": "integer"},
+                                                    "papers_new": {"type": "integer"},
+                                                    "papers_accepted": {"type": "integer"},
+                                                    "papers_existing": {"type": "integer"},
+                                                    "outcome": {"type": "string"},
+                                                    "keyword_mode": {"type": "string"},
+                                                    "error": {"type": "string"},
+                                                },
+                                            },
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.crawl_job_detail_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/crawl/jobs/{} diagnostics fields missing: keyword_terms"]
+
+
+def test_api_contract_validator_reports_missing_paper_detail_response_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/papers/{paper_id}": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "id",
+                                            "doi",
+                                            "title",
+                                            "abstract",
+                                            "authors",
+                                            "journal_id",
+                                            "journal_name",
+                                            "published_date",
+                                            "published_year",
+                                            "oa_status",
+                                            "oa_pdf_url",
+                                            "landing_url",
+                                            "source_api",
+                                            "dedupe_key",
+                                            "has_doi",
+                                            "dedupe_strategy",
+                                            "categories",
+                                            "category_details",
+                                        ],
+                                        "properties": {
+                                            "id": {"type": "integer"},
+                                            "doi": {"type": "string"},
+                                            "title": {"type": "string"},
+                                            "abstract": {"type": "string"},
+                                            "authors": {"type": "array"},
+                                            "journal_id": {"type": "integer"},
+                                            "journal_name": {"type": "string"},
+                                            "published_date": {"type": "string"},
+                                            "published_year": {"type": "integer"},
+                                            "oa_status": {"type": "string"},
+                                            "oa_pdf_url": {"type": "string"},
+                                            "landing_url": {"type": "string"},
+                                            "source_api": {"type": "string"},
+                                            "dedupe_key": {"type": "string"},
+                                            "has_doi": {"type": "boolean"},
+                                            "dedupe_strategy": {"type": "string"},
+                                            "categories": {"type": "array"},
+                                            "category_details": {"type": "array", "items": {"type": "object"}},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.paper_detail_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/papers/{} missing response fields: raw_metadata"]
+
+
+def test_api_contract_validator_reports_missing_paper_mutation_response_field():
+    validate_api_contract = load_validate_api_contract()
+    response_fields = [
+        field for field in validate_api_contract.PAPER_DETAIL_RESPONSE_FIELDS if field != "raw_metadata"
+    ]
+    schema = {
+        "type": "object",
+        "required": response_fields,
+        "properties": {field: {"type": "string"} for field in response_fields},
+    }
+    schema["properties"]["category_details"] = {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "required": list(validate_api_contract.PAPER_CATEGORY_DETAIL_FIELDS),
+            "properties": {
+                field: {"type": "string"} for field in validate_api_contract.PAPER_CATEGORY_DETAIL_FIELDS
+            },
+        },
+    }
+    openapi = {
+        "paths": {
+            "/api/v1/papers/{paper_id}/classify": {
+                "post": {
+                    "responses": {
+                        "200": {
+                            "content": {"application/json": {"schema": schema}},
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.paper_mutation_response_contract_issues(openapi=openapi)
+
+    assert issues == ["POST /api/v1/papers/{}/classify missing response fields: raw_metadata"]
+
+
+def test_api_contract_validator_reports_missing_paper_category_detail_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/papers/{paper_id}": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "id",
+                                            "doi",
+                                            "title",
+                                            "abstract",
+                                            "authors",
+                                            "journal_id",
+                                            "journal_name",
+                                            "published_date",
+                                            "published_year",
+                                            "oa_status",
+                                            "oa_pdf_url",
+                                            "landing_url",
+                                            "source_api",
+                                            "dedupe_key",
+                                            "has_doi",
+                                            "dedupe_strategy",
+                                            "categories",
+                                            "category_details",
+                                            "raw_metadata",
+                                        ],
+                                        "properties": {
+                                            "id": {"type": "integer"},
+                                            "doi": {"type": "string"},
+                                            "title": {"type": "string"},
+                                            "abstract": {"type": "string"},
+                                            "authors": {"type": "array"},
+                                            "journal_id": {"type": "integer"},
+                                            "journal_name": {"type": "string"},
+                                            "published_date": {"type": "string"},
+                                            "published_year": {"type": "integer"},
+                                            "oa_status": {"type": "string"},
+                                            "oa_pdf_url": {"type": "string"},
+                                            "landing_url": {"type": "string"},
+                                            "source_api": {"type": "string"},
+                                            "dedupe_key": {"type": "string"},
+                                            "has_doi": {"type": "boolean"},
+                                            "dedupe_strategy": {"type": "string"},
+                                            "categories": {"type": "array"},
+                                            "raw_metadata": {"type": "object"},
+                                            "category_details": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": ["id", "slug", "name", "confidence"],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "slug": {"type": "string"},
+                                                        "name": {"type": "string"},
+                                                        "confidence": {"type": "number"},
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.paper_detail_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/papers/{} category detail fields missing: method"]
+
+
+def test_api_contract_validator_reports_missing_translation_response_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/documents/{document_id}/translation": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "id",
+                                            "document_id",
+                                            "source_lang",
+                                            "target_lang",
+                                            "status",
+                                            "error",
+                                            "created_at",
+                                        ],
+                                        "properties": {
+                                            "id": {"type": "integer"},
+                                            "document_id": {"type": "integer"},
+                                            "source_lang": {"type": "string"},
+                                            "target_lang": {"type": "string"},
+                                            "status": {"type": "string"},
+                                            "error": {"type": "string"},
+                                            "created_at": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.translation_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/documents/{}/translation missing response fields: output_path"]
 
 
 def test_api_contract_validator_reports_missing_document_response_field():
@@ -1253,6 +4004,14 @@ def test_api_contract_reaction_set_detail_response_exposes_review_gate():
     assert issues == []
 
 
+def test_api_contract_reaction_verify_response_exposes_review_gate():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.reaction_verify_response_contract_issues()
+
+    assert issues == []
+
+
 def test_api_contract_validator_reports_missing_reaction_set_detail_field():
     validate_api_contract = load_validate_api_contract()
     openapi = {
@@ -1408,6 +4167,38 @@ def test_api_contract_validator_reports_missing_reaction_set_detail_reaction_fie
     issues = validate_api_contract.reaction_set_detail_response_contract_issues(openapi=openapi)
 
     assert issues == ["GET /api/v1/reaction-sets/{} reaction fields missing: source_excerpt"]
+
+
+def test_api_contract_validator_reports_missing_reaction_verify_response_field():
+    validate_api_contract = load_validate_api_contract()
+    response_fields = [
+        field for field in validate_api_contract.REACTION_SET_DETAIL_RESPONSE_FIELDS if field != "export_ready"
+    ]
+    openapi = {
+        "paths": {
+            "/api/v1/reactions/{reaction_id}/verify": {
+                "put": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": response_fields,
+                                        "properties": {field: {"type": "string"} for field in response_fields},
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.reaction_verify_response_contract_issues(openapi=openapi)
+
+    assert issues == ["PUT /api/v1/reactions/{}/verify missing response fields: export_ready"]
 
 
 def test_api_contract_rag_query_response_exposes_cited_sources():
@@ -1907,7 +4698,7 @@ def test_requirements_validator_ignores_standard_library_imports(tmp_path):
     source_dir = tmp_path / "scripts"
     source_dir.mkdir()
     (source_dir / "uses_stdlib.py").write_text(
-        "import email.utils\nimport fnmatch\nimport importlib.util\nimport shlex\nimport subprocess\n",
+        "import email.utils\nimport fnmatch\nimport importlib.util\nimport shlex\nimport subprocess\nimport zipfile\n",
         encoding="utf-8",
     )
     requirements_path = tmp_path / "requirements.txt"
@@ -2066,6 +4857,23 @@ def test_readme_commands_validator_reports_missing_scripts_module(tmp_path):
     issues = validate_readme_commands.missing_command_targets(tmp_path)
 
     assert issues == ["README.md: command target missing: scripts/missing_check.py"]
+
+
+def test_readme_commands_validator_checks_release_checklist_commands(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (tmp_path / "README.md").write_text("# Test\n", encoding="utf-8")
+    (docs_dir / "release-checklist.md").write_text(
+        "```bash\npython scripts/missing_release_gate.py\n```\n",
+        encoding="utf-8",
+    )
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == [
+        "docs/release-checklist.md: command target missing: scripts/missing_release_gate.py"
+    ]
 
 
 def test_readme_commands_validator_reports_unknown_python_script_option(tmp_path):

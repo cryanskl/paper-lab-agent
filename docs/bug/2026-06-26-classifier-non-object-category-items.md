@@ -19,3 +19,5 @@ OpenAI-compatible 分类 adapter 收到 `categories` 数组但其中元素不是
 ```bash
 python -m pytest tests/test_api.py::test_openai_classifier_keeps_only_registered_taxonomy_slugs tests/test_api.py::test_openai_classifier_reports_invalid_chat_completion_shape tests/test_api.py::test_openai_classifier_reports_invalid_json_content tests/test_api.py::test_openai_classifier_reports_non_object_json_content tests/test_api.py::test_openai_classifier_reports_missing_categories_field tests/test_api.py::test_openai_classifier_reports_non_list_categories_field tests/test_api.py::test_openai_classifier_reports_non_object_category_items tests/test_api.py::test_classify_paper_failure_returns_json_error -q
 ```
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。

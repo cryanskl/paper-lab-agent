@@ -184,11 +184,17 @@ def main() -> int:
     parser.add_argument("--verified-by", default="prepare-demo-data")
     parser.add_argument("--compact", action="store_true", help="Print JSON on one line")
     parser.add_argument("--summary-only", action="store_true", help="Print only the release/demo summary object")
+    parser.add_argument("--output", type=Path, help="Write the JSON payload to this path instead of stdout")
     args = parser.parse_args()
 
     payload = prepare_demo_data(args.target_lang, args.verified_by)
     output = payload["summary"] if args.summary_only else payload
-    print(json.dumps(output, ensure_ascii=False, indent=None if args.compact else 2))
+    text = json.dumps(output, ensure_ascii=False, indent=None if args.compact else 2)
+    if args.output is None:
+        print(text)
+    else:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(f"{text}\n", encoding="utf-8")
     return 0
 
 

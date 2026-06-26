@@ -15,3 +15,5 @@
 ## 验证
 
 新增 `test_docs_links_validator_reports_missing_backtick_runtime_file_reference` 覆盖运行文件引用缺失场景。完整验证以 `bash scripts/release_check.sh` 为准。
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。

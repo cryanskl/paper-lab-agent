@@ -46,6 +46,21 @@ def unresolved_template_placeholders(text: str) -> list[str]:
     return labels
 
 
+def has_pending_release_gate_evidence(text: str) -> bool:
+    return bool(re.search(r"^\s*[-*]\s*完整 gate[：:].*待运行", text, flags=re.MULTILINE))
+
+
+def has_release_gate_evidence(text: str) -> bool:
+    return bool(re.search(r"^\s*[-*]\s*完整 gate[：:]", text, flags=re.MULTILINE))
+
+
+def has_incomplete_release_gate_evidence(text: str) -> bool:
+    for match in re.finditer(r"^\s*[-*]\s*完整 gate[：:](.*)$", text, flags=re.MULTILINE):
+        if not re.search(r"\b\d+\s+passed\b", match.group(1)):
+            return True
+    return False
+
+
 def bug_doc_issues(repo: Path) -> list[str]:
     repo = repo.resolve()
     bug_dir = repo / "docs" / "bug"
@@ -81,6 +96,12 @@ def bug_doc_issues(repo: Path) -> list[str]:
             issues.append(
                 f"{rel}: unresolved template placeholders: {', '.join(placeholders)}"
             )
+        if not has_release_gate_evidence(text):
+            issues.append(f"{rel}: missing release gate evidence")
+        if has_pending_release_gate_evidence(text):
+            issues.append(f"{rel}: pending release gate evidence")
+        if has_incomplete_release_gate_evidence(text):
+            issues.append(f"{rel}: incomplete release gate evidence")
 
     return issues
 

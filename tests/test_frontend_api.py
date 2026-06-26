@@ -162,6 +162,22 @@ def test_frontend_api_status_request_promotes_invalid_success_payload(monkeypatc
     assert "HTTP 200" in payload["error"]["message"]
 
 
+def test_crawl_job_option_label_summarizes_job_status():
+    from app import frontend_api
+
+    label = frontend_api.crawl_job_option_label({"id": 12, "journal_id": 3, "status": "success"})
+
+    assert label == "#12 · journal 3 · success"
+
+
+def test_crawl_job_option_label_uses_fallbacks_for_sparse_jobs():
+    from app import frontend_api
+
+    label = frontend_api.crawl_job_option_label({"job_id": 9})
+
+    assert label == "#9 · journal - · unknown"
+
+
 def test_reaction_review_rows_can_focus_unverified_source_metadata():
     from app import frontend_api
 
@@ -249,6 +265,55 @@ def test_reaction_review_rows_mark_export_blockers():
     assert rows[1]["export_blocker"] is None
 
 
+def test_reaction_display_state_summarizes_review_card_metadata():
+    from app import frontend_api
+
+    state = frontend_api.reaction_display_state(
+        {
+            "reaction": "e + Ar -> 2e + Ar+",
+            "verified": 0,
+            "confidence": 0.72,
+            "source_section_id": 12,
+            "source_section_title": "Table 2",
+            "source_section_type": "table",
+            "source_section_seq": 4,
+            "source_label": "table 4: Table 2",
+            "source_excerpt": "Measured ionization cross section.",
+            "reactants": '["e", "Ar"]',
+            "products": '["e", "e", "Ar+"]',
+            "reference": "Smith 2024",
+        }
+    )
+
+    assert state == {
+        "reaction": "e + Ar -> 2e + Ar+",
+        "source_excerpt": "Measured ionization cross section.",
+        "source_summary": (
+            "verified: False · confidence: 0.72 · source_section_id: 12 · "
+            "source_section_title: Table 2 · source_section_type: table · "
+            "source_section_seq: 4 · source_label: table 4: Table 2"
+        ),
+        "species_summary": 'reactants: ["e", "Ar"] · products: ["e", "e", "Ar+"] · reference: Smith 2024',
+    }
+
+
+def test_reaction_display_state_uses_dash_fallbacks_for_sparse_metadata():
+    from app import frontend_api
+
+    state = frontend_api.reaction_display_state({"reaction": "Ar+ + e -> Ar"})
+
+    assert state == {
+        "reaction": "Ar+ + e -> Ar",
+        "source_excerpt": None,
+        "source_summary": (
+            "verified: False · confidence: None · source_section_id: None · "
+            "source_section_title: - · source_section_type: - · "
+            "source_section_seq: - · source_label: -"
+        ),
+        "species_summary": "reactants: - · products: - · reference: -",
+    }
+
+
 def test_reaction_set_rows_label_export_state_and_review_progress():
     from app import frontend_api
 
@@ -329,6 +394,30 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
     ]
 
 
+def test_reaction_set_option_label_summarizes_review_and_export_state():
+    from app import frontend_api
+
+    label = frontend_api.reaction_set_option_label(
+        {
+            "id": 3,
+            "name": "Ar chemistry",
+            "status": "pending",
+            "export_ready": False,
+            "unverified_count": 2,
+        }
+    )
+
+    assert label == "#3 · pending · export_ready False · 未复核 2 · Ar chemistry"
+
+
+def test_reaction_set_option_label_uses_fallbacks_for_sparse_items():
+    from app import frontend_api
+
+    label = frontend_api.reaction_set_option_label({"id": 8})
+
+    assert label == "#8 · unknown · export_ready False · 未复核 0 · Reaction set"
+
+
 def test_reaction_review_payload_normalizes_edit_form_values():
     from app import frontend_api
 
@@ -379,6 +468,60 @@ def test_reaction_review_payload_clears_disabled_and_blank_fields():
     }
 
 
+def test_reaction_review_form_state_normalizes_unknown_types_and_zero_threshold():
+    from app import frontend_api
+
+    state = frontend_api.reaction_review_form_state(
+        {
+            "id": 11,
+            "reaction_type": "unknown",
+            "rate_type": "unknown",
+            "threshold_ev": 0,
+            "rate_value": "original value",
+            "cross_section_url": "https://example.test/cross-section",
+            "verified": True,
+        }
+    )
+
+    assert state == {
+        "reaction_type_options": ["", "elastic", "excitation", "ionization", "attachment", "recombination"],
+        "rate_type_options": ["", "cross_section", "arrhenius", "constant"],
+        "reaction_type_value": "",
+        "reaction_type_index": 0,
+        "rate_type_value": "",
+        "rate_type_index": 0,
+        "include_threshold_ev": True,
+        "threshold_ev_value": 0.0,
+        "rate_value": "original value",
+        "cross_section_url": "https://example.test/cross-section",
+        "verified": True,
+        "verified_by": "streamlit",
+    }
+
+
+def test_reaction_review_form_state_preserves_known_type_indexes_and_blank_text():
+    from app import frontend_api
+
+    state = frontend_api.reaction_review_form_state(
+        {
+            "reaction_type": "ionization",
+            "rate_type": "cross_section",
+            "rate_value": None,
+            "cross_section_url": None,
+            "verified": False,
+        }
+    )
+
+    assert state["reaction_type_index"] == 3
+    assert state["rate_type_index"] == 1
+    assert state["include_threshold_ev"] is False
+    assert state["threshold_ev_value"] == 0.0
+    assert state["rate_value"] == ""
+    assert state["cross_section_url"] == ""
+    assert state["verified"] is False
+    assert state["verified_by"] == "streamlit"
+
+
 def test_reaction_export_rows_summarize_download_and_audit_metadata():
     from app import frontend_api
 
@@ -402,6 +545,131 @@ def test_reaction_export_rows_summarize_download_and_audit_metadata():
         {"field": "audit_entry_count", "value": 4},
         {"field": "download_label", "value": "bolsig · 4 reactions · 4 audit entries"},
     ]
+
+
+def test_reaction_export_download_reads_text_file_for_streamlit_button(tmp_path):
+    from app import frontend_api
+
+    export_path = tmp_path / "reaction-set-3.txt"
+    export_path.write_text("e + Ar -> e + e + Ar+\n", encoding="utf-8")
+
+    download = frontend_api.reaction_export_download(
+        {
+            "format": "txt",
+            "output_path": str(export_path),
+            "mime_type": "text/plain",
+        }
+    )
+
+    assert download == {
+        "label": "下载导出文件",
+        "data": "e + Ar -> e + e + Ar+\n",
+        "file_name": "reaction-set-3.txt",
+        "mime": "text/plain",
+        "path": str(export_path),
+    }
+
+
+def test_reaction_export_download_reads_binary_file_for_non_text_mime(tmp_path):
+    from app import frontend_api
+
+    export_path = tmp_path / "reaction-set-3.bin"
+    export_path.write_bytes(b"\x00\x01")
+
+    download = frontend_api.reaction_export_download(
+        {
+            "output_path": str(export_path),
+            "mime_type": "application/octet-stream",
+        }
+    )
+
+    assert download == {
+        "label": "下载导出文件",
+        "data": b"\x00\x01",
+        "file_name": "reaction-set-3.bin",
+        "mime": "application/octet-stream",
+        "path": str(export_path),
+    }
+
+
+def test_reaction_export_download_returns_none_for_missing_output_file(tmp_path):
+    from app import frontend_api
+
+    missing_path = tmp_path / "missing.txt"
+
+    assert frontend_api.reaction_export_download({"output_path": str(missing_path)}) is None
+
+
+def test_reaction_set_review_state_blocks_empty_reaction_sets():
+    from app import frontend_api
+
+    state = frontend_api.reaction_set_review_state(
+        {
+            "id": 7,
+            "status": "pending",
+            "reaction_count": 0,
+            "verified_count": 0,
+            "unverified_count": 0,
+            "export_ready": False,
+            "gas_mixture": "Ar/O2",
+            "lxcat_db": "Biagi",
+            "verified_by": None,
+            "verified_at": None,
+            "source_note": "Appendix table A1",
+            "reactions": [],
+        }
+    )
+
+    assert state == {
+        "reactions": [],
+        "unverified_reactions": [],
+        "reaction_count": 0,
+        "verified_count": 0,
+        "unverified_count": 0,
+        "export_ready": False,
+        "export_blocked": True,
+        "export_message": "没有可导出的反应。",
+        "source_note": "Appendix table A1",
+        "summary": (
+            "status: pending · reactions: 0 · verified: 0 · 未复核: 0 · "
+            "export_ready: False · gas_mixture: Ar/O2 · lxcat_db: Biagi · "
+            "verified_by: - · verified_at: -"
+        ),
+    }
+
+
+def test_reaction_set_review_state_derives_unverified_counts_and_export_gate():
+    from app import frontend_api
+
+    reactions = [
+        {"id": 1, "reaction": "e + Ar -> e + Ar", "verified": True},
+        {"id": 2, "reaction": "e + Ar -> 2e + Ar+", "verified": False},
+    ]
+
+    state = frontend_api.reaction_set_review_state(
+        {
+            "status": "pending",
+            "gas_mixture": None,
+            "lxcat_db": None,
+            "verified_by": "reviewer",
+            "verified_at": "2026-06-26T10:00:00",
+            "reactions": reactions,
+        }
+    )
+
+    assert state["reactions"] == reactions
+    assert state["unverified_reactions"] == [reactions[1]]
+    assert state["reaction_count"] == 2
+    assert state["verified_count"] == 1
+    assert state["unverified_count"] == 1
+    assert state["export_ready"] is False
+    assert state["export_blocked"] is True
+    assert state["export_message"] == "未全复核不可导出：请先完成所有反应复核。"
+    assert state["summary"] == (
+        "status: pending · reactions: 2 · verified: 1 · 未复核: 1 · "
+        "export_ready: False · gas_mixture: - · lxcat_db: - · "
+        "verified_by: reviewer · verified_at: 2026-06-26T10:00:00"
+    )
 
 
 def test_reaction_audit_rows_flatten_field_changes_for_review():
@@ -619,6 +887,78 @@ def test_crawl_journal_options_label_whitelist_choices_for_manual_runs():
     ]
 
 
+def test_crawl_journal_option_label_returns_prebuilt_label():
+    from app import frontend_api
+
+    label = frontend_api.crawl_journal_option_label(
+        {"label": "#2 · Plasma Sources Science and Technology", "journal_id": 2}
+    )
+
+    assert label == "#2 · Plasma Sources Science and Technology"
+
+
+def test_crawl_journal_option_label_uses_fallback_for_missing_label():
+    from app import frontend_api
+
+    label = frontend_api.crawl_journal_option_label({"journal_id": None})
+
+    assert label == "期刊选项"
+
+
+def test_journal_option_label_summarizes_whitelist_status():
+    from app import frontend_api
+
+    label = frontend_api.journal_option_label(
+        {"id": 4, "name": "Journal of Physics D", "active": True}
+    )
+
+    assert label == "#4 Journal of Physics D · active=True"
+
+
+def test_journal_option_label_uses_unknown_name_and_false_active_fallback():
+    from app import frontend_api
+
+    label = frontend_api.journal_option_label({"id": 8})
+
+    assert label == "#8 Journal · active=False"
+
+
+def test_category_parent_option_label_returns_none_label():
+    from app import frontend_api
+
+    label = frontend_api.category_parent_option_label(None)
+
+    assert label == "无"
+
+
+def test_category_parent_option_label_summarizes_category_identity():
+    from app import frontend_api
+
+    label = frontend_api.category_parent_option_label(
+        {"id": 3, "slug": "chemistry", "name": "等离子体化学"}
+    )
+
+    assert label == "#3 chemistry"
+
+
+def test_paper_category_option_label_summarizes_slug_and_name():
+    from app import frontend_api
+
+    label = frontend_api.paper_category_option_label(
+        {"id": 2, "slug": "chemistry", "name": "等离子体化学"}
+    )
+
+    assert label == "chemistry · 等离子体化学"
+
+
+def test_paper_category_option_label_uses_fallback_name():
+    from app import frontend_api
+
+    label = frontend_api.paper_category_option_label({"id": 9, "slug": "methods"})
+
+    assert label == "methods · category"
+
+
 def test_document_option_label_surfaces_processing_states():
     from app import frontend_api
 
@@ -721,6 +1061,24 @@ def test_document_section_rows_surface_location_and_preview():
     ]
 
 
+def test_document_section_option_label_uses_sequence_and_title():
+    from app import frontend_api
+
+    label = frontend_api.document_section_option_label(
+        {"id": 21, "seq": 2, "title": "Reaction kinetics", "section_type": "body"}
+    )
+
+    assert label == "2. Reaction kinetics"
+
+
+def test_document_section_option_label_falls_back_to_type_and_id():
+    from app import frontend_api
+
+    label = frontend_api.document_section_option_label({"id": 22, "section_type": "table"})
+
+    assert label == "22. table"
+
+
 def test_document_chunk_rows_surface_vector_backlinks_and_preview():
     from app import frontend_api
 
@@ -769,6 +1127,94 @@ def test_document_chunk_rows_surface_vector_backlinks_and_preview():
     ]
 
 
+def test_document_chunk_option_label_uses_vector_and_section_title():
+    from app import frontend_api
+
+    label = frontend_api.document_chunk_option_label(
+        {"id": 31, "vector_id": "doc-5-section-21-chunk-31", "section_title": "Reaction kinetics"}
+    )
+
+    assert label == "doc-5-section-21-chunk-31 · Reaction kinetics"
+
+
+def test_document_chunk_option_label_falls_back_to_id_and_dash_title():
+    from app import frontend_api
+
+    label = frontend_api.document_chunk_option_label({"id": 32})
+
+    assert label == "32 · -"
+
+
+def test_document_asset_downloads_read_pdf_bytes_and_tei_text(tmp_path):
+    from app import frontend_api
+
+    pdf_path = tmp_path / "paper.pdf"
+    tei_path = tmp_path / "paper.tei.xml"
+    pdf_path.write_bytes(b"%PDF plasma")
+    tei_path.write_text("<TEI>plasma</TEI>", encoding="utf-8")
+
+    downloads = frontend_api.document_asset_downloads(
+        {"file_path": str(pdf_path), "tei_path": str(tei_path)}
+    )
+
+    assert downloads == [
+        {
+            "kind": "pdf",
+            "label": "下载原始 PDF",
+            "data": b"%PDF plasma",
+            "file_name": "paper.pdf",
+            "mime": "application/pdf",
+            "path": str(pdf_path),
+            "exists": True,
+            "missing_message": None,
+        },
+        {
+            "kind": "tei",
+            "label": "下载 TEI XML",
+            "data": "<TEI>plasma</TEI>",
+            "file_name": "paper.tei.xml",
+            "mime": "application/xml",
+            "path": str(tei_path),
+            "exists": True,
+            "missing_message": None,
+        },
+    ]
+
+
+def test_document_asset_downloads_report_missing_files(tmp_path):
+    from app import frontend_api
+
+    missing_pdf = tmp_path / "missing.pdf"
+    missing_tei = tmp_path / "missing.tei.xml"
+
+    downloads = frontend_api.document_asset_downloads(
+        {"file_path": str(missing_pdf), "tei_path": str(missing_tei)}
+    )
+
+    assert downloads == [
+        {
+            "kind": "pdf",
+            "label": "下载原始 PDF",
+            "data": None,
+            "file_name": "missing.pdf",
+            "mime": "application/pdf",
+            "path": str(missing_pdf),
+            "exists": False,
+            "missing_message": f"PDF 文件不存在: {missing_pdf}",
+        },
+        {
+            "kind": "tei",
+            "label": "下载 TEI XML",
+            "data": None,
+            "file_name": "missing.tei.xml",
+            "mime": "application/xml",
+            "path": str(missing_tei),
+            "exists": False,
+            "missing_message": f"TEI 文件不存在: {missing_tei}",
+        },
+    ]
+
+
 def test_translation_status_rows_summarize_output_file_preview():
     from app import frontend_api
 
@@ -798,6 +1244,31 @@ def test_translation_status_rows_summarize_output_file_preview():
             ),
         },
     ]
+
+
+def test_translation_download_reads_markdown_for_streamlit_button(tmp_path):
+    from app import frontend_api
+
+    output_path = tmp_path / "document-5-zh.md"
+    output_path.write_text("# Plasma\n\n等离子体翻译\n", encoding="utf-8")
+
+    download = frontend_api.translation_download({"output_path": str(output_path)})
+
+    assert download == {
+        "label": "下载双语翻译",
+        "data": "# Plasma\n\n等离子体翻译\n",
+        "file_name": "document-5-zh.md",
+        "mime": "text/markdown",
+        "path": str(output_path),
+    }
+
+
+def test_translation_download_returns_none_for_missing_output_file(tmp_path):
+    from app import frontend_api
+
+    missing_path = tmp_path / "missing.md"
+
+    assert frontend_api.translation_download({"output_path": str(missing_path)}) is None
 
 
 def test_rag_source_rows_include_citation_and_location_labels():
@@ -858,3 +1329,48 @@ def test_rag_source_rows_include_citation_and_location_labels():
             "score": None,
         },
     ]
+
+
+def test_rag_source_option_label_combines_citation_and_location():
+    from app import frontend_api
+
+    label = frontend_api.rag_source_option_label(
+        {
+            "citation": "[paper 7 · doc 3 · section 4 · chunk 19]",
+            "source_location": "paper 7 · doc 3 · section 4 · table · Reaction table",
+        }
+    )
+
+    assert label == "[paper 7 · doc 3 · section 4 · chunk 19] · paper 7 · doc 3 · section 4 · table · Reaction table"
+
+
+def test_rag_source_option_label_uses_stable_fallback():
+    from app import frontend_api
+
+    label = frontend_api.rag_source_option_label({})
+
+    assert label == "引用来源"
+
+
+def test_api_docs_links_use_service_root_when_api_base_includes_version_prefix():
+    from app import frontend_api
+
+    links = frontend_api.api_docs_links("http://127.0.0.1:8000/api/v1")
+
+    assert links == {
+        "OpenAPI JSON": "http://127.0.0.1:8000/openapi.json",
+        "Swagger UI": "http://127.0.0.1:8000/docs",
+        "ReDoc": "http://127.0.0.1:8000/redoc",
+    }
+
+
+def test_api_docs_links_preserve_custom_api_base_without_version_prefix():
+    from app import frontend_api
+
+    links = frontend_api.api_docs_links("https://paper-lab.example.test/custom-api/")
+
+    assert links == {
+        "OpenAPI JSON": "https://paper-lab.example.test/custom-api/openapi.json",
+        "Swagger UI": "https://paper-lab.example.test/custom-api/docs",
+        "ReDoc": "https://paper-lab.example.test/custom-api/redoc",
+    }

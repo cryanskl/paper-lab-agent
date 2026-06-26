@@ -164,3 +164,35 @@ def test_sections_from_tei_uses_grobid_labels_for_table_and_figure_titles():
             "section_type": "table",
         },
     ]
+
+
+def test_sections_from_tei_preserves_table_notes_with_rows():
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <table>
+            <head>Table 2</head>
+            <row><cell>Reaction</cell><cell>Rate</cell></row>
+            <row><cell>e + Ar -> Ar+</cell><cell>1.0e-13 cm3/s</cell></row>
+            <note>Rates are reported in the source paper without unit conversion.</note>
+          </table>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Table 2",
+            "content": (
+                "Reaction Rate "
+                "e + Ar -> Ar+ 1.0e-13 cm3/s "
+                "Rates are reported in the source paper without unit conversion."
+            ),
+            "section_type": "table",
+        }
+    ]

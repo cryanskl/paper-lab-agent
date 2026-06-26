@@ -183,6 +183,18 @@ def test_crawl_keyword_matching_collapses_internal_whitespace():
     assert matches_keywords(work, {"mode": "and", "terms": ["plasma   chemistry", "argon   discharge"]}) is True
 
 
+def test_crawl_keyword_matching_treats_punctuation_as_word_boundaries():
+    from app.services.crawl import matches_keywords
+
+    work = {
+        "title": "Low temperature plasma-chemistry model",
+        "abstract": "Ar/O2 global discharge benchmark",
+    }
+
+    assert matches_keywords(work, ["plasma chemistry"]) is True
+    assert matches_keywords(work, {"mode": "and", "terms": ["ar o2", "global discharge"]}) is True
+
+
 def test_crawl_keyword_matching_strips_mode_whitespace():
     from app.services.crawl import matches_keywords, normalize_keyword_config
 
@@ -1640,6 +1652,50 @@ def test_prepare_demo_data_script_can_print_summary_only(tmp_path):
     assert summary["chemistry_status"] == "extracted"
     assert summary["translation_status"] == "done"
     assert summary["reaction_set_status"] == "verified"
+    assert summary["export_formats"] == ["json", "txt", "bolsig"]
+    assert "document" not in summary
+    assert "exports" not in summary
+
+
+def test_prepare_demo_data_script_can_write_summary_output_file(tmp_path):
+    import json
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(tmp_path / "data")
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+    output_path = tmp_path / "out" / "demo-summary.json"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/prepare_demo_data.py",
+            "--summary-only",
+            "--compact",
+            "--output",
+            str(output_path),
+        ],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
+    summary = json.loads(output_path.read_text(encoding="utf-8"))
+    assert summary["ready"] is True
     assert summary["export_formats"] == ["json", "txt", "bolsig"]
     assert "document" not in summary
     assert "exports" not in summary
@@ -7089,6 +7145,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     for compiled_script in [
         "scripts/health_check.py",
         "scripts/import_fixtures.py",
+        "scripts/export_release_artifacts.py",
         "scripts/prepare_demo_data.py",
         "scripts/smoke_check.py",
         "scripts/validate_api_contract.py",
@@ -7103,6 +7160,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     ]:
         assert compiled_script in release_text
     assert "scripts/health_check.py --help" in release_text
+    assert "scripts/export_release_artifacts.py --help" in release_text
     assert "scripts/prepare_demo_data.py --help" in release_text
     assert "scripts/validate_api_contract.py" in release_text
     assert "scripts/validate_bug_docs.py" in release_text
@@ -7223,10 +7281,16 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "python scripts/health_check.py --require-no-config-warnings",
         "python scripts/health_check.py --require-demo-data",
         "python scripts/health_check.py --require-release-ready",
+        "python scripts/health_check.py --check-openapi",
+        "python scripts/health_check.py --require-openapi",
+        "curl http://127.0.0.1:8000/openapi.json",
+        "http://127.0.0.1:8000/docs",
+        "http://127.0.0.1:8000/redoc",
         "python scripts/import_fixtures.py",
         "python scripts/prepare_demo_data.py",
         "python scripts/prepare_demo_data.py --compact",
         "python scripts/prepare_demo_data.py --summary-only --compact",
+        "python scripts/export_release_artifacts.py --output-dir out/release --compact",
         "`summary.ready`",
         "`release_ready`",
         "`frontend_ok`",
@@ -7819,6 +7883,66 @@ def test_system_status_reports_workflow_status_counts(tmp_path):
     ]
 
 
+def test_system_release_readiness_blocks_rejected_chemistry_workflows(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
+    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+    monkeypatch.setenv("EMBEDDING_MODEL", "local-hash")
+    monkeypatch.setenv("VECTOR_DB_BACKEND", "local-json")
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (
+                file_path, file_hash, original_name,
+                parse_status, index_status, chemistry_status
+            ) VALUES (?, ?, ?, 'parsed', 'indexed', 'rejected')
+            """,
+            (str(tmp_path / "rejected-chemistry.pdf"), "rejected-chemistry-status", "rejected-chemistry.pdf"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'No reactions', 'No reaction expressions found.', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, vector_id, embedded)
+            VALUES (?, ?, 1, 'No reaction expressions found.', 'rejected-vector', 1)
+            """,
+            (document_id, section_id),
+        )
+        reaction_set_id = conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, status, source_note)
+            VALUES (?, 'Rejected set', 'rejected', 'No reaction expressions found')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO reactions (reaction_set_id, reaction, verified)
+            VALUES (?, 'e + Ar -> e + e + Ar+', 1)
+            """,
+            (reaction_set_id,),
+        )
+
+    payload = client.get("/api/v1/system/status").json()
+
+    assert payload["status_counts"]["document_chemistry"]["rejected"] == 1
+    assert payload["status_counts"]["reaction_sets"]["rejected"] == 1
+    assert payload["release_readiness"]["failed_workflows"] == [
+        "document_chemistry.rejected=1",
+        "reaction_sets.rejected=1",
+    ]
+    assert payload["release_readiness"]["ready"] is False
+
+
 def test_reaction_verify_contract_documents_clearable_review_fields():
     repo = Path(__file__).resolve().parent.parent
     api_doc = (repo / "docs" / "接口设计文档.md").read_text(encoding="utf-8")
@@ -7923,6 +8047,131 @@ def test_health_check_fails_when_runtime_status_is_missing(monkeypatch, capsys):
     assert health_check.main() == 1
     captured = capsys.readouterr()
     assert "runtime" in captured.err
+
+
+def test_health_check_can_probe_openapi_schema(monkeypatch, capsys):
+    import importlib.util
+    import json
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_openapi", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        if url.endswith("/api/v1/system/status"):
+            return {
+                "database_path": "/tmp/plasma.db",
+                "runtime": health_check_runtime(),
+                "config_warnings": [],
+                "storage": {
+                    "data_dir": "/tmp/data",
+                    "pdf_dir": "/tmp/data/pdfs",
+                    "tei_dir": "/tmp/data/tei",
+                    "translation_dir": "/tmp/data/translations",
+                    "export_dir": "/tmp/data/exports",
+                    "vector_db_path": "/tmp/data/vector-index.json",
+                },
+                "storage_health": health_check_storage_health(),
+                "external_capabilities": {
+                    "openalex_mailto": True,
+                    "unpaywall_email": True,
+                    "grobid_url": "http://127.0.0.1:8070",
+                    "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                    "llm_api_key": True,
+                    "translation_adapter": "local-echo",
+                    "llm_model": "gpt-4o-mini",
+                    "embedding_model": "local-hash",
+                    "vector_db_backend": "local-json",
+                },
+                "counts": health_check_counts(),
+                "demo_data": health_check_demo_data(),
+                "release_readiness": health_check_release_readiness(),
+                "status_counts": health_check_status_counts(),
+            }
+        if url.endswith("/openapi.json"):
+            return {
+                "info": {"title": "paper-lab-agent", "version": "0.1.0"},
+                "paths": {"/api/v1/health": {"get": {}}},
+                "tags": [{"name": "system", "description": "System endpoints"}],
+                "components": {"schemas": {"ErrorResponse": {"type": "object"}}},
+            }
+        raise AssertionError(url)
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["health_check.py", "--base-url", "http://api.test", "--check-openapi", "--summary-only", "--compact"],
+    )
+
+    assert health_check.main() == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["openapi_ok"] is True
+    assert summary["openapi_path_count"] == 1
+    assert summary["openapi_tag_names"] == ["system"]
+
+
+def test_health_check_requires_openapi_schema(monkeypatch, capsys):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_require_openapi", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        if url.endswith("/api/v1/system/status"):
+            return {
+                "database_path": "/tmp/plasma.db",
+                "runtime": health_check_runtime(),
+                "config_warnings": [],
+                "storage": {
+                    "data_dir": "/tmp/data",
+                    "pdf_dir": "/tmp/data/pdfs",
+                    "tei_dir": "/tmp/data/tei",
+                    "translation_dir": "/tmp/data/translations",
+                    "export_dir": "/tmp/data/exports",
+                    "vector_db_path": "/tmp/data/vector-index.json",
+                },
+                "storage_health": health_check_storage_health(),
+                "external_capabilities": {
+                    "openalex_mailto": True,
+                    "unpaywall_email": True,
+                    "grobid_url": "http://127.0.0.1:8070",
+                    "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                    "llm_api_key": True,
+                    "translation_adapter": "local-echo",
+                    "llm_model": "gpt-4o-mini",
+                    "embedding_model": "local-hash",
+                    "vector_db_backend": "local-json",
+                },
+                "counts": health_check_counts(),
+                "demo_data": health_check_demo_data(),
+                "release_readiness": health_check_release_readiness(),
+                "status_counts": health_check_status_counts(),
+            }
+        if url.endswith("/openapi.json"):
+            return {"info": {"title": "paper-lab-agent"}, "paths": {}, "tags": [], "components": {"schemas": {}}}
+        raise AssertionError(url)
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(sys, "argv", ["health_check.py", "--base-url", "http://api.test", "--require-openapi"])
+
+    assert health_check.main() == 1
+    assert "OpenAPI" in capsys.readouterr().err
 
 
 def test_health_check_requires_runtime_version():
@@ -10036,6 +10285,44 @@ def test_health_check_summary_prefers_api_release_readiness():
     assert summary["storage_errors"] == ["pdf_dir.writable"]
 
 
+def test_health_check_summary_rejects_inconsistent_api_release_readiness():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_api_readiness_inconsistent", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [],
+        "storage_health": health_check_storage_health(),
+        "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+        "demo_data": {
+            "ready": True,
+            "requirements": {"papers": 1},
+            "missing": [],
+            "counts": {"papers": 1},
+        },
+        "status_counts": health_check_status_counts(),
+        "release_readiness": {
+            "ready": True,
+            "demo_data_missing": [],
+            "failed_workflows": [],
+            "config_warning_codes": ["missing_llm_api_key"],
+            "storage_errors": [],
+        },
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
+    assert summary["release_ready"] is False
+    assert summary["release_blockers"] == ["config_warning_codes:missing_llm_api_key"]
+
+
 def test_health_check_validates_release_readiness_shape():
     import importlib.util
 
@@ -10806,9 +11093,11 @@ def test_bug_docs_validator_checks_naming_and_required_sections(tmp_path):
 
     assert validator.bug_doc_issues(tmp_path) == [
         "docs/bug/2026-06-25-empty-bug.md: empty sections: 现象, 原因, 修复, 验证",
+        "docs/bug/2026-06-25-empty-bug.md: missing release gate evidence",
         "docs/bug/bad-name.md: filename must match YYYY-MM-DD-short-slug.md",
         "docs/bug/bad-name.md: missing sections: 原因, 修复, 验证",
         "docs/bug/bad-name.md: empty sections: 现象",
+        "docs/bug/bad-name.md: missing release gate evidence",
     ]
 
 
@@ -10895,20 +11184,16 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
     for required in [
+        "reaction_display_state(reaction)",
+        "display_state",
+        'st.write(display_state["reaction"])',
+        'st.caption(display_state["source_summary"])',
+        'display_state["source_excerpt"]',
+        'st.caption(display_state["species_summary"])',
         "reaction_type",
-        "reactants",
-        "products",
         "rate_type",
         "rate_value",
-        "reference",
         "threshold_ev",
-        "confidence",
-        "source_section_id",
-        "source_section_title",
-        "source_section_type",
-        "source_section_seq",
-        "source_label",
-        "source_excerpt",
         "cross_section_url",
         "verified_by",
         "audit_log",
@@ -10916,19 +11201,17 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         "document_reaction_sets",
         "/documents/{chemistry_document_id}/reaction-sets",
         "reaction_count",
-        "verified_count",
-        "unverified_count",
-        "export_ready",
+        "reaction_set_rows",
+        "reaction_set_option_label",
         "unverified_reactions",
         "show_only_unverified",
         "export_blocked",
         "disabled=export_blocked",
-        "detail.get('verified_by')",
-        "detail.get('verified_at')",
-        "detail.get('gas_mixture')",
-        "detail.get('lxcat_db')",
-        "detail.get('source_note')",
-        "未全复核不可导出",
+        "reaction_set_review_state(detail)",
+        "review_state",
+        'st.caption(review_state["summary"])',
+        'review_state.get("source_note")',
+        'review_state["export_message"]',
         "未复核",
         "bolsig",
         "format={export_format}",
@@ -10955,6 +11238,24 @@ def test_streamlit_sidebar_surfaces_release_readiness():
         "failed workflows:",
         "config warnings:",
         "storage errors:",
+        'release_ready = release_readiness.get("ready") is True and not blockers',
+        "if release_ready:",
+    ]:
+        assert required in sidebar_section
+    assert 'if release_readiness.get("ready"):' not in sidebar_section
+
+
+def test_streamlit_sidebar_system_status_error_shows_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+
+    for required in [
+        'status = api_get("/system/status")',
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
     ]:
         assert required in sidebar_section
 
@@ -10965,12 +11266,12 @@ def test_streamlit_chemistry_export_surfaces_file_and_metadata_status():
     chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
 
     for required in [
-        'export_path = Path(payload["output_path"])',
-        "export_path.exists()",
-        "下载导出文件",
+        "reaction_export_download",
+        "reaction_export_download(payload)",
+        "export_download",
+        'export_download["label"]',
         "导出文件不存在",
         "reaction_export_rows(payload)",
-        'payload.get("mime_type")',
     ]:
         assert required in chemistry_section
 
@@ -11015,6 +11316,22 @@ def test_streamlit_chemistry_tab_exposes_document_pagination_controls():
         assert required in chemistry_section
 
 
+def test_streamlit_chemistry_documents_list_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    for required in [
+        "chemistry_documents_response = api_get(",
+        '"/documents"',
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
+    ]:
+        assert required in chemistry_section
+
+
 def test_streamlit_chemistry_tab_exposes_reaction_set_pagination_controls():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
@@ -11033,9 +11350,8 @@ def test_streamlit_chemistry_tab_exposes_reaction_set_pagination_controls():
         "document_reaction_sets['page_size']",
         "document_reaction_sets['total']",
         "reaction_set_rows",
-        "reaction_count",
-        "verified_count",
-        "unverified_count",
+        "reaction_set_option_label",
+        "format_func=reaction_set_option_label",
         "st.dataframe(reaction_set_rows",
     ]:
         assert required in chemistry_section
@@ -11073,18 +11389,33 @@ def test_streamlit_chemistry_review_surfaces_save_success_state():
         assert required in chemistry_section
 
 
+def test_streamlit_chemistry_review_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    review_save_section = chemistry_section[chemistry_section.index("status_code, result = api_put(") :]
+
+    for required in [
+        'status_code, result = api_put(f"/reactions/{reaction[\'id\']}/verify", json=payload)',
+        "else:",
+        "st.warning(format_error_payload(result, status_code))",
+        "st.json(result)",
+    ]:
+        assert required in review_save_section
+
+
 def test_streamlit_chemistry_export_offers_download():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
 
     for required in [
-        "export_path = Path(payload[\"output_path\"])",
-        "export_text",
+        "export_download = reaction_export_download(payload)",
         "st.download_button",
-        "下载导出文件",
-        'mime=payload.get("mime_type")',
-        "file_name=export_path.name",
+        'export_download["label"]',
+        'data=export_download["data"]',
+        'file_name=export_download["file_name"]',
+        'mime=export_download["mime"]',
     ]:
         assert required in chemistry_section
 
@@ -11095,12 +11426,12 @@ def test_streamlit_chemistry_review_uses_controlled_type_options():
     chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
 
     for required in [
-        'reaction_type_options = ["", "elastic", "excitation", "ionization", "attachment", "recombination"]',
-        'rate_type_options = ["", "cross_section", "arrhenius", "constant"]',
-        'reaction_type_value = reaction.get("reaction_type") or ""',
-        'rate_type_value = reaction.get("rate_type") or ""',
-        'if reaction_type_value == "unknown":',
-        'if rate_type_value == "unknown":',
+        "reaction_review_form_state(reaction)",
+        "form_state",
+        'form_state["reaction_type_options"]',
+        'form_state["reaction_type_index"]',
+        'form_state["rate_type_options"]',
+        'form_state["rate_type_index"]',
         'c1.selectbox(',
         'c2.selectbox(',
         "reaction_review_payload(",
@@ -11118,9 +11449,8 @@ def test_streamlit_chemistry_review_can_preserve_zero_threshold():
     for required in [
         'include_threshold_ev = c3.checkbox(',
         '"include_threshold_ev"',
-        'value=reaction.get("threshold_ev") is not None',
-        "threshold_ev_value = (",
-        'float(reaction["threshold_ev"]) if reaction.get("threshold_ev") is not None else 0.0',
+        'value=form_state["include_threshold_ev"]',
+        'value=form_state["threshold_ev_value"]',
         'disabled=not include_threshold_ev',
         "include_threshold_ev=include_threshold_ev",
         "threshold_ev=threshold_ev",
@@ -11136,11 +11466,11 @@ def test_streamlit_chemistry_export_blocks_empty_reaction_sets():
     chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
 
     for required in [
-        'export_ready = detail.get("export_ready"',
-        "export_blocked = not export_ready",
-        "if reaction_count == 0:",
-        "没有可导出的反应。",
-        "elif export_blocked:",
+        "reaction_set_review_state(detail)",
+        "review_state",
+        'export_blocked = review_state["export_blocked"]',
+        'if review_state["export_message"]:',
+        'st.info(review_state["export_message"])',
         "disabled=export_blocked",
     ]:
         assert required in chemistry_section
@@ -11152,6 +11482,116 @@ def test_streamlit_chemistry_document_reaction_sets_show_empty_state():
     chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
 
     assert "该文档暂无反应集。" in chemistry_section
+
+
+def test_streamlit_chemistry_tab_does_not_auto_load_missing_reaction_set():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    for required in [
+        'load_reaction_set = st.button("加载反应集")',
+        "should_load_reaction_set = load_reaction_set or selected_reaction_set_id is not None",
+        "if should_load_reaction_set:",
+    ]:
+        assert required in chemistry_section
+    assert '"reaction_set_detail" not in st.session_state' not in chemistry_section
+
+
+def test_streamlit_chemistry_api_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    helper_section = streamlit[: streamlit.index("st.set_page_config")]
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    assert "FrontendApiError" in helper_section
+    assert "except FrontendApiError as exc:" in chemistry_section
+    assert "st.warning(format_error_payload(exc.payload, exc.status_code))" in chemistry_section
+    assert chemistry_section.count("st.json(exc.payload)") >= 2
+    assert "st.warning(exc)" not in chemistry_section
+
+
+def test_streamlit_startup_health_error_shows_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    startup_section = streamlit[streamlit.index("st.set_page_config") : streamlit.index("review_message =")]
+
+    assert "except FrontendApiError as exc:" in startup_section
+    assert "st.error(format_error_payload(exc.payload, exc.status_code))" in startup_section
+    assert "st.json(exc.payload)" in startup_section
+    assert 'st.error(f"API unavailable: {exc}")' not in startup_section
+
+
+def test_streamlit_high_frequency_actions_format_api_error_payloads():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    assert "format_error_payload" in streamlit
+    for required in [
+        "st.warning(format_error_payload(crawl_payload, status_code))",
+        "st.warning(format_error_payload(parse_payload, status_code))",
+        "st.warning(format_error_payload(translate_payload, status_code))",
+        "st.warning(format_error_payload(index_payload, status_code))",
+        "st.warning(format_error_payload(extract_payload, status_code))",
+    ]:
+        assert required in streamlit
+    for old_warning in [
+        "st.warning(crawl_payload)",
+        "st.warning(parse_payload)",
+        "st.warning(translate_payload)",
+        "st.warning(index_payload)",
+        "st.warning(extract_payload)",
+    ]:
+        assert old_warning not in search_section
+        assert old_warning not in documents_section
+
+
+def test_streamlit_remaining_api_status_failures_format_error_payloads():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+
+    for required in [
+        "st.warning(format_error_payload(classified_paper, status_code))",
+        "st.warning(format_error_payload(resolved_paper, status_code))",
+        "st.warning(format_error_payload(updated_paper, status_code))",
+        "st.warning(format_error_payload(result, status_code))",
+        "st.warning(format_error_payload(payload, status))",
+        "st.warning(format_error_payload(rag_payload, status))",
+        "st.warning(format_error_payload(payload, status))",
+        "st.error(format_error_payload(payload, status))",
+    ]:
+        assert required in streamlit
+    for old_warning in [
+        "st.warning(classified_paper)",
+        "st.warning(resolved_paper)",
+        "st.warning(updated_paper)",
+        "st.warning(result)",
+        "st.warning(payload)",
+        "st.warning(rag_payload)",
+        "st.error(payload)",
+    ]:
+        assert old_warning not in streamlit
+
+
+def test_streamlit_chemistry_export_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    export_section = streamlit[
+        streamlit.index('if st.button("导出反应集"') :
+        streamlit.index('st.success(payload["output_path"]')
+    ]
+
+    for required in [
+        'status, payload = api_post(f"/reaction-sets/{rs_id}/export?format={export_format}", json=None)',
+        "if status == 409:",
+        "st.warning(format_error_payload(payload, status))",
+        "elif status >= 400:",
+        "st.error(format_error_payload(payload, status))",
+        "st.json(payload)",
+    ]:
+        assert required in export_section
 
 
 def test_document_chunks_endpoint_reports_index_status(tmp_path):
@@ -11739,10 +12179,14 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
         "document_option_label",
         "document_status_rows(document_detail, chunks)",
         "section_preview",
+        "format_func=document_section_option_label",
+        "format_func=document_chunk_option_label",
         "parse_error",
         "vector_id",
     ]:
         assert required in documents_section
+    assert "format_func=lambda section" not in documents_section
+    assert "format_func=lambda chunk" not in documents_section
     assert 'type=["pdf"]' in documents_section
     assert 'type=["pdf", "txt"]' not in documents_section
 
@@ -11762,11 +12206,14 @@ def test_streamlit_documents_tab_offers_tei_xml_download():
     documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
 
     for required in [
-        'document_detail.get("tei_path")',
-        'tei_path = Path(document_detail.get("tei_path"))',
-        "tei_path.exists()",
-        "下载 TEI XML",
-        "TEI 文件不存在",
+        "document_asset_downloads(document_detail)",
+        "document_asset",
+        'document_asset["exists"]',
+        'document_asset["label"]',
+        'data=document_asset["data"]',
+        'file_name=document_asset["file_name"]',
+        'mime=document_asset["mime"]',
+        'st.warning(document_asset["missing_message"])',
     ]:
         assert required in documents_section
 
@@ -11777,11 +12224,14 @@ def test_streamlit_documents_tab_offers_original_pdf_download():
     documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
 
     for required in [
-        'document_detail.get("file_path")',
-        'pdf_path = Path(document_detail.get("file_path"))',
-        "pdf_path.exists()",
-        "下载原始 PDF",
-        "PDF 文件不存在",
+        "document_asset_downloads(document_detail)",
+        "document_asset",
+        'document_asset["exists"]',
+        'document_asset["label"]',
+        'data=document_asset["data"]',
+        'file_name=document_asset["file_name"]',
+        'mime=document_asset["mime"]',
+        'st.warning(document_asset["missing_message"])',
     ]:
         assert required in documents_section
 
@@ -11815,6 +12265,44 @@ def test_streamlit_documents_tab_exposes_section_and_chunk_pagination_controls()
         assert required in documents_section
 
 
+def test_streamlit_document_sections_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    sections_load_section = documents_section[
+        documents_section.index("sections_response = api_get(") :
+        documents_section.index('sections = sections_response["items"]')
+    ]
+
+    for required in [
+        "sections_response = api_get(",
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
+    ]:
+        assert required in sections_load_section
+
+
+def test_streamlit_document_chunks_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    chunks_load_section = documents_section[
+        documents_section.index("chunks = api_get(") :
+        documents_section.index("index_status = chunks.get")
+    ]
+
+    for required in [
+        "chunks = api_get(",
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
+    ]:
+        assert required in chunks_load_section
+
+
 def test_streamlit_document_parse_surfaces_success_and_error_states():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
@@ -11825,7 +12313,7 @@ def test_streamlit_document_parse_surfaces_success_and_error_states():
         "if status_code < 400:",
         "已创建解析任务",
         "else:",
-        "st.warning(parse_payload)",
+        "st.warning(format_error_payload(parse_payload, status_code))",
         "st.json(parse_payload)",
     ]:
         assert required in documents_section
@@ -11843,7 +12331,7 @@ def test_streamlit_document_translate_surfaces_success_and_error_states():
         "if status_code < 400:",
         "已创建翻译任务",
         "else:",
-        "st.warning(translate_payload)",
+        "st.warning(format_error_payload(translate_payload, status_code))",
         "st.json(translate_payload)",
     ]:
         assert required in documents_section
@@ -11859,7 +12347,7 @@ def test_streamlit_document_index_surfaces_success_and_error_states():
         "if status_code < 400:",
         "已创建索引任务",
         "else:",
-        "st.warning(index_payload)",
+        "st.warning(format_error_payload(index_payload, status_code))",
         "st.json(index_payload)",
     ]:
         assert required in documents_section
@@ -11875,7 +12363,7 @@ def test_streamlit_document_extract_surfaces_success_and_error_states():
         "if status_code < 400:",
         "已创建化学抽取任务",
         "else:",
-        "st.warning(extract_payload)",
+        "st.warning(format_error_payload(extract_payload, status_code))",
         "st.json(extract_payload)",
     ]:
         assert required in documents_section
@@ -11924,10 +12412,31 @@ def test_streamlit_translation_preview_offers_download():
 
     for required in [
         "translation_text",
+        "translation_download(translation_preview)",
+        "translation_file",
         "st.download_button",
-        "下载双语翻译",
-        'mime="text/markdown"',
-        "file_name=output_path.name",
+        'translation_file["label"]',
+        'data=translation_file["data"]',
+        'file_name=translation_file["file_name"]',
+        'mime=translation_file["mime"]',
+    ]:
+        assert required in translation_section
+
+
+def test_streamlit_translation_preview_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    translation_section = documents_section[
+        documents_section.index("with translation_tab:") : documents_section.index("with chunks_tab:")
+    ]
+
+    for required in [
+        'translation_preview = api_get(f"/documents/{selected[\'id\']}/translation")',
+        "except FrontendApiError as exc:",
+        "st.warning(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "except Exception as exc:",
     ]:
         assert required in translation_section
 
@@ -11941,8 +12450,8 @@ def test_streamlit_translation_preview_warns_when_output_file_is_missing():
     ]
 
     for required in [
-        'output_path = Path(translation_preview.get("output_path"))',
-        "output_path.exists()",
+        "translation_download(translation_preview)",
+        "translation_file",
         "翻译文件不存在",
     ]:
         assert required in translation_section
@@ -11975,13 +12484,13 @@ def test_streamlit_rag_tab_separates_answer_and_sources():
         "rag_source_rows",
         "引用来源",
         "st.dataframe(sources",
+        "format_func=rag_source_option_label",
         "source_excerpt",
         'source_preview.get("source_excerpt")',
         "st.code(source_preview.get(\"source_excerpt\")",
-        "source_location",
-        "citation",
     ]:
         assert required in rag_section
+    assert "format_func=lambda source" not in rag_section
 
 
 def test_streamlit_rag_tab_validates_document_ids_before_query():
@@ -12000,6 +12509,25 @@ def test_streamlit_rag_tab_validates_document_ids_before_query():
         '"/rag/query"',
     ]:
         assert required in rag_section
+
+
+def test_streamlit_rag_query_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+    rag_query_section = rag_section[
+        rag_section.index("status, rag_payload = api_post(") :
+        rag_section.index("answer = rag_payload.get")
+    ]
+
+    for required in [
+        'status, rag_payload = api_post(',
+        '"/rag/query"',
+        "if status >= 400:",
+        "st.warning(format_error_payload(rag_payload, status))",
+        "st.json(rag_payload)",
+    ]:
+        assert required in rag_query_section
 
 
 def test_streamlit_rag_tab_exposes_top_k_control():
@@ -12053,6 +12581,21 @@ def test_streamlit_rag_tab_exposes_document_pagination_controls():
         assert required in rag_section
 
 
+def test_streamlit_rag_documents_list_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+
+    for required in [
+        'rag_documents_response = api_get("/documents", page=int(rag_documents_page), page_size=int(rag_documents_page_size))',
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
+    ]:
+        assert required in rag_section
+
+
 def test_streamlit_document_upload_shows_duplicate_result():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
@@ -12067,12 +12610,57 @@ def test_streamlit_document_upload_shows_duplicate_result():
         assert required in documents_section
 
 
+def test_streamlit_document_upload_shows_error_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    upload_error_section = documents_section[
+        documents_section.index("else:\n            st.warning(format_error_payload(payload, status))") :
+    ]
+
+    assert "st.json(payload)" in upload_error_section
+
+
 def test_streamlit_documents_tab_shows_empty_state():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
 
     assert "暂无文档，请先上传 PDF。" in documents_section
+
+
+def test_streamlit_documents_list_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    for required in [
+        'documents_response = api_get("/documents", page=int(documents_page), page_size=int(documents_page_size))',
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
+    ]:
+        assert required in documents_section
+
+
+def test_streamlit_document_detail_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    detail_section = documents_section[
+        documents_section.index('selected = st.selectbox("文档", docs, format_func=document_option_label)') :
+        documents_section.index('if document_detail.get("parse_error"):')
+    ]
+
+    for required in [
+        'document_detail = api_get(f"/documents/{selected[\'id\']}")',
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
+    ]:
+        assert required in detail_section
 
 
 def test_streamlit_documents_tab_exposes_pagination_controls():
@@ -12206,6 +12794,21 @@ def test_streamlit_sidebar_can_check_grobid_live_status():
         assert required in sidebar_section
 
 
+def test_streamlit_sidebar_links_live_api_documentation():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+
+    for required in [
+        "api_docs_links",
+        "API 文档",
+        "api_docs_links(API_BASE).items()",
+        "st.link_button(label, url)",
+    ]:
+        assert required in streamlit
+        assert required in sidebar_section or required == "api_docs_links"
+
+
 def test_streamlit_crawl_jobs_table_flattens_diagnostics():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
@@ -12218,6 +12821,16 @@ def test_streamlit_crawl_jobs_table_flattens_diagnostics():
     assert "st.dataframe(crawl_job_rows(jobs), use_container_width=True)" in search_section
     assert "crawl_job_diagnostic_rows(job_detail)" in search_section
     assert "st.dataframe(crawl_job_diagnostic_rows(job_detail), use_container_width=True)" in search_section
+
+
+def test_streamlit_crawl_jobs_use_option_label_helper():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+
+    assert "crawl_job_option_label" in streamlit
+    assert "format_func=crawl_job_option_label" in search_section
+    assert "format_func=lambda job" not in search_section
 
 
 def test_streamlit_crawl_jobs_show_empty_state():
@@ -12246,6 +12859,44 @@ def test_streamlit_crawl_jobs_exposes_pagination_controls():
         assert required in search_section
 
 
+def test_streamlit_crawl_jobs_list_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+    crawl_jobs_section = search_section[
+        search_section.index("crawl_jobs_page_col, crawl_jobs_page_size_col = st.columns(2)") :
+        search_section.index('if not jobs:')
+    ]
+
+    for required in [
+        'crawl_jobs_response = api_get("/crawl/jobs", page=int(crawl_jobs_page), page_size=int(crawl_jobs_page_size))',
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
+    ]:
+        assert required in crawl_jobs_section
+
+
+def test_streamlit_crawl_job_detail_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+    crawl_job_detail_section = search_section[
+        search_section.index("selected_job = st.selectbox(") :
+        search_section.index("st.dataframe(crawl_job_diagnostic_rows(job_detail), use_container_width=True)")
+    ]
+
+    for required in [
+        'job_detail = api_get(f"/crawl/jobs/{selected_job[\'id\']}")',
+        "except FrontendApiError as exc:",
+        "st.warning(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "if job_detail:",
+    ]:
+        assert required in crawl_job_detail_section
+
+
 def test_streamlit_crawl_run_surfaces_success_and_error_states():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
@@ -12255,7 +12906,7 @@ def test_streamlit_crawl_run_surfaces_success_and_error_states():
         "crawl_journal_choice = crawl_col1.selectbox(",
         '"抓取期刊"',
         "crawl_journal_options(journals)",
-        'format_func=lambda option: option["label"]',
+        "format_func=crawl_journal_option_label",
         'selected_crawl_journal_id = crawl_journal_choice["journal_id"]',
         "crawl_date_error = date_from and date_to and date_from > date_to",
         "if crawl_date_error:",
@@ -12266,11 +12917,28 @@ def test_streamlit_crawl_run_surfaces_success_and_error_states():
         "if status_code < 400:",
         "已创建抓取任务",
         "else:",
-        "st.warning(crawl_payload)",
+        "st.warning(format_error_payload(crawl_payload, status_code))",
         "st.json(crawl_payload)",
     ]:
         assert required in search_section
     assert 'number_input("journal_id"' not in search_section
+    assert "format_func=lambda option" not in search_section
+
+
+def test_streamlit_search_filter_metadata_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    for required in [
+        'journals = api_get("/journals", active=True, page_size=100)["items"]',
+        'categories = api_get("/categories")["items"]',
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
+    ]:
+        assert required in search_section
 
 
 def test_streamlit_search_results_show_dedupe_strategy():
@@ -12309,6 +12977,24 @@ def test_streamlit_search_results_can_trigger_classification():
         assert required in search_section
 
 
+def test_streamlit_search_classification_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    classify_section = search_section[
+        search_section.index('if st.button("触发分类"') :
+        search_section.index('if st.button(\n                "重新解析 OA"')
+    ]
+
+    for required in [
+        'status_code, classified_paper = api_post(f"/papers/{paper[\'id\']}/classify")',
+        "else:",
+        "st.warning(format_error_payload(classified_paper, status_code))",
+        "st.json(classified_paper)",
+    ]:
+        assert required in classify_section
+
+
 def test_streamlit_search_results_can_override_categories_manually():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
@@ -12321,10 +13007,31 @@ def test_streamlit_search_results_can_override_categories_manually():
         "api_put(",
         'f"/papers/{paper[\'id\']}/categories"',
         '"method": "manual"',
+        "format_func=paper_category_option_label",
         'key=f"manual-categories-{paper[\'id\']}"',
         'key=f"save-manual-categories-{paper[\'id\']}"',
     ]:
         assert required in search_section
+    assert "format_func=lambda category" not in search_section
+
+
+def test_streamlit_search_manual_category_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    manual_category_section = search_section[
+        search_section.index('if st.button("保存人工分类"') :
+        search_section.index("links = []")
+    ]
+
+    for required in [
+        "status_code, updated_paper = api_put(",
+        'f"/papers/{paper[\'id\']}/categories"',
+        "else:",
+        "st.warning(format_error_payload(updated_paper, status_code))",
+        "st.json(updated_paper)",
+    ]:
+        assert required in manual_category_section
 
 
 def test_streamlit_search_results_can_resolve_oa_manually():
@@ -12344,6 +13051,24 @@ def test_streamlit_search_results_can_resolve_oa_manually():
         assert required in search_section
 
 
+def test_streamlit_search_resolve_oa_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    resolve_oa_section = search_section[
+        search_section.index('if st.button(\n                "重新解析 OA"') :
+        search_section.index("category_options_by_slug =")
+    ]
+
+    for required in [
+        'status_code, resolved_paper = api_post(f"/papers/{paper[\'id\']}/resolve-oa")',
+        "else:",
+        "st.warning(format_error_payload(resolved_paper, status_code))",
+        "st.json(resolved_paper)",
+    ]:
+        assert required in resolve_oa_section
+
+
 def test_streamlit_search_tab_handles_empty_results_and_api_errors():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
@@ -12356,10 +13081,14 @@ def test_streamlit_search_tab_handles_empty_results_and_api_errors():
         "sort=relevance requires q",
         'elif sort_choice == "relevance" and not q.strip():',
         "try:",
+        "except FrontendApiError as exc:",
+        "st.warning(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
         'papers = {"items": [], "total": 0, "page": 1, "page_size": 20}',
         'if not search_error and papers["total"] == 0:',
     ]:
         assert required in search_section
+    assert 'st.warning(f"检索失败: {exc}")' not in search_section
 
 
 def test_streamlit_search_tab_exposes_year_filters():
@@ -12403,12 +13132,12 @@ def test_streamlit_api_put_preserves_json_errors_for_callers():
     journals_section = streamlit[streamlit.index("更新期刊") : streamlit.index("st.divider()", streamlit.index("更新期刊"))]
     assert "status_code, result = api_put(" in journals_section
     assert "if status_code < 400:" in journals_section
-    assert "st.warning(result)" in journals_section
+    assert "st.warning(format_error_payload(result, status_code))" in journals_section
 
     reactions_section = streamlit[streamlit.index("with chemistry_tab:") :]
     assert "status_code, result = api_put(" in reactions_section
     assert "st.session_state[\"reaction_set_detail\"] = result" in reactions_section
-    assert "st.warning(result)" in reactions_section
+    assert "st.warning(format_error_payload(result, status_code))" in reactions_section
 
 
 def test_streamlit_config_tab_exposes_journal_and_category_management():
@@ -12436,6 +13165,16 @@ def test_streamlit_config_tab_exposes_journal_and_category_management():
         assert required in config_section
 
 
+def test_streamlit_config_tab_uses_journal_option_label_helper():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+
+    assert "journal_option_label" in streamlit
+    assert "format_func=journal_option_label" in config_section
+    assert "format_func=lambda journal" not in config_section
+
+
 def test_streamlit_config_tab_normalizes_journal_keywords_for_dataframe():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
@@ -12445,6 +13184,22 @@ def test_streamlit_config_tab_normalizes_journal_keywords_for_dataframe():
         "journals_table",
         'json.dumps(journal.get("keywords"), ensure_ascii=False)',
         "st.dataframe(journals_table, use_container_width=True)",
+    ]:
+        assert required in config_section
+
+
+def test_streamlit_config_metadata_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+
+    for required in [
+        'journals_response = api_get("/journals", page=int(config_journals_page), page_size=int(config_journals_page_size))',
+        'categories_response = api_get("/categories", page=1, page_size=100)',
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
     ]:
         assert required in config_section
 
@@ -12496,3 +13251,55 @@ def test_streamlit_config_tab_can_create_journal_with_year_to():
         "year_from must be less than or equal to year_to",
     ]:
         assert required in create_section
+
+
+def test_streamlit_config_create_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    create_journal_section = streamlit[
+        streamlit.index('with st.form("create-journal-form")') :
+        streamlit.index("if journals_all:")
+    ]
+    create_category_section = streamlit[
+        streamlit.index('with st.form("create-category-form")') :
+        streamlit.index("with documents_tab:")
+    ]
+
+    for section, endpoint in [
+        (create_journal_section, 'api_post("/journals"'),
+        (create_category_section, 'api_post("/categories"'),
+    ]:
+        assert endpoint in section
+        assert "st.warning(format_error_payload(result, status_code))" in section
+        assert "st.json(result)" in section
+
+
+def test_streamlit_config_update_delete_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    update_section = streamlit[
+        streamlit.index('if st.button("更新期刊"') :
+        streamlit.index('if st.button("停用期刊"')
+    ]
+    delete_section = streamlit[
+        streamlit.index('if st.button("停用期刊"') :
+        streamlit.index("st.divider()", streamlit.index('if st.button("停用期刊"'))
+    ]
+
+    for section, endpoint in [
+        (update_section, "status_code, result = api_put("),
+        (delete_section, 'status_code, result = api_delete(f"/journals/{selected_journal[\'id\']}")'),
+    ]:
+        assert endpoint in section
+        assert "st.warning(format_error_payload(result, status_code))" in section
+        assert "st.json(result)" in section
+
+
+def test_streamlit_config_tab_uses_category_parent_option_label_helper():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+
+    assert "category_parent_option_label" in streamlit
+    assert "format_func=category_parent_option_label" in config_section
+    assert "format_func=lambda category" not in config_section

@@ -11,7 +11,9 @@ python scripts/doctor.py --strict --compact
 bash scripts/release_check.sh
 ```
 
-The strict preflight doctor checks Python version, required project files, and importable Python dependencies before service startup, and exits non-zero when any required check fails. The release gate validates shell syntax, Python compilation, API/schema/docs/env/requirement hygiene, the unified dev startup path, fixture import, demo data preparation, smoke coverage, and the full test suite.
+The strict preflight doctor checks Python version, required project files, importable Python dependencies, and whether local storage paths are creatable and writable before service startup. It reads `.env` for local path configuration while preserving exported environment variable overrides, and exits non-zero when any required check fails. The release gate validates shell syntax, Python compilation, API/schema/docs/env/requirement hygiene, the unified dev startup path, fixture import, demo data preparation, smoke coverage, and the full test suite.
+
+The API contract gate compares `docs/接口设计文档.md` with the generated OpenAPI schema and fails on missing, undocumented, or duplicate documented routes.
 
 ## 2. Demo Data
 
@@ -19,22 +21,40 @@ Prepare and inspect walking skeleton data:
 
 ```bash
 python scripts/prepare_demo_data.py --summary-only --compact
+python scripts/prepare_demo_data.py --summary-only --compact --output out/demo-summary.json
 ```
 
-The compact summary should report `ready: true`, parsed/indexed/extracted/done statuses, a verified reaction set, and `json`, `txt`, `bolsig` export formats.
+The compact summary should report `ready: true`, parsed/indexed/extracted/done statuses, a verified reaction set, and `json`, `txt`, `bolsig` export formats. Use `--output out/demo-summary.json` when you need a handoff artifact alongside the OpenAPI export.
 
-## 3. Live Runtime
+## 3. API Contract Handoff
+
+Export the current OpenAPI schema for frontend handoff, review, or release artifacts:
+
+```bash
+python scripts/export_openapi.py --output out/openapi.json
+python scripts/export_release_artifacts.py --output-dir out/release --compact
+python scripts/validate_release_artifacts.py --artifact-dir out/release --compact
+python scripts/package_release_artifacts.py --artifact-dir out/release --output out/paper-lab-agent-release.zip --compact
+python scripts/validate_release_package.py --package out/paper-lab-agent-release.zip --compact
+```
+
+The combined release artifact command writes `openapi.json`, `demo-summary.json`, and `release-manifest.json` into the target directory. The manifest records source git commit/branch, source dirty state, and file checksums. Validate the directory before handoff so missing files, checksum mismatches, edited summaries, version drift, or malformed manifests fail before sharing. Package the validated directory when you need a single handoff file, then validate the zip so the package can be unpacked and rechecked before delivery. For final handoff after committing, add `--require-clean-source` to validation or packaging to fail if the manifest was exported from a dirty worktree. The output is generated under `out/`, which is ignored by Git. Do not hand-edit the exported schema or summary; regenerate them from the app.
+
+## 4. Live Runtime
 
 After starting the app with `bash scripts/dev.sh`, run:
 
 ```bash
+python scripts/health_check.py --summary-only --compact
 python scripts/health_check.py --require-release-ready
 python scripts/health_check.py --require-frontend
+python scripts/health_check.py --require-openapi
 ```
 
-`--require-release-ready` checks storage writability, no failed workflow backlog, no config warnings, and demo data readiness. `--require-frontend` verifies the Streamlit health endpoint.
+Use the compact summary first to inspect `release_ready` and `release_blockers`, then run the required gates to fail fast.
+`--require-release-ready` checks storage writability, no failed workflow backlog, no config warnings, and demo data readiness. `--require-frontend` verifies the Streamlit health endpoint. `--require-openapi` verifies the live `/openapi.json` schema used by frontend handoff.
 
-## 4. Optional External Gate
+## 5. Optional External Gate
 
 For real PDF parsing deployments with GROBID running:
 
@@ -44,11 +64,11 @@ python scripts/health_check.py --require-grobid
 
 This gate is intentionally separate because local fallback mode and offline CI do not require GROBID.
 
-## 5. GitHub Gate
+## 6. GitHub Gate
 
 GitHub Actions runs `.github/workflows/ci.yml` on push and pull request. It also exposes `workflow_dispatch`, so the release gate can be triggered manually before a demo or release handoff.
 
-## 6. Git Safety
+## 7. Git Safety
 
 Before tagging, publishing, or handing off a release, confirm that the checkout matches the intended branch and worktree:
 

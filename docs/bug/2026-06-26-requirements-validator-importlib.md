@@ -20,3 +20,5 @@
 python -m pytest tests/test_release_contracts.py::test_requirements_validator_ignores_standard_library_imports -q
 python scripts/validate_requirements.py
 ```
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。

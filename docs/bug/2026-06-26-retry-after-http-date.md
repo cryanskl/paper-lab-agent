@@ -22,4 +22,4 @@
 - RED：`python -m pytest tests/test_clients.py::test_academic_clients_parse_retry_after_http_date -q` 在日期格式未支持时失败。
 - GREEN：`python -m pytest tests/test_clients.py::test_academic_clients_parse_retry_after_http_date -q`
 - 客户端测试：`python -m pytest tests/test_clients.py -q`
-- 完整 gate：`bash scripts/release_check.sh`
+- 完整 gate：`bash scripts/release_check.sh` 通过，`707 passed`。

@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.package_release_artifacts import artifact_filenames, sha256_file
+from scripts.validate_release_artifacts import format_report, validate_release_artifacts
+
+
+def validate_release_package(package_path: Path, *, require_clean_source: bool = False) -> dict[str, Any]:
+    package_path = package_path.resolve()
+    issues: list[str] = []
+    artifact_names: list[str] = []
+    source: dict[str, Any] = {}
+    package_sha256 = sha256_file(package_path) if package_path.exists() else None
+
+    if not package_path.exists():
+        issues.append(f"release package missing: {package_path}")
+        return {
+            "ok": False,
+            "package_path": str(package_path),
+            "package_sha256": package_sha256,
+            "artifact_count": 0,
+            "artifact_names": artifact_names,
+            "source": source,
+            "issues": issues,
+        }
+
+    expected_names = artifact_filenames()
+    try:
+        with zipfile.ZipFile(package_path) as archive:
+            artifact_names = sorted(archive.namelist())
+            if artifact_names != expected_names:
+                issues.append(f"release package artifacts mismatch: {artifact_names!r}")
+            if len(artifact_names) != len(set(artifact_names)):
+                issues.append("release package contains duplicate artifact names")
+            unsafe_names = [
+                name
+                for name in archive.namelist()
+                if Path(name).is_absolute() or ".." in Path(name).parts
+            ]
+            if unsafe_names:
+                issues.append(f"release package contains unsafe artifact names: {unsafe_names!r}")
+
+            if not issues:
+                with tempfile.TemporaryDirectory(prefix="paper-lab-release-package-") as extract_dir:
+                    archive.extractall(extract_dir)
+                    validation = validate_release_artifacts(
+                        Path(extract_dir),
+                        require_clean_source=require_clean_source,
+                    )
+                    source = validation.get("source") or {}
+                    issues.extend(validation.get("issues") or [])
+    except zipfile.BadZipFile as exc:
+        issues.append(f"release package invalid zip: {exc}")
+
+    return {
+        "ok": not issues,
+        "package_path": str(package_path),
+        "package_sha256": package_sha256,
+        "artifact_count": len(artifact_names),
+        "artifact_names": artifact_names,
+        "source": source,
+        "issues": issues,
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Validate a packaged release handoff zip file.")
+    parser.add_argument(
+        "--package",
+        default="out/paper-lab-agent-release.zip",
+        type=Path,
+        help="Release zip package path.",
+    )
+    parser.add_argument(
+        "--require-clean-source",
+        action="store_true",
+        help="Fail when the packaged manifest records a dirty source worktree.",
+    )
+    parser.add_argument("--compact", action="store_true", help="Emit compact single-line JSON.")
+    args = parser.parse_args()
+
+    report = validate_release_package(args.package, require_clean_source=args.require_clean_source)
+    print(format_report(report, compact=args.compact))
+    return 0 if report["ok"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

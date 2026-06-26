@@ -14,11 +14,16 @@ fi
 bash -n scripts/env.sh
 bash -n scripts/dev.sh
 "${PYTHON_CMD[@]}" -m compileall -q app scripts tests streamlit_app.py
-"${PYTHON_CMD[@]}" -m py_compile scripts/doctor.py scripts/health_check.py scripts/import_fixtures.py scripts/prepare_demo_data.py scripts/smoke_check.py scripts/validate_api_contract.py scripts/validate_bug_docs.py scripts/validate_docs_links.py scripts/validate_env_example.py scripts/validate_readme_commands.py scripts/validate_release_hygiene.py scripts/validate_requirements.py scripts/validate_schema.py streamlit_app.py
+"${PYTHON_CMD[@]}" -m py_compile scripts/doctor.py scripts/export_openapi.py scripts/export_release_artifacts.py scripts/health_check.py scripts/import_fixtures.py scripts/package_release_artifacts.py scripts/prepare_demo_data.py scripts/smoke_check.py scripts/validate_api_contract.py scripts/validate_bug_docs.py scripts/validate_docs_links.py scripts/validate_env_example.py scripts/validate_readme_commands.py scripts/validate_release_artifacts.py scripts/validate_release_hygiene.py scripts/validate_release_package.py scripts/validate_requirements.py scripts/validate_schema.py streamlit_app.py
 "${PYTHON_CMD[@]}" scripts/doctor.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact
+"${PYTHON_CMD[@]}" scripts/export_openapi.py --help >/dev/null
+"${PYTHON_CMD[@]}" scripts/export_release_artifacts.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/health_check.py --help >/dev/null
+"${PYTHON_CMD[@]}" scripts/package_release_artifacts.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/prepare_demo_data.py --help >/dev/null
+"${PYTHON_CMD[@]}" scripts/validate_release_artifacts.py --help >/dev/null
+"${PYTHON_CMD[@]}" scripts/validate_release_package.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/validate_api_contract.py
 "${PYTHON_CMD[@]}" scripts/validate_bug_docs.py
 "${PYTHON_CMD[@]}" scripts/validate_docs_links.py
@@ -27,6 +32,25 @@ bash -n scripts/dev.sh
 "${PYTHON_CMD[@]}" scripts/validate_release_hygiene.py
 "${PYTHON_CMD[@]}" scripts/validate_requirements.py
 "${PYTHON_CMD[@]}" scripts/validate_schema.py
+OPENAPI_JSON="$(mktemp)"
+"${PYTHON_CMD[@]}" scripts/export_openapi.py --output "${OPENAPI_JSON}" --compact
+OPENAPI_JSON="${OPENAPI_JSON}" "${PYTHON_CMD[@]}" - <<'PY'
+import json
+import os
+from pathlib import Path
+
+payload = json.loads(Path(os.environ["OPENAPI_JSON"]).read_text(encoding="utf-8"))
+tag_names = {tag.get("name") for tag in payload.get("tags", [])}
+if payload.get("info", {}).get("title") != "paper-lab-agent":
+    raise SystemExit("release_check failed: OpenAPI title mismatch")
+if "/api/v1/health" not in payload.get("paths", {}):
+    raise SystemExit("release_check failed: OpenAPI missing /api/v1/health")
+if "system" not in tag_names:
+    raise SystemExit("release_check failed: OpenAPI missing system tag metadata")
+if "ErrorResponse" not in payload.get("components", {}).get("schemas", {}):
+    raise SystemExit("release_check failed: OpenAPI missing ErrorResponse schema")
+PY
+rm -f "${OPENAPI_JSON}"
 DEV_CHECK_JSON="$("${PYTHON_CMD[@]}" - <<'PY'
 import json
 import os
@@ -171,6 +195,25 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-demo-") as demo_dir:
         env=env,
     )
     summary_payload = json.loads(summary_result.stdout)
+    summary_output_path = os.path.join(demo_dir, "out", "demo-summary.json")
+    summary_output_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/prepare_demo_data.py",
+            "--summary-only",
+            "--compact",
+            "--output",
+            summary_output_path,
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+    if summary_output_result.stdout:
+        print("release_check failed: prepare_demo_data --output should not write JSON to stdout", file=sys.stderr)
+        raise SystemExit(1)
+    summary_output_payload = json.loads(open(summary_output_path, encoding="utf-8").read())
     for name, export_payload in payload.get("exports", {}).items():
         path = export_payload.get("output_path")
         if not path or not os.path.exists(path):
@@ -194,8 +237,14 @@ if summary.get("ready") is not True:
 if summary_payload != summary:
     print("release_check failed: prepare_demo_data --summary-only output does not match payload.summary", file=sys.stderr)
     raise SystemExit(1)
+if summary_output_payload != summary:
+    print("release_check failed: prepare_demo_data --output summary does not match payload.summary", file=sys.stderr)
+    raise SystemExit(1)
 if any(key in summary_payload for key in ("document", "exports")):
     print("release_check failed: prepare_demo_data --summary-only leaked full payload keys", file=sys.stderr)
+    raise SystemExit(1)
+if any(key in summary_output_payload for key in ("document", "exports")):
+    print("release_check failed: prepare_demo_data --output summary leaked full payload keys", file=sys.stderr)
     raise SystemExit(1)
 expected_counts = {
     "papers": 2,
@@ -237,6 +286,143 @@ print(json.dumps(payload, ensure_ascii=False))
 PY
 )"
 printf '%s\n' "${PREPARE_DEMO_JSON}"
+RELEASE_ARTIFACTS_JSON="$("${PYTHON_CMD[@]}" - <<'PY'
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = os.path.join(release_dir, "data")
+    output_dir = Path(release_dir) / "out" / "release"
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+    manifest = json.loads(result.stdout)
+    manifest_path = output_dir / "release-manifest.json"
+    demo_summary_path = output_dir / "demo-summary.json"
+    openapi_path = output_dir / "openapi.json"
+    file_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    demo_summary = json.loads(demo_summary_path.read_text(encoding="utf-8"))
+    openapi = json.loads(openapi_path.read_text(encoding="utf-8"))
+    if manifest != file_manifest:
+        print("release_check failed: release-manifest.json differs from stdout manifest", file=sys.stderr)
+        raise SystemExit(1)
+    if manifest.get("service") != "paper-lab-agent":
+        print(f"release_check failed: release manifest service={manifest.get('service')!r}", file=sys.stderr)
+        raise SystemExit(1)
+    if manifest.get("version") != openapi.get("info", {}).get("version"):
+        print("release_check failed: release manifest version does not match OpenAPI version", file=sys.stderr)
+        raise SystemExit(1)
+    if manifest.get("artifacts") != {
+        "openapi": "openapi.json",
+        "demo_summary": "demo-summary.json",
+        "manifest": "release-manifest.json",
+    }:
+        print(f"release_check failed: release manifest artifacts={manifest.get('artifacts')!r}", file=sys.stderr)
+        raise SystemExit(1)
+    if manifest.get("demo_ready") is not True or demo_summary.get("ready") is not True:
+        print("release_check failed: release handoff demo summary is not ready", file=sys.stderr)
+        raise SystemExit(1)
+    if manifest.get("demo_export_formats") != ["json", "txt", "bolsig"]:
+        print(f"release_check failed: release manifest demo_export_formats={manifest.get('demo_export_formats')!r}", file=sys.stderr)
+        raise SystemExit(1)
+    if "/api/v1/health" not in openapi.get("paths", {}):
+        print("release_check failed: release handoff OpenAPI missing /api/v1/health", file=sys.stderr)
+        raise SystemExit(1)
+    validate_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_artifacts.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    validation = json.loads(validate_result.stdout)
+    if validation.get("ok") is not True:
+        print(f"release_check failed: release artifact validation={validation!r}", file=sys.stderr)
+        raise SystemExit(1)
+    source = validation.get("source") or {}
+    if not source.get("git_commit") or not source.get("git_branch"):
+        print(f"release_check failed: release artifact source={source!r}", file=sys.stderr)
+        raise SystemExit(1)
+    if not isinstance(source.get("git_dirty"), bool):
+        print(f"release_check failed: release artifact source.git_dirty={source.get('git_dirty')!r}", file=sys.stderr)
+        raise SystemExit(1)
+    checksums = validation.get("checksums") or {}
+    if sorted(checksums) != ["demo-summary.json", "openapi.json", "release-manifest.json"]:
+        print(f"release_check failed: release artifact checksums={checksums!r}", file=sys.stderr)
+        raise SystemExit(1)
+    package_path = Path(release_dir) / "out" / "paper-lab-agent-release.zip"
+    package_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/package_release_artifacts.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--output",
+            str(package_path),
+            "--compact",
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    package = json.loads(package_result.stdout)
+    if package.get("ok") is not True or package.get("artifact_count") != 3 or not package_path.exists():
+        print(f"release_check failed: release artifact package={package!r}", file=sys.stderr)
+        raise SystemExit(1)
+    validate_package_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_package.py",
+            "--package",
+            str(package_path),
+            "--compact",
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    package_validation = json.loads(validate_package_result.stdout)
+    if (
+        package_validation.get("ok") is not True
+        or package_validation.get("artifact_count") != 3
+        or package_validation.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]
+    ):
+        print(f"release_check failed: release package validation={package_validation!r}", file=sys.stderr)
+        raise SystemExit(1)
+print(json.dumps(package, ensure_ascii=False))
+PY
+)"
+printf '%s\n' "${RELEASE_ARTIFACTS_JSON}"
 SMOKE_JSON="$("${PYTHON_CMD[@]}" -m scripts.smoke_check)"
 printf '%s\n' "${SMOKE_JSON}"
 SMOKE_JSON="${SMOKE_JSON}" "${PYTHON_CMD[@]}" - <<'PY'
@@ -268,6 +454,7 @@ expected = {
     "document_detail_has_paper": True,
     "document_detail_parse_status": "uploaded",
     "document_list_total": 1,
+    "duplicate_document_matches_original": True,
     "duplicate_upload_status": 409,
     "unsupported_document_status": 415,
     "error_response_count": 4,
@@ -344,6 +531,7 @@ expected = {
     "extracted_rate_type": "cross_section",
     "reaction_set_detail_export_ready_after_verify": True,
     "reaction_set_detail_audit_entries_after_verify": 1,
+    "verified_export_has_smoke_check_audit": True,
     "verified_export_txt_has_verification_metadata": True,
     "verified_export_bolsig_has_verification_metadata": True,
     "verified_export_txt_has_confidence": True,

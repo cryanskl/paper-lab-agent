@@ -15,3 +15,5 @@
 ## 验证
 
 新增 `tests/test_config.py` 覆盖 `PAPER_LAB_DATA_DIR` 默认派生和显式路径覆盖。完整验证以 `bash scripts/release_check.sh` 为准。
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。

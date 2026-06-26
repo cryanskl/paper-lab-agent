@@ -20,4 +20,4 @@
 
 - RED：`python -m pytest tests/test_release_contracts.py::test_doctor_preflight_is_documented_and_in_release_gate -q` 在 checklist 缺少 strict 时失败。
 - GREEN：`python -m pytest tests/test_release_contracts.py::test_doctor_preflight_is_documented_and_in_release_gate -q`
-- 完整 gate：`bash scripts/release_check.sh`
+- 完整 gate：`bash scripts/release_check.sh` 通过，`707 passed`。

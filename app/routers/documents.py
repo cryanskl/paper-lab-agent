@@ -56,6 +56,88 @@ class DocumentResponse(BaseModel):
     paper: Optional[PaperSummaryResponse] = None
 
 
+class DocumentListResponse(BaseModel):
+    items: list[DocumentResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+class TranslationResponse(BaseModel):
+    id: int
+    document_id: int
+    source_lang: Optional[str] = None
+    target_lang: str
+    status: str
+    output_path: Optional[str] = None
+    error: Optional[str] = None
+    created_at: str
+
+
+class SectionResponse(BaseModel):
+    id: int
+    document_id: int
+    parent_id: Optional[int] = None
+    seq: Optional[int] = None
+    title: Optional[str] = None
+    content: Optional[str] = None
+    section_type: Optional[str] = None
+
+
+class SectionListResponse(BaseModel):
+    items: list[SectionResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+class ChunkResponse(BaseModel):
+    id: int
+    document_id: int
+    section_id: Optional[int] = None
+    seq: Optional[int] = None
+    text: str
+    token_count: Optional[int] = None
+    vector_id: Optional[str] = None
+    embedded: bool
+    created_at: str
+    section_title: Optional[str] = None
+
+
+class ChunkListResponse(BaseModel):
+    items: list[ChunkResponse]
+    total: int
+    page: int
+    page_size: int
+    indexed: bool
+    index_status: str
+    index_error: Optional[str] = None
+
+
+class ReactionSetListItemResponse(BaseModel):
+    id: int
+    document_id: Optional[int] = None
+    name: Optional[str] = None
+    gas_mixture: Optional[str] = None
+    lxcat_db: Optional[str] = None
+    source_note: Optional[str] = None
+    status: str
+    verified_by: Optional[str] = None
+    verified_at: Optional[str] = None
+    created_at: str
+    reaction_count: int
+    verified_count: int
+    unverified_count: int
+    export_ready: bool
+
+
+class ReactionSetListResponse(BaseModel):
+    items: list[ReactionSetListItemResponse]
+    total: int
+    page: int
+    page_size: int
+
+
 async def ensure_pdf_upload(file: UploadFile) -> None:
     suffix = Path(file.filename or "").suffix.lower()
     header = await file.read(5)
@@ -121,7 +203,7 @@ async def upload_document(file: UploadFile = File(...), paper_id: Optional[int] 
     return document
 
 
-@router.get("", response_model=PageResponse)
+@router.get("", response_model=DocumentListResponse)
 def list_documents(
     page_num: int = Query(1, alias="page", ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -147,7 +229,7 @@ def parse(document_id: int, background_tasks: BackgroundTasks) -> dict:
     return {"job_id": document_id, "document_id": document_id, "parse_status": "parsing", "status": "pending"}
 
 
-@router.get("/{document_id}/sections", response_model=PageResponse)
+@router.get("/{document_id}/sections", response_model=SectionListResponse)
 def list_sections(
     document_id: int,
     page_num: int = Query(1, alias="page", ge=1),
@@ -164,7 +246,7 @@ def list_sections(
     return page([dict_from_row(row) for row in rows], total, page_num, page_size)
 
 
-@router.get("/{document_id}/chunks", response_model=PageResponse)
+@router.get("/{document_id}/chunks", response_model=ChunkListResponse)
 def list_chunks(
     document_id: int,
     page_num: int = Query(1, alias="page", ge=1),
@@ -211,7 +293,7 @@ def translate(document_id: int, body: TranslateIn, background_tasks: BackgroundT
     }
 
 
-@router.get("/{document_id}/translation")
+@router.get("/{document_id}/translation", response_model=TranslationResponse)
 def get_translation(document_id: int) -> dict:
     get_document_or_404(document_id)
     with get_conn() as conn:
@@ -240,7 +322,7 @@ def extract_chemistry(document_id: int, background_tasks: BackgroundTasks) -> di
     return {"job_id": document_id, "document_id": document_id, "chemistry_status": "extracting", "status": "pending"}
 
 
-@router.get("/{document_id}/reaction-sets", response_model=PageResponse)
+@router.get("/{document_id}/reaction-sets", response_model=ReactionSetListResponse)
 def document_reaction_sets(
     document_id: int,
     page_num: int = Query(1, alias="page", ge=1),

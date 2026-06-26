@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any, Optional
 
 import requests
@@ -19,6 +20,17 @@ def normalize_base_url(base_url: str) -> str:
 
 def normalize_path(path: str) -> str:
     return f"/{path.lstrip('/')}"
+
+
+def api_docs_links(base_url: str) -> dict[str, str]:
+    root = normalize_base_url(base_url)
+    if root.endswith("/api/v1"):
+        root = root[: -len("/api/v1")]
+    return {
+        "OpenAPI JSON": f"{root}/openapi.json",
+        "Swagger UI": f"{root}/docs",
+        "ReDoc": f"{root}/redoc",
+    }
 
 
 def summarize_text(text: str, limit: int = ERROR_TEXT_LIMIT) -> str:
@@ -119,6 +131,24 @@ def crawl_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]
     return options
 
 
+def crawl_journal_option_label(option: dict[str, Any]) -> str:
+    return str(option.get("label") or "期刊选项")
+
+
+def journal_option_label(journal: dict[str, Any]) -> str:
+    return f"#{journal['id']} {journal.get('name') or 'Journal'} · active={bool(journal.get('active'))}"
+
+
+def category_parent_option_label(category: Optional[dict[str, Any]]) -> str:
+    if category is None:
+        return "无"
+    return f"#{category['id']} {category.get('slug') or 'category'}"
+
+
+def paper_category_option_label(category: dict[str, Any]) -> str:
+    return f"{category.get('slug') or 'category'} · {category.get('name') or 'category'}"
+
+
 def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for job in jobs:
@@ -151,6 +181,14 @@ def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def crawl_job_option_label(job: dict[str, Any]) -> str:
+    return (
+        f"#{job.get('id') or job.get('job_id')} · "
+        f"journal {job.get('journal_id') or '-'} · "
+        f"{job.get('status') or 'unknown'}"
+    )
 
 
 def crawl_job_diagnostic_rows(job: dict[str, Any]) -> list[dict[str, Any]]:
@@ -205,6 +243,39 @@ def document_status_rows(document: dict[str, Any], chunks: Optional[dict[str, An
     return [{"field": field, "value": value} for field, value in rows]
 
 
+def document_asset_downloads(document: dict[str, Any]) -> list[dict[str, Any]]:
+    assets = [
+        ("pdf", "file_path", "下载原始 PDF", "application/pdf", "PDF 文件不存在", "bytes"),
+        ("tei", "tei_path", "下载 TEI XML", "application/xml", "TEI 文件不存在", "text"),
+    ]
+    downloads = []
+    for kind, field, label, mime, missing_label, data_mode in assets:
+        raw_path = document.get(field)
+        if not isinstance(raw_path, str) or not raw_path:
+            continue
+        path = Path(raw_path)
+        exists = path.exists() and path.is_file()
+        if exists and data_mode == "bytes":
+            data = path.read_bytes()
+        elif exists:
+            data = path.read_text(encoding="utf-8")
+        else:
+            data = None
+        downloads.append(
+            {
+                "kind": kind,
+                "label": label,
+                "data": data,
+                "file_name": path.name,
+                "mime": mime,
+                "path": str(path),
+                "exists": exists,
+                "missing_message": None if exists else f"{missing_label}: {path}",
+            }
+        )
+    return downloads
+
+
 def document_section_rows(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for section in sections:
@@ -236,6 +307,12 @@ def document_section_rows(sections: list[dict[str, Any]]) -> list[dict[str, Any]
     return rows
 
 
+def document_section_option_label(section: dict[str, Any]) -> str:
+    section_ref = section.get("seq") if section.get("seq") is not None else section.get("id")
+    label = section.get("title") or section.get("section_type") or "section"
+    return f"{section_ref}. {label}"
+
+
 def translation_status_rows(
     translation: dict[str, Any], *, preview_text: Optional[str] = None
 ) -> list[dict[str, Any]]:
@@ -250,6 +327,22 @@ def translation_status_rows(
         ("preview", summarize_text(preview, limit=160)),
     ]
     return [{"field": field, "value": value} for field, value in rows]
+
+
+def translation_download(translation: dict[str, Any]) -> Optional[dict[str, Any]]:
+    output_path = translation.get("output_path")
+    if not isinstance(output_path, str) or not output_path:
+        return None
+    path = Path(output_path)
+    if not path.exists() or not path.is_file():
+        return None
+    return {
+        "label": "下载双语翻译",
+        "data": path.read_text(encoding="utf-8"),
+        "file_name": path.name,
+        "mime": "text/markdown",
+        "path": str(path),
+    }
 
 
 def document_chunk_rows(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -282,6 +375,11 @@ def document_chunk_rows(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def document_chunk_option_label(chunk: dict[str, Any]) -> str:
+    chunk_ref = chunk.get("vector_id") or chunk.get("id")
+    return f"{chunk_ref} · {chunk.get('section_title') or '-'}"
 
 
 def rag_source_rows(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -334,6 +432,11 @@ def rag_source_rows(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
+def rag_source_option_label(source: dict[str, Any]) -> str:
+    label = " · ".join(compact_parts([source.get("citation"), source.get("source_location")]))
+    return label or "引用来源"
+
+
 def reaction_set_rows(reaction_sets: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for item in reaction_sets:
@@ -365,11 +468,77 @@ def reaction_set_rows(reaction_sets: list[dict[str, Any]]) -> list[dict[str, Any
     return rows
 
 
+def reaction_display_state(reaction: dict[str, Any]) -> dict[str, Any]:
+    source_section_seq = reaction.get("source_section_seq")
+    source_summary = (
+        f"verified: {bool(reaction.get('verified'))} · "
+        f"confidence: {reaction.get('confidence')} · "
+        f"source_section_id: {reaction.get('source_section_id')} · "
+        f"source_section_title: {reaction.get('source_section_title') or '-'} · "
+        f"source_section_type: {reaction.get('source_section_type') or '-'} · "
+        f"source_section_seq: {source_section_seq if source_section_seq is not None else '-'} · "
+        f"source_label: {reaction.get('source_label') or '-'}"
+    )
+    species_summary = (
+        f"reactants: {reaction.get('reactants') or '-'} · "
+        f"products: {reaction.get('products') or '-'} · "
+        f"reference: {reaction.get('reference') or '-'}"
+    )
+    return {
+        "reaction": reaction.get("reaction"),
+        "source_excerpt": reaction.get("source_excerpt"),
+        "source_summary": source_summary,
+        "species_summary": species_summary,
+    }
+
+
+def reaction_set_option_label(item: dict[str, Any]) -> str:
+    return (
+        f"#{item['id']} · {item.get('status') or 'unknown'} · "
+        f"export_ready {bool(item.get('export_ready'))} · "
+        f"未复核 {item.get('unverified_count', 0)} · {item.get('name') or 'Reaction set'}"
+    )
+
+
 def normalize_optional_text(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+REACTION_TYPE_OPTIONS = ["", "elastic", "excitation", "ionization", "attachment", "recombination"]
+RATE_TYPE_OPTIONS = ["", "cross_section", "arrhenius", "constant"]
+
+
+def option_index(options: list[str], value: str) -> int:
+    return options.index(value) if value in options else 0
+
+
+def normalized_option_value(value: Any) -> str:
+    normalized = str(value or "")
+    return "" if normalized == "unknown" else normalized
+
+
+def reaction_review_form_state(reaction: dict[str, Any]) -> dict[str, Any]:
+    reaction_type_value = normalized_option_value(reaction.get("reaction_type"))
+    rate_type_value = normalized_option_value(reaction.get("rate_type"))
+    include_threshold_ev = reaction.get("threshold_ev") is not None
+    threshold_ev_value = float(reaction["threshold_ev"]) if include_threshold_ev else 0.0
+    return {
+        "reaction_type_options": REACTION_TYPE_OPTIONS,
+        "rate_type_options": RATE_TYPE_OPTIONS,
+        "reaction_type_value": reaction_type_value,
+        "reaction_type_index": option_index(REACTION_TYPE_OPTIONS, reaction_type_value),
+        "rate_type_value": rate_type_value,
+        "rate_type_index": option_index(RATE_TYPE_OPTIONS, rate_type_value),
+        "include_threshold_ev": include_threshold_ev,
+        "threshold_ev_value": threshold_ev_value,
+        "rate_value": reaction.get("rate_value") or "",
+        "cross_section_url": reaction.get("cross_section_url") or "",
+        "verified": bool(reaction.get("verified")),
+        "verified_by": "streamlit",
+    }
 
 
 def reaction_review_payload(
@@ -408,6 +577,68 @@ def reaction_export_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
         ("download_label", f"{export_format} · {reaction_count} reactions · {audit_entry_count} audit entries"),
     ]
     return [{"field": field, "value": value} for field, value in rows]
+
+
+def reaction_export_download(payload: dict[str, Any]) -> Optional[dict[str, Any]]:
+    output_path = payload.get("output_path")
+    if not isinstance(output_path, str) or not output_path:
+        return None
+    path = Path(output_path)
+    if not path.exists() or not path.is_file():
+        return None
+    mime = payload.get("mime_type") or "application/octet-stream"
+    data = path.read_text(encoding="utf-8") if mime.startswith("text/") or mime == "application/json" else path.read_bytes()
+    return {
+        "label": "下载导出文件",
+        "data": data,
+        "file_name": path.name,
+        "mime": mime,
+        "path": str(path),
+    }
+
+
+def int_or_default(value: Any, default: int) -> int:
+    return default if value is None else int(value)
+
+
+def reaction_set_review_state(detail: dict[str, Any]) -> dict[str, Any]:
+    reactions = detail.get("reactions") or []
+    unverified_reactions = [reaction for reaction in reactions if not reaction.get("verified")]
+    reaction_count = int_or_default(detail.get("reaction_count"), len(reactions))
+    verified_count = int_or_default(detail.get("verified_count"), reaction_count - len(unverified_reactions))
+    unverified_count = int_or_default(detail.get("unverified_count"), len(unverified_reactions))
+    export_ready_value = detail.get("export_ready")
+    export_ready = bool(export_ready_value) if export_ready_value is not None else reaction_count > 0 and unverified_count == 0
+    export_blocked = not export_ready
+    if reaction_count == 0:
+        export_message = "没有可导出的反应。"
+    elif export_blocked:
+        export_message = "未全复核不可导出：请先完成所有反应复核。"
+    else:
+        export_message = None
+    summary = (
+        f"status: {detail.get('status')} · "
+        f"reactions: {reaction_count} · "
+        f"verified: {verified_count} · "
+        f"未复核: {unverified_count} · "
+        f"export_ready: {export_ready} · "
+        f"gas_mixture: {detail.get('gas_mixture') or '-'} · "
+        f"lxcat_db: {detail.get('lxcat_db') or '-'} · "
+        f"verified_by: {detail.get('verified_by') or '-'} · "
+        f"verified_at: {detail.get('verified_at') or '-'}"
+    )
+    return {
+        "reactions": reactions,
+        "unverified_reactions": unverified_reactions,
+        "reaction_count": reaction_count,
+        "verified_count": verified_count,
+        "unverified_count": unverified_count,
+        "export_ready": export_ready,
+        "export_blocked": export_blocked,
+        "export_message": export_message,
+        "source_note": detail.get("source_note"),
+        "summary": summary,
+    }
 
 
 def reaction_audit_rows(audit_log: list[dict[str, Any]]) -> list[dict[str, Any]]:

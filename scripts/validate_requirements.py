@@ -55,6 +55,7 @@ FALLBACK_STDLIB_MODULES = {
     "typing",
     "urllib",
     "xml",
+    "zipfile",
 }
 STDLIB_MODULES = set(FALLBACK_STDLIB_MODULES) | set(getattr(sys, "stdlib_module_names", set()))
 IMPORT_PACKAGE_ALIASES = {

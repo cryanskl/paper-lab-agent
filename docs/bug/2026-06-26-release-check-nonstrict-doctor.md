@@ -20,3 +20,5 @@
 python -m pytest tests/test_release_contracts.py::test_doctor_preflight_is_documented_and_in_release_gate -q
 python scripts/doctor.py --strict --compact
 ```
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。

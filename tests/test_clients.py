@@ -106,6 +106,20 @@ def test_crossref_skips_malformed_text_list_items():
     assert untitled["title"] == "Untitled"
 
 
+def test_crossref_falls_back_to_subtitle_for_missing_title():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/subtitle-title",
+            "title": [],
+            "subtitle": ["  Argon oxygen plasma chemistry model  "],
+        }
+    )
+
+    assert work["title"] == "Argon oxygen plasma chemistry model"
+
+
 def test_crossref_skips_malformed_author_items():
     client = CrossrefClient()
 
@@ -293,6 +307,22 @@ def test_crossref_falls_back_to_next_valid_publication_date():
     assert work["published_year"] == 2026
 
 
+def test_crossref_uses_published_date_before_issued_date():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/published-date",
+            "title": ["Published date"],
+            "published": {"date-parts": [[2026, 8, 9]]},
+            "issued": {"date-parts": [[2026, 1, 1]]},
+        }
+    )
+
+    assert work["published_date"] == "2026-08-09"
+    assert work["published_year"] == 2026
+
+
 def test_crossref_expands_partial_date_parts_to_iso_dates():
     client = CrossrefClient()
 
@@ -414,6 +444,20 @@ def test_openalex_tolerates_malformed_title_fields():
     assert object_title["title"] == "Untitled"
 
 
+def test_openalex_falls_back_to_display_name_for_missing_title():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-display-name-title",
+            "title": None,
+            "display_name": "  Plasma chemistry in argon oxygen discharges  ",
+        }
+    )
+
+    assert work["title"] == "Plasma chemistry in argon oxygen discharges"
+
+
 def test_openalex_strips_text_fields():
     client = OpenAlexClient()
 
@@ -478,6 +522,21 @@ def test_openalex_rejects_invalid_publication_date_string():
     )
 
     assert work["published_date"] is None
+    assert work["published_year"] == 2026
+
+
+def test_openalex_expands_missing_publication_date_from_year():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-year-only",
+            "title": "Year only publication",
+            "publication_year": 2026,
+        }
+    )
+
+    assert work["published_date"] == "2026-01-01"
     assert work["published_year"] == 2026
 
 

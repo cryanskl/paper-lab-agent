@@ -2,10 +2,10 @@ import re
 from typing import Optional
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.db import dict_from_row, get_conn
-from app.errors import AppError, PageResponse
+from app.errors import AppError
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -37,6 +37,22 @@ class CategoryIn(BaseModel):
         return normalized
 
 
+class CategoryResponse(BaseModel):
+    id: int
+    name: str
+    slug: str
+    description: Optional[str] = None
+    parent_id: Optional[int] = None
+    children: list["CategoryResponse"] = Field(default_factory=list)
+
+
+class CategoryListResponse(BaseModel):
+    items: list[CategoryResponse]
+    total: int
+    page: int
+    page_size: int
+
+
 def serialize_categories(rows) -> list[dict]:
     categories = [dict_from_row(row) for row in rows]
     by_parent: dict[int, list[dict]] = {}
@@ -50,7 +66,7 @@ def serialize_categories(rows) -> list[dict]:
     return categories
 
 
-@router.get("", response_model=PageResponse)
+@router.get("", response_model=CategoryListResponse)
 def list_categories(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -63,7 +79,7 @@ def list_categories(
     return {"items": items, "total": len(all_items), "page": page, "page_size": page_size}
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=CategoryResponse)
 def create_category(body: CategoryIn) -> dict:
     try:
         with get_conn() as conn:

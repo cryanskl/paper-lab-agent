@@ -171,12 +171,14 @@ class OpenAlexClient:
         names = [item.strip() for item in value if isinstance(item, str) and item.strip()]
         return "; ".join(names) if names else None
 
-    def normalize_title(self, value: Any) -> str:
+    def normalize_title(self, value: Any, fallback: Any = None) -> str:
         if isinstance(value, str) and value.strip():
             return value.strip()
+        if isinstance(fallback, str) and fallback.strip():
+            return fallback.strip()
         return "Untitled"
 
-    def normalize_publication_date(self, value: Any) -> Optional[str]:
+    def normalize_publication_date(self, value: Any, fallback_year: Optional[int] = None) -> Optional[str]:
         if isinstance(value, str) and value.strip():
             text = value.strip()
             try:
@@ -184,6 +186,8 @@ class OpenAlexClient:
             except ValueError:
                 return None
             return text
+        if value is None and fallback_year is not None:
+            return f"{fallback_year:04d}-01-01"
         return None
 
     def normalize_publication_year(self, value: Any) -> Optional[int]:
@@ -241,15 +245,16 @@ class OpenAlexClient:
             source = {}
         authors = self.normalize_authors(item.get("authorships"))
         abstract = self.abstract_text(item)
+        published_year = self.normalize_publication_year(item.get("publication_year"))
         return {
             "doi": doi,
-            "title": self.normalize_title(item.get("title")),
+            "title": self.normalize_title(item.get("title"), item.get("display_name")),
             "abstract": abstract,
             "authors": authors,
             "journal_name": self.normalize_optional_text(source.get("display_name"))
             or self.first_location_source_name(item.get("locations")),
-            "published_date": self.normalize_publication_date(item.get("publication_date")),
-            "published_year": self.normalize_publication_year(item.get("publication_year")),
+            "published_date": self.normalize_publication_date(item.get("publication_date"), published_year),
+            "published_year": published_year,
             "landing_url": self.normalize_url(primary_location.get("landing_page_url"))
             or self.first_location_landing_url(item.get("locations"))
             or self.normalize_url(item.get("id")),

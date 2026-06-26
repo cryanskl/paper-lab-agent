@@ -552,8 +552,11 @@ def run_smoke() -> dict:
             for reaction in exported_reactions
             for audit in reaction.get("audit_log") or []
         ]
+        verified_export_has_smoke_check_audit = any(
+            audit.get("verified_by") == "smoke-check" for audit in export_audit_entries
+        )
         assert_ok(
-            any(audit.get("verified_by") == "smoke-check" for audit in export_audit_entries),
+            verified_export_has_smoke_check_audit,
             f"expected smoke-check audit entry in JSON export, got {export_audit_entries}",
         )
         export_source_sections = [
@@ -723,6 +726,7 @@ def run_smoke() -> dict:
             "duplicate_upload_status": duplicate_upload.status_code,
             "unsupported_document_status": unsupported_document.status_code,
             "duplicate_document_id": duplicate_document["id"],
+            "duplicate_document_matches_original": duplicate_document["id"] == document_id,
             "error_response_count": len(error_responses),
             "error_response_codes": error_responses,
             "sections": counts["sections"],
@@ -773,6 +777,7 @@ def run_smoke() -> dict:
             "verified_export_reaction_type": verified_export_reaction_type,
             "verified_export_rate_type": verified_export_rate_type,
             "verified_export_audit_entries": len(export_audit_entries),
+            "verified_export_has_smoke_check_audit": verified_export_has_smoke_check_audit,
             "verified_export_source_sections": len(export_source_sections),
             "verified_export_text_files": len([txt_export["output_path"], bolsig_export["output_path"]]),
             "verified_export_bolsig_contains_header": bolsig_contains_header,

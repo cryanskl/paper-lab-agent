@@ -15,3 +15,5 @@
 ## 验证
 
 新增 `test_reaction_verify_records_audit_for_unchanged_review` 覆盖重复复核；完整验证以 `bash scripts/release_check.sh` 为准。
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。
