@@ -1230,6 +1230,9 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package.get("demo_ready") is not True' in release_check
     assert 'package.get("demo_export_formats") != ["json", "txt", "bolsig"]' in release_check
     assert 'package.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}' in release_check
+    assert 'package_validation.get("demo_ready") is not True' in release_check
+    assert 'package_validation.get("demo_export_formats") != ["json", "txt", "bolsig"]' in release_check
+    assert 'package_validation.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}' in release_check
     assert "release manifest version does not match OpenAPI version" in release_check
     assert "checksums" in release_check
     assert "git_dirty" in release_check
