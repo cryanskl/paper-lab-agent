@@ -45,6 +45,7 @@ REQUIRED_GITIGNORE_PATTERNS = [
 ]
 REQUIRED_CI_WORKFLOW = Path(".github/workflows/ci.yml")
 REQUIRED_CI_RELEASE_CHECK = "bash scripts/release_check.sh"
+REQUIRED_CI_CHECKOUT = "actions/checkout@v4"
 REQUIRED_CI_REQUIREMENTS_INSTALL = "python -m pip install -r requirements.txt"
 REQUIRED_CI_PYTHON_SETUP = "actions/setup-python@v5"
 REQUIRED_CI_PYTHON_VERSION = 'python-version: "3.11"'
@@ -131,6 +132,8 @@ def missing_required_ci_release_gate(repo: Path) -> list[str]:
     for trigger in REQUIRED_CI_TRIGGERS:
         if not workflow_declares_trigger(workflow_text, trigger):
             missing.append(f"ci_{trigger}_trigger")
+    if REQUIRED_CI_CHECKOUT not in workflow_text:
+        missing.append("ci_checks_out_repo")
     if REQUIRED_CI_RELEASE_CHECK not in workflow_text:
         missing.append("ci_runs_release_check")
     if REQUIRED_CI_REQUIREMENTS_INSTALL not in workflow_text:
