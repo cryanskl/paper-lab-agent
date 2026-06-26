@@ -674,9 +674,11 @@ def test_doctor_script_reports_local_storage_preflight_paths(tmp_path):
     doctor = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(doctor)
 
+    project = tmp_path / "project"
+    project.mkdir()
     data_dir = tmp_path / "local-data"
 
-    check = doctor.check_local_storage(repo, env={"PAPER_LAB_DATA_DIR": str(data_dir)})
+    check = doctor.check_local_storage(project, env={"PAPER_LAB_DATA_DIR": str(data_dir)})
 
     assert check["name"] == "local_storage"
     assert check["status"] == "pass"
@@ -719,6 +721,66 @@ def test_doctor_script_reports_storage_parent_that_is_not_directory(tmp_path):
     } in check["issues"]
 
 
+def test_doctor_script_local_storage_preflight_reads_env_file(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+
+    project = tmp_path / "project"
+    project.mkdir()
+    blocked_parent = project / "not-a-directory"
+    blocked_parent.write_text("file blocks database parent", encoding="utf-8")
+    (project / ".env").write_text(
+        "\n".join(
+            [
+                "PAPER_LAB_DATA_DIR=env-data",
+                f"DATABASE_PATH={blocked_parent}/plasma.db",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    check = doctor.check_local_storage(project, env={})
+
+    assert check["status"] == "fail"
+    assert check["paths"]["data_dir"] == str(project / "env-data")
+    assert any(
+        issue.get("code") == "storage_path_not_directory"
+        and issue.get("key") == "database_parent"
+        and issue.get("path") == str(blocked_parent)
+        for issue in check["issues"]
+    )
+
+
+def test_doctor_script_local_storage_preflight_keeps_environment_override(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".env").write_text("PAPER_LAB_DATA_DIR=env-data\n", encoding="utf-8")
+    override_data_dir = tmp_path / "override-data"
+
+    check = doctor.check_local_storage(project, env={"PAPER_LAB_DATA_DIR": str(override_data_dir)})
+
+    assert check["status"] == "pass"
+    assert check["paths"]["data_dir"] == str(override_data_dir)
+    assert check["paths"]["pdf_dir"] == str(override_data_dir / "pdfs")
+
+
 def test_doctor_preflight_is_documented_and_in_release_gate():
     repo = Path(__file__).resolve().parent.parent
     readme = (repo / "README.md").read_text(encoding="utf-8")
@@ -728,8 +790,10 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert "python scripts/doctor.py --compact" in readme
     assert "python scripts/doctor.py --strict --compact" in readme
     assert "本地存储目录可创建和可写" in readme
+    assert "读取 `.env`" in readme
     assert "python scripts/doctor.py --strict --compact" in checklist
     assert "local storage paths are creatable and writable" in checklist
+    assert "reads `.env`" in checklist
     assert "scripts/doctor.py" in release_check
     assert "scripts/doctor.py --help" in release_check
     assert "scripts/doctor.py --strict --compact" in release_check

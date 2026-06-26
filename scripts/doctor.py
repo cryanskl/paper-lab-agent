@@ -5,6 +5,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,7 @@ PYTHON_DEPENDENCIES = (
     ("streamlit", "streamlit"),
     ("pytest", "pytest"),
 )
+ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def status_from_issues(issues: list[dict[str, Any]]) -> str:
@@ -125,8 +127,45 @@ def check_python_dependencies() -> dict[str, Any]:
     }
 
 
+def clean_env_value(value: str) -> str:
+    result = []
+    in_single = False
+    in_double = False
+    previous = ""
+    for char in value:
+        if char == "'" and not in_double:
+            in_single = not in_single
+        elif char == '"' and not in_single:
+            in_double = not in_double
+        elif char == "#" and not in_single and not in_double and (not result or previous.isspace()):
+            break
+        result.append(char)
+        previous = char
+    cleaned = "".join(result).strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {"'", '"'}:
+        return cleaned[1:-1]
+    return cleaned
+
+
+def env_with_file_values(repo: Path, env: dict[str, str] | None = None) -> dict[str, str]:
+    merged = dict(os.environ if env is None else env)
+    env_path = repo / ".env"
+    if not env_path.exists() or not env_path.is_file():
+        return merged
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not ENV_KEY_PATTERN.fullmatch(key) or key in merged:
+            continue
+        merged[key] = clean_env_value(value)
+    return merged
+
+
 def storage_path_config(repo: Path, env: dict[str, str] | None = None) -> dict[str, Path]:
-    env = env if env is not None else os.environ
+    env = env_with_file_values(repo, env)
     data_dir = Path(env.get("PAPER_LAB_DATA_DIR") or "data")
     database_path = Path(env.get("DATABASE_PATH") or data_dir / "plasma.db")
     pdf_dir = Path(env.get("PAPER_LAB_PDF_DIR") or data_dir / "pdfs")
