@@ -1003,8 +1003,10 @@ with chemistry_tab:
             status, payload = api_post(f"/reaction-sets/{rs_id}/export?format={export_format}", json=None)
             if status == 409:
                 st.warning(format_error_payload(payload, status))
+                st.json(payload)
             elif status >= 400:
                 st.error(format_error_payload(payload, status))
+                st.json(payload)
             else:
                 st.success(payload["output_path"])
                 st.dataframe(reaction_export_rows(payload), use_container_width=True)

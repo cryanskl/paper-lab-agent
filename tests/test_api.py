@@ -11454,6 +11454,25 @@ def test_streamlit_remaining_api_status_failures_format_error_payloads():
         assert old_warning not in streamlit
 
 
+def test_streamlit_chemistry_export_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    export_section = streamlit[
+        streamlit.index('if st.button("导出反应集"') :
+        streamlit.index('st.success(payload["output_path"]')
+    ]
+
+    for required in [
+        'status, payload = api_post(f"/reaction-sets/{rs_id}/export?format={export_format}", json=None)',
+        "if status == 409:",
+        "st.warning(format_error_payload(payload, status))",
+        "elif status >= 400:",
+        "st.error(format_error_payload(payload, status))",
+        "st.json(payload)",
+    ]:
+        assert required in export_section
+
+
 def test_document_chunks_endpoint_reports_index_status(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
