@@ -12873,6 +12873,24 @@ def test_streamlit_search_results_can_resolve_oa_manually():
         assert required in search_section
 
 
+def test_streamlit_search_resolve_oa_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    resolve_oa_section = search_section[
+        search_section.index('if st.button(\n                "重新解析 OA"') :
+        search_section.index("category_options_by_slug =")
+    ]
+
+    for required in [
+        'status_code, resolved_paper = api_post(f"/papers/{paper[\'id\']}/resolve-oa")',
+        "else:",
+        "st.warning(format_error_payload(resolved_paper, status_code))",
+        "st.json(resolved_paper)",
+    ]:
+        assert required in resolve_oa_section
+
+
 def test_streamlit_search_tab_handles_empty_results_and_api_errors():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

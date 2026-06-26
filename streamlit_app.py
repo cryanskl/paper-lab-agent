@@ -298,6 +298,7 @@ with search_tab:
                     st.success(f"oa_status={resolved_oa_status} · oa_pdf_url={resolved_oa_pdf_url}")
                 else:
                     st.warning(format_error_payload(resolved_paper, status_code))
+                    st.json(resolved_paper)
             category_options_by_slug = {category["slug"]: category for category in categories}
             current_category_slugs = set(paper.get("categories") or [])
             default_categories = [
