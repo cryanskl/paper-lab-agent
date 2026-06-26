@@ -1147,6 +1147,85 @@ def test_api_contract_crawl_job_detail_response_exposes_diagnostics():
     assert issues == []
 
 
+def test_api_contract_crawl_job_list_response_exposes_typed_diagnostic_items():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.crawl_job_list_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_crawl_job_list_item_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/crawl/jobs": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "journal_id",
+                                                        "period",
+                                                        "date_from",
+                                                        "date_to",
+                                                        "status",
+                                                        "papers_found",
+                                                        "papers_filtered",
+                                                        "papers_new",
+                                                        "error",
+                                                        "started_at",
+                                                        "finished_at",
+                                                        "created_at",
+                                                        "journal",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "journal_id": {"type": "integer"},
+                                                        "period": {"type": "string"},
+                                                        "date_from": {"type": "string"},
+                                                        "date_to": {"type": "string"},
+                                                        "status": {"type": "string"},
+                                                        "papers_found": {"type": "integer"},
+                                                        "papers_filtered": {"type": "integer"},
+                                                        "papers_new": {"type": "integer"},
+                                                        "error": {"type": "string"},
+                                                        "started_at": {"type": "string"},
+                                                        "finished_at": {"type": "string"},
+                                                        "created_at": {"type": "string"},
+                                                        "journal": {"type": "object"},
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.crawl_job_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/crawl/jobs item fields missing: diagnostics"]
+
+
 def test_api_contract_validator_reports_missing_crawl_job_detail_response_field():
     validate_api_contract = load_validate_api_contract()
     openapi = {

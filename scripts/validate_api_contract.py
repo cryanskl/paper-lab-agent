@@ -204,6 +204,7 @@ PAPER_DETAIL_RESPONSE_FIELDS = (
 )
 PAPER_CATEGORY_DETAIL_FIELDS = ("id", "slug", "name", "confidence", "method")
 CRAWL_JOB_DETAIL_RESPONSE_ROUTE = ("GET", "/api/v1/crawl/jobs/{}")
+CRAWL_JOB_LIST_RESPONSE_ROUTE = ("GET", "/api/v1/crawl/jobs")
 CRAWL_JOB_DETAIL_RESPONSE_FIELDS = (
     "id",
     "journal_id",
@@ -636,6 +637,35 @@ def crawl_job_detail_response_contract_issues(openapi: dict | None = None) -> li
     return []
 
 
+def crawl_job_list_response_contract_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    specs = normalized_openapi_specs(source_openapi.get("paths", {}))
+    spec = specs.get(CRAWL_JOB_LIST_RESPONSE_ROUTE)
+    if spec is None:
+        return []
+    schema = response_schema(spec, source_openapi)
+    method, path = CRAWL_JOB_LIST_RESPONSE_ROUTE
+    missing_page = [field for field in PAGINATION_RESPONSE_FIELDS if not schema_declares_fields(schema, (field,))]
+    if missing_page:
+        return [f"{method} {path} missing response fields: {', '.join(missing_page)}"]
+
+    items_schema = schema_property(schema, "items", source_openapi)
+    item_schema = effective_schema(items_schema.get("items", {}), source_openapi)
+    missing_item = [
+        field for field in CRAWL_JOB_DETAIL_RESPONSE_FIELDS if not schema_declares_fields(item_schema, (field,))
+    ]
+    if missing_item:
+        return [f"{method} {path} item fields missing: {', '.join(missing_item)}"]
+
+    diagnostics_schema = schema_property(item_schema, "diagnostics", source_openapi)
+    missing_diagnostics = [
+        field for field in CRAWL_JOB_DIAGNOSTIC_FIELDS if not schema_declares_fields(diagnostics_schema, (field,))
+    ]
+    if missing_diagnostics:
+        return [f"{method} {path} item diagnostics fields missing: {', '.join(missing_diagnostics)}"]
+    return []
+
+
 def pagination_response_contract_issues(
     contract_path: Path = DEFAULT_CONTRACT_PATH,
     openapi_paths: dict | None = None,
@@ -757,6 +787,7 @@ def main() -> int:
     translation_response_issues = translation_response_contract_issues()
     paper_detail_response_issues = paper_detail_response_contract_issues()
     crawl_job_detail_response_issues = crawl_job_detail_response_contract_issues()
+    crawl_job_list_response_issues = crawl_job_list_response_contract_issues()
     async_issues = async_response_contract_issues(Path(args.contract_path))
     async_body_issues = async_response_body_contract_issues(Path(args.contract_path))
     empty_success_schema_issues = empty_success_response_schema_issues()
@@ -775,6 +806,7 @@ def main() -> int:
         or translation_response_issues
         or paper_detail_response_issues
         or crawl_job_detail_response_issues
+        or crawl_job_list_response_issues
         or async_issues
         or async_body_issues
         or empty_success_schema_issues
@@ -834,6 +866,10 @@ def main() -> int:
         if crawl_job_detail_response_issues:
             print("api contract crawl job detail response issues:", file=sys.stderr)
             for issue in crawl_job_detail_response_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if crawl_job_list_response_issues:
+            print("api contract crawl job list response issues:", file=sys.stderr)
+            for issue in crawl_job_list_response_issues:
                 print(f"- {issue}", file=sys.stderr)
         if async_issues:
             print("api contract async response issues:", file=sys.stderr)
