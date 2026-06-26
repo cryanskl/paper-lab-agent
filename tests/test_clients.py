@@ -106,6 +106,20 @@ def test_crossref_skips_malformed_text_list_items():
     assert untitled["title"] == "Untitled"
 
 
+def test_crossref_falls_back_to_subtitle_for_missing_title():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/subtitle-title",
+            "title": [],
+            "subtitle": ["  Argon oxygen plasma chemistry model  "],
+        }
+    )
+
+    assert work["title"] == "Argon oxygen plasma chemistry model"
+
+
 def test_crossref_skips_malformed_author_items():
     client = CrossrefClient()
 
