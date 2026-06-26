@@ -31,6 +31,23 @@ def is_unsafe_archive_name(name: str) -> bool:
 
 
 def validate_release_package(package_path: Path, *, require_clean_source: bool = False) -> dict[str, Any]:
+    requested_package_path = package_path
+    if requested_package_path.is_symlink():
+        package_path = requested_package_path.absolute()
+        return {
+            "ok": False,
+            "package_path": str(package_path),
+            "package_sha256": None,
+            "artifact_count": 0,
+            "artifact_names": [],
+            "source": {},
+            "demo_ready": None,
+            "demo_export_formats": [],
+            "demo_export_audit_entry_counts": {},
+            "demo_reaction_set_verified_by": None,
+            "demo_reaction_set_verified_at": None,
+            "issues": [f"release package is not a regular file: {package_path}"],
+        }
     package_path = package_path.resolve()
     issues: list[str] = []
     artifact_names: list[str] = []
