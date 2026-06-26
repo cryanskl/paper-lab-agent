@@ -1189,13 +1189,17 @@ def test_release_check_validates_release_artifact_bundle():
 
     assert "scripts/export_release_artifacts.py" in release_check
     assert "scripts/export_release_artifacts.py --help" in release_check
+    assert "scripts/validate_release_artifacts.py" in release_check
+    assert "scripts/validate_release_artifacts.py --help" in release_check
     assert "RELEASE_ARTIFACTS_JSON" in release_check
     assert "release-manifest.json" in release_check
     assert "demo-summary.json" in release_check
     assert "openapi.json" in release_check
     assert "release manifest version does not match OpenAPI version" in release_check
     assert "python scripts/export_release_artifacts.py --output-dir out/release --compact" in readme
+    assert "python scripts/validate_release_artifacts.py --artifact-dir out/release --compact" in readme
     assert "python scripts/export_release_artifacts.py --output-dir out/release --compact" in checklist
+    assert "python scripts/validate_release_artifacts.py --artifact-dir out/release --compact" in checklist
 
 
 def test_release_check_validates_prepare_demo_data_output_artifact():
@@ -1297,6 +1301,68 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     assert demo_summary["ready"] is True
     assert demo_summary["export_formats"] == ["json", "txt", "bolsig"]
     assert "/api/v1/health" in openapi["paths"]
+
+
+def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    export_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert export_result.returncode == 0, export_result.stderr
+
+    validate_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_artifacts.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert validate_result.returncode == 0, validate_result.stderr
+    payload = json.loads(validate_result.stdout)
+    assert payload["ok"] is True
+    assert payload["artifact_dir"] == str(output_dir)
+    assert payload["service"] == "paper-lab-agent"
+    assert payload["version"] == "0.1.0"
+    assert payload["demo_ready"] is True
+    assert payload["demo_export_formats"] == ["json", "txt", "bolsig"]
+    assert payload["openapi_path_count"] == 28
 
 
 def test_release_check_derives_expected_runtime_version_from_app_version():

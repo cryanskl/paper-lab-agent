@@ -14,13 +14,14 @@ fi
 bash -n scripts/env.sh
 bash -n scripts/dev.sh
 "${PYTHON_CMD[@]}" -m compileall -q app scripts tests streamlit_app.py
-"${PYTHON_CMD[@]}" -m py_compile scripts/doctor.py scripts/export_openapi.py scripts/export_release_artifacts.py scripts/health_check.py scripts/import_fixtures.py scripts/prepare_demo_data.py scripts/smoke_check.py scripts/validate_api_contract.py scripts/validate_bug_docs.py scripts/validate_docs_links.py scripts/validate_env_example.py scripts/validate_readme_commands.py scripts/validate_release_hygiene.py scripts/validate_requirements.py scripts/validate_schema.py streamlit_app.py
+"${PYTHON_CMD[@]}" -m py_compile scripts/doctor.py scripts/export_openapi.py scripts/export_release_artifacts.py scripts/health_check.py scripts/import_fixtures.py scripts/prepare_demo_data.py scripts/smoke_check.py scripts/validate_api_contract.py scripts/validate_bug_docs.py scripts/validate_docs_links.py scripts/validate_env_example.py scripts/validate_readme_commands.py scripts/validate_release_artifacts.py scripts/validate_release_hygiene.py scripts/validate_requirements.py scripts/validate_schema.py streamlit_app.py
 "${PYTHON_CMD[@]}" scripts/doctor.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact
 "${PYTHON_CMD[@]}" scripts/export_openapi.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/export_release_artifacts.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/health_check.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/prepare_demo_data.py --help >/dev/null
+"${PYTHON_CMD[@]}" scripts/validate_release_artifacts.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/validate_api_contract.py
 "${PYTHON_CMD[@]}" scripts/validate_bug_docs.py
 "${PYTHON_CMD[@]}" scripts/validate_docs_links.py
@@ -350,7 +351,23 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     if "/api/v1/health" not in openapi.get("paths", {}):
         print("release_check failed: release handoff OpenAPI missing /api/v1/health", file=sys.stderr)
         raise SystemExit(1)
-print(json.dumps(manifest, ensure_ascii=False))
+    validate_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_artifacts.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    validation = json.loads(validate_result.stdout)
+    if validation.get("ok") is not True:
+        print(f"release_check failed: release artifact validation={validation!r}", file=sys.stderr)
+        raise SystemExit(1)
+print(json.dumps(validation, ensure_ascii=False))
 PY
 )"
 printf '%s\n' "${RELEASE_ARTIFACTS_JSON}"

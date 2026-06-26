@@ -33,9 +33,10 @@ Export the current OpenAPI schema for frontend handoff, review, or release artif
 ```bash
 python scripts/export_openapi.py --output out/openapi.json
 python scripts/export_release_artifacts.py --output-dir out/release --compact
+python scripts/validate_release_artifacts.py --artifact-dir out/release --compact
 ```
 
-The combined release artifact command writes `openapi.json`, `demo-summary.json`, and `release-manifest.json` into the target directory. The output is generated under `out/`, which is ignored by Git. Do not hand-edit the exported schema or summary; regenerate them from the app.
+The combined release artifact command writes `openapi.json`, `demo-summary.json`, and `release-manifest.json` into the target directory. Validate the directory before handoff so missing files, edited summaries, version drift, or malformed manifests fail before sharing. The output is generated under `out/`, which is ignored by Git. Do not hand-edit the exported schema or summary; regenerate them from the app.
 
 ## 4. Live Runtime
 
