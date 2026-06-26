@@ -49,6 +49,21 @@ EXPORT_RESPONSE_FIELDS = (
     "audit_entry_count",
 )
 EXPORT_RESPONSE_ROUTE = ("POST", "/api/v1/reaction-sets/{}/export")
+RAG_RESPONSE_FIELDS = ("answer", "sources")
+RAG_SOURCE_FIELDS = (
+    "document_id",
+    "paper_id",
+    "paper_title",
+    "section_id",
+    "section_seq",
+    "section_title",
+    "section_type",
+    "chunk_id",
+    "vector_id",
+    "score",
+    "source_excerpt",
+)
+RAG_RESPONSE_ROUTE = ("POST", "/api/v1/rag/query")
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -264,6 +279,28 @@ def export_response_contract_issues(openapi: dict | None = None) -> list[str]:
     return [f"{method} {path} missing response fields: {', '.join(missing)}"]
 
 
+def rag_response_contract_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    specs = normalized_openapi_specs(source_openapi.get("paths", {}))
+    spec = specs.get(RAG_RESPONSE_ROUTE)
+    if spec is None:
+        return []
+    schema = response_schema(spec, source_openapi)
+    missing = [field for field in RAG_RESPONSE_FIELDS if not schema_declares_fields(schema, (field,))]
+    method, path = RAG_RESPONSE_ROUTE
+    if missing:
+        return [f"{method} {path} missing response fields: {', '.join(missing)}"]
+
+    sources_schema = resolve_openapi_ref(schema.get("properties", {}).get("sources", {}), source_openapi)
+    source_item_schema = resolve_openapi_ref(sources_schema.get("items", {}), source_openapi)
+    missing_source = [
+        field for field in RAG_SOURCE_FIELDS if not schema_declares_fields(source_item_schema, (field,))
+    ]
+    if missing_source:
+        return [f"{method} {path} missing source fields: {', '.join(missing_source)}"]
+    return []
+
+
 def pagination_response_contract_issues(
     contract_path: Path = DEFAULT_CONTRACT_PATH,
     openapi_paths: dict | None = None,
@@ -352,6 +389,7 @@ def main() -> int:
     error_response_issues = error_response_contract_issues()
     semantic_error_status_issues = semantic_error_status_contract_issues()
     export_response_issues = export_response_contract_issues()
+    rag_response_issues = rag_response_contract_issues()
     async_issues = async_response_contract_issues(Path(args.contract_path))
     async_body_issues = async_response_body_contract_issues(Path(args.contract_path))
     if (
@@ -362,6 +400,7 @@ def main() -> int:
         or error_response_issues
         or semantic_error_status_issues
         or export_response_issues
+        or rag_response_issues
         or async_issues
         or async_body_issues
     ):
@@ -392,6 +431,10 @@ def main() -> int:
         if export_response_issues:
             print("api contract export response issues:", file=sys.stderr)
             for issue in export_response_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if rag_response_issues:
+            print("api contract rag response issues:", file=sys.stderr)
+            for issue in rag_response_issues:
                 print(f"- {issue}", file=sys.stderr)
         if async_issues:
             print("api contract async response issues:", file=sys.stderr)

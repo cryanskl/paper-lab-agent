@@ -1082,6 +1082,106 @@ def test_api_contract_export_response_exposes_delivery_metadata():
     assert issues == []
 
 
+def test_api_contract_rag_query_response_exposes_cited_sources():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.rag_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_rag_response_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/rag/query": {
+                "post": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["answer"],
+                                        "properties": {
+                                            "answer": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.rag_response_contract_issues(openapi=openapi)
+
+    assert issues == ["POST /api/v1/rag/query missing response fields: sources"]
+
+
+def test_api_contract_validator_reports_missing_rag_source_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/rag/query": {
+                "post": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["answer", "sources"],
+                                        "properties": {
+                                            "answer": {"type": "string"},
+                                            "sources": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "document_id",
+                                                        "paper_id",
+                                                        "paper_title",
+                                                        "section_id",
+                                                        "section_seq",
+                                                        "section_title",
+                                                        "section_type",
+                                                        "chunk_id",
+                                                        "vector_id",
+                                                        "score",
+                                                    ],
+                                                    "properties": {
+                                                        "document_id": {"type": "integer"},
+                                                        "paper_id": {"type": "integer"},
+                                                        "paper_title": {"type": "string"},
+                                                        "section_id": {"type": "integer"},
+                                                        "section_seq": {"type": "integer"},
+                                                        "section_title": {"type": "string"},
+                                                        "section_type": {"type": "string"},
+                                                        "chunk_id": {"type": "integer"},
+                                                        "vector_id": {"type": "string"},
+                                                        "score": {"type": "number"},
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.rag_response_contract_issues(openapi=openapi)
+
+    assert issues == ["POST /api/v1/rag/query missing source fields: source_excerpt"]
+
+
 def test_api_contract_validator_reports_missing_export_response_field():
     validate_api_contract = load_validate_api_contract()
     openapi = {
