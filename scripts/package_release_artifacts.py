@@ -33,6 +33,23 @@ def package_release_artifacts(
 ) -> dict[str, Any]:
     artifact_dir = artifact_dir.resolve()
     output_path = output_path.resolve()
+    output_inside_artifact_dir = output_path == artifact_dir or artifact_dir in output_path.parents
+    if output_inside_artifact_dir:
+        return {
+            "ok": False,
+            "artifact_dir": str(artifact_dir),
+            "package_path": str(output_path),
+            "artifact_count": 0,
+            "artifact_names": [],
+            "package_sha256": None,
+            "source": {},
+            "demo_ready": None,
+            "demo_export_formats": [],
+            "demo_export_audit_entry_counts": {},
+            "demo_reaction_set_verified_by": None,
+            "demo_reaction_set_verified_at": None,
+            "issues": ["release package output must not be inside the artifact directory"],
+        }
     validation = validate_release_artifacts(artifact_dir, require_clean_source=require_clean_source)
     if validation.get("ok") is not True:
         output_path.unlink(missing_ok=True)
