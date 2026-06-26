@@ -15,6 +15,7 @@ from app.frontend_api import (
     document_status_rows,
     rag_source_rows,
     reaction_audit_rows,
+    reaction_display_state,
     reaction_export_download,
     reaction_export_rows,
     reaction_review_form_state,
@@ -937,28 +938,12 @@ with chemistry_tab:
         display_reactions = unverified_reactions if show_only_unverified else reactions
         for reaction in display_reactions:
             with st.container(border=True):
-                st.write(reaction["reaction"])
-                source_section_title = reaction.get("source_section_title") or "-"
-                source_section_type = reaction.get("source_section_type") or "-"
-                source_section_seq = reaction.get("source_section_seq")
-                source_label = reaction.get("source_label") or "-"
-                st.caption(
-                    f"verified: {bool(reaction.get('verified'))} · "
-                    f"confidence: {reaction.get('confidence')} · "
-                    f"source_section_id: {reaction.get('source_section_id')} · "
-                    f"source_section_title: {source_section_title} · "
-                    f"source_section_type: {source_section_type} · "
-                    f"source_section_seq: {source_section_seq if source_section_seq is not None else '-'} · "
-                    f"source_label: {source_label}"
-                )
-                source_excerpt = reaction.get("source_excerpt")
-                if source_excerpt:
-                    st.code(source_excerpt)
-                st.caption(
-                    f"reactants: {reaction.get('reactants') or '-'} · "
-                    f"products: {reaction.get('products') or '-'} · "
-                    f"reference: {reaction.get('reference') or '-'}"
-                )
+                display_state = reaction_display_state(reaction)
+                st.write(display_state["reaction"])
+                st.caption(display_state["source_summary"])
+                if display_state["source_excerpt"]:
+                    st.code(display_state["source_excerpt"])
+                st.caption(display_state["species_summary"])
                 c1, c2, c3 = st.columns(3)
                 form_state = reaction_review_form_state(reaction)
                 reaction_type = c1.selectbox(

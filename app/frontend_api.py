@@ -426,6 +426,30 @@ def reaction_set_rows(reaction_sets: list[dict[str, Any]]) -> list[dict[str, Any
     return rows
 
 
+def reaction_display_state(reaction: dict[str, Any]) -> dict[str, Any]:
+    source_section_seq = reaction.get("source_section_seq")
+    source_summary = (
+        f"verified: {bool(reaction.get('verified'))} · "
+        f"confidence: {reaction.get('confidence')} · "
+        f"source_section_id: {reaction.get('source_section_id')} · "
+        f"source_section_title: {reaction.get('source_section_title') or '-'} · "
+        f"source_section_type: {reaction.get('source_section_type') or '-'} · "
+        f"source_section_seq: {source_section_seq if source_section_seq is not None else '-'} · "
+        f"source_label: {reaction.get('source_label') or '-'}"
+    )
+    species_summary = (
+        f"reactants: {reaction.get('reactants') or '-'} · "
+        f"products: {reaction.get('products') or '-'} · "
+        f"reference: {reaction.get('reference') or '-'}"
+    )
+    return {
+        "reaction": reaction.get("reaction"),
+        "source_excerpt": reaction.get("source_excerpt"),
+        "source_summary": source_summary,
+        "species_summary": species_summary,
+    }
+
+
 def normalize_optional_text(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None

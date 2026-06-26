@@ -249,6 +249,55 @@ def test_reaction_review_rows_mark_export_blockers():
     assert rows[1]["export_blocker"] is None
 
 
+def test_reaction_display_state_summarizes_review_card_metadata():
+    from app import frontend_api
+
+    state = frontend_api.reaction_display_state(
+        {
+            "reaction": "e + Ar -> 2e + Ar+",
+            "verified": 0,
+            "confidence": 0.72,
+            "source_section_id": 12,
+            "source_section_title": "Table 2",
+            "source_section_type": "table",
+            "source_section_seq": 4,
+            "source_label": "table 4: Table 2",
+            "source_excerpt": "Measured ionization cross section.",
+            "reactants": '["e", "Ar"]',
+            "products": '["e", "e", "Ar+"]',
+            "reference": "Smith 2024",
+        }
+    )
+
+    assert state == {
+        "reaction": "e + Ar -> 2e + Ar+",
+        "source_excerpt": "Measured ionization cross section.",
+        "source_summary": (
+            "verified: False · confidence: 0.72 · source_section_id: 12 · "
+            "source_section_title: Table 2 · source_section_type: table · "
+            "source_section_seq: 4 · source_label: table 4: Table 2"
+        ),
+        "species_summary": 'reactants: ["e", "Ar"] · products: ["e", "e", "Ar+"] · reference: Smith 2024',
+    }
+
+
+def test_reaction_display_state_uses_dash_fallbacks_for_sparse_metadata():
+    from app import frontend_api
+
+    state = frontend_api.reaction_display_state({"reaction": "Ar+ + e -> Ar"})
+
+    assert state == {
+        "reaction": "Ar+ + e -> Ar",
+        "source_excerpt": None,
+        "source_summary": (
+            "verified: False · confidence: None · source_section_id: None · "
+            "source_section_title: - · source_section_type: - · "
+            "source_section_seq: - · source_label: -"
+        ),
+        "species_summary": "reactants: - · products: - · reference: -",
+    }
+
+
 def test_reaction_set_rows_label_export_state_and_review_progress():
     from app import frontend_api
 
