@@ -184,7 +184,9 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
                 issues.append(f"release manifest checksums keys mismatch: {sorted(checksums)!r}")
             for artifact_name in (EXPECTED_ARTIFACTS["openapi"], EXPECTED_ARTIFACTS["demo_summary"]):
                 artifact_path = artifact_dir / artifact_name
-                if artifact_path.exists() and checksums.get(artifact_name) != sha256_file(artifact_path):
+                if artifact_path.exists() and not artifact_path.is_file():
+                    issues.append(f"checksum unavailable: {artifact_name} is not a file: {artifact_path}")
+                elif artifact_path.exists() and checksums.get(artifact_name) != sha256_file(artifact_path):
                     issues.append(f"checksum mismatch: {artifact_name}")
             if checksums.get(EXPECTED_ARTIFACTS["manifest"]) != manifest_checksum(manifest):
                 issues.append(f"checksum mismatch: {EXPECTED_ARTIFACTS['manifest']}")
