@@ -1098,6 +1098,162 @@ def test_api_contract_translation_response_exposes_status_and_output_path():
     assert issues == []
 
 
+def test_api_contract_paper_detail_response_exposes_metadata_and_categories():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.paper_detail_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_paper_detail_response_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/papers/{paper_id}": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "id",
+                                            "doi",
+                                            "title",
+                                            "abstract",
+                                            "authors",
+                                            "journal_id",
+                                            "journal_name",
+                                            "published_date",
+                                            "published_year",
+                                            "oa_status",
+                                            "oa_pdf_url",
+                                            "landing_url",
+                                            "source_api",
+                                            "dedupe_key",
+                                            "has_doi",
+                                            "dedupe_strategy",
+                                            "categories",
+                                            "category_details",
+                                        ],
+                                        "properties": {
+                                            "id": {"type": "integer"},
+                                            "doi": {"type": "string"},
+                                            "title": {"type": "string"},
+                                            "abstract": {"type": "string"},
+                                            "authors": {"type": "array"},
+                                            "journal_id": {"type": "integer"},
+                                            "journal_name": {"type": "string"},
+                                            "published_date": {"type": "string"},
+                                            "published_year": {"type": "integer"},
+                                            "oa_status": {"type": "string"},
+                                            "oa_pdf_url": {"type": "string"},
+                                            "landing_url": {"type": "string"},
+                                            "source_api": {"type": "string"},
+                                            "dedupe_key": {"type": "string"},
+                                            "has_doi": {"type": "boolean"},
+                                            "dedupe_strategy": {"type": "string"},
+                                            "categories": {"type": "array"},
+                                            "category_details": {"type": "array", "items": {"type": "object"}},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.paper_detail_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/papers/{} missing response fields: raw_metadata"]
+
+
+def test_api_contract_validator_reports_missing_paper_category_detail_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/papers/{paper_id}": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "id",
+                                            "doi",
+                                            "title",
+                                            "abstract",
+                                            "authors",
+                                            "journal_id",
+                                            "journal_name",
+                                            "published_date",
+                                            "published_year",
+                                            "oa_status",
+                                            "oa_pdf_url",
+                                            "landing_url",
+                                            "source_api",
+                                            "dedupe_key",
+                                            "has_doi",
+                                            "dedupe_strategy",
+                                            "categories",
+                                            "category_details",
+                                            "raw_metadata",
+                                        ],
+                                        "properties": {
+                                            "id": {"type": "integer"},
+                                            "doi": {"type": "string"},
+                                            "title": {"type": "string"},
+                                            "abstract": {"type": "string"},
+                                            "authors": {"type": "array"},
+                                            "journal_id": {"type": "integer"},
+                                            "journal_name": {"type": "string"},
+                                            "published_date": {"type": "string"},
+                                            "published_year": {"type": "integer"},
+                                            "oa_status": {"type": "string"},
+                                            "oa_pdf_url": {"type": "string"},
+                                            "landing_url": {"type": "string"},
+                                            "source_api": {"type": "string"},
+                                            "dedupe_key": {"type": "string"},
+                                            "has_doi": {"type": "boolean"},
+                                            "dedupe_strategy": {"type": "string"},
+                                            "categories": {"type": "array"},
+                                            "raw_metadata": {"type": "object"},
+                                            "category_details": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": ["id", "slug", "name", "confidence"],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "slug": {"type": "string"},
+                                                        "name": {"type": "string"},
+                                                        "confidence": {"type": "number"},
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.paper_detail_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/papers/{} category detail fields missing: method"]
+
+
 def test_api_contract_validator_reports_missing_translation_response_field():
     validate_api_contract = load_validate_api_contract()
     openapi = {
