@@ -835,6 +835,24 @@ def test_doctor_env_example_check_rejects_settings_default_drift(tmp_path):
     } in check["issues"]
 
 
+def test_doctor_env_example_check_rejects_api_base_url_runtime_drift(tmp_path):
+    doctor = load_doctor()
+    repo = Path(__file__).resolve().parent.parent
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_text = env_text.replace("API_PORT=8000\n", "API_PORT=9000\n")
+    (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
+
+    check = doctor.check_env_example(tmp_path)
+
+    assert {
+        "code": "env_example_runtime_default_drift",
+        "key": "API_BASE_URL",
+        "expected": "http://127.0.0.1:9000/api/v1",
+        "actual": "http://127.0.0.1:8000/api/v1",
+        "message": ".env.example API_BASE_URL must match runtime default http://127.0.0.1:9000/api/v1",
+    } in check["issues"]
+
+
 def test_doctor_script_reports_missing_python_dependencies(monkeypatch):
     import importlib.util
 

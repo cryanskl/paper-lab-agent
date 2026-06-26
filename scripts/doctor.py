@@ -182,6 +182,9 @@ def check_env_example(repo: Path) -> dict[str, Any]:
                         "message": f".env.example {key} must match default {expected}",
                     }
                 )
+        api_base_url_issue = api_base_url_runtime_issue(values)
+        if api_base_url_issue is not None:
+            issues.append(api_base_url_issue)
     return {
         "name": "env_example",
         "status": status_from_issues(issues),
@@ -221,6 +224,32 @@ def env_values_match(actual: str, expected: str) -> bool:
         return float(actual) == float(expected)
     except ValueError:
         return False
+
+
+def connect_host(host: str) -> str:
+    return "127.0.0.1" if host == "0.0.0.0" else host
+
+
+def url_host(host: str) -> str:
+    return f"[{host}]" if ":" in host and not host.startswith("[") else host
+
+
+def api_base_url_runtime_issue(values: dict[str, str]) -> dict[str, str] | None:
+    api_host = values.get("API_HOST")
+    api_port = values.get("API_PORT")
+    api_base_url = values.get("API_BASE_URL")
+    if not api_host or not api_port or not api_base_url:
+        return None
+    expected = f"http://{url_host(connect_host(api_host))}:{api_port}/api/v1"
+    if api_base_url == expected:
+        return None
+    return {
+        "code": "env_example_runtime_default_drift",
+        "key": "API_BASE_URL",
+        "expected": expected,
+        "actual": api_base_url,
+        "message": f".env.example API_BASE_URL must match runtime default {expected}",
+    }
 
 
 def check_python_dependencies() -> dict[str, Any]:
