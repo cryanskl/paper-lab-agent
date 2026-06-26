@@ -74,6 +74,23 @@ class TranslationResponse(BaseModel):
     created_at: str
 
 
+class SectionResponse(BaseModel):
+    id: int
+    document_id: int
+    parent_id: Optional[int] = None
+    seq: Optional[int] = None
+    title: Optional[str] = None
+    content: Optional[str] = None
+    section_type: Optional[str] = None
+
+
+class SectionListResponse(BaseModel):
+    items: list[SectionResponse]
+    total: int
+    page: int
+    page_size: int
+
+
 async def ensure_pdf_upload(file: UploadFile) -> None:
     suffix = Path(file.filename or "").suffix.lower()
     header = await file.read(5)
@@ -165,7 +182,7 @@ def parse(document_id: int, background_tasks: BackgroundTasks) -> dict:
     return {"job_id": document_id, "document_id": document_id, "parse_status": "parsing", "status": "pending"}
 
 
-@router.get("/{document_id}/sections", response_model=PageResponse)
+@router.get("/{document_id}/sections", response_model=SectionListResponse)
 def list_sections(
     document_id: int,
     page_num: int = Query(1, alias="page", ge=1),

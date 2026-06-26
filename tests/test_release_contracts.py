@@ -1338,6 +1338,69 @@ def test_api_contract_document_list_response_exposes_typed_document_items():
     assert issues == []
 
 
+def test_api_contract_section_list_response_exposes_typed_section_items():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.section_list_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_section_list_item_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/documents/{document_id}/sections": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "document_id",
+                                                        "parent_id",
+                                                        "seq",
+                                                        "title",
+                                                        "content",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "document_id": {"type": "integer"},
+                                                        "parent_id": {"type": "integer"},
+                                                        "seq": {"type": "integer"},
+                                                        "title": {"type": "string"},
+                                                        "content": {"type": "string"},
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.section_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/documents/{}/sections item fields missing: section_type"]
+
+
 def test_api_contract_validator_reports_missing_document_list_item_field():
     validate_api_contract = load_validate_api_contract()
     openapi = {
