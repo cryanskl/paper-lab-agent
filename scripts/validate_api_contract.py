@@ -110,6 +110,43 @@ SYSTEM_STATUS_NESTED_FIELDS = {
         "vector_db",
     ),
 }
+REACTION_SET_DETAIL_RESPONSE_ROUTE = ("GET", "/api/v1/reaction-sets/{}")
+REACTION_SET_DETAIL_RESPONSE_FIELDS = (
+    "id",
+    "document_id",
+    "name",
+    "gas_mixture",
+    "lxcat_db",
+    "source_note",
+    "status",
+    "created_at",
+    "reactions",
+    "reaction_count",
+    "verified_count",
+    "unverified_count",
+    "export_ready",
+)
+REACTION_DETAIL_FIELDS = (
+    "id",
+    "reaction_set_id",
+    "reaction",
+    "reactants",
+    "products",
+    "reaction_type",
+    "rate_type",
+    "rate_value",
+    "threshold_ev",
+    "cross_section_url",
+    "source_section_id",
+    "source_section_title",
+    "source_section_type",
+    "source_section_seq",
+    "source_label",
+    "source_excerpt",
+    "confidence",
+    "verified",
+    "audit_log",
+)
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -377,6 +414,31 @@ def system_status_response_contract_issues(openapi: dict | None = None) -> list[
     return []
 
 
+def reaction_set_detail_response_contract_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    specs = normalized_openapi_specs(source_openapi.get("paths", {}))
+    spec = specs.get(REACTION_SET_DETAIL_RESPONSE_ROUTE)
+    if spec is None:
+        return []
+    schema = response_schema(spec, source_openapi)
+    method, path = REACTION_SET_DETAIL_RESPONSE_ROUTE
+    missing = [
+        field for field in REACTION_SET_DETAIL_RESPONSE_FIELDS if not schema_declares_fields(schema, (field,))
+    ]
+    if missing:
+        return [f"{method} {path} missing response fields: {', '.join(missing)}"]
+
+    reactions_schema = schema_property(schema, "reactions", source_openapi)
+    reaction_item_schema = resolve_openapi_ref(reactions_schema.get("items", {}), source_openapi)
+    missing_reaction = [
+        field for field in REACTION_DETAIL_FIELDS if not schema_declares_fields(reaction_item_schema, (field,))
+    ]
+    if missing_reaction:
+        return [f"{method} {path} reaction fields missing: {', '.join(missing_reaction)}"]
+
+    return []
+
+
 def pagination_response_contract_issues(
     contract_path: Path = DEFAULT_CONTRACT_PATH,
     openapi_paths: dict | None = None,
@@ -467,6 +529,7 @@ def main() -> int:
     export_response_issues = export_response_contract_issues()
     rag_response_issues = rag_response_contract_issues()
     system_status_response_issues = system_status_response_contract_issues()
+    reaction_set_detail_response_issues = reaction_set_detail_response_contract_issues()
     async_issues = async_response_contract_issues(Path(args.contract_path))
     async_body_issues = async_response_body_contract_issues(Path(args.contract_path))
     if (
@@ -479,6 +542,7 @@ def main() -> int:
         or export_response_issues
         or rag_response_issues
         or system_status_response_issues
+        or reaction_set_detail_response_issues
         or async_issues
         or async_body_issues
     ):
@@ -517,6 +581,10 @@ def main() -> int:
         if system_status_response_issues:
             print("api contract system status response issues:", file=sys.stderr)
             for issue in system_status_response_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if reaction_set_detail_response_issues:
+            print("api contract reaction set detail response issues:", file=sys.stderr)
+            for issue in reaction_set_detail_response_issues:
                 print(f"- {issue}", file=sys.stderr)
         if async_issues:
             print("api contract async response issues:", file=sys.stderr)

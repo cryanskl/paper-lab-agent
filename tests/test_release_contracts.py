@@ -1082,6 +1082,171 @@ def test_api_contract_export_response_exposes_delivery_metadata():
     assert issues == []
 
 
+def test_api_contract_reaction_set_detail_response_exposes_review_gate():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.reaction_set_detail_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_reaction_set_detail_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/reaction-sets/{reaction_set_id}": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "id",
+                                            "document_id",
+                                            "name",
+                                            "gas_mixture",
+                                            "lxcat_db",
+                                            "source_note",
+                                            "status",
+                                            "created_at",
+                                            "reactions",
+                                            "reaction_count",
+                                            "verified_count",
+                                            "unverified_count",
+                                        ],
+                                        "properties": {
+                                            "id": {"type": "integer"},
+                                            "document_id": {"type": "integer"},
+                                            "name": {"type": "string"},
+                                            "gas_mixture": {"type": "string"},
+                                            "lxcat_db": {"type": "string"},
+                                            "source_note": {"type": "string"},
+                                            "status": {"type": "string"},
+                                            "created_at": {"type": "string"},
+                                            "reactions": {"type": "array", "items": {"type": "object"}},
+                                            "reaction_count": {"type": "integer"},
+                                            "verified_count": {"type": "integer"},
+                                            "unverified_count": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.reaction_set_detail_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/reaction-sets/{} missing response fields: export_ready"]
+
+
+def test_api_contract_validator_reports_missing_reaction_set_detail_reaction_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/reaction-sets/{reaction_set_id}": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "id",
+                                            "document_id",
+                                            "name",
+                                            "gas_mixture",
+                                            "lxcat_db",
+                                            "source_note",
+                                            "status",
+                                            "created_at",
+                                            "reactions",
+                                            "reaction_count",
+                                            "verified_count",
+                                            "unverified_count",
+                                            "export_ready",
+                                        ],
+                                        "properties": {
+                                            "id": {"type": "integer"},
+                                            "document_id": {"type": "integer"},
+                                            "name": {"type": "string"},
+                                            "gas_mixture": {"type": "string"},
+                                            "lxcat_db": {"type": "string"},
+                                            "source_note": {"type": "string"},
+                                            "status": {"type": "string"},
+                                            "created_at": {"type": "string"},
+                                            "reaction_count": {"type": "integer"},
+                                            "verified_count": {"type": "integer"},
+                                            "unverified_count": {"type": "integer"},
+                                            "export_ready": {"type": "boolean"},
+                                            "reactions": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "reaction_set_id",
+                                                        "reaction",
+                                                        "reactants",
+                                                        "products",
+                                                        "reaction_type",
+                                                        "rate_type",
+                                                        "rate_value",
+                                                        "threshold_ev",
+                                                        "cross_section_url",
+                                                        "source_section_id",
+                                                        "source_section_title",
+                                                        "source_section_type",
+                                                        "source_section_seq",
+                                                        "source_label",
+                                                        "confidence",
+                                                        "verified",
+                                                        "audit_log",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "reaction_set_id": {"type": "integer"},
+                                                        "reaction": {"type": "string"},
+                                                        "reactants": {"type": "array"},
+                                                        "products": {"type": "array"},
+                                                        "reaction_type": {"type": "string"},
+                                                        "rate_type": {"type": "string"},
+                                                        "rate_value": {"type": "string"},
+                                                        "threshold_ev": {"type": "number"},
+                                                        "cross_section_url": {"type": "string"},
+                                                        "source_section_id": {"type": "integer"},
+                                                        "source_section_title": {"type": "string"},
+                                                        "source_section_type": {"type": "string"},
+                                                        "source_section_seq": {"type": "integer"},
+                                                        "source_label": {"type": "string"},
+                                                        "confidence": {"type": "number"},
+                                                        "verified": {"type": "boolean"},
+                                                        "audit_log": {"type": "array"},
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.reaction_set_detail_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/reaction-sets/{} reaction fields missing: source_excerpt"]
+
+
 def test_api_contract_rag_query_response_exposes_cited_sources():
     validate_api_contract = load_validate_api_contract()
 

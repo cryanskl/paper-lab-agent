@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Query
@@ -91,7 +91,60 @@ class ExportResponse(BaseModel):
     audit_entry_count: int
 
 
-@router.get("/reaction-sets/{reaction_set_id}")
+class ReactionAuditResponse(BaseModel):
+    id: int
+    reaction_id: int
+    action: str
+    changes: dict[str, Any]
+    verified_by: Optional[str] = None
+    created_at: str
+    field_changes: dict[str, Any]
+    verified_at: Optional[str] = None
+
+
+class ReactionDetailResponse(BaseModel):
+    id: int
+    reaction_set_id: int
+    reaction: str
+    reaction_type: Optional[str] = None
+    reactants: list[str]
+    products: list[str]
+    rate_type: Optional[str] = None
+    rate_value: Optional[str] = None
+    threshold_ev: Optional[float] = None
+    reference: Optional[str] = None
+    cross_section_url: Optional[str] = None
+    source_section_id: Optional[int] = None
+    source_section_title: Optional[str] = None
+    source_section_type: Optional[str] = None
+    source_section_seq: Optional[int] = None
+    source_label: Optional[str] = None
+    source_excerpt: Optional[str] = None
+    confidence: Optional[float] = None
+    verified: bool
+    created_at: str
+    audit_log: list[ReactionAuditResponse]
+
+
+class ReactionSetDetailResponse(BaseModel):
+    id: int
+    document_id: Optional[int] = None
+    name: Optional[str] = None
+    gas_mixture: Optional[str] = None
+    lxcat_db: Optional[str] = None
+    source_note: Optional[str] = None
+    status: str
+    verified_by: Optional[str] = None
+    verified_at: Optional[str] = None
+    created_at: str
+    reactions: list[ReactionDetailResponse]
+    reaction_count: int
+    verified_count: int
+    unverified_count: int
+    export_ready: bool
+
+
+@router.get("/reaction-sets/{reaction_set_id}", response_model=ReactionSetDetailResponse)
 def get_reaction_set(reaction_set_id: int) -> dict:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM reaction_sets WHERE id=?", (reaction_set_id,)).fetchone()
