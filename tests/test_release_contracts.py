@@ -1206,6 +1206,8 @@ def test_release_check_validates_release_artifact_bundle():
     assert "scripts/export_release_artifacts.py --help" in release_check
     assert "scripts/package_release_artifacts.py" in release_check
     assert "scripts/package_release_artifacts.py --help" in release_check
+    assert "scripts/validate_release_package.py" in release_check
+    assert "scripts/validate_release_package.py --help" in release_check
     assert "scripts/validate_release_artifacts.py" in release_check
     assert "scripts/validate_release_artifacts.py --help" in release_check
     assert "RELEASE_ARTIFACTS_JSON" in release_check
@@ -1219,9 +1221,11 @@ def test_release_check_validates_release_artifact_bundle():
     assert "python scripts/validate_release_artifacts.py --artifact-dir out/release --compact" in readme
     assert "--require-clean-source" in readme
     assert "python scripts/package_release_artifacts.py --artifact-dir out/release --output out/paper-lab-agent-release.zip --compact" in readme
+    assert "python scripts/validate_release_package.py --package out/paper-lab-agent-release.zip --compact" in readme
     assert "python scripts/export_release_artifacts.py --output-dir out/release --compact" in checklist
     assert "python scripts/validate_release_artifacts.py --artifact-dir out/release --compact" in checklist
     assert "python scripts/package_release_artifacts.py --artifact-dir out/release --output out/paper-lab-agent-release.zip --compact" in checklist
+    assert "python scripts/validate_release_package.py --package out/paper-lab-agent-release.zip --compact" in checklist
     assert "--require-clean-source" in checklist
 
 
@@ -1623,6 +1627,99 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
             "openapi.json",
             "release-manifest.json",
         ]
+
+    validate_package_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_package.py",
+            "--package",
+            str(package_path),
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert validate_package_result.returncode == 0, validate_package_result.stderr
+    validate_payload = json.loads(validate_package_result.stdout)
+    assert validate_payload["ok"] is True
+    assert validate_payload["package_path"] == str(package_path)
+    assert validate_payload["artifact_count"] == 3
+    assert validate_payload["artifact_names"] == [
+        "demo-summary.json",
+        "openapi.json",
+        "release-manifest.json",
+    ]
+    assert validate_payload["source"]["git_commit"]
+
+
+def test_validate_release_package_script_rejects_tampered_zip_artifact(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    package_path = tmp_path / "paper-lab-agent-release.zip"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    export_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert export_result.returncode == 0, export_result.stderr
+
+    with zipfile.ZipFile(package_path, mode="w") as archive:
+        for artifact_path in sorted(output_dir.iterdir()):
+            payload = artifact_path.read_bytes()
+            if artifact_path.name == "demo-summary.json":
+                demo_summary = json.loads(payload.decode("utf-8"))
+                demo_summary["ready"] = False
+                payload = json.dumps(demo_summary, ensure_ascii=False).encode("utf-8")
+            archive.writestr(artifact_path.name, payload)
+
+    validate_package_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_package.py",
+            "--package",
+            str(package_path),
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert validate_package_result.returncode == 1
+    payload = json.loads(validate_package_result.stdout)
+    assert payload["ok"] is False
+    assert any("checksum mismatch: demo-summary.json" in issue for issue in payload["issues"])
 
 
 def test_release_check_derives_expected_runtime_version_from_app_version():

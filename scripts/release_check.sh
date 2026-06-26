@@ -14,7 +14,7 @@ fi
 bash -n scripts/env.sh
 bash -n scripts/dev.sh
 "${PYTHON_CMD[@]}" -m compileall -q app scripts tests streamlit_app.py
-"${PYTHON_CMD[@]}" -m py_compile scripts/doctor.py scripts/export_openapi.py scripts/export_release_artifacts.py scripts/health_check.py scripts/import_fixtures.py scripts/package_release_artifacts.py scripts/prepare_demo_data.py scripts/smoke_check.py scripts/validate_api_contract.py scripts/validate_bug_docs.py scripts/validate_docs_links.py scripts/validate_env_example.py scripts/validate_readme_commands.py scripts/validate_release_artifacts.py scripts/validate_release_hygiene.py scripts/validate_requirements.py scripts/validate_schema.py streamlit_app.py
+"${PYTHON_CMD[@]}" -m py_compile scripts/doctor.py scripts/export_openapi.py scripts/export_release_artifacts.py scripts/health_check.py scripts/import_fixtures.py scripts/package_release_artifacts.py scripts/prepare_demo_data.py scripts/smoke_check.py scripts/validate_api_contract.py scripts/validate_bug_docs.py scripts/validate_docs_links.py scripts/validate_env_example.py scripts/validate_readme_commands.py scripts/validate_release_artifacts.py scripts/validate_release_hygiene.py scripts/validate_release_package.py scripts/validate_requirements.py scripts/validate_schema.py streamlit_app.py
 "${PYTHON_CMD[@]}" scripts/doctor.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact
 "${PYTHON_CMD[@]}" scripts/export_openapi.py --help >/dev/null
@@ -23,6 +23,7 @@ bash -n scripts/dev.sh
 "${PYTHON_CMD[@]}" scripts/package_release_artifacts.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/prepare_demo_data.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/validate_release_artifacts.py --help >/dev/null
+"${PYTHON_CMD[@]}" scripts/validate_release_package.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/validate_api_contract.py
 "${PYTHON_CMD[@]}" scripts/validate_bug_docs.py
 "${PYTHON_CMD[@]}" scripts/validate_docs_links.py
@@ -397,6 +398,26 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     package = json.loads(package_result.stdout)
     if package.get("ok") is not True or package.get("artifact_count") != 3 or not package_path.exists():
         print(f"release_check failed: release artifact package={package!r}", file=sys.stderr)
+        raise SystemExit(1)
+    validate_package_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_package.py",
+            "--package",
+            str(package_path),
+            "--compact",
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    package_validation = json.loads(validate_package_result.stdout)
+    if (
+        package_validation.get("ok") is not True
+        or package_validation.get("artifact_count") != 3
+        or package_validation.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]
+    ):
+        print(f"release_check failed: release package validation={package_validation!r}", file=sys.stderr)
         raise SystemExit(1)
 print(json.dumps(package, ensure_ascii=False))
 PY
