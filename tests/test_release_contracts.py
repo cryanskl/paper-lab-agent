@@ -1485,6 +1485,23 @@ def test_export_release_artifacts_reports_expected_artifact_path_not_file(tmp_pa
     assert not (output_dir / "demo-summary.json").exists()
 
 
+def test_export_release_artifacts_rejects_expected_artifact_symlink(tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    output_dir = tmp_path / "release"
+    outside_path = tmp_path / "outside-openapi.json"
+    openapi_path = output_dir / "openapi.json"
+    output_dir.mkdir()
+    outside_path.write_text("do not overwrite", encoding="utf-8")
+    openapi_path.symlink_to(outside_path)
+
+    report = export_release_artifacts.export_release_artifacts(output_dir, compact=True)
+
+    assert report["ok"] is False
+    assert f"release artifact output path is not a regular file: {output_dir.resolve() / 'openapi.json'}" in report["issues"]
+    assert outside_path.read_text(encoding="utf-8") == "do not overwrite"
+    assert not (output_dir / "demo-summary.json").exists()
+
+
 def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     import os
     import subprocess
