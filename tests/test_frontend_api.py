@@ -162,6 +162,22 @@ def test_frontend_api_status_request_promotes_invalid_success_payload(monkeypatc
     assert "HTTP 200" in payload["error"]["message"]
 
 
+def test_crawl_job_option_label_summarizes_job_status():
+    from app import frontend_api
+
+    label = frontend_api.crawl_job_option_label({"id": 12, "journal_id": 3, "status": "success"})
+
+    assert label == "#12 · journal 3 · success"
+
+
+def test_crawl_job_option_label_uses_fallbacks_for_sparse_jobs():
+    from app import frontend_api
+
+    label = frontend_api.crawl_job_option_label({"job_id": 9})
+
+    assert label == "#9 · journal - · unknown"
+
+
 def test_reaction_review_rows_can_focus_unverified_source_metadata():
     from app import frontend_api
 

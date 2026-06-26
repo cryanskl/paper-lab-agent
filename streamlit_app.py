@@ -6,6 +6,7 @@ import streamlit as st
 from app.frontend_api import (
     api_docs_links,
     crawl_job_diagnostic_rows,
+    crawl_job_option_label,
     crawl_job_rows,
     crawl_journal_options,
     document_asset_downloads,
@@ -356,7 +357,7 @@ with search_tab:
         selected_job = st.selectbox(
             "任务详情",
             jobs,
-            format_func=lambda job: f"#{job['id']} · journal {job.get('journal_id') or '-'} · {job.get('status')}",
+            format_func=crawl_job_option_label,
         )
         job_detail = api_get(f"/crawl/jobs/{selected_job['id']}")
         diagnostics = job_detail.get("diagnostics", {})

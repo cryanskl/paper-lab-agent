@@ -165,6 +165,14 @@ def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
+def crawl_job_option_label(job: dict[str, Any]) -> str:
+    return (
+        f"#{job.get('id') or job.get('job_id')} · "
+        f"journal {job.get('journal_id') or '-'} · "
+        f"{job.get('status') or 'unknown'}"
+    )
+
+
 def crawl_job_diagnostic_rows(job: dict[str, Any]) -> list[dict[str, Any]]:
     diagnostics = job.get("diagnostics") or {}
     journal = job.get("journal") or {}

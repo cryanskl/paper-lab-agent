@@ -12366,6 +12366,16 @@ def test_streamlit_crawl_jobs_table_flattens_diagnostics():
     assert "st.dataframe(crawl_job_diagnostic_rows(job_detail), use_container_width=True)" in search_section
 
 
+def test_streamlit_crawl_jobs_use_option_label_helper():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+
+    assert "crawl_job_option_label" in streamlit
+    assert "format_func=crawl_job_option_label" in search_section
+    assert "format_func=lambda job" not in search_section
+
+
 def test_streamlit_crawl_jobs_show_empty_state():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
