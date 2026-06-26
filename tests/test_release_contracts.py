@@ -1346,6 +1346,129 @@ def test_api_contract_section_list_response_exposes_typed_section_items():
     assert issues == []
 
 
+def test_api_contract_chunk_list_response_exposes_typed_index_items():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.chunk_list_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_chunk_list_response_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/documents/{document_id}/chunks": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "items",
+                                            "total",
+                                            "page",
+                                            "page_size",
+                                            "indexed",
+                                            "index_status",
+                                        ],
+                                        "properties": {
+                                            "items": {"type": "array", "items": {"type": "object"}},
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                            "indexed": {"type": "boolean"},
+                                            "index_status": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.chunk_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/documents/{}/chunks missing response fields: index_error"]
+
+
+def test_api_contract_validator_reports_missing_chunk_list_item_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/documents/{document_id}/chunks": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "items",
+                                            "total",
+                                            "page",
+                                            "page_size",
+                                            "indexed",
+                                            "index_status",
+                                            "index_error",
+                                        ],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "document_id",
+                                                        "section_id",
+                                                        "seq",
+                                                        "text",
+                                                        "token_count",
+                                                        "vector_id",
+                                                        "embedded",
+                                                        "created_at",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "document_id": {"type": "integer"},
+                                                        "section_id": {"type": "integer"},
+                                                        "seq": {"type": "integer"},
+                                                        "text": {"type": "string"},
+                                                        "token_count": {"type": "integer"},
+                                                        "vector_id": {"type": "string"},
+                                                        "embedded": {"type": "boolean"},
+                                                        "created_at": {"type": "string"},
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                            "indexed": {"type": "boolean"},
+                                            "index_status": {"type": "string"},
+                                            "index_error": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.chunk_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/documents/{}/chunks item fields missing: section_title"]
+
+
 def test_api_contract_validator_reports_missing_section_list_item_field():
     validate_api_contract = load_validate_api_contract()
     openapi = {

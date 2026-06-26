@@ -91,6 +91,29 @@ class SectionListResponse(BaseModel):
     page_size: int
 
 
+class ChunkResponse(BaseModel):
+    id: int
+    document_id: int
+    section_id: Optional[int] = None
+    seq: Optional[int] = None
+    text: str
+    token_count: Optional[int] = None
+    vector_id: Optional[str] = None
+    embedded: bool
+    created_at: str
+    section_title: Optional[str] = None
+
+
+class ChunkListResponse(BaseModel):
+    items: list[ChunkResponse]
+    total: int
+    page: int
+    page_size: int
+    indexed: bool
+    index_status: str
+    index_error: Optional[str] = None
+
+
 async def ensure_pdf_upload(file: UploadFile) -> None:
     suffix = Path(file.filename or "").suffix.lower()
     header = await file.read(5)
@@ -199,7 +222,7 @@ def list_sections(
     return page([dict_from_row(row) for row in rows], total, page_num, page_size)
 
 
-@router.get("/{document_id}/chunks", response_model=PageResponse)
+@router.get("/{document_id}/chunks", response_model=ChunkListResponse)
 def list_chunks(
     document_id: int,
     page_num: int = Query(1, alias="page", ge=1),
