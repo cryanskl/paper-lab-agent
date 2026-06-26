@@ -1139,6 +1139,182 @@ def test_api_contract_paper_detail_response_exposes_metadata_and_categories():
     assert issues == []
 
 
+def test_api_contract_paper_list_response_exposes_typed_search_items():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.paper_list_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_paper_list_item_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/papers": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "doi",
+                                                        "title",
+                                                        "abstract",
+                                                        "authors",
+                                                        "journal_id",
+                                                        "journal_name",
+                                                        "published_date",
+                                                        "published_year",
+                                                        "oa_status",
+                                                        "oa_pdf_url",
+                                                        "landing_url",
+                                                        "source_api",
+                                                        "dedupe_key",
+                                                        "has_doi",
+                                                        "dedupe_strategy",
+                                                        "categories",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "doi": {"type": "string"},
+                                                        "title": {"type": "string"},
+                                                        "abstract": {"type": "string"},
+                                                        "authors": {"type": "array"},
+                                                        "journal_id": {"type": "integer"},
+                                                        "journal_name": {"type": "string"},
+                                                        "published_date": {"type": "string"},
+                                                        "published_year": {"type": "integer"},
+                                                        "oa_status": {"type": "string"},
+                                                        "oa_pdf_url": {"type": "string"},
+                                                        "landing_url": {"type": "string"},
+                                                        "source_api": {"type": "string"},
+                                                        "dedupe_key": {"type": "string"},
+                                                        "has_doi": {"type": "boolean"},
+                                                        "dedupe_strategy": {"type": "string"},
+                                                        "categories": {"type": "array"},
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.paper_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/papers item fields missing: category_details"]
+
+
+def test_api_contract_validator_reports_missing_paper_list_category_detail_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/papers": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "doi",
+                                                        "title",
+                                                        "abstract",
+                                                        "authors",
+                                                        "journal_id",
+                                                        "journal_name",
+                                                        "published_date",
+                                                        "published_year",
+                                                        "oa_status",
+                                                        "oa_pdf_url",
+                                                        "landing_url",
+                                                        "source_api",
+                                                        "dedupe_key",
+                                                        "has_doi",
+                                                        "dedupe_strategy",
+                                                        "categories",
+                                                        "category_details",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "doi": {"type": "string"},
+                                                        "title": {"type": "string"},
+                                                        "abstract": {"type": "string"},
+                                                        "authors": {"type": "array"},
+                                                        "journal_id": {"type": "integer"},
+                                                        "journal_name": {"type": "string"},
+                                                        "published_date": {"type": "string"},
+                                                        "published_year": {"type": "integer"},
+                                                        "oa_status": {"type": "string"},
+                                                        "oa_pdf_url": {"type": "string"},
+                                                        "landing_url": {"type": "string"},
+                                                        "source_api": {"type": "string"},
+                                                        "dedupe_key": {"type": "string"},
+                                                        "has_doi": {"type": "boolean"},
+                                                        "dedupe_strategy": {"type": "string"},
+                                                        "categories": {"type": "array"},
+                                                        "category_details": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "required": ["id", "slug", "name", "confidence"],
+                                                                "properties": {
+                                                                    "id": {"type": "integer"},
+                                                                    "slug": {"type": "string"},
+                                                                    "name": {"type": "string"},
+                                                                    "confidence": {"type": "number"},
+                                                                },
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.paper_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/papers item category detail fields missing: method"]
+
+
 def test_api_contract_crawl_job_detail_response_exposes_diagnostics():
     validate_api_contract = load_validate_api_contract()
 

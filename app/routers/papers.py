@@ -7,7 +7,7 @@ from pydantic import BaseModel, field_validator
 from app.clients.unpaywall import UnpaywallClient, oa_status, web_url
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
-from app.errors import AppError, PageResponse, page
+from app.errors import AppError, page
 from app.services.classification import get_classifier
 from app.services.crawl import normalize_doi, unpaywall_client_options
 from app.utils import json_dumps, json_loads
@@ -60,6 +60,34 @@ class PaperDetailResponse(BaseModel):
     categories: list[str]
     category_details: list[CategoryDetailResponse]
     raw_metadata: dict[str, Any]
+
+
+class PaperListItemResponse(BaseModel):
+    id: int
+    doi: Optional[str] = None
+    title: str
+    abstract: Optional[str] = None
+    authors: list[dict[str, Any]]
+    journal_id: Optional[int] = None
+    journal_name: Optional[str] = None
+    published_date: Optional[str] = None
+    published_year: Optional[int] = None
+    oa_status: Optional[str] = None
+    oa_pdf_url: Optional[str] = None
+    landing_url: Optional[str] = None
+    source_api: Optional[str] = None
+    dedupe_key: Optional[str] = None
+    has_doi: bool
+    dedupe_strategy: str
+    categories: list[str]
+    category_details: list[CategoryDetailResponse]
+
+
+class PaperListResponse(BaseModel):
+    items: list[PaperListItemResponse]
+    total: int
+    page: int
+    page_size: int
 
 
 def category_details_for(conn, paper_id: int) -> list[dict]:
@@ -123,7 +151,7 @@ def serialize_paper(row: dict, category_details: list[dict]) -> dict:
     }
 
 
-@router.get("", response_model=PageResponse)
+@router.get("", response_model=PaperListResponse)
 def list_papers(
     q: Optional[str] = None,
     category: Optional[str] = None,
