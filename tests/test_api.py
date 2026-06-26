@@ -12110,6 +12110,25 @@ def test_streamlit_documents_tab_exposes_section_and_chunk_pagination_controls()
         assert required in documents_section
 
 
+def test_streamlit_document_sections_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    sections_load_section = documents_section[
+        documents_section.index("sections_response = api_get(") :
+        documents_section.index('sections = sections_response["items"]')
+    ]
+
+    for required in [
+        "sections_response = api_get(",
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
+    ]:
+        assert required in sections_load_section
+
+
 def test_streamlit_document_parse_surfaces_success_and_error_states():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

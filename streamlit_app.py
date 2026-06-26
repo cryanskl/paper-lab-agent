@@ -708,11 +708,16 @@ with documents_tab:
             value=20,
             key=f"chunks-page-size-{selected['id']}",
         )
-        sections_response = api_get(
-            f"/documents/{selected['id']}/sections",
-            page=int(sections_page),
-            page_size=int(sections_page_size),
-        )
+        try:
+            sections_response = api_get(
+                f"/documents/{selected['id']}/sections",
+                page=int(sections_page),
+                page_size=int(sections_page_size),
+            )
+        except FrontendApiError as exc:
+            st.error(format_error_payload(exc.payload, exc.status_code))
+            st.json(exc.payload)
+            st.stop()
         sections = sections_response["items"]
         chunks = api_get(
             f"/documents/{selected['id']}/chunks",
