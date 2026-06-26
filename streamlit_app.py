@@ -17,6 +17,7 @@ from app.frontend_api import (
     document_section_rows,
     document_status_rows,
     journal_option_label,
+    paper_category_option_label,
     rag_source_option_label,
     rag_source_rows,
     reaction_audit_rows,
@@ -288,7 +289,7 @@ with search_tab:
                     "人工覆盖分类",
                     categories,
                     default=default_categories,
-                    format_func=lambda category: f"{category['slug']} · {category['name']}",
+                    format_func=paper_category_option_label,
                     key=f"manual-categories-{paper['id']}",
                 )
                 if st.button("保存人工分类", key=f"save-manual-categories-{paper['id']}"):

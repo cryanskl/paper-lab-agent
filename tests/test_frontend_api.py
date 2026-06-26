@@ -941,6 +941,24 @@ def test_category_parent_option_label_summarizes_category_identity():
     assert label == "#3 chemistry"
 
 
+def test_paper_category_option_label_summarizes_slug_and_name():
+    from app import frontend_api
+
+    label = frontend_api.paper_category_option_label(
+        {"id": 2, "slug": "chemistry", "name": "等离子体化学"}
+    )
+
+    assert label == "chemistry · 等离子体化学"
+
+
+def test_paper_category_option_label_uses_fallback_name():
+    from app import frontend_api
+
+    label = frontend_api.paper_category_option_label({"id": 9, "slug": "methods"})
+
+    assert label == "methods · category"
+
+
 def test_document_option_label_surfaces_processing_states():
     from app import frontend_api
 

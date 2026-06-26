@@ -12478,10 +12478,12 @@ def test_streamlit_search_results_can_override_categories_manually():
         "api_put(",
         'f"/papers/{paper[\'id\']}/categories"',
         '"method": "manual"',
+        "format_func=paper_category_option_label",
         'key=f"manual-categories-{paper[\'id\']}"',
         'key=f"save-manual-categories-{paper[\'id\']}"',
     ]:
         assert required in search_section
+    assert "format_func=lambda category" not in search_section
 
 
 def test_streamlit_search_results_can_resolve_oa_manually():

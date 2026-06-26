@@ -145,6 +145,10 @@ def category_parent_option_label(category: Optional[dict[str, Any]]) -> str:
     return f"#{category['id']} {category.get('slug') or 'category'}"
 
 
+def paper_category_option_label(category: dict[str, Any]) -> str:
+    return f"{category.get('slug') or 'category'} · {category.get('name') or 'category'}"
+
+
 def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for job in jobs:
