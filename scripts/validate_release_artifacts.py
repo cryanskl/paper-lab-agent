@@ -55,7 +55,7 @@ def read_json(path: Path, label: str, issues: list[str]) -> dict[str, Any]:
     return payload
 
 
-def validate_release_artifacts(artifact_dir: Path) -> dict[str, Any]:
+def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool = False) -> dict[str, Any]:
     artifact_dir = artifact_dir.resolve()
     issues: list[str] = []
     manifest = read_json(artifact_dir / EXPECTED_ARTIFACTS["manifest"], "release manifest", issues)
@@ -91,10 +91,15 @@ def validate_release_artifacts(artifact_dir: Path) -> dict[str, Any]:
         else:
             git_commit = source.get("git_commit")
             git_branch = source.get("git_branch")
+            git_dirty = source.get("git_dirty")
             if not isinstance(git_commit, str) or not GIT_COMMIT_RE.fullmatch(git_commit):
                 issues.append(f"release manifest source.git_commit invalid: {git_commit!r}")
             if not isinstance(git_branch, str) or not git_branch.strip():
                 issues.append(f"release manifest source.git_branch invalid: {git_branch!r}")
+            if not isinstance(git_dirty, bool):
+                issues.append(f"release manifest source.git_dirty invalid: {git_dirty!r}")
+            if require_clean_source and git_dirty is True:
+                issues.append("release manifest source.git_dirty must be false for clean-source validation")
         checksums = manifest.get("checksums")
         if not isinstance(checksums, dict):
             issues.append("release manifest checksums must be an object")
@@ -147,10 +152,15 @@ def format_report(report: dict[str, Any], *, compact: bool = False) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate a release handoff artifact directory.")
     parser.add_argument("--artifact-dir", default="out/release", type=Path, help="Directory with release artifacts.")
+    parser.add_argument(
+        "--require-clean-source",
+        action="store_true",
+        help="Fail when the manifest records a dirty source worktree.",
+    )
     parser.add_argument("--compact", action="store_true", help="Emit compact single-line JSON.")
     args = parser.parse_args()
 
-    report = validate_release_artifacts(args.artifact_dir)
+    report = validate_release_artifacts(args.artifact_dir, require_clean_source=args.require_clean_source)
     print(format_report(report, compact=args.compact))
     return 0 if report["ok"] else 1
 

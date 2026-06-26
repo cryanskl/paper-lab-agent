@@ -46,10 +46,25 @@ def git_value(args: list[str]) -> str:
     return result.stdout.strip() or "unknown"
 
 
-def source_metadata() -> dict[str, str]:
+def git_dirty() -> bool:
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    return bool(result.stdout.strip())
+
+
+def source_metadata() -> dict[str, Any]:
     return {
         "git_commit": git_value(["rev-parse", "HEAD"]),
         "git_branch": git_value(["branch", "--show-current"]),
+        "git_dirty": git_dirty(),
     }
 
 

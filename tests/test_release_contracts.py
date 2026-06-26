@@ -134,6 +134,19 @@ def load_export_openapi():
     return export_openapi
 
 
+def load_export_release_artifacts():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "export_release_artifacts.py"
+    spec = importlib.util.spec_from_file_location("export_release_artifacts_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    export_release_artifacts = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(export_release_artifacts)
+    return export_release_artifacts
+
+
 def test_env_example_contains_required_external_dependency_keys():
     validate_env_example = load_validate_env_example()
     env_path = Path(__file__).resolve().parent.parent / ".env.example"
@@ -1198,10 +1211,13 @@ def test_release_check_validates_release_artifact_bundle():
     assert "openapi.json" in release_check
     assert "release manifest version does not match OpenAPI version" in release_check
     assert "checksums" in release_check
+    assert "git_dirty" in release_check
     assert "python scripts/export_release_artifacts.py --output-dir out/release --compact" in readme
     assert "python scripts/validate_release_artifacts.py --artifact-dir out/release --compact" in readme
+    assert "--require-clean-source" in readme
     assert "python scripts/export_release_artifacts.py --output-dir out/release --compact" in checklist
     assert "python scripts/validate_release_artifacts.py --artifact-dir out/release --compact" in checklist
+    assert "--require-clean-source" in checklist
 
 
 def test_release_check_validates_prepare_demo_data_output_artifact():
@@ -1314,8 +1330,18 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
         capture_output=True,
         text=True,
     ).stdout.strip()
+    expected_dirty = bool(
+        subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    )
     assert manifest["source"]["git_commit"] == expected_commit
     assert manifest["source"]["git_branch"] == expected_branch
+    assert manifest["source"]["git_dirty"] is expected_dirty
     assert set(manifest["checksums"]) == {"openapi.json", "demo-summary.json", "release-manifest.json"}
     assert all(
         len(value) == 64 and all(character in string.hexdigits for character in value)
@@ -1391,6 +1417,7 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
         capture_output=True,
         text=True,
     ).stdout.strip()
+    assert isinstance(payload["source"]["git_dirty"], bool)
     assert payload["demo_ready"] is True
     assert payload["demo_export_formats"] == ["json", "txt", "bolsig"]
     assert payload["openapi_path_count"] == 28
@@ -1456,6 +1483,71 @@ def test_validate_release_artifacts_script_rejects_tampered_artifact(tmp_path):
     payload = json.loads(validate_result.stdout)
     assert payload["ok"] is False
     assert any("checksum mismatch: demo-summary.json" in issue for issue in payload["issues"])
+
+
+def test_validate_release_artifacts_script_can_require_clean_source(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    export_release_artifacts = load_export_release_artifacts()
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    export_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert export_result.returncode == 0, export_result.stderr
+
+    manifest_path = output_dir / "release-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["source"]["git_dirty"] = True
+    manifest["checksums"]["release-manifest.json"] = export_release_artifacts.manifest_checksum(manifest)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+    validate_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_artifacts.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--require-clean-source",
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert validate_result.returncode == 1
+    payload = json.loads(validate_result.stdout)
+    assert payload["ok"] is False
+    assert "release manifest source.git_dirty must be false for clean-source validation" in payload["issues"]
 
 
 def test_release_check_derives_expected_runtime_version_from_app_version():

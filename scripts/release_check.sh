@@ -371,6 +371,9 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     if not source.get("git_commit") or not source.get("git_branch"):
         print(f"release_check failed: release artifact source={source!r}", file=sys.stderr)
         raise SystemExit(1)
+    if not isinstance(source.get("git_dirty"), bool):
+        print(f"release_check failed: release artifact source.git_dirty={source.get('git_dirty')!r}", file=sys.stderr)
+        raise SystemExit(1)
     checksums = validation.get("checksums") or {}
     if sorted(checksums) != ["demo-summary.json", "openapi.json", "release-manifest.json"]:
         print(f"release_check failed: release artifact checksums={checksums!r}", file=sys.stderr)
