@@ -80,6 +80,13 @@ def write_json(path: Path, payload: dict[str, Any], *, compact: bool = False) ->
 
 
 def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict[str, Any]:
+    output_dir = output_dir.resolve()
+    if output_dir.exists() and not output_dir.is_dir():
+        return {
+            "ok": False,
+            "output_dir": str(output_dir),
+            "issues": [f"release artifact output directory is not a directory: {output_dir}"],
+        }
     output_dir.mkdir(parents=True, exist_ok=True)
     openapi_path = output_dir / "openapi.json"
     demo_summary_path = output_dir / "demo-summary.json"
@@ -131,7 +138,7 @@ def main() -> int:
             separators=(",", ":") if args.compact else None,
         )
     )
-    return 0
+    return 1 if manifest.get("ok") is False else 0
 
 
 if __name__ == "__main__":

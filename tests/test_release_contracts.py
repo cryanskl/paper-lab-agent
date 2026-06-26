@@ -1426,6 +1426,35 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     assert "/api/v1/health" in openapi["paths"]
 
 
+def test_export_release_artifacts_reports_output_dir_not_directory(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    output_dir.write_text("not a directory", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert f"release artifact output directory is not a directory: {output_dir.resolve()}" in payload["issues"]
+    assert "Traceback" not in result.stderr
+
+
 def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     import os
     import subprocess
