@@ -366,7 +366,12 @@ with search_tab:
         value=10,
         key="crawl-jobs-page-size",
     )
-    crawl_jobs_response = api_get("/crawl/jobs", page=int(crawl_jobs_page), page_size=int(crawl_jobs_page_size))
+    try:
+        crawl_jobs_response = api_get("/crawl/jobs", page=int(crawl_jobs_page), page_size=int(crawl_jobs_page_size))
+    except FrontendApiError as exc:
+        st.error(format_error_payload(exc.payload, exc.status_code))
+        st.json(exc.payload)
+        st.stop()
     jobs = crawl_jobs_response["items"]
     st.caption(
         f"crawl jobs page {crawl_jobs_response['page']} · "

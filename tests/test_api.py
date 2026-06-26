@@ -12610,6 +12610,25 @@ def test_streamlit_crawl_jobs_exposes_pagination_controls():
         assert required in search_section
 
 
+def test_streamlit_crawl_jobs_list_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+    crawl_jobs_section = search_section[
+        search_section.index("crawl_jobs_page_col, crawl_jobs_page_size_col = st.columns(2)") :
+        search_section.index('if not jobs:')
+    ]
+
+    for required in [
+        'crawl_jobs_response = api_get("/crawl/jobs", page=int(crawl_jobs_page), page_size=int(crawl_jobs_page_size))',
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
+    ]:
+        assert required in crawl_jobs_section
+
+
 def test_streamlit_crawl_run_surfaces_success_and_error_states():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
