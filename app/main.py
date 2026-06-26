@@ -16,6 +16,18 @@ class HealthResponse(BaseModel):
     service: str
 
 
+OPENAPI_TAGS = [
+    {"name": "system", "description": "Health checks, runtime status, and release readiness."},
+    {"name": "journals", "description": "Journal whitelist metadata and curation endpoints."},
+    {"name": "categories", "description": "Research taxonomy categories for paper classification."},
+    {"name": "crawl", "description": "Metadata crawl jobs and crawl status inspection."},
+    {"name": "papers", "description": "Paper search, detail, OA resolution, and categorization."},
+    {"name": "documents", "description": "Uploaded full-text documents, parsing, translation, and indexing."},
+    {"name": "rag", "description": "Retrieval-augmented question answering over indexed documents."},
+    {"name": "reactions", "description": "Extracted reaction sets, human verification, and exports."},
+]
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
@@ -32,7 +44,12 @@ async def lifespan(_: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title="paper-lab-agent", version=__version__, lifespan=lifespan)
+    app = FastAPI(
+        title="paper-lab-agent",
+        version=__version__,
+        lifespan=lifespan,
+        openapi_tags=OPENAPI_TAGS,
+    )
     install_error_handlers(app)
 
     @app.get("/health", response_model=HealthResponse, tags=["system"])

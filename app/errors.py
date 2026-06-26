@@ -57,7 +57,7 @@ def install_openapi_error_schema(app: FastAPI) -> None:
     def custom_openapi() -> dict:
         if app.openapi_schema:
             return app.openapi_schema
-        schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+        schema = get_openapi(title=app.title, version=app.version, tags=app.openapi_tags, routes=app.routes)
         schemas = schema.setdefault("components", {}).setdefault("schemas", {})
         schemas["ErrorDetail"] = {
             "type": "object",

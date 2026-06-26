@@ -1175,6 +1175,39 @@ def untagged_api_route_issues(openapi: dict | None = None) -> list[str]:
     return issues
 
 
+def openapi_tag_metadata_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    operation_tags: set[str] = set()
+    for path, methods in source_openapi.get("paths", {}).items():
+        if not str(path).startswith("/api/v1"):
+            continue
+        for method, spec in methods.items():
+            if method.upper() not in HTTP_METHODS:
+                continue
+            tags = spec.get("tags")
+            if isinstance(tags, list):
+                operation_tags.update(tag.strip() for tag in tags if isinstance(tag, str) and tag.strip())
+
+    metadata = {
+        tag.get("name"): tag
+        for tag in source_openapi.get("tags", [])
+        if isinstance(tag, dict) and isinstance(tag.get("name"), str) and tag.get("name").strip()
+    }
+    issues: list[str] = []
+    missing = sorted(operation_tags - set(metadata))
+    if missing:
+        issues.append(f"OpenAPI tag metadata missing: {', '.join(missing)}")
+
+    missing_descriptions = sorted(
+        tag
+        for tag in operation_tags & set(metadata)
+        if not isinstance(metadata[tag].get("description"), str) or not metadata[tag]["description"].strip()
+    )
+    if missing_descriptions:
+        issues.append(f"OpenAPI tag metadata missing descriptions: {', '.join(missing_descriptions)}")
+    return issues
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate documented API endpoints against FastAPI routes.")
     parser.add_argument("contract_path", nargs="?", default=str(DEFAULT_CONTRACT_PATH))
@@ -1213,6 +1246,7 @@ def main() -> int:
     bare_success_schema_issues = bare_success_response_schema_issues()
     named_success_schema_issues = named_success_response_schema_issues()
     untagged_route_issues = untagged_api_route_issues()
+    tag_metadata_issues = openapi_tag_metadata_issues()
     if (
         missing
         or undocumented
@@ -1247,6 +1281,7 @@ def main() -> int:
         or bare_success_schema_issues
         or named_success_schema_issues
         or untagged_route_issues
+        or tag_metadata_issues
     ):
         if missing:
             print("api contract missing routes:", file=sys.stderr)
@@ -1379,6 +1414,10 @@ def main() -> int:
         if untagged_route_issues:
             print("api contract untagged route issues:", file=sys.stderr)
             for issue in untagged_route_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if tag_metadata_issues:
+            print("api contract tag metadata issues:", file=sys.stderr)
+            for issue in tag_metadata_issues:
                 print(f"- {issue}", file=sys.stderr)
         return 1
     return 0

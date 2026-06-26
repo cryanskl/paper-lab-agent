@@ -909,6 +909,14 @@ def test_api_contract_app_routes_expose_openapi_tags():
     assert issues == []
 
 
+def test_api_contract_openapi_tags_have_metadata_descriptions():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.openapi_tag_metadata_issues()
+
+    assert issues == []
+
+
 def test_api_contract_documents_reaction_verify_reviewer_requirement():
     repo = Path(__file__).resolve().parent.parent
     contract_text = (repo / "docs" / "接口设计文档.md").read_text(encoding="utf-8")
@@ -1158,6 +1166,44 @@ def test_api_contract_validator_reports_untagged_api_route():
     issues = validate_api_contract.untagged_api_route_issues(openapi=openapi)
 
     assert issues == ["GET /api/v1/things missing OpenAPI tags"]
+
+
+def test_api_contract_validator_reports_missing_openapi_tag_metadata():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/things": {
+                "get": {
+                    "tags": ["things"],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+        "tags": [],
+    }
+
+    issues = validate_api_contract.openapi_tag_metadata_issues(openapi=openapi)
+
+    assert issues == ["OpenAPI tag metadata missing: things"]
+
+
+def test_api_contract_validator_reports_openapi_tag_metadata_missing_description():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/things": {
+                "get": {
+                    "tags": ["things"],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+        "tags": [{"name": "things"}],
+    }
+
+    issues = validate_api_contract.openapi_tag_metadata_issues(openapi=openapi)
+
+    assert issues == ["OpenAPI tag metadata missing descriptions: things"]
 
 
 def test_api_contract_validator_reports_missing_async_response_field(tmp_path):
