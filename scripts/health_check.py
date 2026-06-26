@@ -23,6 +23,8 @@ STATUS_REQUIRED_KEYS = {
     "storage",
     "storage_health",
     "external_capabilities",
+    "demo_data",
+    "release_readiness",
     "status_counts",
     "counts",
 }
@@ -499,6 +501,8 @@ def storage_writability_errors(status: dict) -> list[str]:
     vector_db = storage_health.get("vector_db")
     if isinstance(vector_db, dict) and vector_db.get("exists") is True and vector_db.get("writable") is not True:
         errors.append("vector_db.writable")
+    if isinstance(vector_db, dict) and vector_db.get("exists") is True and vector_db.get("valid_json") is not True:
+        errors.append("vector_db.valid_json")
 
     return errors
 
@@ -577,6 +581,19 @@ def release_readiness_blockers(readiness: dict) -> list[str]:
     return blockers or ["ready=false"]
 
 
+def probe_blocker(prefix: str, detail: Optional[dict]) -> Optional[str]:
+    if not isinstance(detail, dict):
+        return None
+    if prefix == "frontend" and detail.get("status_code") == 200:
+        return None
+    if prefix == "grobid" and detail.get("available") is True:
+        return None
+    reason = detail.get("error")
+    if not reason:
+        reason = f"status_code={detail.get('status_code')}"
+    return f"{prefix}:{reason}"
+
+
 def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) -> dict:
     safe_status = status if isinstance(status, dict) else {}
     runtime = safe_status.get("runtime")
@@ -605,16 +622,42 @@ def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) 
             if isinstance(warning, dict) and isinstance(warning.get("code"), str) and warning["code"].strip()
         ]
         release_ready = not (storage_errors or failed_workflows or config_warning_codes or demo_data_missing)
+    readiness_blockers = release_readiness_blockers(
+        {
+            "ready": release_ready,
+            "demo_data_missing": demo_data_missing,
+            "failed_workflows": failed_workflows,
+            "config_warning_codes": config_warning_codes,
+            "storage_errors": storage_errors,
+        }
+    )
+    external_capabilities = safe_status.get("external_capabilities")
+    grobid = external_capabilities.get("grobid") if isinstance(external_capabilities, dict) else None
+    frontend_blocker = probe_blocker("frontend", frontend)
+    grobid_blocker = (
+        probe_blocker("grobid", grobid)
+        if isinstance(grobid, dict)
+        and any(grobid.get(key) is not None for key in ("available", "status_code", "error"))
+        else None
+    )
+    release_blockers = [*readiness_blockers]
+    if frontend_blocker:
+        release_blockers.append(frontend_blocker)
+    if grobid_blocker:
+        release_blockers.append(grobid_blocker)
     summary = {
         "service": health.get("service") if isinstance(health, dict) else None,
         "api_status": health.get("status") if isinstance(health, dict) else None,
         "api_prefix": runtime.get("api_prefix"),
         "version": runtime.get("version"),
-        "release_ready": release_ready,
+        "release_ready": release_blockers == [],
+        "release_blockers": release_blockers,
         "demo_data_ready": demo_data.get("ready") is True,
         "demo_data_missing": demo_data_missing,
+        "workflows_ok": failed_workflows == [],
         "failed_workflows": failed_workflows,
         "config_warning_count": len(config_warning_codes),
+        "config_ready": config_warning_codes == [],
         "config_warning_codes": config_warning_codes,
         "storage_writable": storage_errors == [],
         "storage_errors": storage_errors,
@@ -627,8 +670,6 @@ def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) 
                 "frontend_ok": frontend.get("status_code") == 200,
             }
         )
-    external_capabilities = safe_status.get("external_capabilities")
-    grobid = external_capabilities.get("grobid") if isinstance(external_capabilities, dict) else None
     if isinstance(grobid, dict) and any(
         grobid.get(key) is not None for key in ("available", "status_code", "error")
     ):

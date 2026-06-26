@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, Query, UploadFile
 from pydantic import BaseModel, field_validator
 
 from app.db import dict_from_row, get_conn
-from app.errors import AppError, page
+from app.errors import AppError, AsyncJobResponse, PageResponse, page
 from app.services.chemistry import extract_reactions, mark_chemistry_queued
 from app.services.documents import mark_parse_queued, parse_document, save_upload
 from app.services.rag import index_document, mark_index_queued
@@ -28,6 +28,32 @@ class TranslateIn(BaseModel):
         if any(ord(char) < 32 for char in normalized):
             raise ValueError("target_lang must not contain control characters")
         return normalized
+
+
+class PaperSummaryResponse(BaseModel):
+    id: int
+    doi: Optional[str] = None
+    title: Optional[str] = None
+    journal_name: Optional[str] = None
+    published_date: Optional[str] = None
+
+
+class DocumentResponse(BaseModel):
+    id: int
+    paper_id: Optional[int] = None
+    file_path: str
+    file_hash: Optional[str] = None
+    original_name: Optional[str] = None
+    num_pages: Optional[int] = None
+    parse_status: str
+    parse_error: Optional[str] = None
+    index_status: str
+    index_error: Optional[str] = None
+    chemistry_status: str
+    chemistry_error: Optional[str] = None
+    tei_path: Optional[str] = None
+    created_at: str
+    paper: Optional[PaperSummaryResponse] = None
 
 
 async def ensure_pdf_upload(file: UploadFile) -> None:
@@ -67,7 +93,15 @@ def get_document_or_404(document_id: int) -> dict:
         return serialize_document(row, conn)
 
 
-@router.post("", status_code=201)
+@router.post(
+    "",
+    status_code=201,
+    response_model=DocumentResponse,
+    responses={
+        409: {"description": "Duplicate document"},
+        415: {"description": "Unsupported document type"},
+    },
+)
 async def upload_document(file: UploadFile = File(...), paper_id: Optional[int] = Form(None)) -> dict:
     await ensure_pdf_upload(file)
     if paper_id is not None:
@@ -87,7 +121,7 @@ async def upload_document(file: UploadFile = File(...), paper_id: Optional[int] 
     return document
 
 
-@router.get("")
+@router.get("", response_model=PageResponse)
 def list_documents(
     page_num: int = Query(1, alias="page", ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -100,12 +134,12 @@ def list_documents(
     return page(items, total, page_num, page_size)
 
 
-@router.get("/{document_id}")
+@router.get("/{document_id}", response_model=DocumentResponse)
 def get_document(document_id: int) -> dict:
     return get_document_or_404(document_id)
 
 
-@router.post("/{document_id}/parse", status_code=202)
+@router.post("/{document_id}/parse", status_code=202, response_model=AsyncJobResponse)
 def parse(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
     mark_parse_queued(document_id)
@@ -113,7 +147,7 @@ def parse(document_id: int, background_tasks: BackgroundTasks) -> dict:
     return {"job_id": document_id, "document_id": document_id, "parse_status": "parsing", "status": "pending"}
 
 
-@router.get("/{document_id}/sections")
+@router.get("/{document_id}/sections", response_model=PageResponse)
 def list_sections(
     document_id: int,
     page_num: int = Query(1, alias="page", ge=1),
@@ -130,7 +164,7 @@ def list_sections(
     return page([dict_from_row(row) for row in rows], total, page_num, page_size)
 
 
-@router.get("/{document_id}/chunks")
+@router.get("/{document_id}/chunks", response_model=PageResponse)
 def list_chunks(
     document_id: int,
     page_num: int = Query(1, alias="page", ge=1),
@@ -164,7 +198,7 @@ def list_chunks(
     }
 
 
-@router.post("/{document_id}/translate", status_code=202)
+@router.post("/{document_id}/translate", status_code=202, response_model=AsyncJobResponse)
 def translate(document_id: int, body: TranslateIn, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
     translation = create_translation_job(document_id, body.target_lang)
@@ -190,7 +224,7 @@ def get_translation(document_id: int) -> dict:
     return dict_from_row(row)
 
 
-@router.post("/{document_id}/index", status_code=202)
+@router.post("/{document_id}/index", status_code=202, response_model=AsyncJobResponse)
 def index(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
     mark_index_queued(document_id)
@@ -198,7 +232,7 @@ def index(document_id: int, background_tasks: BackgroundTasks) -> dict:
     return {"job_id": document_id, "document_id": document_id, "index_status": "indexing", "status": "pending"}
 
 
-@router.post("/{document_id}/extract-chemistry", status_code=202)
+@router.post("/{document_id}/extract-chemistry", status_code=202, response_model=AsyncJobResponse)
 def extract_chemistry(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
     mark_chemistry_queued(document_id)
@@ -206,7 +240,7 @@ def extract_chemistry(document_id: int, background_tasks: BackgroundTasks) -> di
     return {"job_id": document_id, "document_id": document_id, "chemistry_status": "extracting", "status": "pending"}
 
 
-@router.get("/{document_id}/reaction-sets")
+@router.get("/{document_id}/reaction-sets", response_model=PageResponse)
 def document_reaction_sets(
     document_id: int,
     page_num: int = Query(1, alias="page", ge=1),

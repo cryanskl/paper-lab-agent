@@ -4,6 +4,7 @@ from typing import Any, Optional, Protocol
 import httpx
 
 from app.config import Settings
+from app.services.llm import chat_completion_content
 
 
 class Classifier(Protocol):
@@ -93,11 +94,9 @@ class OpenAICompatibleClassifier:
                 json=payload,
             )
         response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
-        data = json.loads(strip_json_fence(content))
-        raw_items = data.get("categories") or []
-        if not isinstance(raw_items, list):
-            raw_items = []
+        content = chat_completion_content(response.json())
+        data = parse_classifier_response_content(content)
+        raw_items = data["categories"]
         return normalize_classifier_results(raw_items, categories)
 
 
@@ -111,6 +110,20 @@ def strip_json_fence(value: str) -> str:
             lines = lines[:-1]
         text = "\n".join(lines).strip()
     return text
+
+
+def parse_classifier_response_content(content: str) -> dict[str, Any]:
+    try:
+        data = json.loads(strip_json_fence(content))
+    except json.JSONDecodeError as exc:
+        raise ValueError("classifier response content is not valid JSON") from exc
+    if not isinstance(data, dict):
+        raise ValueError("classifier response content must be a JSON object")
+    if not isinstance(data.get("categories"), list):
+        raise ValueError("classifier response content missing categories list")
+    if not all(isinstance(item, dict) for item in data["categories"]):
+        raise ValueError("classifier response categories items must be JSON objects")
+    return data
 
 
 def get_classifier(settings: Settings) -> Classifier:

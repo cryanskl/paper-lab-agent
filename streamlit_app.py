@@ -4,7 +4,24 @@ from pathlib import Path
 
 import streamlit as st
 
-from app.frontend_api import reaction_review_rows, request_json, request_json_status
+from app.frontend_api import (
+    crawl_job_diagnostic_rows,
+    crawl_job_rows,
+    crawl_journal_options,
+    document_chunk_rows,
+    document_option_label,
+    document_section_rows,
+    document_status_rows,
+    rag_source_rows,
+    reaction_audit_rows,
+    reaction_export_rows,
+    reaction_review_payload,
+    reaction_review_rows,
+    reaction_set_rows,
+    request_json,
+    request_json_status,
+    translation_status_rows,
+)
 
 
 API_BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000/api/v1").rstrip("/")
@@ -24,33 +41,6 @@ def api_put(path: str, json=None):
 
 def api_delete(path: str):
     return request_json_status("DELETE", API_BASE, path, timeout=20)
-
-
-def flatten_crawl_job_rows(jobs: list[dict]) -> list[dict]:
-    rows = []
-    for job in jobs:
-        diagnostics = job.get("diagnostics") or {}
-        journal = job.get("journal") or {}
-        rows.append(
-            {
-                "id": job.get("id") or job.get("job_id"),
-                "journal": journal.get("name") or diagnostics.get("journal_name") or job.get("journal_id"),
-                "status": diagnostics.get("status") or job.get("status"),
-                "period": diagnostics.get("period") or job.get("period"),
-                "date_from": diagnostics.get("date_from") or job.get("date_from"),
-                "date_to": diagnostics.get("date_to") or job.get("date_to"),
-                "found": diagnostics.get("papers_found", 0),
-                "filtered": diagnostics.get("papers_filtered", 0),
-                "accepted": diagnostics.get("papers_accepted", 0),
-                "existing": diagnostics.get("papers_existing", 0),
-                "new": diagnostics.get("papers_new", 0),
-                "outcome": diagnostics.get("outcome"),
-                "keyword_mode": diagnostics.get("keyword_mode"),
-                "keyword_terms": ", ".join(diagnostics.get("keyword_terms") or []),
-                "error": diagnostics.get("error") or job.get("error"),
-            }
-        )
-    return rows
 
 
 def format_category_summary(paper: dict) -> str:
@@ -260,7 +250,12 @@ with search_tab:
                     st.success(format_category_summary(classified_paper))
                 else:
                     st.warning(classified_paper)
-            if st.button("重新解析 OA", key=f"resolve-oa-{paper['id']}"):
+            if st.button(
+                "重新解析 OA",
+                key=f"resolve-oa-{paper['id']}",
+                disabled=not paper.get("doi"),
+                help="需要 DOI 才能通过 Unpaywall 解析 OA 链接",
+            ):
                 status_code, resolved_paper = api_post(f"/papers/{paper['id']}/resolve-oa")
                 if status_code < 400:
                     resolved_oa_status = resolved_paper.get("oa_status") or "unknown"
@@ -302,23 +297,32 @@ with search_tab:
     st.divider()
     st.subheader("抓取任务")
     crawl_col1, crawl_col2, crawl_col3 = st.columns([1, 1, 1])
-    crawl_journal_id = crawl_col1.number_input("journal_id", min_value=0, value=0)
+    crawl_journal_choice = crawl_col1.selectbox(
+        "抓取期刊",
+        crawl_journal_options(journals),
+        format_func=lambda option: option["label"],
+    )
+    selected_crawl_journal_id = crawl_journal_choice["journal_id"]
     date_from = crawl_col2.text_input("date_from", value="")
     date_to = crawl_col3.text_input("date_to", value="")
     if st.button("创建抓取任务"):
-        body = {"period": "manual"}
-        if crawl_journal_id:
-            body["journal_ids"] = [int(crawl_journal_id)]
-        if date_from:
-            body["date_from"] = date_from
-        if date_to:
-            body["date_to"] = date_to
-        status_code, crawl_payload = api_post("/crawl/run", json=body)
-        if status_code < 400:
-            st.success("已创建抓取任务")
+        crawl_date_error = date_from and date_to and date_from > date_to
+        if crawl_date_error:
+            st.warning("date_from must be less than or equal to date_to")
         else:
-            st.warning(crawl_payload)
-        st.json(crawl_payload)
+            body = {"period": "manual"}
+            if selected_crawl_journal_id is not None:
+                body["journal_ids"] = [int(selected_crawl_journal_id)]
+            if date_from:
+                body["date_from"] = date_from
+            if date_to:
+                body["date_to"] = date_to
+            status_code, crawl_payload = api_post("/crawl/run", json=body)
+            if status_code < 400:
+                st.success("已创建抓取任务")
+            else:
+                st.warning(crawl_payload)
+            st.json(crawl_payload)
     crawl_jobs_page_col, crawl_jobs_page_size_col = st.columns(2)
     crawl_jobs_page = crawl_jobs_page_col.number_input("crawl_jobs_page", min_value=1, value=1, key="crawl-jobs-page")
     crawl_jobs_page_size = crawl_jobs_page_size_col.number_input(
@@ -335,7 +339,7 @@ with search_tab:
         f"page_size {crawl_jobs_response['page_size']} · "
         f"total {crawl_jobs_response['total']}"
     )
-    st.dataframe(flatten_crawl_job_rows(jobs), use_container_width=True)
+    st.dataframe(crawl_job_rows(jobs), use_container_width=True)
     if not jobs:
         st.info("暂无抓取任务。")
     else:
@@ -354,7 +358,7 @@ with search_tab:
         st.caption(f"outcome: {diagnostics.get('outcome') or 'unknown'}")
         if diagnostics.get("error"):
             st.warning(diagnostics["error"])
-        st.dataframe([diagnostics], use_container_width=True)
+        st.dataframe(crawl_job_diagnostic_rows(job_detail), use_container_width=True)
         st.json(job_detail)
 
 with config_tab:
@@ -373,7 +377,7 @@ with config_tab:
         key="config-journals-page-size",
     )
     journals_response = api_get("/journals", page=int(config_journals_page), page_size=int(config_journals_page_size))
-    categories_response = api_get("/categories")
+    categories_response = api_get("/categories", page=1, page_size=100)
     journals_all = journals_response["items"]
     categories_all = categories_response["items"]
 
@@ -562,7 +566,7 @@ with documents_tab:
     if not docs:
         st.info("暂无文档，请先上传 PDF。")
     else:
-        selected = st.selectbox("文档", docs, format_func=lambda d: f"#{d['id']} {d.get('original_name') or Path(d['file_path']).name} · {d['parse_status']}")
+        selected = st.selectbox("文档", docs, format_func=document_option_label)
         document_detail = api_get(f"/documents/{selected['id']}")
         if document_detail.get("parse_error"):
             st.warning(f"parse_error: {document_detail['parse_error']}")
@@ -668,6 +672,7 @@ with documents_tab:
         )
         index_status = chunks.get("index_status") or ("indexed" if chunks["indexed"] else "not_indexed")
         st.caption(f"index_status: {index_status} · chunks: {chunks['total']}")
+        st.dataframe(document_status_rows(document_detail, chunks), use_container_width=True)
         if chunks.get("index_error"):
             st.warning(f"index_error: {chunks['index_error']}")
         section_tab, translation_tab, chunks_tab = st.tabs(["章节", "翻译预览", "索引"])
@@ -685,19 +690,25 @@ with documents_tab:
                 f"page_size {sections_response['page_size']} · "
                 f"total {sections_response['total']}"
             )
-            st.dataframe(sections, use_container_width=True)
+            st.dataframe(document_section_rows(sections), use_container_width=True)
         with translation_tab:
             try:
                 translation_preview = api_get(f"/documents/{selected['id']}/translation")
                 st.caption(translation_preview.get("status"))
+                translation_text = ""
                 if translation_preview.get("status") == "failed":
                     translation_error = translation_preview.get("error") or "unknown error"
                     st.warning(f"translation failed: {translation_error}")
+                    st.dataframe(translation_status_rows(translation_preview), use_container_width=True)
                     st.json(translation_preview)
                 elif translation_preview.get("output_path"):
                     output_path = Path(translation_preview.get("output_path"))
                     if output_path.exists():
                         translation_text = output_path.read_text(encoding="utf-8")
+                        st.dataframe(
+                            translation_status_rows(translation_preview, preview_text=translation_text),
+                            use_container_width=True,
+                        )
                         st.download_button(
                             "下载双语翻译",
                             data=translation_text,
@@ -707,8 +718,10 @@ with documents_tab:
                         st.markdown(translation_text[:4000])
                     else:
                         st.warning(f"翻译文件不存在: {output_path}")
+                        st.dataframe(translation_status_rows(translation_preview), use_container_width=True)
                         st.json(translation_preview)
                 else:
+                    st.dataframe(translation_status_rows(translation_preview), use_container_width=True)
                     st.json(translation_preview)
             except Exception as exc:
                 translation_preview = None
@@ -722,7 +735,7 @@ with documents_tab:
                 )
                 st.code(chunk_preview.get("text") or "")
             st.caption(f"chunks page {chunks['page']} · page_size {chunks['page_size']} · total {chunks['total']}")
-            st.dataframe(chunks["items"], use_container_width=True)
+            st.dataframe(document_chunk_rows(chunks["items"]), use_container_width=True)
 
 with rag_tab:
     rag_documents_page_col, rag_documents_page_size_col = st.columns(2)
@@ -745,10 +758,7 @@ with rag_tab:
         selected_rag_documents = st.multiselect(
             "限定文档",
             rag_documents,
-            format_func=lambda document: (
-                f"#{document['id']} {document.get('original_name') or Path(document['file_path']).name} · "
-                f"{document.get('index_status') or 'not_indexed'}"
-            ),
+            format_func=document_option_label,
             key="rag-document-select",
         )
     else:
@@ -778,35 +788,14 @@ with rag_tab:
             else:
                 answer = rag_payload.get("answer") or ""
                 st.markdown(answer)
-                sources = [
-                    {
-                        "document_id": source.get("document_id"),
-                        "paper_id": source.get("paper_id"),
-                        "paper_title": source.get("paper_title"),
-                        "section_id": source.get("section_id"),
-                        "section_seq": source.get("section_seq"),
-                        "section_title": source.get("section_title"),
-                        "section_type": source.get("section_type"),
-                        "source_excerpt": source.get("source_excerpt"),
-                        "chunk_id": source.get("chunk_id"),
-                        "vector_id": source.get("vector_id"),
-                        "score": source.get("score"),
-                    }
-                    for source in rag_payload.get("sources") or []
-                ]
+                sources = rag_source_rows(rag_payload.get("sources") or [])
                 st.subheader("引用来源")
                 if sources:
                     st.dataframe(sources, use_container_width=True)
                     source_preview = st.selectbox(
                         "source chunk",
                         sources,
-                        format_func=lambda source: (
-                            f"paper {source.get('paper_id') or '-'} · "
-                            f"doc {source.get('document_id')} · "
-                            f"section {source.get('section_seq') or source.get('section_id') or '-'} · "
-                            f"chunk_id={source.get('chunk_id')} · "
-                            f"{source.get('section_title') or '-'}"
-                        ),
+                        format_func=lambda source: f"{source.get('citation')} · {source.get('source_location')}",
                     )
                     if source_preview.get("source_excerpt"):
                         st.code(source_preview.get("source_excerpt"))
@@ -847,10 +836,7 @@ with chemistry_tab:
         selected_chemistry_document = st.selectbox(
             "化学库文档",
             chemistry_document_options,
-            format_func=lambda document: (
-                f"#{document['id']} {document.get('original_name') or Path(document['file_path']).name} · "
-                f"{document.get('chemistry_status') or 'not_extracted'}"
-            ),
+            format_func=document_option_label,
             key="chemistry-document-select",
         )
         chemistry_document_id = int(selected_chemistry_document["id"])
@@ -892,21 +878,7 @@ with chemistry_tab:
             f"page_size {document_reaction_sets['page_size']} · "
             f"total {document_reaction_sets['total']}"
         )
-        reaction_set_rows = [
-            {
-                "id": item.get("id"),
-                "name": item.get("name"),
-                "status": item.get("status"),
-                "reaction_count": item.get("reaction_count", 0),
-                "verified_count": item.get("verified_count", 0),
-                "unverified_count": item.get("unverified_count", 0),
-                "export_ready": item.get("export_ready", False),
-                "verified_by": item.get("verified_by"),
-                "verified_at": item.get("verified_at"),
-            }
-            for item in reaction_set_items
-        ]
-        st.dataframe(reaction_set_rows, use_container_width=True)
+        st.dataframe(reaction_set_rows(reaction_set_items), use_container_width=True)
         if not reaction_set_items:
             st.info("该文档暂无反应集。")
         else:
@@ -968,12 +940,7 @@ with chemistry_tab:
                 st.error(payload)
             else:
                 st.success(payload["output_path"])
-                st.caption(
-                    f'format: {payload.get("format")} · '
-                    f'mime_type: {payload.get("mime_type")} · '
-                    f'reactions: {payload.get("reaction_count")} · '
-                    f'audit_entries: {payload.get("audit_entry_count")}'
-                )
+                st.dataframe(reaction_export_rows(payload), use_container_width=True)
                 export_path = Path(payload["output_path"])
                 if export_path.exists():
                     export_text = export_path.read_text(encoding="utf-8")
@@ -1062,31 +1029,19 @@ with chemistry_tab:
                 verified = st.checkbox("verified", value=bool(reaction.get("verified")), key=f"verified-{reaction['id']}")
                 if reaction.get("audit_log"):
                     with st.expander("audit_log"):
-                        field_change_rows = []
-                        for audit in reaction["audit_log"]:
-                            for field, change in (audit.get("field_changes") or {}).items():
-                                field_change_rows.append(
-                                    {
-                                        "field": field,
-                                        "before": change.get("before"),
-                                        "after": change.get("after"),
-                                        "verified_by": audit.get("verified_by"),
-                                        "verified_at": audit.get("verified_at"),
-                                    }
-                                )
-                        if field_change_rows:
-                            st.dataframe(field_change_rows, use_container_width=True)
+                        st.dataframe(reaction_audit_rows(reaction["audit_log"]), use_container_width=True)
                         st.json(reaction["audit_log"])
                 if st.button("保存复核", key=f"verify-{reaction['id']}"):
-                    payload = {
-                        "verified": verified,
-                        "reaction_type": reaction_type or None,
-                        "rate_type": rate_type or None,
-                        "rate_value": rate_value or None,
-                        "threshold_ev": threshold_ev if include_threshold_ev else None,
-                        "cross_section_url": cross_section_url or None,
-                        "verified_by": verified_by or None,
-                    }
+                    payload = reaction_review_payload(
+                        verified=verified,
+                        reaction_type=reaction_type,
+                        rate_type=rate_type,
+                        rate_value=rate_value,
+                        include_threshold_ev=include_threshold_ev,
+                        threshold_ev=threshold_ev,
+                        cross_section_url=cross_section_url,
+                        verified_by=verified_by,
+                    )
                     status_code, result = api_put(f"/reactions/{reaction['id']}/verify", json=payload)
                     if status_code < 400:
                         st.session_state["reaction_set_detail"] = result

@@ -6,9 +6,11 @@ import httpx
 from app.config import Settings
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
+from app.services.llm import chat_completion_content
 
 
 FORMULA_RE = re.compile(r"(\$\$.*?\$\$|\$.*?\$)", re.DOTALL)
+FORMULA_PLACEHOLDER_RE = re.compile(r"<EQ_\d+>")
 PRESERVE_SECTION_TYPES = {"table", "reference"}
 MAX_TARGET_LANG_SLUG_LENGTH = 80
 
@@ -53,7 +55,7 @@ class OpenAICompatibleTranslator:
             )
         response.raise_for_status()
         data = response.json()
-        return data["choices"][0]["message"]["content"]
+        return chat_completion_content(data)
 
 
 def get_translator(settings: Settings) -> Translator:
@@ -79,9 +81,20 @@ def unmask_formulas(text: str, formulas: dict[str, str]) -> str:
     return text
 
 
+def validate_formula_placeholders(translated: str, formulas: dict[str, str]) -> None:
+    for key in formulas:
+        if key not in translated:
+            raise ValueError(f"translation response missing formula placeholder {key}")
+    expected = set(formulas)
+    for key in FORMULA_PLACEHOLDER_RE.findall(translated):
+        if key not in expected:
+            raise ValueError(f"translation response unexpected formula placeholder {key}")
+
+
 def translate_text_preserving_formulas(text: str, translator: Translator, target_lang: str) -> str:
     masked, formulas = mask_formulas(text)
     translated = translator.translate(masked, target_lang)
+    validate_formula_placeholders(translated, formulas)
     return unmask_formulas(translated, formulas)
 
 

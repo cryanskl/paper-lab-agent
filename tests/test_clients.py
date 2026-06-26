@@ -10,6 +10,23 @@ def json_response(payload: dict) -> httpx.Response:
     return httpx.Response(200, json=payload)
 
 
+def test_academic_clients_parse_retry_after_http_date():
+    response = httpx.Response(
+        429,
+        headers={
+            "Date": "Thu, 01 Jan 1970 00:00:00 GMT",
+            "Retry-After": "Thu, 01 Jan 1970 00:00:05 GMT",
+        },
+    )
+    clients = [
+        OpenAlexClient(retry_backoff_seconds=0.25),
+        CrossrefClient(retry_backoff_seconds=0.25),
+        UnpaywallClient(email="dev@example.test", retry_backoff_seconds=0.25),
+    ]
+
+    assert [client.retry_delay(0, response) for client in clients] == [5.0, 5.0, 5.0]
+
+
 def test_crossref_normalizes_url_doi_to_bare_identifier():
     client = CrossrefClient()
 

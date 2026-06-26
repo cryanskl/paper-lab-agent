@@ -117,3 +117,50 @@ def test_sections_from_tei_deduplicates_repeated_header_and_front_abstracts():
     abstracts = [section for section in sections if section["section_type"] == "abstract"]
 
     assert [abstract["content"] for abstract in abstracts] == ["Repeated plasma abstract."]
+
+
+def test_sections_from_tei_uses_grobid_labels_for_table_and_figure_titles():
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <figure type="table">
+            <label>Table 7</label>
+            <figDesc>Electron impact reactions.</figDesc>
+            <p>e + Ar -> e + e + Ar+</p>
+          </figure>
+          <figure>
+            <label>Figure 3</label>
+            <figDesc>Electron density profile.</figDesc>
+          </figure>
+          <table>
+            <label>Table A1</label>
+            <row><cell>Reaction</cell><cell>Rate</cell></row>
+          </table>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Table 7",
+            "content": "Electron impact reactions. e + Ar -> e + e + Ar+",
+            "section_type": "table",
+        },
+        {
+            "seq": 2,
+            "title": "Figure 3",
+            "content": "Electron density profile.",
+            "section_type": "figure_caption",
+        },
+        {
+            "seq": 3,
+            "title": "Table A1",
+            "content": "Reaction Rate",
+            "section_type": "table",
+        },
+    ]

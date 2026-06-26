@@ -9,6 +9,41 @@ from pathlib import Path
 
 BUG_FILENAME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
 REQUIRED_SECTIONS = ("现象", "原因", "修复", "验证")
+TEMPLATE_PLACEHOLDER_LABELS = (
+    "触发命令、接口或页面",
+    "实际结果",
+    "期望结果",
+    "根因",
+    "影响范围",
+    "修改文件",
+    "关键行为",
+    "RED 证据",
+    "GREEN 证据",
+    "完整 gate",
+)
+
+
+def has_title(text: str) -> bool:
+    match = re.search(r"^#\s+(.+?)\s*$", text, flags=re.MULTILINE)
+    return bool(match and match.group(1).strip())
+
+
+def section_body(text: str, section: str) -> str | None:
+    match = re.search(rf"^## {re.escape(section)}\s*$", text, flags=re.MULTILINE)
+    if match is None:
+        return None
+    next_match = re.search(r"^##\s+", text[match.end() :], flags=re.MULTILINE)
+    end = match.end() + next_match.start() if next_match else len(text)
+    return text[match.end() : end].strip()
+
+
+def unresolved_template_placeholders(text: str) -> list[str]:
+    labels = []
+    for label in TEMPLATE_PLACEHOLDER_LABELS:
+        pattern = rf"^\s*[-*]\s*{re.escape(label)}[：:]\s*$"
+        if re.search(pattern, text, flags=re.MULTILINE):
+            labels.append(label)
+    return labels
 
 
 def bug_doc_issues(repo: Path) -> list[str]:
@@ -29,11 +64,23 @@ def bug_doc_issues(repo: Path) -> list[str]:
             issues.append(f"{rel}: filename must match YYYY-MM-DD-short-slug.md")
 
         text = path.read_text(encoding="utf-8")
+        if not has_title(text):
+            issues.append(f"{rel}: missing title")
         missing_sections = [
-            section for section in REQUIRED_SECTIONS if f"## {section}" not in text
+            section for section in REQUIRED_SECTIONS if section_body(text, section) is None
         ]
         if missing_sections:
             issues.append(f"{rel}: missing sections: {', '.join(missing_sections)}")
+        empty_sections = [
+            section for section in REQUIRED_SECTIONS if section_body(text, section) == ""
+        ]
+        if empty_sections:
+            issues.append(f"{rel}: empty sections: {', '.join(empty_sections)}")
+        placeholders = unresolved_template_placeholders(text)
+        if placeholders:
+            issues.append(
+                f"{rel}: unresolved template placeholders: {', '.join(placeholders)}"
+            )
 
     return issues
 

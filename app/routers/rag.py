@@ -1,5 +1,7 @@
-from pydantic import BaseModel, Field, field_validator
+from typing import Optional
+
 from fastapi import APIRouter
+from pydantic import BaseModel, Field, field_validator
 
 from app.db import get_conn
 from app.errors import AppError
@@ -29,7 +31,26 @@ class RagQueryIn(BaseModel):
         return value
 
 
-@router.post("/query")
+class RagSourceResponse(BaseModel):
+    document_id: int
+    paper_id: Optional[int] = None
+    paper_title: Optional[str] = None
+    section_id: Optional[int] = None
+    section_seq: Optional[int] = None
+    section_title: Optional[str] = None
+    section_type: Optional[str] = None
+    chunk_id: Optional[int] = None
+    vector_id: Optional[str] = None
+    score: float
+    source_excerpt: str
+
+
+class RagResponse(BaseModel):
+    answer: str
+    sources: list[RagSourceResponse]
+
+
+@router.post("/query", response_model=RagResponse)
 def rag_query(body: RagQueryIn) -> dict:
     _ensure_documents_exist(body.document_ids)
     try:

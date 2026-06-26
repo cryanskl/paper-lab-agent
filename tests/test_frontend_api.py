@@ -198,6 +198,8 @@ def test_reaction_review_rows_can_focus_unverified_source_metadata():
         {
             "id": 1,
             "verified": False,
+            "review_state": "unverified",
+            "export_blocker": "unverified reaction",
             "reaction": "e + Ar -> e + e + Ar+",
             "confidence": 0.5,
             "reaction_type": "ionization",
@@ -206,8 +208,653 @@ def test_reaction_review_rows_can_focus_unverified_source_metadata():
             "threshold_ev": 15.76,
             "cross_section_url": "https://nl.lxcat.net/data/set/example",
             "source_section": "4 | table | Table 2",
+            "source_location": "section 4 · table · Table 2",
             "source_section_id": 12,
             "source_label": "table 4: Table 2",
             "source_excerpt": "e + Ar -> e + e + Ar+ .",
         }
+    ]
+
+
+def test_reaction_review_rows_label_verified_state_and_sparse_source_location():
+    from app import frontend_api
+
+    rows = frontend_api.reaction_review_rows(
+        [
+            {
+                "id": 2,
+                "reaction": "Ar+ + e -> Ar",
+                "verified": 1,
+                "source_section_id": 22,
+                "source_section_title": "Appendix",
+            }
+        ]
+    )
+
+    assert rows[0]["review_state"] == "verified"
+    assert rows[0]["source_location"] == "section 22 · Appendix"
+
+
+def test_reaction_review_rows_mark_export_blockers():
+    from app import frontend_api
+
+    rows = frontend_api.reaction_review_rows(
+        [
+            {"id": 1, "reaction": "e + Ar -> e + e + Ar+", "verified": 0},
+            {"id": 2, "reaction": "Ar+ + e -> Ar", "verified": 1},
+        ]
+    )
+
+    assert rows[0]["export_blocker"] == "unverified reaction"
+    assert rows[1]["export_blocker"] is None
+
+
+def test_reaction_set_rows_label_export_state_and_review_progress():
+    from app import frontend_api
+
+    rows = frontend_api.reaction_set_rows(
+        [
+            {
+                "id": 1,
+                "name": "Ar chemistry",
+                "status": "verified",
+                "reaction_count": 4,
+                "verified_count": 4,
+                "unverified_count": 0,
+                "export_ready": True,
+                "verified_by": "engineer_a",
+                "verified_at": "2026-06-25T10:00:00",
+            },
+            {
+                "id": 2,
+                "name": "O2 chemistry",
+                "status": "pending",
+                "reaction_count": 5,
+                "verified_count": 2,
+                "unverified_count": 3,
+                "export_ready": False,
+            },
+            {
+                "id": 3,
+                "name": "Empty extraction",
+                "status": "rejected",
+                "reaction_count": 0,
+                "verified_count": 0,
+                "unverified_count": 0,
+                "export_ready": False,
+            },
+        ]
+    )
+
+    assert rows == [
+        {
+            "id": 1,
+            "name": "Ar chemistry",
+            "status": "verified",
+            "reaction_count": 4,
+            "verified_count": 4,
+            "unverified_count": 0,
+            "export_ready": True,
+            "export_state": "ready",
+            "review_progress": "4/4 verified",
+            "verified_by": "engineer_a",
+            "verified_at": "2026-06-25T10:00:00",
+        },
+        {
+            "id": 2,
+            "name": "O2 chemistry",
+            "status": "pending",
+            "reaction_count": 5,
+            "verified_count": 2,
+            "unverified_count": 3,
+            "export_ready": False,
+            "export_state": "blocked: 3 unverified",
+            "review_progress": "2/5 verified",
+            "verified_by": None,
+            "verified_at": None,
+        },
+        {
+            "id": 3,
+            "name": "Empty extraction",
+            "status": "rejected",
+            "reaction_count": 0,
+            "verified_count": 0,
+            "unverified_count": 0,
+            "export_ready": False,
+            "export_state": "empty",
+            "review_progress": "0/0 verified",
+            "verified_by": None,
+            "verified_at": None,
+        },
+    ]
+
+
+def test_reaction_review_payload_normalizes_edit_form_values():
+    from app import frontend_api
+
+    payload = frontend_api.reaction_review_payload(
+        verified=True,
+        reaction_type=" ionization ",
+        rate_type=" cross_section ",
+        rate_value="  original table value  ",
+        include_threshold_ev=True,
+        threshold_ev=15.76,
+        cross_section_url=" https://nl.lxcat.net/data/set/example ",
+        verified_by=" engineer_a ",
+    )
+
+    assert payload == {
+        "verified": True,
+        "reaction_type": "ionization",
+        "rate_type": "cross_section",
+        "rate_value": "original table value",
+        "threshold_ev": 15.76,
+        "cross_section_url": "https://nl.lxcat.net/data/set/example",
+        "verified_by": "engineer_a",
+    }
+
+
+def test_reaction_review_payload_clears_disabled_and_blank_fields():
+    from app import frontend_api
+
+    payload = frontend_api.reaction_review_payload(
+        verified=False,
+        reaction_type="",
+        rate_type="",
+        rate_value="   ",
+        include_threshold_ev=False,
+        threshold_ev=15.76,
+        cross_section_url="",
+        verified_by=" streamlit ",
+    )
+
+    assert payload == {
+        "verified": False,
+        "reaction_type": None,
+        "rate_type": None,
+        "rate_value": None,
+        "threshold_ev": None,
+        "cross_section_url": None,
+        "verified_by": "streamlit",
+    }
+
+
+def test_reaction_export_rows_summarize_download_and_audit_metadata():
+    from app import frontend_api
+
+    rows = frontend_api.reaction_export_rows(
+        {
+            "reaction_set_id": 3,
+            "format": "bolsig",
+            "output_path": "/tmp/exports/reaction-set-3.bolsig.txt",
+            "mime_type": "text/plain",
+            "reaction_count": 4,
+            "audit_entry_count": 4,
+        }
+    )
+
+    assert rows == [
+        {"field": "reaction_set_id", "value": 3},
+        {"field": "format", "value": "bolsig"},
+        {"field": "output_path", "value": "/tmp/exports/reaction-set-3.bolsig.txt"},
+        {"field": "mime_type", "value": "text/plain"},
+        {"field": "reaction_count", "value": 4},
+        {"field": "audit_entry_count", "value": 4},
+        {"field": "download_label", "value": "bolsig · 4 reactions · 4 audit entries"},
+    ]
+
+
+def test_reaction_audit_rows_flatten_field_changes_for_review():
+    from app import frontend_api
+
+    rows = frontend_api.reaction_audit_rows(
+        [
+            {
+                "id": 31,
+                "reaction_id": 7,
+                "verified_by": "engineer_a",
+                "verified_at": "2026-06-25T10:00:00",
+                "field_changes": {
+                    "reaction_type": {"before": "unknown", "after": "ionization"},
+                    "rate_value": {"before": None, "after": "1.2e-8 cm3/s"},
+                },
+            },
+            {
+                "id": 32,
+                "reaction_id": 7,
+                "verified_by": "engineer_b",
+                "verified_at": "2026-06-26T11:00:00",
+                "field_changes": {},
+            },
+        ]
+    )
+
+    assert rows == [
+        {
+            "audit_id": 31,
+            "reaction_id": 7,
+            "field": "reaction_type",
+            "before": "unknown",
+            "after": "ionization",
+            "verified_by": "engineer_a",
+            "verified_at": "2026-06-25T10:00:00",
+        },
+        {
+            "audit_id": 31,
+            "reaction_id": 7,
+            "field": "rate_value",
+            "before": None,
+            "after": "1.2e-8 cm3/s",
+            "verified_by": "engineer_a",
+            "verified_at": "2026-06-25T10:00:00",
+        },
+        {
+            "audit_id": 32,
+            "reaction_id": 7,
+            "field": "-",
+            "before": None,
+            "after": None,
+            "verified_by": "engineer_b",
+            "verified_at": "2026-06-26T11:00:00",
+        },
+    ]
+
+
+def test_crawl_job_rows_summarize_diagnostics_and_workflow_state():
+    from app import frontend_api
+
+    rows = frontend_api.crawl_job_rows(
+        [
+            {
+                "id": 11,
+                "journal_id": 2,
+                "status": "success",
+                "period": "manual",
+                "date_from": "2026-01-01",
+                "date_to": "2026-01-31",
+                "journal": {"name": "Plasma Sources Science and Technology"},
+                "diagnostics": {
+                    "status": "success",
+                    "period": "manual",
+                    "date_from": "2026-01-01",
+                    "date_to": "2026-01-31",
+                    "papers_found": 12,
+                    "papers_filtered": 4,
+                    "papers_accepted": 8,
+                    "papers_existing": 3,
+                    "papers_new": 5,
+                    "outcome": "new_papers",
+                    "keyword_mode": "or",
+                    "keyword_terms": ["plasma chemistry", "argon"],
+                },
+            },
+            {
+                "id": 12,
+                "journal_id": 3,
+                "status": "failed",
+                "period": "weekly",
+                "error": "OpenAlex timeout",
+                "diagnostics": {"error": "OpenAlex timeout"},
+            },
+        ]
+    )
+
+    assert rows == [
+        {
+            "id": 11,
+            "journal": "Plasma Sources Science and Technology",
+            "status": "success",
+            "workflow_state": "success",
+            "period": "manual",
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-31",
+            "found": 12,
+            "filtered": 4,
+            "accepted": 8,
+            "existing": 3,
+            "new": 5,
+            "progress_summary": "12 found / 8 accepted / 5 new",
+            "outcome": "new_papers",
+            "keyword_mode": "or",
+            "keyword_terms": "plasma chemistry, argon",
+            "error": None,
+        },
+        {
+            "id": 12,
+            "journal": 3,
+            "status": "failed",
+            "workflow_state": "failed: OpenAlex timeout",
+            "period": "weekly",
+            "date_from": None,
+            "date_to": None,
+            "found": 0,
+            "filtered": 0,
+            "accepted": 0,
+            "existing": 0,
+            "new": 0,
+            "progress_summary": "0 found / 0 accepted / 0 new",
+            "outcome": None,
+            "keyword_mode": None,
+            "keyword_terms": "",
+            "error": "OpenAlex timeout",
+        },
+    ]
+
+
+def test_crawl_job_diagnostic_rows_flatten_job_detail_for_review():
+    from app import frontend_api
+
+    rows = frontend_api.crawl_job_diagnostic_rows(
+        {
+            "id": 42,
+            "journal_id": 7,
+            "status": "failed",
+            "period": "manual",
+            "date_from": "2026-02-01",
+            "date_to": "2026-02-28",
+            "error": "Crossref returned 503",
+            "journal": {"name": "Journal of Physics D"},
+            "diagnostics": {
+                "status": "failed",
+                "journal_name": "Journal of Physics D",
+                "papers_found": 18,
+                "papers_filtered": 10,
+                "papers_accepted": 8,
+                "papers_existing": 6,
+                "papers_new": 2,
+                "outcome": "partial_failure",
+                "keyword_mode": "and",
+                "keyword_terms": ["plasma", "etching"],
+                "error": "Crossref returned 503",
+            },
+        }
+    )
+
+    assert rows == [
+        {"field": "job_id", "value": 42},
+        {"field": "status", "value": "failed"},
+        {"field": "journal", "value": "Journal of Physics D"},
+        {"field": "period", "value": "manual"},
+        {"field": "date_from", "value": "2026-02-01"},
+        {"field": "date_to", "value": "2026-02-28"},
+        {"field": "papers_found", "value": 18},
+        {"field": "papers_filtered", "value": 10},
+        {"field": "papers_accepted", "value": 8},
+        {"field": "papers_existing", "value": 6},
+        {"field": "papers_new", "value": 2},
+        {"field": "outcome", "value": "partial_failure"},
+        {"field": "keyword_mode", "value": "and"},
+        {"field": "keyword_terms", "value": "plasma, etching"},
+        {"field": "error", "value": "Crossref returned 503"},
+    ]
+
+
+def test_crawl_journal_options_label_whitelist_choices_for_manual_runs():
+    from app import frontend_api
+
+    options = frontend_api.crawl_journal_options(
+        [
+            {
+                "id": 2,
+                "name": "Plasma Sources Science and Technology",
+                "issn_print": "0963-0252",
+                "issn_electronic": "1361-6595",
+            },
+            {
+                "id": 5,
+                "name": "Journal of Physics D",
+                "issn_print": None,
+                "issn_electronic": "1361-6463",
+            },
+        ]
+    )
+
+    assert options == [
+        {"label": "全部 active 期刊", "journal_id": None},
+        {
+            "label": "#2 · Plasma Sources Science and Technology · 0963-0252 / 1361-6595",
+            "journal_id": 2,
+        },
+        {"label": "#5 · Journal of Physics D · 1361-6463", "journal_id": 5},
+    ]
+
+
+def test_document_option_label_surfaces_processing_states():
+    from app import frontend_api
+
+    label = frontend_api.document_option_label(
+        {
+            "id": 9,
+            "original_name": "argon-kinetics.pdf",
+            "file_path": "/tmp/uploads/argon-kinetics.pdf",
+            "parse_status": "parsed",
+            "index_status": "indexed",
+            "chemistry_status": "extracted",
+        }
+    )
+
+    assert label == "#9 · argon-kinetics.pdf · parse=parsed · index=indexed · chemistry=extracted"
+
+
+def test_document_option_label_falls_back_to_file_name_and_unknown_states():
+    from app import frontend_api
+
+    label = frontend_api.document_option_label({"id": 10, "file_path": "/tmp/uploads/no-name.pdf"})
+
+    assert label == "#10 · no-name.pdf · parse=unknown · index=unknown · chemistry=unknown"
+
+
+def test_document_status_rows_summarize_document_workflow_and_errors():
+    from app import frontend_api
+
+    rows = frontend_api.document_status_rows(
+        {
+            "id": 12,
+            "parse_status": "failed",
+            "parse_error": "GROBID timeout",
+            "index_status": "not_indexed",
+            "index_error": None,
+            "chemistry_status": "failed",
+            "chemistry_error": "no parsed sections",
+        },
+        {"index_status": "failed", "index_error": "embedding unavailable", "total": 3},
+    )
+
+    assert rows == [
+        {"field": "document_id", "value": 12},
+        {"field": "parse_status", "value": "failed"},
+        {"field": "parse_error", "value": "GROBID timeout"},
+        {"field": "index_status", "value": "failed"},
+        {"field": "index_error", "value": "embedding unavailable"},
+        {"field": "chunks_total", "value": 3},
+        {"field": "chemistry_status", "value": "failed"},
+        {"field": "chemistry_error", "value": "no parsed sections"},
+    ]
+
+
+def test_document_section_rows_surface_location_and_preview():
+    from app import frontend_api
+
+    rows = frontend_api.document_section_rows(
+        [
+            {
+                "id": 21,
+                "document_id": 5,
+                "seq": 2,
+                "section_type": "body",
+                "title": "Reaction kinetics",
+                "content": "  Electron impact ionization controls the density.  " * 20,
+            },
+            {
+                "id": 22,
+                "document_id": 5,
+                "section_type": "table",
+                "content": "",
+            },
+        ]
+    )
+
+    assert rows == [
+        {
+            "id": 21,
+            "document_id": 5,
+            "seq": 2,
+            "section_type": "body",
+            "title": "Reaction kinetics",
+            "section_location": "section 2 · body · Reaction kinetics",
+            "content_preview": (
+                "Electron impact ionization controls the density. Electron impact ionization controls the "
+                "density. Electron impact ionization controls the density. Electron impa..."
+            ),
+            "content_chars": 1040,
+        },
+        {
+            "id": 22,
+            "document_id": 5,
+            "seq": None,
+            "section_type": "table",
+            "title": None,
+            "section_location": "section 22 · table",
+            "content_preview": "",
+            "content_chars": 0,
+        },
+    ]
+
+
+def test_document_chunk_rows_surface_vector_backlinks_and_preview():
+    from app import frontend_api
+
+    rows = frontend_api.document_chunk_rows(
+        [
+            {
+                "id": 31,
+                "document_id": 5,
+                "section_id": 21,
+                "section_seq": 2,
+                "section_title": "Reaction kinetics",
+                "vector_id": "doc-5-section-21-chunk-31",
+                "text": "Ar + e -> Ar+ + 2e is listed in the extracted table.",
+            },
+            {
+                "id": 32,
+                "section_id": 22,
+                "text": None,
+            },
+        ]
+    )
+
+    assert rows == [
+        {
+            "id": 31,
+            "document_id": 5,
+            "section_id": 21,
+            "section_seq": 2,
+            "section_title": "Reaction kinetics",
+            "vector_id": "doc-5-section-21-chunk-31",
+            "chunk_location": "section 2 · Reaction kinetics · vector doc-5-section-21-chunk-31",
+            "text_preview": "Ar + e -> Ar+ + 2e is listed in the extracted table.",
+            "text_chars": 52,
+        },
+        {
+            "id": 32,
+            "document_id": None,
+            "section_id": 22,
+            "section_seq": None,
+            "section_title": None,
+            "vector_id": None,
+            "chunk_location": "section 22",
+            "text_preview": "",
+            "text_chars": 0,
+        },
+    ]
+
+
+def test_translation_status_rows_summarize_output_file_preview():
+    from app import frontend_api
+
+    rows = frontend_api.translation_status_rows(
+        {
+            "document_id": 5,
+            "status": "translated",
+            "target_lang": "zh",
+            "output_path": "/tmp/translations/doc-5.zh.md",
+            "error": None,
+        },
+        preview_text="# Title\n\n" + "Translated plasma paragraph. " * 30,
+    )
+
+    assert rows == [
+        {"field": "document_id", "value": 5},
+        {"field": "status", "value": "translated"},
+        {"field": "target_lang", "value": "zh"},
+        {"field": "output_path", "value": "/tmp/translations/doc-5.zh.md"},
+        {"field": "error", "value": None},
+        {"field": "preview_chars", "value": 879},
+        {
+            "field": "preview",
+            "value": (
+                "# Title Translated plasma paragraph. Translated plasma paragraph. Translated plasma "
+                "paragraph. Translated plasma paragraph. Translated plasma paragraph. Transla..."
+            ),
+        },
+    ]
+
+
+def test_rag_source_rows_include_citation_and_location_labels():
+    from app import frontend_api
+
+    sources = [
+        {
+            "document_id": 3,
+            "paper_id": 7,
+            "paper_title": "Argon plasma chemistry",
+            "section_id": 12,
+            "section_seq": 4,
+            "section_title": "Reaction table",
+            "section_type": "table",
+            "source_excerpt": "e + Ar -> e + e + Ar+",
+            "chunk_id": 19,
+            "vector_id": "doc-3-section-12-chunk-19",
+            "score": 0.875,
+        },
+        {
+            "document_id": 4,
+            "section_id": 20,
+            "section_title": "Appendix",
+        },
+    ]
+
+    rows = frontend_api.rag_source_rows(sources)
+
+    assert rows == [
+        {
+            "citation": "[paper 7 · doc 3 · section 4 · chunk 19]",
+            "source_location": "paper 7 · doc 3 · section 4 · table · Reaction table",
+            "document_id": 3,
+            "paper_id": 7,
+            "paper_title": "Argon plasma chemistry",
+            "section_id": 12,
+            "section_seq": 4,
+            "section_title": "Reaction table",
+            "section_type": "table",
+            "source_excerpt": "e + Ar -> e + e + Ar+",
+            "chunk_id": 19,
+            "vector_id": "doc-3-section-12-chunk-19",
+            "score": 0.875,
+        },
+        {
+            "citation": "[doc 4 · section 20]",
+            "source_location": "doc 4 · section 20 · Appendix",
+            "document_id": 4,
+            "paper_id": None,
+            "paper_title": None,
+            "section_id": 20,
+            "section_seq": None,
+            "section_title": "Appendix",
+            "section_type": None,
+            "source_excerpt": None,
+            "chunk_id": None,
+            "vector_id": None,
+            "score": None,
+        },
     ]

@@ -38,6 +38,45 @@ def health_check_status_counts(**overrides):
     return status_counts
 
 
+def health_check_demo_data(**overrides):
+    demo_data = {
+        "ready": True,
+        "requirements": {
+            "journals": 6,
+            "papers": 1,
+            "documents": 1,
+            "sections": 1,
+            "chunks": 1,
+            "reaction_sets": 1,
+            "reactions": 1,
+        },
+        "missing": [],
+        "counts": {
+            "journals": 6,
+            "papers": 1,
+            "documents": 1,
+            "sections": 1,
+            "chunks": 1,
+            "reaction_sets": 1,
+            "reactions": 1,
+        },
+    }
+    demo_data.update(overrides)
+    return demo_data
+
+
+def health_check_release_readiness(**overrides):
+    release_readiness = {
+        "ready": True,
+        "demo_data_missing": [],
+        "failed_workflows": [],
+        "config_warning_codes": [],
+        "storage_errors": [],
+    }
+    release_readiness.update(overrides)
+    return release_readiness
+
+
 def health_check_runtime(**overrides):
     runtime = {
         "api_prefix": "/api/v1",
@@ -990,12 +1029,27 @@ def test_categories_list_includes_total_and_direct_children(tmp_path):
     categories = client.get("/api/v1/categories").json()
     assert categories["total"] == 9
     assert categories["page"] == 1
-    assert categories["page_size"] == 9
+    assert categories["page_size"] == 20
+    assert len(categories["items"]) == 9
 
     parent_item = next(item for item in categories["items"] if item["id"] == parent["id"])
     assert parent_item["children"] == [child]
     child_item = next(item for item in categories["items"] if item["id"] == child["id"])
     assert child_item["children"] == []
+
+
+def test_categories_list_supports_pagination_query(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.get("/api/v1/categories", params={"page": 2, "page_size": 3})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 7
+    assert payload["page"] == 2
+    assert payload["page_size"] == 3
+    assert len(payload["items"]) == 3
+    assert [item["id"] for item in payload["items"]] == [4, 5, 6]
 
 
 def test_create_category_rejects_blank_name_and_slug(tmp_path):
@@ -1603,7 +1657,7 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["crawl_job_new"] >= 1
     assert result["crawled_papers"] >= 1
     assert result["papers"] == 2
-    assert result["paper_categories"] == 1
+    assert result["paper_categories"] == 2
     assert result["duplicate_upload_status"] == 409
     assert result["duplicate_document_id"] == result["document_id"]
     assert result["translation_status"] == "done"
@@ -1662,7 +1716,7 @@ def test_smoke_check_script_outputs_json():
     assert payload["crawl_job_status"] == "success"
     assert payload["crawled_papers"] >= 1
     assert payload["papers"] == 2
-    assert payload["paper_categories"] == 1
+    assert payload["paper_categories"] == 2
     assert payload["duplicate_upload_status"] == 409
     assert payload["translation_status"] == "done"
     assert payload["sections"] == 1
@@ -3773,6 +3827,49 @@ def test_crawl_run_rejects_invalid_period_and_reversed_dates(tmp_path):
     assert reversed_dates.json()["error"]["code"] == "validation_error"
 
 
+def test_crawl_run_accepts_missing_body_with_default_all_active_journals(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.routers import crawl as crawl_router
+
+    def fake_create_jobs(journal_ids, period, date_from, date_to):
+        assert journal_ids is None
+        assert period == "manual"
+        assert date_from is None
+        assert date_to is None
+        return [
+            {
+                "job_id": 41,
+                "journal_id": 2,
+                "period": period,
+                "date_from": date_from,
+                "date_to": date_to,
+            }
+        ]
+
+    async def fake_run_crawl_job(job_id, journal_id, date_from, date_to):
+        return None
+
+    monkeypatch.setattr(crawl_router, "create_jobs", fake_create_jobs)
+    monkeypatch.setattr(crawl_router, "run_crawl_job", fake_run_crawl_job)
+
+    response = client.post("/api/v1/crawl/run")
+
+    assert response.status_code == 202
+    assert response.json() == {
+        "jobs": [
+            {
+                "job_id": 41,
+                "journal_id": 2,
+                "period": "manual",
+                "date_from": None,
+                "date_to": None,
+                "status": "pending",
+            }
+        ]
+    }
+
+
 def test_crawl_run_response_includes_created_job_context(tmp_path, monkeypatch):
     client = make_client(tmp_path)
 
@@ -4066,6 +4163,7 @@ def test_system_status_reports_corrupt_vector_store_health(tmp_path):
     assert vector_db["readable"] is True
     assert vector_db["valid_json"] is False
     assert "Expecting property name enclosed in double quotes" in vector_db["error"]
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
 
 
 def test_system_status_reports_vector_db_backend(tmp_path):
@@ -4924,6 +5022,89 @@ def test_sections_from_tei_extracts_biblfull_references():
     ]
 
 
+def test_sections_from_tei_extracts_biblstruct_reference_identifiers():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <back>
+          <listBibl>
+            <biblStruct>
+              <analytic>
+                <author><persName><surname>Doe</surname><forename>A.</forename></persName></author>
+                <title level="a">Electron impact ionization in argon plasmas</title>
+              </analytic>
+              <monogr>
+                <title level="j">Plasma Chemistry and Plasma Processing</title>
+                <imprint><date when="2026">2026</date></imprint>
+              </monogr>
+              <idno type="DOI">10.1234/plasma.2026.001</idno>
+              <ptr target="https://doi.org/10.1234/plasma.2026.001"/>
+            </biblStruct>
+          </listBibl>
+        </back>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Reference 1",
+            "content": (
+                "Doe A. Electron impact ionization in argon plasmas "
+                "Plasma Chemistry and Plasma Processing 2026 "
+                "DOI: 10.1234/plasma.2026.001 "
+                "URL: https://doi.org/10.1234/plasma.2026.001"
+            ),
+            "section_type": "reference",
+        }
+    ]
+
+
+def test_sections_from_tei_preserves_inline_reference_targets():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <div>
+            <head>Data sources</head>
+            <p>Rates follow <ref target="https://nl.lxcat.net/set/argon">LXCat argon set</ref>.</p>
+            <list>
+              <item>Cross sections from <ptr target="https://example.org/cross-sections.xml"/>.</item>
+            </list>
+          </div>
+          <table>
+            <head>Table 1</head>
+            <row>
+              <cell>Dataset</cell>
+              <cell><ref target="https://example.org/table-source">table source</ref></cell>
+            </row>
+          </table>
+          <figure>
+            <head>Figure 1</head>
+            <figDesc>Geometry adapted from <ref target="https://example.org/figure-source">CAD source</ref>.</figDesc>
+          </figure>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections[0]["content"] == (
+        "Rates follow LXCat argon set (https://nl.lxcat.net/set/argon). "
+        "Cross sections from https://example.org/cross-sections.xml."
+    )
+    assert sections[1]["content"] == "Dataset table source (https://example.org/table-source)"
+    assert sections[2]["content"] == "Geometry adapted from CAD source (https://example.org/figure-source)."
+
+
 def test_translation_adapter_preserves_formula_masks():
     from app.services.translation import translate_text_preserving_formulas
 
@@ -4945,6 +5126,48 @@ def test_translation_adapter_preserves_formula_masks():
     assert "$k_1$" in translated
     assert "$$E=mc^2$$" in translated
     assert "<EQ_" not in translated
+
+
+def test_translation_adapter_reports_missing_formula_placeholder():
+    import pytest
+
+    from app.services.translation import translate_text_preserving_formulas
+
+    class DroppingTranslator:
+        def translate(self, text, target_lang):
+            assert "<EQ_000>" in text
+            return "译文没有公式占位符"
+
+    with pytest.raises(ValueError, match="translation response missing formula placeholder <EQ_000>"):
+        translate_text_preserving_formulas("The rate is $k_1$.", DroppingTranslator(), "zh")
+
+
+def test_translation_adapter_reports_unexpected_formula_placeholder():
+    import pytest
+
+    from app.services.translation import translate_text_preserving_formulas
+
+    class InjectingTranslator:
+        def translate(self, text, target_lang):
+            assert "<EQ_000>" in text
+            return f"译文: {text} plus <EQ_999>"
+
+    with pytest.raises(ValueError, match="translation response unexpected formula placeholder <EQ_999>"):
+        translate_text_preserving_formulas("The rate is $k_1$.", InjectingTranslator(), "zh")
+
+
+def test_translation_adapter_reports_unexpected_wide_formula_placeholder():
+    import pytest
+
+    from app.services.translation import translate_text_preserving_formulas
+
+    class InjectingTranslator:
+        def translate(self, text, target_lang):
+            assert "<EQ_000>" in text
+            return f"译文: {text} plus <EQ_1000>"
+
+    with pytest.raises(ValueError, match="translation response unexpected formula placeholder <EQ_1000>"):
+        translate_text_preserving_formulas("The rate is $k_1$.", InjectingTranslator(), "zh")
 
 
 def test_openai_translation_adapter_uses_compatible_chat_completions_payload():
@@ -4980,6 +5203,26 @@ def test_openai_translation_adapter_uses_compatible_chat_completions_payload():
 
     assert result == "速率为 <EQ_000>。"
     assert requests[0].headers["authorization"] == "Bearer test-key"
+
+
+def test_openai_translation_adapter_reports_invalid_chat_completion_shape():
+    import httpx
+    import pytest
+
+    from app.services.translation import OpenAICompatibleTranslator
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": []})
+
+    translator = OpenAICompatibleTranslator(
+        "test-key",
+        "http://llm.test/v1",
+        "translate-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match="chat completion response missing choices\\[0\\].message.content"):
+        translator.translate("The rate is <EQ_000>.", "zh")
 
 
 def test_openai_classifier_keeps_only_registered_taxonomy_slugs():
@@ -5030,6 +5273,148 @@ def test_openai_classifier_keeps_only_registered_taxonomy_slugs():
 
     assert result == [{"category_id": 2, "slug": "chemistry", "confidence": 0.91, "method": "auto"}]
     assert requests[0].headers["authorization"] == "Bearer test-key"
+
+
+def test_openai_classifier_reports_invalid_chat_completion_shape():
+    import httpx
+    import pytest
+
+    from app.services.classification import OpenAICompatibleClassifier
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{}]})
+
+    classifier = OpenAICompatibleClassifier(
+        "test-key",
+        "http://llm.test/v1",
+        "classify-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match="chat completion response missing choices\\[0\\].message.content"):
+        classifier.classify(
+            "argon oxygen plasma chemistry",
+            [{"id": 2, "slug": "chemistry", "name": "Plasma chemistry"}],
+        )
+
+
+def test_openai_classifier_reports_invalid_json_content():
+    import httpx
+    import pytest
+
+    from app.services.classification import OpenAICompatibleClassifier
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": "not json"}}]})
+
+    classifier = OpenAICompatibleClassifier(
+        "test-key",
+        "http://llm.test/v1",
+        "classify-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match="classifier response content is not valid JSON"):
+        classifier.classify(
+            "argon oxygen plasma chemistry",
+            [{"id": 2, "slug": "chemistry", "name": "Plasma chemistry"}],
+        )
+
+
+def test_openai_classifier_reports_non_object_json_content():
+    import httpx
+    import pytest
+
+    from app.services.classification import OpenAICompatibleClassifier
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": "[]"}}]})
+
+    classifier = OpenAICompatibleClassifier(
+        "test-key",
+        "http://llm.test/v1",
+        "classify-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match="classifier response content must be a JSON object"):
+        classifier.classify(
+            "argon oxygen plasma chemistry",
+            [{"id": 2, "slug": "chemistry", "name": "Plasma chemistry"}],
+        )
+
+
+def test_openai_classifier_reports_missing_categories_field():
+    import httpx
+    import pytest
+
+    from app.services.classification import OpenAICompatibleClassifier
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+    classifier = OpenAICompatibleClassifier(
+        "test-key",
+        "http://llm.test/v1",
+        "classify-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match="classifier response content missing categories list"):
+        classifier.classify(
+            "argon oxygen plasma chemistry",
+            [{"id": 2, "slug": "chemistry", "name": "Plasma chemistry"}],
+        )
+
+
+def test_openai_classifier_reports_non_list_categories_field():
+    import json
+
+    import httpx
+    import pytest
+
+    from app.services.classification import OpenAICompatibleClassifier
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps({"categories": {}})}}]})
+
+    classifier = OpenAICompatibleClassifier(
+        "test-key",
+        "http://llm.test/v1",
+        "classify-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match="classifier response content missing categories list"):
+        classifier.classify(
+            "argon oxygen plasma chemistry",
+            [{"id": 2, "slug": "chemistry", "name": "Plasma chemistry"}],
+        )
+
+
+def test_openai_classifier_reports_non_object_category_items():
+    import json
+
+    import httpx
+    import pytest
+
+    from app.services.classification import OpenAICompatibleClassifier
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps({"categories": ["chemistry"]})}}]})
+
+    classifier = OpenAICompatibleClassifier(
+        "test-key",
+        "http://llm.test/v1",
+        "classify-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match="classifier response categories items must be JSON objects"):
+        classifier.classify(
+            "argon oxygen plasma chemistry",
+            [{"id": 2, "slug": "chemistry", "name": "Plasma chemistry"}],
+        )
 
 
 def test_translate_document_preserves_table_and_reference_sections(tmp_path, monkeypatch):
@@ -5960,8 +6345,69 @@ def test_extract_chemistry_handles_unicode_species_subscripts_and_charges(tmp_pa
 
     assert detail["status"] == "pending"
     assert detail["reactions"][0]["reaction"] == "e + O₂ -> O⁻ + O"
+    assert detail["reactions"][0]["reaction_type"] == "attachment"
     assert detail["reactions"][0]["reactants"] == ["e", "O₂"]
     assert detail["reactions"][0]["products"] == ["O⁻", "O"]
+
+
+def test_extract_chemistry_infers_excitation_for_starred_product(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("excitation.pdf", pdf_bytes(b"e + Ar -> e + Ar* ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar*"
+    assert reaction["reaction_type"] == "excitation"
+    assert reaction["reactants"] == ["e", "Ar"]
+    assert reaction["products"] == ["e", "Ar*"]
+
+
+def test_extract_chemistry_infers_recombination_for_positive_ion_reactant(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("recombination.pdf", pdf_bytes(b"e + Ar+ -> Ar ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar+ -> Ar"
+    assert reaction["reaction_type"] == "recombination"
+    assert reaction["reactants"] == ["e", "Ar+"]
+    assert reaction["products"] == ["Ar"]
+
+
+def test_extract_chemistry_infers_elastic_for_unchanged_electron_collision(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("elastic.pdf", pdf_bytes(b"e + Ar -> e + Ar ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar"
+    assert reaction["reaction_type"] == "elastic"
+    assert reaction["reactants"] == ["e", "Ar"]
+    assert reaction["products"] == ["e", "Ar"]
 
 
 def test_extract_chemistry_handles_compact_reaction_species_separators(tmp_path):
@@ -5998,15 +6444,100 @@ def test_extract_chemistry_handles_equilibrium_reaction_arrows(tmp_path):
 
     assert detail["status"] == "pending"
     assert detail["reactions"][0]["reaction"] == "e + O₂ -> O₂⁻"
+    assert detail["reactions"][0]["reaction_type"] == "attachment"
     assert detail["reactions"][0]["reactants"] == ["e", "O₂"]
     assert detail["reactions"][0]["products"] == ["O₂⁻"]
+
+
+def test_extract_chemistry_uses_nearest_lxcat_url_per_reaction(tmp_path):
+    client = make_client(tmp_path)
+    content = (
+        "LXCat IST-Lisbon. e + Ar -> e + e + Ar+ "
+        "https://nl.lxcat.net/data/set/argon-ionization. "
+        "The next entry is separate. e + O2 -> O- + O "
+        "https://nl.lxcat.net/data/set/oxygen-attachment."
+    )
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("multiple-lxcat-urls.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    urls_by_reaction = {reaction["reaction"]: reaction["cross_section_url"] for reaction in detail["reactions"]}
+    assert urls_by_reaction["e + Ar -> e + e + Ar+"] == "https://nl.lxcat.net/data/set/argon-ionization"
+    assert urls_by_reaction["e + O2 -> O- + O"] == "https://nl.lxcat.net/data/set/oxygen-attachment"
+
+
+def test_extract_chemistry_reads_explicit_threshold_ev_near_reaction(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + e + Ar+ . The threshold energy is 15.76 eV in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("threshold-energy.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["reactions"][0]["reaction"] == "e + Ar -> e + e + Ar+"
+    assert detail["reactions"][0]["threshold_ev"] == 15.76
+
+
+def test_extract_chemistry_uses_nearest_threshold_ev_per_reaction(tmp_path):
+    client = make_client(tmp_path)
+    content = (
+        "e + Ar -> e + e + Ar+ . The threshold energy is 15.76 eV. "
+        "e + O2 -> O- + O . The threshold energy is 4.4 eV."
+    )
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("multiple-thresholds.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    thresholds_by_reaction = {reaction["reaction"]: reaction["threshold_ev"] for reaction in detail["reactions"]}
+    assert thresholds_by_reaction["e + Ar -> e + e + Ar+"] == 15.76
+    assert thresholds_by_reaction["e + O2 -> O- + O"] == 4.4
+
+
+def test_extract_chemistry_preserves_explicit_rate_value_near_reaction(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2e-13 cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("rate-coefficient.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-13 cm3/s"
 
 
 def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
         "/api/v1/documents",
-        files={"file": ("chemistry.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
+        files={"file": ("chemistry.pdf", pdf_bytes(b"Ar + O2 -> ArO2 ."), "application/pdf")},
     )
     document_id = response.json()["id"]
     assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
@@ -6019,7 +6550,7 @@ def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
         f"/api/v1/reactions/{reaction_id}/verify",
         json={
             "verified": True,
-            "reaction_type": "ionization",
+            "reaction_type": "elastic",
             "rate_type": "cross_section",
             "rate_value": "LXCat original table",
             "threshold_ev": 15.76,
@@ -6030,7 +6561,7 @@ def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
 
     reaction = verified["reactions"][0]
     assert verified["status"] == "verified"
-    assert reaction["reaction_type"] == "ionization"
+    assert reaction["reaction_type"] == "elastic"
     assert reaction["rate_type"] == "cross_section"
     assert reaction["threshold_ev"] == 15.76
     assert reaction["cross_section_url"] == "https://nl.lxcat.net/data/set/example"
@@ -6040,13 +6571,13 @@ def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
     assert audit["verified_at"]
     assert audit["verified_at"] == audit["created_at"]
     assert audit["action"] == "verify"
-    assert audit["changes"]["reaction_type"] == "ionization"
-    assert audit["field_changes"]["reaction_type"] == {"before": "unknown", "after": "ionization"}
+    assert audit["changes"]["reaction_type"] == "elastic"
+    assert audit["field_changes"]["reaction_type"] == {"before": "unknown", "after": "elastic"}
     assert audit["field_changes"]["rate_value"] == {"before": None, "after": "LXCat original table"}
     assert audit["field_changes"]["verified"] == {"before": False, "after": True}
 
 
-def test_reaction_verify_does_not_add_audit_for_unchanged_review(tmp_path):
+def test_reaction_verify_records_audit_for_unchanged_review(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
         "/api/v1/documents",
@@ -6074,7 +6605,12 @@ def test_reaction_verify_does_not_add_audit_for_unchanged_review(tmp_path):
     assert first["status"] == "verified"
     assert second["status"] == "verified"
     assert len(first["reactions"][0]["audit_log"]) == 1
-    assert len(second["reactions"][0]["audit_log"]) == 1
+    assert len(second["reactions"][0]["audit_log"]) == 2
+    repeated_audit = second["reactions"][0]["audit_log"][0]
+    assert repeated_audit["verified_by"] == "chemist-a"
+    assert repeated_audit["action"] == "verify"
+    assert repeated_audit["changes"] == {}
+    assert repeated_audit["field_changes"] == {}
 
 
 def test_reaction_verify_can_clear_optional_review_fields(tmp_path):
@@ -6604,7 +7140,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "crawl_job_status" in release_text
     assert "crawled_papers" in release_text
     assert '"papers": 2' in release_text
-    assert '"paper_categories": 1' in release_text
+    assert '"paper_categories": 2' in release_text
     assert '"reaction_sets": 1' in release_text
     assert '"reactions": 1' in release_text
     assert "status_counts" in release_text
@@ -6695,6 +7231,9 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "`release_ready`",
         "`frontend_ok`",
         "`grobid_available`",
+        "`workflows_ok`",
+        "`config_ready`",
+        "`release_blockers`",
         "`storage_errors`",
         "python scripts/health_check.py --require-frontend",
         "python -m scripts.smoke_check",
@@ -7358,6 +7897,23 @@ def test_health_check_fails_when_runtime_status_is_missing(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(
+                ready=False,
+                missing=["documents>=1", "sections>=1"],
+                counts={
+                    "journals": 6,
+                    "papers": 1,
+                    "documents": 0,
+                    "sections": 0,
+                    "chunks": 1,
+                    "reaction_sets": 1,
+                    "reactions": 1,
+                },
+            ),
+            "release_readiness": health_check_release_readiness(
+                ready=False,
+                demo_data_missing=["documents>=1", "sections>=1"],
+            ),
             "status_counts": health_check_status_counts(),
         }
 
@@ -7408,6 +7964,8 @@ def test_health_check_requires_runtime_version():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
         }
     )
 
@@ -7453,6 +8011,20 @@ def test_health_check_requires_scheduler_jobs_runtime_key():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(
+                ready=False,
+                missing=["documents>=1", "sections>=1"],
+                counts={
+                    "journals": 6,
+                    "papers": 1,
+                    "documents": 0,
+                    "sections": 0,
+                    "chunks": 1,
+                    "reaction_sets": 1,
+                    "reactions": 1,
+                },
+            ),
+            "release_readiness": health_check_release_readiness(demo_data_missing=["documents>=1", "sections>=1"]),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -7505,6 +8077,8 @@ def test_health_check_rejects_invalid_scheduler_jobs_shape():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -7555,6 +8129,8 @@ def test_health_check_fails_when_database_path_is_invalid(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -7586,6 +8162,8 @@ def test_health_check_fails_when_storage_or_capability_keys_are_missing(monkeypa
             "storage": {"data_dir": "/tmp/data"},
             "external_capabilities": {"openalex_mailto": True},
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -7637,6 +8215,8 @@ def test_health_check_fails_when_storage_values_are_invalid(monkeypatch, capsys)
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -7690,6 +8270,8 @@ def test_health_check_fails_when_external_capability_values_are_invalid(monkeypa
                 "vector_db_backend": 456,
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -7742,6 +8324,8 @@ def test_health_check_requires_translation_and_vector_capability_keys():
                 "embedding_model": "local-hash",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -7789,6 +8373,8 @@ def test_health_check_fails_when_grobid_values_are_invalid(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -7849,6 +8435,8 @@ def test_health_check_fails_when_count_values_are_invalid(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(journals="6", papers=-1),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -7942,11 +8530,28 @@ def test_health_check_requires_config_warnings_key():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
 
     assert "missing keys: config_warnings" in errors
+
+
+def test_health_check_requires_release_readiness_and_demo_data_keys():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_release_gate_keys", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    assert "demo_data" in health_check.STATUS_REQUIRED_KEYS
+    assert "release_readiness" in health_check.STATUS_REQUIRED_KEYS
 
 
 def test_health_check_can_require_no_config_warnings():
@@ -8015,6 +8620,8 @@ def test_health_check_flag_fails_when_config_warnings_exist(monkeypatch, capsys)
             "vector_db_backend": "local-json",
         },
         "counts": health_check_counts(),
+        "demo_data": health_check_demo_data(),
+        "release_readiness": health_check_release_readiness(),
         "status_counts": health_check_status_counts(),
     }
 
@@ -8067,6 +8674,8 @@ def test_health_check_requires_status_counts_key():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
         }
     )
 
@@ -8109,6 +8718,23 @@ def test_health_check_requires_storage_health_key():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(
+                ready=False,
+                missing=["documents>=1", "sections>=1"],
+                counts={
+                    "journals": 6,
+                    "papers": 1,
+                    "documents": 0,
+                    "sections": 0,
+                    "chunks": 1,
+                    "reaction_sets": 1,
+                    "reactions": 1,
+                },
+            ),
+            "release_readiness": health_check_release_readiness(
+                ready=False,
+                demo_data_missing=["documents>=1", "sections>=1"],
+            ),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -8155,6 +8781,8 @@ def test_health_check_requires_database_file_health():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -8201,6 +8829,8 @@ def test_health_check_rejects_database_health_path_mismatch():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -8251,6 +8881,8 @@ def test_health_check_rejects_invalid_storage_health_shape():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -8301,6 +8933,8 @@ def test_health_check_rejects_storage_health_path_mismatch():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -8356,6 +8990,8 @@ def test_health_check_rejects_corrupt_vector_store_health():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -8412,6 +9048,8 @@ def test_health_check_rejects_vector_store_health_path_mismatch():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -8461,6 +9099,8 @@ def test_health_check_rejects_invalid_config_warning_shape():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -8508,6 +9148,8 @@ def test_health_check_fails_when_grobid_status_keys_are_missing(monkeypatch, cap
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -8562,6 +9204,8 @@ def test_health_check_fails_cleanly_when_health_response_is_not_object(monkeypat
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -8617,6 +9261,8 @@ def test_health_check_fails_when_health_service_is_unexpected(monkeypatch, capsy
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -8673,6 +9319,8 @@ def test_health_check_accepts_valid_system_status(monkeypatch):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -8724,6 +9372,8 @@ def test_health_check_require_storage_writable_fails_when_storage_is_unwritable(
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -8776,6 +9426,8 @@ def test_health_check_require_storage_writable_allows_missing_vector_store_when_
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -8829,6 +9481,23 @@ def test_health_check_require_demo_data_fails_when_walking_skeleton_counts_are_m
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(documents=0, sections=0),
+            "demo_data": health_check_demo_data(
+                ready=False,
+                missing=["documents>=1", "sections>=1"],
+                counts={
+                    "journals": 6,
+                    "papers": 1,
+                    "documents": 0,
+                    "sections": 0,
+                    "chunks": 1,
+                    "reaction_sets": 1,
+                    "reactions": 1,
+                },
+            ),
+            "release_readiness": health_check_release_readiness(
+                ready=False,
+                demo_data_missing=["documents>=1", "sections>=1"],
+            ),
             "status_counts": health_check_status_counts(),
         }
 
@@ -8919,6 +9588,10 @@ def test_health_check_require_release_ready_runs_combined_gates(monkeypatch, cap
                 "missing": [],
                 "counts": {"papers": 2},
             },
+            "release_readiness": health_check_release_readiness(
+                ready=False,
+                config_warning_codes=["missing_llm_api_key"],
+            ),
             "status_counts": health_check_status_counts(),
         }
 
@@ -8927,7 +9600,8 @@ def test_health_check_require_release_ready_runs_combined_gates(monkeypatch, cap
 
     assert health_check.main() == 1
     captured = capsys.readouterr()
-    assert "config warnings present" in captured.err
+    assert "release readiness blockers present" in captured.err
+    assert "config_warning_codes:missing_llm_api_key" in captured.err
     assert "missing_llm_api_key" in captured.err
 
 
@@ -9037,6 +9711,8 @@ def test_health_check_require_no_failed_workflows_fails_on_failed_status_counts(
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(document_parse={"failed": 2}),
         }
 
@@ -9101,6 +9777,8 @@ def test_health_check_outputs_config_warnings(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -9160,6 +9838,8 @@ def test_health_check_compact_outputs_single_line_json(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -9228,6 +9908,11 @@ def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
                 "missing": [],
                 "counts": {"papers": 2},
             },
+            "release_readiness": health_check_release_readiness(
+                ready=False,
+                failed_workflows=["document_parse.failed=1"],
+                config_warning_codes=["missing_llm_api_key"],
+            ),
             "status_counts": health_check_status_counts(document_parse={"parsed": 2, "failed": 1}),
         }
 
@@ -9247,10 +9932,13 @@ def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
         "api_prefix": "/api/v1",
         "version": "0.1.0",
         "release_ready": False,
+        "release_blockers": ["failed_workflows:document_parse.failed=1", "config_warning_codes:missing_llm_api_key"],
         "demo_data_ready": True,
         "demo_data_missing": [],
+        "workflows_ok": False,
         "failed_workflows": ["document_parse.failed=1"],
         "config_warning_count": 1,
+        "config_ready": False,
         "config_warning_codes": ["missing_llm_api_key"],
         "storage_writable": True,
         "storage_errors": [],
@@ -9288,8 +9976,11 @@ def test_health_check_summary_only_reports_release_ready_when_gates_are_clean():
     summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
 
     assert summary["release_ready"] is True
+    assert summary["release_blockers"] == []
     assert summary["demo_data_missing"] == []
+    assert summary["workflows_ok"] is True
     assert summary["failed_workflows"] == []
+    assert summary["config_ready"] is True
     assert summary["config_warning_codes"] == []
     assert summary["storage_errors"] == []
 
@@ -9329,9 +10020,17 @@ def test_health_check_summary_prefers_api_release_readiness():
     summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
 
     assert summary["release_ready"] is False
+    assert summary["release_blockers"] == [
+        "demo_data_missing:documents>=1",
+        "failed_workflows:translations.failed=2",
+        "config_warning_codes:missing_llm_api_key",
+        "storage_errors:pdf_dir.writable",
+    ]
     assert summary["demo_data_missing"] == ["documents>=1"]
+    assert summary["workflows_ok"] is False
     assert summary["failed_workflows"] == ["translations.failed=2"]
     assert summary["config_warning_count"] == 1
+    assert summary["config_ready"] is False
     assert summary["config_warning_codes"] == ["missing_llm_api_key"]
     assert summary["storage_writable"] is False
     assert summary["storage_errors"] == ["pdf_dir.writable"]
@@ -9416,15 +10115,38 @@ def test_health_check_summary_only_includes_storage_errors():
         "storage_health": health_check_storage_health(
             pdf_dir={"path": "/tmp/data/pdfs", "exists": True, "writable": False},
             database_parent={"path": "/tmp", "exists": False, "writable": False},
+            vector_db={
+                "path": "/tmp/data/vector-index.json",
+                "exists": True,
+                "readable": True,
+                "writable": True,
+                "valid_json": False,
+                "error": "Expecting property name enclosed in double quotes",
+            },
         ),
         "counts": health_check_counts(),
+        "demo_data": health_check_demo_data(),
+        "release_readiness": health_check_release_readiness(
+            ready=False,
+            storage_errors=[
+                "pdf_dir.writable",
+                "database_parent.exists",
+                "database_parent.writable",
+                "vector_db.valid_json",
+            ],
+        ),
         "status_counts": health_check_status_counts(),
     }
 
     summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
 
     assert summary["storage_writable"] is False
-    assert summary["storage_errors"] == ["pdf_dir.writable", "database_parent.exists", "database_parent.writable"]
+    assert summary["storage_errors"] == [
+        "pdf_dir.writable",
+        "database_parent.exists",
+        "database_parent.writable",
+        "vector_db.valid_json",
+    ]
 
 
 def test_health_check_summary_only_includes_frontend_probe(monkeypatch, capsys):
@@ -9467,12 +10189,19 @@ def test_health_check_summary_only_includes_frontend_probe(monkeypatch, capsys):
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
-            "counts": health_check_counts(),
+            "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+            "demo_data": {
+                "ready": True,
+                "requirements": {"papers": 1},
+                "missing": [],
+                "counts": {"papers": 1},
+            },
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
     def fake_fetch_status(url: str, timeout: float) -> int:
-        return 200
+        return 503
 
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
     monkeypatch.setattr(health_check, "fetch_status", fake_fetch_status, raising=False)
@@ -9491,12 +10220,14 @@ def test_health_check_summary_only_includes_frontend_probe(monkeypatch, capsys):
         ],
     )
 
-    assert health_check.main() == 0
+    assert health_check.main() == 1
     captured = capsys.readouterr()
     summary = json.loads(captured.out)
     assert summary["frontend_url"] == "http://ui.test/_stcore/health"
-    assert summary["frontend_status_code"] == 200
-    assert summary["frontend_ok"] is True
+    assert summary["frontend_status_code"] == 503
+    assert summary["frontend_ok"] is False
+    assert summary["release_ready"] is False
+    assert summary["release_blockers"] == ["frontend:status_code=503"]
     assert "frontend" not in summary
 
 
@@ -9540,6 +10271,8 @@ def test_health_check_require_frontend_fails_when_streamlit_is_unhealthy(monkeyp
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -9614,7 +10347,14 @@ def test_health_check_summary_only_includes_external_grobid_probe(monkeypatch, c
                 "embedding_model": "local-hash",
                 "vector_db_backend": "local-json",
             },
-            "counts": health_check_counts(),
+            "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+            "demo_data": {
+                "ready": True,
+                "requirements": {"papers": 1},
+                "missing": [],
+                "counts": {"papers": 1},
+            },
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -9639,6 +10379,8 @@ def test_health_check_summary_only_includes_external_grobid_probe(monkeypatch, c
     assert summary["grobid_available"] is False
     assert summary["grobid_status_code"] == 503
     assert summary["grobid_error"] == "unexpected health response"
+    assert summary["release_ready"] is False
+    assert summary["release_blockers"] == ["grobid:unexpected health response"]
     assert "status" not in summary
 
 
@@ -9684,6 +10426,8 @@ def test_health_check_can_include_streamlit_frontend_probe(monkeypatch, capsys):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -9754,6 +10498,8 @@ def test_health_check_check_frontend_fails_when_streamlit_is_unhealthy(monkeypat
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -9816,6 +10562,8 @@ def test_health_check_check_frontend_reports_connection_error(monkeypatch, capsy
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -9897,6 +10645,8 @@ def test_health_check_require_grobid_fails_when_external_grobid_is_unavailable(m
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -9957,6 +10707,8 @@ def test_health_check_uses_api_base_url_from_env_file(monkeypatch, tmp_path):
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
 
@@ -10047,14 +10799,16 @@ def test_bug_docs_validator_checks_naming_and_required_sections(tmp_path):
     bug_dir.mkdir(parents=True)
     (bug_dir / "README.md").write_text("# Bug 记录约定\n", encoding="utf-8")
     (bug_dir / "bad-name.md").write_text("# Bad\n\n## 现象\n", encoding="utf-8")
-    (bug_dir / "2026-06-25-good-bug.md").write_text(
+    (bug_dir / "2026-06-25-empty-bug.md").write_text(
         "# Good\n\n## 现象\n\n## 原因\n\n## 修复\n\n## 验证\n",
         encoding="utf-8",
     )
 
     assert validator.bug_doc_issues(tmp_path) == [
+        "docs/bug/2026-06-25-empty-bug.md: empty sections: 现象, 原因, 修复, 验证",
         "docs/bug/bad-name.md: filename must match YYYY-MM-DD-short-slug.md",
         "docs/bug/bad-name.md: missing sections: 原因, 修复, 验证",
+        "docs/bug/bad-name.md: empty sections: 现象",
     ]
 
 
@@ -10127,6 +10881,8 @@ def test_health_check_rejects_unexpected_api_prefix():
                 "vector_db_backend": "local-json",
             },
             "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
             "status_counts": health_check_status_counts(),
         }
     )
@@ -10213,8 +10969,7 @@ def test_streamlit_chemistry_export_surfaces_file_and_metadata_status():
         "export_path.exists()",
         "下载导出文件",
         "导出文件不存在",
-        'payload.get("reaction_count")',
-        'payload.get("audit_entry_count")',
+        "reaction_export_rows(payload)",
         'payload.get("mime_type")',
     ]:
         assert required in chemistry_section
@@ -10229,11 +10984,13 @@ def test_streamlit_chemistry_tab_can_select_document_for_reaction_sets():
         'chemistry_documents = chemistry_documents_response["items"]',
         'selected_chemistry_document = st.selectbox(',
         "chemistry_document_options",
+        "format_func=document_option_label",
         "selected_chemistry_document[\"id\"]",
         "暂无可选文档",
         "手动 document_id",
     ]:
         assert required in chemistry_section
+    assert "format_func=lambda document" not in chemistry_section
 
 
 def test_streamlit_chemistry_tab_exposes_document_pagination_controls():
@@ -10290,12 +11047,9 @@ def test_streamlit_chemistry_audit_log_surfaces_field_changes():
     chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
 
     for required in [
-        "field_changes",
-        "field_change_rows",
-        '"field"',
-        '"before"',
-        '"after"',
-        "st.dataframe(field_change_rows",
+        "reaction_audit_rows(reaction[\"audit_log\"])",
+        "st.dataframe(reaction_audit_rows(reaction[\"audit_log\"])",
+        "st.json(reaction[\"audit_log\"])",
     ]:
         assert required in chemistry_section
 
@@ -10349,8 +11103,9 @@ def test_streamlit_chemistry_review_uses_controlled_type_options():
         'if rate_type_value == "unknown":',
         'c1.selectbox(',
         'c2.selectbox(',
-        '"reaction_type": reaction_type or None',
-        '"rate_type": rate_type or None',
+        "reaction_review_payload(",
+        "reaction_type=reaction_type",
+        "rate_type=rate_type",
     ]:
         assert required in chemistry_section
 
@@ -10367,7 +11122,8 @@ def test_streamlit_chemistry_review_can_preserve_zero_threshold():
         "threshold_ev_value = (",
         'float(reaction["threshold_ev"]) if reaction.get("threshold_ev") is not None else 0.0',
         'disabled=not include_threshold_ev',
-        '"threshold_ev": threshold_ev if include_threshold_ev else None',
+        "include_threshold_ev=include_threshold_ev",
+        "threshold_ev=threshold_ev",
     ]:
         assert required in chemistry_section
 
@@ -10820,8 +11576,11 @@ def test_extract_reactions_detects_lxcat_database_and_url(tmp_path):
 
     assert detail["lxcat_db"] == "Biagi"
     assert reaction["reaction"] == "e + Ar -> e + e + Ar+"
+    assert reaction["reaction_type"] == "ionization"
     assert reaction["reactants"] == ["e", "Ar"]
     assert reaction["products"] == ["e", "e", "Ar+"]
+    assert reaction["rate_type"] == "cross_section"
+    assert reaction["rate_value"] is None
     assert reaction["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
 
 
@@ -10977,6 +11736,8 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
         "index_error",
         "chemistry_status",
         "chemistry_error",
+        "document_option_label",
+        "document_status_rows(document_detail, chunks)",
         "section_preview",
         "parse_error",
         "vector_id",
@@ -11211,18 +11972,14 @@ def test_streamlit_rag_tab_separates_answer_and_sources():
         "rag_payload",
         'rag_payload.get("answer")',
         'rag_payload.get("sources")',
+        "rag_source_rows",
         "引用来源",
         "st.dataframe(sources",
-        "paper_id",
-        "paper_title",
         "source_excerpt",
         'source_preview.get("source_excerpt")',
         "st.code(source_preview.get(\"source_excerpt\")",
-        "chunk_id",
-        "section_title",
-        "section_id",
-        "section_seq",
-        "section_type",
+        "source_location",
+        "citation",
     ]:
         assert required in rag_section
 
@@ -11269,11 +12026,13 @@ def test_streamlit_rag_tab_can_select_documents_for_query_scope():
         'rag_documents = rag_documents_response["items"]',
         "selected_rag_documents = st.multiselect(",
         "限定文档",
+        "format_func=document_option_label",
         "selected_document_ids",
         "ids = list(dict.fromkeys(selected_document_ids + typed_document_ids))",
         "暂无可选文档",
     ]:
         assert required in rag_section
+    assert "format_func=lambda document" not in rag_section
 
 
 def test_streamlit_rag_tab_exposes_document_pagination_controls():
@@ -11450,25 +12209,15 @@ def test_streamlit_sidebar_can_check_grobid_live_status():
 def test_streamlit_crawl_jobs_table_flattens_diagnostics():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    flatten_helper = streamlit[streamlit.index("def flatten_crawl_job_rows") : streamlit.index("st.set_page_config")]
     search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
 
-    for required in [
-        "diagnostics",
-        "journal",
-        "papers_found",
-        "papers_filtered",
-        "papers_accepted",
-        "papers_existing",
-        "papers_new",
-        "outcome",
-        "keyword_mode",
-        "keyword_terms",
-    ]:
-        assert required in flatten_helper
+    assert "crawl_job_rows" in streamlit
+    assert "def flatten_crawl_job_rows" not in streamlit
     assert 'st.caption(f"outcome: {diagnostics.get(\'outcome\') or \'unknown\'}")' in search_section
-    assert "flatten_crawl_job_rows(jobs)" in search_section
-    assert 'st.dataframe(flatten_crawl_job_rows(jobs), use_container_width=True)' in search_section
+    assert "crawl_job_rows(jobs)" in search_section
+    assert "st.dataframe(crawl_job_rows(jobs), use_container_width=True)" in search_section
+    assert "crawl_job_diagnostic_rows(job_detail)" in search_section
+    assert "st.dataframe(crawl_job_diagnostic_rows(job_detail), use_container_width=True)" in search_section
 
 
 def test_streamlit_crawl_jobs_show_empty_state():
@@ -11503,6 +12252,16 @@ def test_streamlit_crawl_run_surfaces_success_and_error_states():
     search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
 
     for required in [
+        "crawl_journal_choice = crawl_col1.selectbox(",
+        '"抓取期刊"',
+        "crawl_journal_options(journals)",
+        'format_func=lambda option: option["label"]',
+        'selected_crawl_journal_id = crawl_journal_choice["journal_id"]',
+        "crawl_date_error = date_from and date_to and date_from > date_to",
+        "if crawl_date_error:",
+        'st.warning("date_from must be less than or equal to date_to")',
+        "if selected_crawl_journal_id is not None:",
+        'body["journal_ids"] = [int(selected_crawl_journal_id)]',
         'status_code, crawl_payload = api_post("/crawl/run", json=body)',
         "if status_code < 400:",
         "已创建抓取任务",
@@ -11511,6 +12270,7 @@ def test_streamlit_crawl_run_surfaces_success_and_error_states():
         "st.json(crawl_payload)",
     ]:
         assert required in search_section
+    assert 'number_input("journal_id"' not in search_section
 
 
 def test_streamlit_search_results_show_dedupe_strategy():
@@ -11578,6 +12338,8 @@ def test_streamlit_search_results_can_resolve_oa_manually():
         'resolved_paper.get("oa_status")',
         'resolved_paper.get("oa_pdf_url")',
         'key=f"resolve-oa-{paper[\'id\']}"',
+        'disabled=not paper.get("doi")',
+        'help="需要 DOI 才能通过 Unpaywall 解析 OA 链接"',
     ]:
         assert required in search_section
 
@@ -11652,7 +12414,7 @@ def test_streamlit_api_put_preserves_json_errors_for_callers():
 def test_streamlit_config_tab_exposes_journal_and_category_management():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    helper_section = streamlit[: streamlit.index("def flatten_crawl_job_rows")]
+    helper_section = streamlit[: streamlit.index("st.set_page_config")]
     assert "配置" in streamlit
     config_section = streamlit[streamlit.index("with config_tab:") :]
     assert "def api_delete(path: str):" in helper_section

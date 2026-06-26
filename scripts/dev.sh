@@ -1,6 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  cat <<'EOF'
+Usage: bash scripts/dev.sh
+
+Starts the local FastAPI backend and Streamlit frontend, waits for both health
+checks, then prints the URLs.
+
+Environment variables:
+  PYTHON                         Python executable, defaults to .venv/bin/python when present.
+  API_HOST                       FastAPI bind host, default 127.0.0.1.
+  API_PORT                       FastAPI port, default 8000.
+  STREAMLIT_HOST                 Streamlit bind host, default 127.0.0.1.
+  STREAMLIT_PORT                 Streamlit port, default 8501.
+  API_BASE_URL                   Frontend API base URL override.
+  DEV_READY_TIMEOUT              Seconds to wait for each service, default 30.
+  DEV_EXIT_AFTER_READY           Set true to exit after both services are ready.
+  PAPER_LAB_SCHEDULER_ENABLED    Set true to enable APScheduler crawl jobs.
+
+After startup, verify the live frontend gate with:
+  python scripts/health_check.py --require-frontend
+EOF
+  exit 0
+fi
+
 source "scripts/env.sh"
 
 USER_API_BASE_URL="${API_BASE_URL:-}"
@@ -19,6 +43,7 @@ STREAMLIT_CONNECT_HOST="$(resolve_connect_host "${STREAMLIT_HOST}")"
 API_URL_HOST="$(format_url_host "${API_CONNECT_HOST}")"
 STREAMLIT_URL_HOST="$(format_url_host "${STREAMLIT_CONNECT_HOST}")"
 DEV_READY_TIMEOUT="${DEV_READY_TIMEOUT:-30}"
+DEV_EXIT_AFTER_READY="${DEV_EXIT_AFTER_READY:-false}"
 PYTHON="${PYTHON:-}"
 
 if [[ -z "${PYTHON}" ]]; then
@@ -96,5 +121,10 @@ echo "FastAPI:   http://${API_HOST}:${API_PORT}"
 echo "Streamlit: http://${STREAMLIT_HOST}:${STREAMLIT_PORT}"
 echo "API_BASE_URL=${API_BASE_URL}"
 echo "PYTHON=${PYTHON}"
+echo "DEV_EXIT_AFTER_READY=${DEV_EXIT_AFTER_READY}"
+
+if [[ "${DEV_EXIT_AFTER_READY}" == "true" ]]; then
+  exit 0
+fi
 
 wait

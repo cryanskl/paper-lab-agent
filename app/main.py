@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from app import __version__
 from app.config import get_settings
 from app.db import init_db
-from app.errors import install_error_handlers
+from app.errors import install_error_handlers, install_openapi_error_schema
 from app.routers import categories, crawl, documents, journals, papers, rag, reactions, system
 from app.scheduler import create_scheduler
 
@@ -45,6 +45,7 @@ def create_app() -> FastAPI:
     app.include_router(rag.router, prefix=settings.api_prefix)
     app.include_router(reactions.router, prefix=settings.api_prefix)
     app.include_router(system.router, prefix=settings.api_prefix)
+    install_openapi_error_schema(app)
 
     return app
 

@@ -50,6 +50,7 @@ def run_smoke() -> dict:
         from app.db import init_db
         from app.fixture_loader import load_fixture_papers
         from app.main import app
+        from app.routers import papers as papers_router
         from app.services import crawl as crawl_service
         from fastapi.testclient import TestClient
 
@@ -97,6 +98,30 @@ def run_smoke() -> dict:
                         "source_api": "openalex",
                         "raw_metadata": {"source": "smoke"},
                     },
+                    {
+                        "doi": None,
+                        "title": "No DOI smoke crawl plasma chemistry paper",
+                        "abstract": "offline crawl verifies no DOI plasma dedupe metadata",
+                        "authors": [{"name": "No DOI", "affiliation": None}],
+                        "journal_name": "Plasma Sources Science and Technology",
+                        "published_date": "2026-01-17",
+                        "published_year": 2026,
+                        "landing_url": "https://example.test/no-doi-smoke-crawl",
+                        "source_api": "openalex",
+                        "raw_metadata": {"source": "smoke-no-doi"},
+                    },
+                    {
+                        "doi": None,
+                        "title": "No DOI smoke crawl plasma chemistry paper",
+                        "abstract": "offline crawl verifies no DOI plasma dedupe metadata update",
+                        "authors": [{"name": "No DOI", "affiliation": None}],
+                        "journal_name": "Plasma Sources Science and Technology",
+                        "published_date": "2026-01-17",
+                        "published_year": 2026,
+                        "landing_url": "https://example.test/no-doi-smoke-crawl",
+                        "source_api": "openalex",
+                        "raw_metadata": {"source": "smoke-no-doi-duplicate"},
+                    },
                 ]
 
         class OfflineUnpaywallClient:
@@ -128,13 +153,161 @@ def run_smoke() -> dict:
         assert_ok(crawl_run["jobs"], "expected crawl run to create a job")
         crawl_job_id = crawl_run["jobs"][0]["job_id"]
         crawl_job = assert_status(client.get(f"/api/v1/crawl/jobs/{crawl_job_id}"), 200, "crawl job detail")
+        crawl_job_list = assert_status(client.get("/api/v1/crawl/jobs"), 200, "crawl job list")
+        listed_crawl_job = next(
+            (item for item in crawl_job_list["items"] if item["id"] == crawl_job_id),
+            None,
+        )
+        assert_ok(crawl_job_list["total"] == 1, f"expected one crawl job in list, got {crawl_job_list}")
+        assert_ok(listed_crawl_job is not None, f"expected crawl job {crawl_job_id} in list, got {crawl_job_list}")
+        assert_ok(
+            crawl_job["journal"]["name"] == "Plasma Sources Science and Technology",
+            f"expected crawl job journal summary, got {crawl_job}",
+        )
+        assert_ok(
+            listed_crawl_job["journal"]["name"] == crawl_job["journal"]["name"],
+            f"expected crawl job list journal summary to match detail, got {listed_crawl_job}",
+        )
         crawl_diagnostics = crawl_job["diagnostics"]
         assert_ok(crawl_diagnostics["status"] == "success", f"expected crawl job success, got {crawl_diagnostics}")
-        assert_ok(crawl_diagnostics["papers_found"] == 2, f"expected crawl papers_found=2, got {crawl_diagnostics}")
+        assert_ok(crawl_diagnostics["papers_found"] == 4, f"expected crawl papers_found=4, got {crawl_diagnostics}")
         assert_ok(crawl_diagnostics["papers_filtered"] == 1, f"expected crawl papers_filtered=1, got {crawl_diagnostics}")
-        assert_ok(crawl_diagnostics["papers_new"] == 1, f"expected crawl papers_new=1, got {crawl_diagnostics}")
-        crawled_search = assert_status(client.get("/api/v1/papers?q=smoke crawl"), 200, "crawled paper search")
+        assert_ok(crawl_diagnostics["papers_new"] == 2, f"expected crawl papers_new=2, got {crawl_diagnostics}")
+        assert_ok(crawl_diagnostics["outcome"] == "new_papers", f"expected crawl outcome=new_papers, got {crawl_diagnostics}")
+        assert_ok(crawl_diagnostics["papers_accepted"] == 3, f"expected crawl papers_accepted=3, got {crawl_diagnostics}")
+        crawl_keyword_terms = crawl_diagnostics.get("keyword_terms") or []
+        assert_ok(crawl_diagnostics["keyword_mode"] == "or", f"expected crawl keyword_mode=or, got {crawl_diagnostics}")
+        assert_ok(bool(crawl_keyword_terms), f"expected crawl keyword terms, got {crawl_diagnostics}")
+        assert_ok(
+            "plasma chemistry" in crawl_keyword_terms,
+            f"expected plasma chemistry keyword term, got {crawl_diagnostics}",
+        )
+        crawled_search = assert_status(client.get("/api/v1/papers?q=argon smoke crawl"), 200, "crawled paper search")
         assert_ok(crawled_search["total"] >= 1, f"expected crawled paper to be searchable, got {crawled_search}")
+        crawled_paper_id = crawled_search["items"][0]["id"]
+        paper_detail = assert_status(client.get(f"/api/v1/papers/{crawled_paper_id}"), 200, "paper detail")
+        assert_ok(paper_detail["doi"] == "10.999/smoke-crawl", f"expected smoke crawl DOI, got {paper_detail}")
+        assert_ok(
+            paper_detail.get("raw_metadata", {}).get("source") == "smoke",
+            f"expected paper detail raw metadata, got {paper_detail}",
+        )
+        no_doi_search = assert_status(client.get("/api/v1/papers?q=no doi smoke crawl"), 200, "no DOI paper search")
+        assert_ok(no_doi_search["total"] == 1, f"expected no DOI crawl duplicate to dedupe, got {no_doi_search}")
+        no_doi_paper = no_doi_search["items"][0]
+        assert_ok(no_doi_paper["has_doi"] is False, f"expected no DOI paper, got {no_doi_paper}")
+        assert_ok(
+            no_doi_paper["dedupe_strategy"] == "no_doi_fingerprint",
+            f"expected no DOI fingerprint dedupe strategy, got {no_doi_paper}",
+        )
+        assert_ok(bool(no_doi_paper.get("dedupe_key")), f"expected no DOI dedupe key, got {no_doi_paper}")
+
+        categories = assert_status(client.get("/api/v1/categories"), 200, "category list")
+        chemistry_category = next(
+            (category for category in categories["items"] if category.get("slug") == "chemistry"),
+            None,
+        )
+        assert_ok(chemistry_category is not None, f"expected chemistry category, got {categories}")
+        auto_classified = assert_status(
+            client.post(f"/api/v1/papers/{crawled_paper_id}/classify"),
+            200,
+            "auto classify paper",
+        )
+        auto_classify_details = auto_classified.get("category_details") or []
+        assert_ok(auto_classified.get("categories") == ["chemistry"], f"expected auto chemistry category, got {auto_classified}")
+        assert_ok(
+            len(auto_classify_details) == 1 and auto_classify_details[0].get("method") == "auto",
+            f"expected auto category method, got {auto_classify_details}",
+        )
+        manual_category = assert_status(
+            client.put(
+                f"/api/v1/papers/{crawled_paper_id}/categories",
+                json={"category_ids": [chemistry_category["id"]], "method": "manual"},
+            ),
+            200,
+            "manual category override",
+        )
+        manual_category_details = manual_category.get("category_details") or []
+        assert_ok(manual_category.get("categories") == ["chemistry"], f"expected manual chemistry category, got {manual_category}")
+        assert_ok(
+            len(manual_category_details) == 1 and manual_category_details[0].get("method") == "manual",
+            f"expected manual category method, got {manual_category_details}",
+        )
+        manual_category_search = assert_status(
+            client.get("/api/v1/papers?q=argon smoke crawl&category=chemistry"),
+            200,
+            "manual category search",
+        )
+        assert_ok(
+            manual_category_search["total"] == 1,
+            f"expected manual category search to return one paper, got {manual_category_search}",
+        )
+        journal_filter_search = assert_status(
+            client.get("/api/v1/papers?q=argon smoke crawl&journal_id=2"),
+            200,
+            "journal-filtered paper search",
+        )
+        assert_ok(
+            journal_filter_search["total"] == 1,
+            f"expected journal-filtered search to return one paper, got {journal_filter_search}",
+        )
+        relevance_sort_search = assert_status(
+            client.get("/api/v1/papers?q=argon smoke crawl&sort=relevance"),
+            200,
+            "relevance-sorted paper search",
+        )
+        assert_ok(
+            relevance_sort_search["total"] == 1,
+            f"expected relevance-sorted search to return one paper, got {relevance_sort_search}",
+        )
+
+        original_paper_unpaywall_client = papers_router.UnpaywallClient
+
+        class ManualResolveUnpaywallClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def resolve(self, doi: str) -> dict:
+                return {
+                    "oa_status": "green",
+                    "oa_pdf_url": f"https://example.test/manual-resolve-{doi.replace('/', '-')}.pdf",
+                    "raw": {"doi": doi, "oa_status": "green", "source": "smoke-manual-resolve"},
+                }
+
+        papers_router.UnpaywallClient = ManualResolveUnpaywallClient
+        try:
+            manual_resolve_oa = assert_status(
+                client.post(f"/api/v1/papers/{crawled_paper_id}/resolve-oa"),
+                200,
+                "manual resolve oa",
+            )
+        finally:
+            papers_router.UnpaywallClient = original_paper_unpaywall_client
+        assert_ok(
+            manual_resolve_oa["oa_status"] == "green",
+            f"expected manual resolve oa_status=green, got {manual_resolve_oa}",
+        )
+        assert_ok(
+            manual_resolve_oa.get("oa_pdf_url", "").startswith("https://example.test/manual-resolve-"),
+            f"expected manual resolve oa_pdf_url, got {manual_resolve_oa}",
+        )
+        oa_only_search = assert_status(
+            client.get("/api/v1/papers?q=smoke crawl&oa_only=true"),
+            200,
+            "oa-only paper search",
+        )
+        assert_ok(
+            oa_only_search["total"] == 1,
+            f"expected oa-only search to return one paper, got {oa_only_search}",
+        )
+        year_filter_search = assert_status(
+            client.get("/api/v1/papers?q=argon smoke crawl&year_from=2026&year_to=2026"),
+            200,
+            "year-filtered paper search",
+        )
+        assert_ok(
+            year_filter_search["total"] == 1,
+            f"expected year-filtered search to return one paper, got {year_filter_search}",
+        )
 
         smoke_pdf = (
             b"%PDF-1.4\nArgon plasma chemistry and electron impact reactions. "
@@ -144,12 +317,29 @@ def run_smoke() -> dict:
         upload = assert_status(
             client.post(
                 "/api/v1/documents",
+                data={"paper_id": str(crawled_paper_id)},
                 files={"file": ("smoke.pdf", smoke_pdf, "application/pdf")},
             ),
             201,
             "document upload",
         )
         document_id = upload["id"]
+        document_list = assert_status(client.get("/api/v1/documents"), 200, "document list")
+        assert_ok(document_list["total"] == 1, f"expected one document in list, got {document_list}")
+        document_detail = assert_status(client.get(f"/api/v1/documents/{document_id}"), 200, "document detail")
+        assert_ok(document_detail["parse_status"] == "uploaded", f"expected uploaded document, got {document_detail}")
+        assert_ok(
+            document_detail.get("paper", {}).get("id") == crawled_paper_id,
+            f"expected linked paper summary, got {document_detail}",
+        )
+        unsupported_document = client.post(
+            "/api/v1/documents",
+            files={"file": ("notes.txt", b"plain text is not a pdf", "text/plain")},
+        )
+        unsupported_document_payload = assert_error_response(
+            unsupported_document, 415, "unsupported document upload"
+        )
+        error_responses.append(unsupported_document_payload["error"]["code"])
         duplicate_upload = client.post(
             "/api/v1/documents",
             files={"file": ("smoke-copy.pdf", smoke_pdf, "application/pdf")},
@@ -165,10 +355,17 @@ def run_smoke() -> dict:
         assert_status(client.post(f"/api/v1/documents/{document_id}/parse"), 202, "document parse")
         sections = assert_status(client.get(f"/api/v1/documents/{document_id}/sections"), 200, "document sections")
         assert_ok(sections["total"] >= 1, "expected parsed document sections")
+        first_section = sections["items"][0]
+        assert_ok(first_section["section_type"] == "body", f"expected body section, got {first_section}")
+        assert_ok(bool(first_section.get("content")), f"expected section content, got {first_section}")
 
         assert_status(client.post(f"/api/v1/documents/{document_id}/index"), 202, "document index")
         chunks = assert_status(client.get(f"/api/v1/documents/{document_id}/chunks"), 200, "document chunks")
         assert_ok(chunks["total"] >= 1, "expected indexed document chunks")
+        assert_ok(chunks["index_status"] == "indexed", f"expected indexed chunk response, got {chunks}")
+        first_chunk = chunks["items"][0]
+        assert_ok(bool(first_chunk.get("vector_id")), f"expected chunk vector_id, got {first_chunk}")
+        assert_ok(bool(first_chunk.get("section_title")), f"expected chunk section_title, got {first_chunk}")
 
         assert_status(
             client.post(f"/api/v1/documents/{document_id}/translate", json={"target_lang": "zh"}),
@@ -192,14 +389,40 @@ def run_smoke() -> dict:
             "rag query",
         )
         assert_ok(bool(rag["sources"]), "expected RAG sources")
+        first_rag_source = rag["sources"][0]
         rag_answer_has_citation = (
             "Source:" in (rag.get("answer") or "")
             and ("paper_id=" in (rag.get("answer") or "") or "document_id=" in (rag.get("answer") or ""))
             and "chunk_id=" in (rag.get("answer") or "")
         )
         rag_source_excerpts = len([source for source in rag["sources"] if source.get("source_excerpt")])
+        rag_source_has_document_id = first_rag_source.get("document_id") == document_id
+        rag_source_has_paper_id = first_rag_source.get("paper_id") == crawled_paper_id
+        rag_source_has_section_id = bool(first_rag_source.get("section_id"))
+        rag_source_has_section_title = bool(first_rag_source.get("section_title"))
+        rag_source_has_section_type = bool(first_rag_source.get("section_type"))
+        rag_source_has_chunk_id = bool(first_rag_source.get("chunk_id"))
+        rag_source_has_vector_id = bool(first_rag_source.get("vector_id"))
+        rag_source_has_score = isinstance(first_rag_source.get("score"), (int, float)) and not isinstance(
+            first_rag_source.get("score"), bool
+        )
         assert_ok(rag_answer_has_citation, f"expected RAG answer citation, got {rag.get('answer')!r}")
         assert_ok(rag_source_excerpts == len(rag["sources"]), f"expected source excerpts in RAG sources, got {rag['sources']}")
+        assert_ok(
+            all(
+                [
+                    rag_source_has_document_id,
+                    rag_source_has_paper_id,
+                    rag_source_has_section_id,
+                    rag_source_has_section_title,
+                    rag_source_has_section_type,
+                    rag_source_has_chunk_id,
+                    rag_source_has_vector_id,
+                    rag_source_has_score,
+                ]
+            ),
+            f"expected locator fields in RAG source, got {first_rag_source}",
+        )
 
         assert_status(
             client.post(f"/api/v1/documents/{document_id}/extract-chemistry"),
@@ -212,13 +435,51 @@ def run_smoke() -> dict:
             "document reaction sets",
         )
         assert_ok(reaction_sets["total"] == 1, f"expected one reaction set, got {reaction_sets['total']}")
-        reaction_set_id = reaction_sets["items"][0]["id"]
+        reaction_set_summary_before_verify = reaction_sets["items"][0]
+        reaction_set_id = reaction_set_summary_before_verify["id"]
+        assert_ok(
+            reaction_set_summary_before_verify["reaction_count"] == 1,
+            f"expected one reaction in document reaction-set list, got {reaction_set_summary_before_verify}",
+        )
+        assert_ok(
+            reaction_set_summary_before_verify["verified_count"] == 0,
+            f"expected zero verified reactions before review, got {reaction_set_summary_before_verify}",
+        )
+        assert_ok(
+            reaction_set_summary_before_verify["unverified_count"] == 1,
+            f"expected one unverified reaction before review, got {reaction_set_summary_before_verify}",
+        )
+        assert_ok(
+            reaction_set_summary_before_verify["export_ready"] is False,
+            f"expected export_ready=false before review, got {reaction_set_summary_before_verify}",
+        )
         reaction_detail = assert_status(
             client.get(f"/api/v1/reaction-sets/{reaction_set_id}"),
             200,
             "reaction set detail",
         )
         assert_ok(len(reaction_detail["reactions"]) == 1, "expected one extracted reaction")
+        assert_ok(
+            reaction_detail["reaction_count"] == 1
+            and reaction_detail["verified_count"] == 0
+            and reaction_detail["unverified_count"] == 1
+            and reaction_detail["export_ready"] is False,
+            f"expected reaction set detail to require review before export, got {reaction_detail}",
+        )
+        assert_ok(
+            isinstance(reaction_detail["reactions"][0].get("audit_log"), list),
+            f"expected reaction audit_log list in detail, got {reaction_detail['reactions'][0]}",
+        )
+        extracted_reaction_type = reaction_detail["reactions"][0].get("reaction_type")
+        assert_ok(
+            extracted_reaction_type == "ionization",
+            f"expected inferred ionization reaction type before review, got {reaction_detail['reactions'][0]}",
+        )
+        extracted_rate_type = reaction_detail["reactions"][0].get("rate_type")
+        assert_ok(
+            extracted_rate_type == "cross_section",
+            f"expected inferred cross_section rate type before review, got {reaction_detail['reactions'][0]}",
+        )
         reaction_id = reaction_detail["reactions"][0]["id"]
         blocked_export = client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=json")
         blocked_payload = assert_error_response(blocked_export, 409, "unverified reaction export")
@@ -240,6 +501,33 @@ def run_smoke() -> dict:
             "reaction verify",
         )
         assert_ok(verified["status"] == "verified", f"expected verified reaction set, got {verified['status']}")
+        reaction_sets_after_verify = assert_status(
+            client.get(f"/api/v1/documents/{document_id}/reaction-sets"),
+            200,
+            "document reaction sets after verify",
+        )
+        reaction_set_summary_after_verify = reaction_sets_after_verify["items"][0]
+        assert_ok(
+            reaction_set_summary_after_verify["verified_count"] == 1
+            and reaction_set_summary_after_verify["unverified_count"] == 0
+            and reaction_set_summary_after_verify["export_ready"] is True,
+            f"expected export_ready=true after review, got {reaction_set_summary_after_verify}",
+        )
+        reaction_detail_after_verify = assert_status(
+            client.get(f"/api/v1/reaction-sets/{reaction_set_id}"),
+            200,
+            "reaction set detail after verify",
+        )
+        reaction_detail_audit_entries_after_verify = sum(
+            len(reaction.get("audit_log") or []) for reaction in reaction_detail_after_verify["reactions"]
+        )
+        assert_ok(
+            reaction_detail_after_verify["verified_count"] == 1
+            and reaction_detail_after_verify["unverified_count"] == 0
+            and reaction_detail_after_verify["export_ready"] is True
+            and reaction_detail_audit_entries_after_verify == 1,
+            f"expected verified reaction set detail with audit log, got {reaction_detail_after_verify}",
+        )
         verified_export = assert_status(
             client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=json"),
             200,
@@ -249,6 +537,16 @@ def run_smoke() -> dict:
         verified_export_payload = json.loads(Path(verified_export["output_path"]).read_text(encoding="utf-8"))
         exported_reactions = verified_export_payload.get("reactions") or []
         assert_ok(len(exported_reactions) == 1, f"expected one reaction in JSON export, got {exported_reactions}")
+        verified_export_reaction_type = exported_reactions[0].get("reaction_type")
+        assert_ok(
+            verified_export_reaction_type == "ionization",
+            f"expected ionization reaction type in JSON export, got {exported_reactions[0]}",
+        )
+        verified_export_rate_type = exported_reactions[0].get("rate_type")
+        assert_ok(
+            verified_export_rate_type == "cross_section",
+            f"expected cross_section rate type in JSON export, got {exported_reactions[0]}",
+        )
         export_audit_entries = [
             audit
             for reaction in exported_reactions
@@ -277,6 +575,9 @@ def run_smoke() -> dict:
             200,
             "verified reaction bolsig export",
         )
+        unsupported_export = client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=csv")
+        unsupported_export_payload = assert_error_response(unsupported_export, 400, "unsupported reaction export format")
+        error_responses.append(unsupported_export_payload["error"]["code"])
         txt_path = Path(txt_export["output_path"])
         bolsig_path = Path(bolsig_export["output_path"])
         assert_ok(txt_path.exists(), "expected verified txt export file")
@@ -312,6 +613,8 @@ def run_smoke() -> dict:
         status = assert_status(client.get("/api/v1/system/status"), 200, "system status")
         runtime = status["runtime"]
         config_warnings = status["config_warnings"]
+        external_capabilities = status["external_capabilities"]
+        storage_health = status["storage_health"]
         assert_ok(runtime["version"], "expected runtime version")
         scheduler_job_ids = [job["id"] for job in runtime.get("scheduler_jobs") or []]
         assert_ok(
@@ -319,6 +622,32 @@ def run_smoke() -> dict:
             f"expected scheduler crawl jobs, got {scheduler_job_ids}",
         )
         assert_ok(isinstance(config_warnings, list), "expected config_warnings list")
+        assert_ok(
+            external_capabilities["translation_adapter"] == "local-echo",
+            f"expected local translation adapter, got {external_capabilities}",
+        )
+        assert_ok(
+            external_capabilities["embedding_model"] == "local-hash",
+            f"expected local embedding model, got {external_capabilities}",
+        )
+        assert_ok(
+            external_capabilities["vector_db_backend"] == "local-json",
+            f"expected local vector DB backend, got {external_capabilities}",
+        )
+        assert_ok(
+            external_capabilities["grobid_url"] == "http://127.0.0.1:8070",
+            f"expected default GROBID URL, got {external_capabilities}",
+        )
+        assert_ok(storage_health["data_dir"]["writable"] is True, f"expected writable data_dir, got {storage_health}")
+        assert_ok(
+            storage_health["database_parent"]["writable"] is True,
+            f"expected writable database parent, got {storage_health}",
+        )
+        assert_ok(storage_health["vector_db"]["exists"] is True, f"expected vector DB file, got {storage_health}")
+        assert_ok(
+            storage_health["vector_db"]["valid_json"] is True,
+            f"expected valid vector DB JSON, got {storage_health}",
+        )
         counts = status["counts"]
         status_counts = status["status_counts"]
         release_readiness = status["release_readiness"]
@@ -348,34 +677,101 @@ def run_smoke() -> dict:
             "paper_categories": counts["paper_categories"],
             "status_counts": status_counts,
             "release_readiness": release_readiness,
+            "system_translation_adapter": external_capabilities["translation_adapter"],
+            "system_embedding_model": external_capabilities["embedding_model"],
+            "system_vector_db_backend": external_capabilities["vector_db_backend"],
+            "system_grobid_url": external_capabilities["grobid_url"],
+            "system_storage_data_dir_writable": storage_health["data_dir"]["writable"],
+            "system_storage_database_parent_writable": storage_health["database_parent"]["writable"],
+            "system_storage_vector_db_exists": storage_health["vector_db"]["exists"],
+            "system_storage_vector_db_valid_json": storage_health["vector_db"]["valid_json"],
             "crawl_jobs": counts["crawl_jobs"],
             "crawl_job_status": crawl_diagnostics["status"],
             "crawl_job_found": crawl_diagnostics["papers_found"],
             "crawl_job_filtered": crawl_diagnostics["papers_filtered"],
             "crawl_job_new": crawl_diagnostics["papers_new"],
+            "crawl_job_list_total": crawl_job_list["total"],
+            "crawl_job_detail_status": crawl_job["status"],
+            "crawl_job_detail_journal_name": crawl_job["journal"]["name"],
+            "crawl_job_detail_diagnostics_outcome": crawl_diagnostics["outcome"],
+            "crawl_job_detail_diagnostics_papers_accepted": crawl_diagnostics["papers_accepted"],
+            "crawl_job_detail_keyword_mode": crawl_diagnostics["keyword_mode"],
+            "crawl_job_detail_has_keyword_terms": bool(crawl_keyword_terms),
+            "crawl_job_detail_keyword_terms_include_plasma_chemistry": "plasma chemistry" in crawl_keyword_terms,
             "crawled_papers": crawled_search["total"],
+            "no_doi_search_hits": no_doi_search["total"],
+            "no_doi_paper_has_doi": no_doi_paper["has_doi"],
+            "no_doi_paper_dedupe_strategy": no_doi_paper["dedupe_strategy"],
+            "no_doi_paper_has_dedupe_key": bool(no_doi_paper.get("dedupe_key")),
+            "auto_classify_category_count": len(auto_classify_details),
+            "auto_classify_method": auto_classify_details[0]["method"],
+            "journal_filter_search_hits": journal_filter_search["total"],
+            "manual_category_count": len(manual_category_details),
+            "manual_category_method": manual_category_details[0]["method"],
+            "manual_category_search_hits": manual_category_search["total"],
+            "relevance_sort_search_hits": relevance_sort_search["total"],
+            "manual_resolve_oa_status": manual_resolve_oa["oa_status"],
+            "manual_resolve_oa_pdf_url": manual_resolve_oa["oa_pdf_url"],
+            "oa_only_search_hits": oa_only_search["total"],
+            "paper_detail_doi": paper_detail["doi"],
+            "paper_detail_has_raw_metadata": paper_detail.get("raw_metadata", {}).get("source") == "smoke",
+            "year_filter_search_hits": year_filter_search["total"],
             "document_id": document_id,
+            "document_detail_has_paper": document_detail.get("paper", {}).get("id") == crawled_paper_id,
+            "document_detail_parse_status": document_detail["parse_status"],
+            "document_list_total": document_list["total"],
             "duplicate_upload_status": duplicate_upload.status_code,
+            "unsupported_document_status": unsupported_document.status_code,
             "duplicate_document_id": duplicate_document["id"],
             "error_response_count": len(error_responses),
             "error_response_codes": error_responses,
             "sections": counts["sections"],
+            "section_list_first_type": first_section["section_type"],
+            "section_list_has_content": bool(first_section.get("content")),
             "chunks": counts["chunks"],
+            "chunk_list_index_status": chunks["index_status"],
+            "chunk_list_has_vector_id": bool(first_chunk.get("vector_id")),
+            "chunk_list_has_section_title": bool(first_chunk.get("section_title")),
             "rag_sources": len(rag["sources"]),
             "rag_answer_has_citation": rag_answer_has_citation,
             "rag_source_excerpts": rag_source_excerpts,
+            "rag_source_has_document_id": rag_source_has_document_id,
+            "rag_source_has_paper_id": rag_source_has_paper_id,
+            "rag_source_has_section_id": rag_source_has_section_id,
+            "rag_source_has_section_title": rag_source_has_section_title,
+            "rag_source_has_section_type": rag_source_has_section_type,
+            "rag_source_has_chunk_id": rag_source_has_chunk_id,
+            "rag_source_has_vector_id": rag_source_has_vector_id,
+            "rag_source_has_score": rag_source_has_score,
             "translation_status": translation["status"],
             "translation_output_path": translation["output_path"],
             "reaction_sets": counts["reaction_sets"],
             "reactions": counts["reactions"],
             "reaction_audits": counts["reaction_audits"],
+            "document_reaction_set_list_total": reaction_sets["total"],
+            "document_reaction_set_reaction_count": reaction_set_summary_before_verify["reaction_count"],
+            "document_reaction_set_verified_count_before_verify": reaction_set_summary_before_verify["verified_count"],
+            "document_reaction_set_unverified_count_before_verify": reaction_set_summary_before_verify["unverified_count"],
+            "document_reaction_set_export_ready_before_verify": reaction_set_summary_before_verify["export_ready"],
+            "document_reaction_set_export_ready_after_verify": reaction_set_summary_after_verify["export_ready"],
+            "reaction_set_detail_reaction_count_before_verify": reaction_detail["reaction_count"],
+            "reaction_set_detail_verified_count_before_verify": reaction_detail["verified_count"],
+            "reaction_set_detail_unverified_count_before_verify": reaction_detail["unverified_count"],
+            "reaction_set_detail_export_ready_before_verify": reaction_detail["export_ready"],
+            "extracted_reaction_type": extracted_reaction_type,
+            "extracted_rate_type": extracted_rate_type,
+            "reaction_set_detail_export_ready_after_verify": reaction_detail_after_verify["export_ready"],
+            "reaction_set_detail_audit_entries_after_verify": reaction_detail_audit_entries_after_verify,
             "blocked_export_status": blocked_export.status_code,
+            "unsupported_export_status": unsupported_export.status_code,
             "verified_export_format": verified_export["format"],
             "verified_export_formats": [verified_export["format"], txt_export["format"], bolsig_export["format"]],
             "verified_export_path": verified_export["output_path"],
             "verified_export_response_reactions": verified_export["reaction_count"],
             "verified_export_response_audit_entries": verified_export["audit_entry_count"],
             "verified_export_reactions": len(exported_reactions),
+            "verified_export_reaction_type": verified_export_reaction_type,
+            "verified_export_rate_type": verified_export_rate_type,
             "verified_export_audit_entries": len(export_audit_entries),
             "verified_export_source_sections": len(export_source_sections),
             "verified_export_text_files": len([txt_export["output_path"], bolsig_export["output_path"]]),

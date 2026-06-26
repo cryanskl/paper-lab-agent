@@ -106,12 +106,353 @@ def request_json(
     return payload
 
 
+def compact_parts(parts: list[Any]) -> list[str]:
+    return [str(part) for part in parts if part is not None and str(part) != ""]
+
+
+def crawl_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    options = [{"label": "全部 active 期刊", "journal_id": None}]
+    for journal in journals:
+        issn_label = " / ".join(compact_parts([journal.get("issn_print"), journal.get("issn_electronic")]))
+        suffix = f" · {issn_label}" if issn_label else ""
+        options.append({"label": f"#{journal['id']} · {journal['name']}{suffix}", "journal_id": journal["id"]})
+    return options
+
+
+def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for job in jobs:
+        diagnostics = job.get("diagnostics") or {}
+        journal = job.get("journal") or {}
+        status = diagnostics.get("status") or job.get("status")
+        error = diagnostics.get("error") or job.get("error")
+        found = int(diagnostics.get("papers_found") or 0)
+        accepted = int(diagnostics.get("papers_accepted") or 0)
+        new = int(diagnostics.get("papers_new") or 0)
+        rows.append(
+            {
+                "id": job.get("id") or job.get("job_id"),
+                "journal": journal.get("name") or diagnostics.get("journal_name") or job.get("journal_id"),
+                "status": status,
+                "workflow_state": f"failed: {error}" if status == "failed" and error else str(status or "unknown"),
+                "period": diagnostics.get("period") or job.get("period"),
+                "date_from": diagnostics.get("date_from") or job.get("date_from"),
+                "date_to": diagnostics.get("date_to") or job.get("date_to"),
+                "found": found,
+                "filtered": int(diagnostics.get("papers_filtered") or 0),
+                "accepted": accepted,
+                "existing": int(diagnostics.get("papers_existing") or 0),
+                "new": new,
+                "progress_summary": f"{found} found / {accepted} accepted / {new} new",
+                "outcome": diagnostics.get("outcome"),
+                "keyword_mode": diagnostics.get("keyword_mode"),
+                "keyword_terms": ", ".join(diagnostics.get("keyword_terms") or []),
+                "error": error,
+            }
+        )
+    return rows
+
+
+def crawl_job_diagnostic_rows(job: dict[str, Any]) -> list[dict[str, Any]]:
+    diagnostics = job.get("diagnostics") or {}
+    journal = job.get("journal") or {}
+    fields = [
+        ("job_id", job.get("id") or job.get("job_id")),
+        ("status", diagnostics.get("status") or job.get("status")),
+        ("journal", journal.get("name") or diagnostics.get("journal_name") or job.get("journal_id")),
+        ("period", diagnostics.get("period") or job.get("period")),
+        ("date_from", diagnostics.get("date_from") or job.get("date_from")),
+        ("date_to", diagnostics.get("date_to") or job.get("date_to")),
+        ("papers_found", int(diagnostics.get("papers_found") or 0)),
+        ("papers_filtered", int(diagnostics.get("papers_filtered") or 0)),
+        ("papers_accepted", int(diagnostics.get("papers_accepted") or 0)),
+        ("papers_existing", int(diagnostics.get("papers_existing") or 0)),
+        ("papers_new", int(diagnostics.get("papers_new") or 0)),
+        ("outcome", diagnostics.get("outcome")),
+        ("keyword_mode", diagnostics.get("keyword_mode")),
+        ("keyword_terms", ", ".join(diagnostics.get("keyword_terms") or [])),
+        ("error", diagnostics.get("error") or job.get("error")),
+    ]
+    return [{"field": field, "value": value} for field, value in fields]
+
+
+def document_option_label(document: dict[str, Any]) -> str:
+    file_path = str(document.get("file_path") or "")
+    file_name = document.get("original_name") or file_path.rsplit("/", 1)[-1] or "document"
+    parse_status = document.get("parse_status") or "unknown"
+    index_status = document.get("index_status") or "unknown"
+    chemistry_status = document.get("chemistry_status") or "unknown"
+    return (
+        f"#{document.get('id')} · {file_name} · "
+        f"parse={parse_status} · index={index_status} · chemistry={chemistry_status}"
+    )
+
+
+def document_status_rows(document: dict[str, Any], chunks: Optional[dict[str, Any]] = None) -> list[dict[str, Any]]:
+    chunks = chunks or {}
+    index_status = chunks.get("index_status") or document.get("index_status") or "unknown"
+    index_error = chunks.get("index_error") or document.get("index_error")
+    rows = [
+        ("document_id", document.get("id")),
+        ("parse_status", document.get("parse_status") or "unknown"),
+        ("parse_error", document.get("parse_error")),
+        ("index_status", index_status),
+        ("index_error", index_error),
+        ("chunks_total", int(chunks.get("total") or 0)),
+        ("chemistry_status", document.get("chemistry_status") or "unknown"),
+        ("chemistry_error", document.get("chemistry_error")),
+    ]
+    return [{"field": field, "value": value} for field, value in rows]
+
+
+def document_section_rows(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for section in sections:
+        section_id = section.get("id")
+        section_seq = section.get("seq")
+        section_ref = section_seq if section_seq is not None else section_id
+        content = section.get("content") or ""
+        section_location = " · ".join(
+            compact_parts(
+                [
+                    f"section {section_ref}" if section_ref is not None else None,
+                    section.get("section_type"),
+                    section.get("title"),
+                ]
+            )
+        )
+        rows.append(
+            {
+                "id": section_id,
+                "document_id": section.get("document_id"),
+                "seq": section_seq,
+                "section_type": section.get("section_type"),
+                "title": section.get("title"),
+                "section_location": section_location or "-",
+                "content_preview": summarize_text(content, limit=160),
+                "content_chars": len(content),
+            }
+        )
+    return rows
+
+
+def translation_status_rows(
+    translation: dict[str, Any], *, preview_text: Optional[str] = None
+) -> list[dict[str, Any]]:
+    preview = preview_text or ""
+    rows = [
+        ("document_id", translation.get("document_id")),
+        ("status", translation.get("status") or "unknown"),
+        ("target_lang", translation.get("target_lang")),
+        ("output_path", translation.get("output_path")),
+        ("error", translation.get("error")),
+        ("preview_chars", len(preview)),
+        ("preview", summarize_text(preview, limit=160)),
+    ]
+    return [{"field": field, "value": value} for field, value in rows]
+
+
+def document_chunk_rows(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for chunk in chunks:
+        section_id = chunk.get("section_id")
+        section_seq = chunk.get("section_seq")
+        section_ref = section_seq if section_seq is not None else section_id
+        text = chunk.get("text") or ""
+        chunk_location = " · ".join(
+            compact_parts(
+                [
+                    f"section {section_ref}" if section_ref is not None else None,
+                    chunk.get("section_title"),
+                    f"vector {chunk.get('vector_id')}" if chunk.get("vector_id") else None,
+                ]
+            )
+        )
+        rows.append(
+            {
+                "id": chunk.get("id"),
+                "document_id": chunk.get("document_id"),
+                "section_id": section_id,
+                "section_seq": section_seq,
+                "section_title": chunk.get("section_title"),
+                "vector_id": chunk.get("vector_id"),
+                "chunk_location": chunk_location or "-",
+                "text_preview": summarize_text(text, limit=160),
+                "text_chars": len(text),
+            }
+        )
+    return rows
+
+
+def rag_source_rows(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for source in sources:
+        paper_id = source.get("paper_id")
+        document_id = source.get("document_id")
+        section_seq = source.get("section_seq")
+        section_id = source.get("section_id")
+        section_ref = section_seq if section_seq is not None else section_id
+        chunk_id = source.get("chunk_id")
+        citation = " · ".join(
+            compact_parts(
+                [
+                    f"paper {paper_id}" if paper_id is not None else None,
+                    f"doc {document_id}" if document_id is not None else None,
+                    f"section {section_ref}" if section_ref is not None else None,
+                    f"chunk {chunk_id}" if chunk_id is not None else None,
+                ]
+            )
+        )
+        source_location = " · ".join(
+            compact_parts(
+                [
+                    f"paper {paper_id}" if paper_id is not None else None,
+                    f"doc {document_id}" if document_id is not None else None,
+                    f"section {section_ref}" if section_ref is not None else None,
+                    source.get("section_type"),
+                    source.get("section_title"),
+                ]
+            )
+        )
+        rows.append(
+            {
+                "citation": f"[{citation}]" if citation else "[-]",
+                "source_location": source_location or "-",
+                "document_id": document_id,
+                "paper_id": paper_id,
+                "paper_title": source.get("paper_title"),
+                "section_id": section_id,
+                "section_seq": section_seq,
+                "section_title": source.get("section_title"),
+                "section_type": source.get("section_type"),
+                "source_excerpt": source.get("source_excerpt"),
+                "chunk_id": chunk_id,
+                "vector_id": source.get("vector_id"),
+                "score": source.get("score"),
+            }
+        )
+    return rows
+
+
+def reaction_set_rows(reaction_sets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for item in reaction_sets:
+        reaction_count = int(item.get("reaction_count") or 0)
+        verified_count = int(item.get("verified_count") or 0)
+        unverified_count = int(item.get("unverified_count") or 0)
+        export_ready = bool(item.get("export_ready"))
+        if reaction_count == 0:
+            export_state = "empty"
+        elif export_ready:
+            export_state = "ready"
+        else:
+            export_state = f"blocked: {unverified_count} unverified"
+        rows.append(
+            {
+                "id": item.get("id"),
+                "name": item.get("name"),
+                "status": item.get("status"),
+                "reaction_count": reaction_count,
+                "verified_count": verified_count,
+                "unverified_count": unverified_count,
+                "export_ready": export_ready,
+                "export_state": export_state,
+                "review_progress": f"{verified_count}/{reaction_count} verified",
+                "verified_by": item.get("verified_by"),
+                "verified_at": item.get("verified_at"),
+            }
+        )
+    return rows
+
+
+def normalize_optional_text(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def reaction_review_payload(
+    *,
+    verified: bool,
+    reaction_type: Optional[str],
+    rate_type: Optional[str],
+    rate_value: Optional[str],
+    include_threshold_ev: bool,
+    threshold_ev: Optional[float],
+    cross_section_url: Optional[str],
+    verified_by: Optional[str],
+) -> dict[str, Any]:
+    return {
+        "verified": bool(verified),
+        "reaction_type": normalize_optional_text(reaction_type),
+        "rate_type": normalize_optional_text(rate_type),
+        "rate_value": normalize_optional_text(rate_value),
+        "threshold_ev": threshold_ev if include_threshold_ev else None,
+        "cross_section_url": normalize_optional_text(cross_section_url),
+        "verified_by": normalize_optional_text(verified_by),
+    }
+
+
+def reaction_export_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    export_format = payload.get("format") or "unknown"
+    reaction_count = int(payload.get("reaction_count") or 0)
+    audit_entry_count = int(payload.get("audit_entry_count") or 0)
+    rows = [
+        ("reaction_set_id", payload.get("reaction_set_id")),
+        ("format", export_format),
+        ("output_path", payload.get("output_path")),
+        ("mime_type", payload.get("mime_type")),
+        ("reaction_count", reaction_count),
+        ("audit_entry_count", audit_entry_count),
+        ("download_label", f"{export_format} · {reaction_count} reactions · {audit_entry_count} audit entries"),
+    ]
+    return [{"field": field, "value": value} for field, value in rows]
+
+
+def reaction_audit_rows(audit_log: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for audit in audit_log:
+        field_changes = audit.get("field_changes") or {}
+        if not field_changes:
+            rows.append(
+                {
+                    "audit_id": audit.get("id"),
+                    "reaction_id": audit.get("reaction_id"),
+                    "field": "-",
+                    "before": None,
+                    "after": None,
+                    "verified_by": audit.get("verified_by"),
+                    "verified_at": audit.get("verified_at"),
+                }
+            )
+            continue
+        for field, change in field_changes.items():
+            rows.append(
+                {
+                    "audit_id": audit.get("id"),
+                    "reaction_id": audit.get("reaction_id"),
+                    "field": field,
+                    "before": change.get("before"),
+                    "after": change.get("after"),
+                    "verified_by": audit.get("verified_by"),
+                    "verified_at": audit.get("verified_at"),
+                }
+            )
+    return rows
+
+
 def reaction_review_rows(reactions: list[dict[str, Any]], *, only_unverified: bool = False) -> list[dict[str, Any]]:
     rows = []
     for reaction in reactions:
         verified = bool(reaction.get("verified"))
         if only_unverified and verified:
             continue
+        section_ref = (
+            reaction.get("source_section_seq")
+            if reaction.get("source_section_seq") is not None
+            else reaction.get("source_section_id")
+        )
         source_section = " | ".join(
             str(part)
             for part in [
@@ -121,10 +462,21 @@ def reaction_review_rows(reactions: list[dict[str, Any]], *, only_unverified: bo
             ]
             if part is not None and part != ""
         )
+        source_location = " · ".join(
+            compact_parts(
+                [
+                    f"section {section_ref}" if section_ref is not None else None,
+                    reaction.get("source_section_type"),
+                    reaction.get("source_section_title"),
+                ]
+            )
+        )
         rows.append(
             {
                 "id": reaction.get("id"),
                 "verified": verified,
+                "review_state": "verified" if verified else "unverified",
+                "export_blocker": None if verified else "unverified reaction",
                 "reaction": reaction.get("reaction"),
                 "confidence": reaction.get("confidence"),
                 "reaction_type": reaction.get("reaction_type"),
@@ -133,6 +485,7 @@ def reaction_review_rows(reactions: list[dict[str, Any]], *, only_unverified: bo
                 "threshold_ev": reaction.get("threshold_ev"),
                 "cross_section_url": reaction.get("cross_section_url"),
                 "source_section": source_section or "-",
+                "source_location": source_location or "-",
                 "source_section_id": reaction.get("source_section_id"),
                 "source_label": reaction.get("source_label"),
                 "source_excerpt": reaction.get("source_excerpt"),

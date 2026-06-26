@@ -1,5 +1,6 @@
 import json
 import re
+from collections import Counter
 from typing import Optional
 
 from app.config import get_settings
@@ -14,6 +15,16 @@ SPECIES_SEPARATOR_RE = re.compile(r"\s*\+\s*(?=[A-Za-z0-9(\u0370-\u03ff\u2070-\u
 URL_RE = re.compile(r"https?://[^\s),;]+")
 LXCAT_DB_RE = re.compile(r"LXCat\s+([A-Za-z0-9_.-]+)", re.IGNORECASE)
 GAS_MIXTURE_RE = re.compile(r"\b([A-Z][a-z]?\d?(?:/[A-Z][a-z]?\d?)+)\b")
+THRESHOLD_EV_RE = re.compile(
+    r"\bthreshold(?:\s+energy)?\s*(?:is|=|:)?\s*([0-9]+(?:\.[0-9]+)?)\s*eV\b",
+    re.IGNORECASE,
+)
+RATE_VALUE_RE = re.compile(
+    r"\b(?:rate\s+(?:coefficient|constant)\s*(?:is|=|:)?|k\s*(?:=|:))\s*"
+    r"([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?\d+)?"
+    r"(?:\s*(?:cm\^?3/s|m\^?3/s|s\^-?1|s-1|1/s))?)\b",
+    re.IGNORECASE,
+)
 
 
 def split_species(side: str) -> list[str]:
@@ -43,10 +54,74 @@ def normalize_reaction(reaction: str) -> tuple[str, list[str], list[str]]:
     return normalized, reactants, products
 
 
+def infer_reaction_type(reactants: list[str], products: list[str]) -> str:
+    reactant_electrons = sum(1 for species in reactants if species == "e")
+    product_electrons = sum(1 for species in products if species == "e")
+    consumes_positive_ion = any(species.endswith("+") for species in reactants)
+    produces_positive_ion = any(species.endswith("+") for species in products)
+    produces_negative_ion = any(species.endswith("-") or species.endswith("⁻") for species in products)
+    produces_excited_species = any(species.endswith("*") for species in products)
+    if reactant_electrons >= 1 and product_electrons > reactant_electrons and produces_positive_ion:
+        return "ionization"
+    if reactant_electrons >= 1 and produces_negative_ion:
+        return "attachment"
+    if reactant_electrons >= 1 and produces_excited_species:
+        return "excitation"
+    if reactant_electrons >= 1 and consumes_positive_ion and product_electrons == 0 and not produces_positive_ion:
+        return "recombination"
+    if reactant_electrons >= 1 and Counter(reactants) == Counter(products):
+        return "elastic"
+    return "unknown"
+
+
 def source_excerpt(text: str, start: int, end: int, window: int = 80) -> str:
     left = max(0, start - window)
     right = min(len(text), end + window)
     return " ".join(text[left:right].split())
+
+
+def detect_threshold_ev(text: str, start: int, end: int, window: int = 120) -> Optional[float]:
+    left = max(0, start - window)
+    right = min(len(text), end + window)
+    candidates = []
+    for match in THRESHOLD_EV_RE.finditer(text[left:right]):
+        absolute_start = left + match.start()
+        absolute_end = left + match.end()
+        if absolute_start >= end:
+            direction_priority = 0
+            distance = absolute_start - end
+        elif absolute_end <= start:
+            direction_priority = 1
+            distance = start - absolute_end
+        else:
+            direction_priority = 2
+            distance = 0
+        candidates.append((direction_priority, distance, absolute_start, float(match.group(1))))
+    if candidates:
+        return min(candidates)[3]
+    return None
+
+
+def detect_rate_value(text: str, start: int, end: int, window: int = 120) -> Optional[str]:
+    left = max(0, start - window)
+    right = min(len(text), end + window)
+    candidates = []
+    for match in RATE_VALUE_RE.finditer(text[left:right]):
+        absolute_start = left + match.start()
+        absolute_end = left + match.end()
+        if absolute_start >= end:
+            direction_priority = 0
+            distance = absolute_start - end
+        elif absolute_end <= start:
+            direction_priority = 1
+            distance = start - absolute_end
+        else:
+            direction_priority = 2
+            distance = 0
+        candidates.append((direction_priority, distance, absolute_start, " ".join(match.group(1).split())))
+    if candidates:
+        return min(candidates)[3]
+    return None
 
 
 def source_label(section: dict) -> str:
@@ -76,11 +151,32 @@ def detect_gas_mixture(text: str) -> Optional[str]:
     return match.group(1)
 
 
-def detect_cross_section_url(text: str) -> Optional[str]:
+def mask_urls_for_reaction_matching(text: str) -> str:
+    def replace(match: re.Match) -> str:
+        raw_url = match.group(0)
+        url = raw_url.rstrip(".,")
+        suffix = raw_url[len(url) :]
+        return (" " * len(url)) + suffix
+
+    return URL_RE.sub(replace, text)
+
+
+def detect_cross_section_url(text: str, start: Optional[int] = None, end: Optional[int] = None) -> Optional[str]:
+    candidates = []
     for match in URL_RE.finditer(text):
         url = match.group(0).rstrip(".,")
         if "lxcat" in url.lower():
-            return url
+            if start is None or end is None:
+                return url
+            if match.end() <= start:
+                distance = start - match.end()
+            elif match.start() >= end:
+                distance = match.start() - end
+            else:
+                distance = 0
+            candidates.append((distance, match.start(), url))
+    if candidates:
+        return min(candidates)[2]
     return None
 
 
@@ -143,10 +239,22 @@ def extract_reactions(document_id: int) -> dict:
                 text = section["content"] or ""
                 detected_gas_mixture = detected_gas_mixture or detect_gas_mixture(text)
                 detected_lxcat_db = detected_lxcat_db or detect_lxcat_db(text)
-                cross_section_url = detect_cross_section_url(text)
-                for match in REACTION_RE.finditer(text):
+                section_cross_section_url = detect_cross_section_url(text)
+                reaction_search_text = mask_urls_for_reaction_matching(text)
+                for match in REACTION_RE.finditer(reaction_search_text):
                     reaction = " ".join(match.group(1).split())
                     normalized_reaction, reactants, products = normalize_reaction(reaction)
+                    cross_section_url = (
+                        detect_cross_section_url(text, match.start(), match.end()) or section_cross_section_url
+                    )
+                    threshold_ev = detect_threshold_ev(text, match.start(), match.end())
+                    rate_value = detect_rate_value(text, match.start(), match.end())
+                    if rate_value:
+                        rate_type = "constant"
+                    elif cross_section_url:
+                        rate_type = "cross_section"
+                    else:
+                        rate_type = "unknown"
                     conn.execute(
                         """
                         INSERT INTO reactions (
@@ -158,12 +266,12 @@ def extract_reactions(document_id: int) -> dict:
                         (
                             reaction_set_id,
                             normalized_reaction,
-                            "unknown",
+                            infer_reaction_type(reactants, products),
                             json.dumps(reactants, ensure_ascii=False),
                             json.dumps(products, ensure_ascii=False),
-                            "unknown",
-                            None,
-                            None,
+                            rate_type,
+                            rate_value,
+                            threshold_ev,
                             section["title"],
                             cross_section_url,
                             section["id"],
@@ -275,6 +383,18 @@ def verify_reaction(
         }
         reaction_set_id = row["reaction_set_id"]
         if not changed_updates:
+            conn.execute(
+                """
+                INSERT INTO reaction_audits (reaction_id, action, changes, verified_by)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    reaction_id,
+                    "verify" if verified else "unverify",
+                    json.dumps({"_field_changes": {}}, ensure_ascii=False),
+                    verified_by,
+                ),
+            )
             rs = conn.execute("SELECT * FROM reaction_sets WHERE id=?", (reaction_set_id,)).fetchone()
             return reaction_set_detail(dict_from_row(rs), conn)
         assignments = ", ".join(f"{key}=?" for key in changed_updates)

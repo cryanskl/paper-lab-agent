@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,6 +37,30 @@ class Settings(BaseSettings):
     unpaywall_api_timeout_seconds: float = Field(default=20.0, alias="UNPAYWALL_API_TIMEOUT_SECONDS")
 
     api_prefix: str = "/api/v1"
+
+    @model_validator(mode="after")
+    def derive_storage_paths_from_data_dir(self) -> "Settings":
+        default_paths = {
+            "database_path": Path("data/plasma.db"),
+            "pdf_dir": Path("data/pdfs"),
+            "tei_dir": Path("data/tei"),
+            "translation_dir": Path("data/translations"),
+            "export_dir": Path("data/exports"),
+            "vector_db_path": Path("data/vector-index.json"),
+        }
+        derived_defaults = {
+            "database_path": self.data_dir / "plasma.db",
+            "pdf_dir": self.data_dir / "pdfs",
+            "tei_dir": self.data_dir / "tei",
+            "translation_dir": self.data_dir / "translations",
+            "export_dir": self.data_dir / "exports",
+            "vector_db_path": self.data_dir / "vector-index.json",
+        }
+        for field_name, derived_path in derived_defaults.items():
+            current_path = getattr(self, field_name)
+            if field_name not in self.model_fields_set or current_path == default_paths[field_name]:
+                setattr(self, field_name, derived_path)
+        return self
 
     def ensure_dirs(self) -> None:
         for path in [

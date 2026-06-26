@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import ast
 import argparse
+import re
 from pathlib import Path
 import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SETTINGS_CONFIG_PATH = REPO_ROOT / "app" / "config.py"
+DEV_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev.sh"
 
 REQUIRED_ENV_KEYS = [
     "OPENALEX_MAILTO",
@@ -169,7 +171,16 @@ def url_host(host: str) -> str:
     return f"[{host}]" if ":" in host and not host.startswith("[") else host
 
 
-def script_runtime_default_mismatches(path: Path) -> list[str]:
+def dev_ready_timeout_default(path: Path = DEV_SCRIPT_PATH) -> str | None:
+    if not path.exists():
+        return None
+    match = re.search(r'DEV_READY_TIMEOUT="\$\{DEV_READY_TIMEOUT:-([^}]+)\}"', path.read_text(encoding="utf-8"))
+    if not match:
+        return None
+    return match.group(1)
+
+
+def script_runtime_default_mismatches(path: Path, dev_script_path: Path = DEV_SCRIPT_PATH) -> list[str]:
     values = parse_env_values(path)
     mismatches: list[str] = []
     api_host = values.get("API_HOST")
@@ -187,6 +198,10 @@ def script_runtime_default_mismatches(path: Path) -> list[str]:
         expected_frontend_url = f"http://{url_host(connect_host(streamlit_host))}:{streamlit_port}"
         if frontend_url != expected_frontend_url:
             mismatches.append(f"FRONTEND_URL expected {expected_frontend_url}, got {frontend_url}")
+    expected_timeout = dev_ready_timeout_default(dev_script_path)
+    actual_timeout = values.get("DEV_READY_TIMEOUT")
+    if expected_timeout and actual_timeout and actual_timeout != expected_timeout:
+        mismatches.append(f"DEV_READY_TIMEOUT expected {expected_timeout}, got {actual_timeout}")
     return mismatches
 
 

@@ -7,7 +7,7 @@ from pydantic import BaseModel, field_validator
 from app.clients.unpaywall import UnpaywallClient, oa_status, web_url
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
-from app.errors import AppError, page
+from app.errors import AppError, PageResponse, page
 from app.services.classification import get_classifier
 from app.services.crawl import normalize_doi, unpaywall_client_options
 from app.utils import json_dumps, json_loads
@@ -93,7 +93,7 @@ def serialize_paper(row: dict, category_details: list[dict]) -> dict:
     }
 
 
-@router.get("")
+@router.get("", response_model=PageResponse)
 def list_papers(
     q: Optional[str] = None,
     category: Optional[str] = None,

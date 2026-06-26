@@ -4,6 +4,8 @@ from urllib.parse import quote, urlparse
 
 import httpx
 
+from app.clients.retry_after import retry_after_delay
+
 
 KNOWN_OA_STATUSES = {"gold", "green", "hybrid", "bronze", "closed", "unknown"}
 
@@ -78,12 +80,9 @@ class UnpaywallClient:
 
     def retry_delay(self, attempt: int, response: Optional[httpx.Response] = None) -> float:
         if response is not None and response.status_code == 429:
-            retry_after = response.headers.get("Retry-After")
-            if retry_after:
-                try:
-                    return max(float(retry_after), 0.0)
-                except ValueError:
-                    pass
+            parsed_delay = retry_after_delay(response)
+            if parsed_delay is not None:
+                return parsed_delay
         return self.retry_backoff_seconds * (attempt + 1)
 
 
