@@ -15,6 +15,7 @@ from app.frontend_api import (
     document_status_rows,
     rag_source_rows,
     reaction_audit_rows,
+    reaction_export_download,
     reaction_export_rows,
     reaction_review_payload,
     reaction_review_rows,
@@ -945,17 +946,16 @@ with chemistry_tab:
             else:
                 st.success(payload["output_path"])
                 st.dataframe(reaction_export_rows(payload), use_container_width=True)
-                export_path = Path(payload["output_path"])
-                if export_path.exists():
-                    export_text = export_path.read_text(encoding="utf-8")
+                export_download = reaction_export_download(payload)
+                if export_download:
                     st.download_button(
-                        "下载导出文件",
-                        data=export_text,
-                        file_name=export_path.name,
-                        mime=payload.get("mime_type") or "text/plain",
+                        export_download["label"],
+                        data=export_download["data"],
+                        file_name=export_download["file_name"],
+                        mime=export_download["mime"],
                     )
                 else:
-                    st.warning(f"导出文件不存在: {export_path}")
+                    st.warning(f"导出文件不存在: {payload.get('output_path')}")
                 st.json(payload)
         display_reactions = unverified_reactions if show_only_unverified else reactions
         for reaction in display_reactions:

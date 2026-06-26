@@ -404,6 +404,59 @@ def test_reaction_export_rows_summarize_download_and_audit_metadata():
     ]
 
 
+def test_reaction_export_download_reads_text_file_for_streamlit_button(tmp_path):
+    from app import frontend_api
+
+    export_path = tmp_path / "reaction-set-3.txt"
+    export_path.write_text("e + Ar -> e + e + Ar+\n", encoding="utf-8")
+
+    download = frontend_api.reaction_export_download(
+        {
+            "format": "txt",
+            "output_path": str(export_path),
+            "mime_type": "text/plain",
+        }
+    )
+
+    assert download == {
+        "label": "下载导出文件",
+        "data": "e + Ar -> e + e + Ar+\n",
+        "file_name": "reaction-set-3.txt",
+        "mime": "text/plain",
+        "path": str(export_path),
+    }
+
+
+def test_reaction_export_download_reads_binary_file_for_non_text_mime(tmp_path):
+    from app import frontend_api
+
+    export_path = tmp_path / "reaction-set-3.bin"
+    export_path.write_bytes(b"\x00\x01")
+
+    download = frontend_api.reaction_export_download(
+        {
+            "output_path": str(export_path),
+            "mime_type": "application/octet-stream",
+        }
+    )
+
+    assert download == {
+        "label": "下载导出文件",
+        "data": b"\x00\x01",
+        "file_name": "reaction-set-3.bin",
+        "mime": "application/octet-stream",
+        "path": str(export_path),
+    }
+
+
+def test_reaction_export_download_returns_none_for_missing_output_file(tmp_path):
+    from app import frontend_api
+
+    missing_path = tmp_path / "missing.txt"
+
+    assert frontend_api.reaction_export_download({"output_path": str(missing_path)}) is None
+
+
 def test_reaction_audit_rows_flatten_field_changes_for_review():
     from app import frontend_api
 

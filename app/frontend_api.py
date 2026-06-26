@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any, Optional
 
 import requests
@@ -419,6 +420,24 @@ def reaction_export_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
         ("download_label", f"{export_format} · {reaction_count} reactions · {audit_entry_count} audit entries"),
     ]
     return [{"field": field, "value": value} for field, value in rows]
+
+
+def reaction_export_download(payload: dict[str, Any]) -> Optional[dict[str, Any]]:
+    output_path = payload.get("output_path")
+    if not isinstance(output_path, str) or not output_path:
+        return None
+    path = Path(output_path)
+    if not path.exists() or not path.is_file():
+        return None
+    mime = payload.get("mime_type") or "application/octet-stream"
+    data = path.read_text(encoding="utf-8") if mime.startswith("text/") or mime == "application/json" else path.read_bytes()
+    return {
+        "label": "下载导出文件",
+        "data": data,
+        "file_name": path.name,
+        "mime": mime,
+        "path": str(path),
+    }
 
 
 def reaction_audit_rows(audit_log: list[dict[str, Any]]) -> list[dict[str, Any]]:

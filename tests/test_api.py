@@ -11095,12 +11095,12 @@ def test_streamlit_chemistry_export_surfaces_file_and_metadata_status():
     chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
 
     for required in [
-        'export_path = Path(payload["output_path"])',
-        "export_path.exists()",
-        "下载导出文件",
+        "reaction_export_download",
+        "reaction_export_download(payload)",
+        "export_download",
+        'export_download["label"]',
         "导出文件不存在",
         "reaction_export_rows(payload)",
-        'payload.get("mime_type")',
     ]:
         assert required in chemistry_section
 
@@ -11209,12 +11209,12 @@ def test_streamlit_chemistry_export_offers_download():
     chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
 
     for required in [
-        "export_path = Path(payload[\"output_path\"])",
-        "export_text",
+        "export_download = reaction_export_download(payload)",
         "st.download_button",
-        "下载导出文件",
-        'mime=payload.get("mime_type")',
-        "file_name=export_path.name",
+        'export_download["label"]',
+        'data=export_download["data"]',
+        'file_name=export_download["file_name"]',
+        'mime=export_download["mime"]',
     ]:
         assert required in chemistry_section
 
