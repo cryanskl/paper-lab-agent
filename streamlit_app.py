@@ -78,8 +78,9 @@ st.title("paper-lab-agent")
 try:
     health = api_get("/health")
     st.caption(f"{health['service']} · {health['status']}")
-except Exception as exc:
-    st.error(f"API unavailable: {exc}")
+except FrontendApiError as exc:
+    st.error(format_error_payload(exc.payload, exc.status_code))
+    st.json(exc.payload)
     st.stop()
 
 review_message = st.session_state.pop("reaction_review_message", None)

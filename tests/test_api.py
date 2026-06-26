@@ -11344,6 +11344,17 @@ def test_streamlit_chemistry_api_errors_show_payload_details():
     assert "st.warning(exc)" not in chemistry_section
 
 
+def test_streamlit_startup_health_error_shows_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    startup_section = streamlit[streamlit.index("st.set_page_config") : streamlit.index("review_message =")]
+
+    assert "except FrontendApiError as exc:" in startup_section
+    assert "st.error(format_error_payload(exc.payload, exc.status_code))" in startup_section
+    assert "st.json(exc.payload)" in startup_section
+    assert 'st.error(f"API unavailable: {exc}")' not in startup_section
+
+
 def test_streamlit_high_frequency_actions_format_api_error_payloads():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
