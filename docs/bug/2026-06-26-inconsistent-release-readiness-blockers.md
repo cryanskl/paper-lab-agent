@@ -19,3 +19,5 @@
 RED：`.venv/bin/python -m pytest tests/test_api.py::test_health_check_summary_rejects_inconsistent_api_release_readiness -q` 在修复前失败，`release_ready` 错误为 `true`。
 
 GREEN：`.venv/bin/python -m pytest tests/test_api.py::test_health_check_summary_rejects_inconsistent_api_release_readiness -q`
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。

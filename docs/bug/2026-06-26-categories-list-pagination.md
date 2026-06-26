@@ -15,3 +15,5 @@
 ## 验证
 
 - `.venv/bin/python -m pytest tests/test_api.py -k categories -q`
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。

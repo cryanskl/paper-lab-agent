@@ -19,3 +19,5 @@ Streamlit 侧边栏展示发布就绪状态时，只检查 `release_readiness.re
 RED：`.venv/bin/python -m pytest tests/test_api.py::test_streamlit_sidebar_surfaces_release_readiness -q` 在修复前失败，缺少 blocker 优先判断。
 
 GREEN：`.venv/bin/python -m pytest tests/test_api.py::test_streamlit_sidebar_surfaces_release_readiness -q`
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。

@@ -15,3 +15,5 @@
 ## 验证
 
 新增 `test_extract_chemistry_uses_nearest_lxcat_url_per_reaction`，覆盖同一文档章节内两条反应分别绑定两个不同 LXCat URL 的场景。完整验证以 `bash scripts/release_check.sh` 为准。
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。

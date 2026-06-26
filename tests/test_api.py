@@ -10974,9 +10974,11 @@ def test_bug_docs_validator_checks_naming_and_required_sections(tmp_path):
 
     assert validator.bug_doc_issues(tmp_path) == [
         "docs/bug/2026-06-25-empty-bug.md: empty sections: 现象, 原因, 修复, 验证",
+        "docs/bug/2026-06-25-empty-bug.md: missing release gate evidence",
         "docs/bug/bad-name.md: filename must match YYYY-MM-DD-short-slug.md",
         "docs/bug/bad-name.md: missing sections: 原因, 修复, 验证",
         "docs/bug/bad-name.md: empty sections: 现象",
+        "docs/bug/bad-name.md: missing release gate evidence",
     ]
 
 

@@ -15,3 +15,5 @@ GROBID TEI 的正文、列表、表格单元格和图注可能使用 `ref target
 ## 验证
 
 新增 `test_sections_from_tei_preserves_inline_reference_targets` 覆盖正文段落、列表项、表格单元格和图注中的内联 target。完整验证以 `bash scripts/release_check.sh` 为准。
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。

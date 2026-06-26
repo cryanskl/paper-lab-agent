@@ -19,3 +19,5 @@ OpenAI-compatible 翻译或分类 adapter 收到异常 chat completion 响应时
 ```bash
 python -m pytest tests/test_api.py::test_openai_translation_adapter_uses_compatible_chat_completions_payload tests/test_api.py::test_openai_translation_adapter_reports_invalid_chat_completion_shape tests/test_api.py::test_openai_classifier_keeps_only_registered_taxonomy_slugs tests/test_api.py::test_openai_classifier_reports_invalid_chat_completion_shape -q
 ```
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。

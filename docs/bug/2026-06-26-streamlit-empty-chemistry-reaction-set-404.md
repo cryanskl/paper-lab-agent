@@ -21,3 +21,5 @@
 RED：`.venv/bin/python -m pytest tests/test_api.py::test_streamlit_chemistry_tab_does_not_auto_load_missing_reaction_set -q` 在修复前失败。
 
 GREEN：`.venv/bin/python -m pytest tests/test_api.py::test_streamlit_chemistry_tab_does_not_auto_load_missing_reaction_set -q`
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。

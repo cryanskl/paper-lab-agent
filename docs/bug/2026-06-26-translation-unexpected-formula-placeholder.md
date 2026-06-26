@@ -19,3 +19,5 @@
 ```bash
 python -m pytest tests/test_api.py::test_translation_adapter_preserves_formula_masks tests/test_api.py::test_translation_adapter_reports_missing_formula_placeholder tests/test_api.py::test_translation_adapter_reports_unexpected_formula_placeholder tests/test_api.py::test_translate_document_failure_clears_stale_output_path tests/test_api.py::test_translate_document_preserves_table_and_reference_sections -q
 ```
+
+- 完整 gate：`bash scripts/release_check.sh` 通过，`708 passed`。
