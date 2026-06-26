@@ -197,7 +197,7 @@ class CrossrefClient:
         return parsed.isoformat(), year
 
     def first_publication_date(self, item: dict[str, Any]) -> tuple[Optional[str], Optional[int]]:
-        for key in ["published-print", "published-online", "issued"]:
+        for key in ["published-print", "published-online", "published", "issued"]:
             published = item.get(key)
             if not isinstance(published, dict):
                 continue

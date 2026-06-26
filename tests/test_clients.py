@@ -307,6 +307,22 @@ def test_crossref_falls_back_to_next_valid_publication_date():
     assert work["published_year"] == 2026
 
 
+def test_crossref_uses_published_date_before_issued_date():
+    client = CrossrefClient()
+
+    work = client.normalize(
+        {
+            "DOI": "10.5555/published-date",
+            "title": ["Published date"],
+            "published": {"date-parts": [[2026, 8, 9]]},
+            "issued": {"date-parts": [[2026, 1, 1]]},
+        }
+    )
+
+    assert work["published_date"] == "2026-08-09"
+    assert work["published_year"] == 2026
+
+
 def test_crossref_expands_partial_date_parts_to_iso_dates():
     client = CrossrefClient()
 
