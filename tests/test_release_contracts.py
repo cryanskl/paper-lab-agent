@@ -1742,6 +1742,9 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
         "release-manifest.json",
     ]
     assert validate_payload["source"]["git_commit"]
+    assert validate_payload["demo_ready"] is True
+    assert validate_payload["demo_export_formats"] == ["json", "txt", "bolsig"]
+    assert validate_payload["demo_export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
 
 
 def test_validate_release_package_script_rejects_tampered_zip_artifact(tmp_path):

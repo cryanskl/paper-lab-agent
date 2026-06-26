@@ -22,6 +22,9 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
     issues: list[str] = []
     artifact_names: list[str] = []
     source: dict[str, Any] = {}
+    demo_ready = None
+    demo_export_formats: list[str] = []
+    demo_export_audit_entry_counts: dict[str, Any] = {}
     package_sha256 = sha256_file(package_path) if package_path.exists() else None
 
     if not package_path.exists():
@@ -33,6 +36,9 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "artifact_count": 0,
             "artifact_names": artifact_names,
             "source": source,
+            "demo_ready": demo_ready,
+            "demo_export_formats": demo_export_formats,
+            "demo_export_audit_entry_counts": demo_export_audit_entry_counts,
             "issues": issues,
         }
 
@@ -60,6 +66,9 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
                         require_clean_source=require_clean_source,
                     )
                     source = validation.get("source") or {}
+                    demo_ready = validation.get("demo_ready")
+                    demo_export_formats = validation.get("demo_export_formats") or []
+                    demo_export_audit_entry_counts = validation.get("demo_export_audit_entry_counts") or {}
                     issues.extend(validation.get("issues") or [])
     except zipfile.BadZipFile as exc:
         issues.append(f"release package invalid zip: {exc}")
@@ -71,6 +80,9 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
         "artifact_count": len(artifact_names),
         "artifact_names": artifact_names,
         "source": source,
+        "demo_ready": demo_ready,
+        "demo_export_formats": demo_export_formats,
+        "demo_export_audit_entry_counts": demo_export_audit_entry_counts,
         "issues": issues,
     }
 
