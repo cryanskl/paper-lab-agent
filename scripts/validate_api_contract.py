@@ -41,6 +41,12 @@ REQUIRED_SEMANTIC_ERROR_RESPONSES = {
     ("POST", "/api/v1/reaction-sets/{}/export"): ("400", "409"),
 }
 JOURNAL_LIST_RESPONSE_ROUTE = ("GET", "/api/v1/journals")
+JOURNAL_CRUD_RESPONSE_ROUTES = (
+    ("POST", "/api/v1/journals", "201"),
+    ("GET", "/api/v1/journals/{}", "200"),
+    ("PUT", "/api/v1/journals/{}", "200"),
+    ("DELETE", "/api/v1/journals/{}", "200"),
+)
 JOURNAL_RESPONSE_FIELDS = (
     "id",
     "name",
@@ -537,6 +543,21 @@ def journal_list_response_contract_issues(openapi: dict | None = None) -> list[s
     return []
 
 
+def journal_crud_response_contract_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    specs = normalized_openapi_specs(source_openapi.get("paths", {}))
+    issues: list[str] = []
+    for method, path, status_code in JOURNAL_CRUD_RESPONSE_ROUTES:
+        spec = specs.get((method, path))
+        if spec is None:
+            continue
+        schema = response_schema(spec, source_openapi, status_code)
+        missing = [field for field in JOURNAL_RESPONSE_FIELDS if not schema_declares_fields(schema, (field,))]
+        if missing:
+            issues.append(f"{method} {path} missing response fields: {', '.join(missing)}")
+    return issues
+
+
 def category_list_response_contract_issues(openapi: dict | None = None) -> list[str]:
     source_openapi = openapi if openapi is not None else app_openapi()
     specs = normalized_openapi_specs(source_openapi.get("paths", {}))
@@ -1005,6 +1026,7 @@ def main() -> int:
     error_response_issues = error_response_contract_issues()
     semantic_error_status_issues = semantic_error_status_contract_issues()
     journal_list_response_issues = journal_list_response_contract_issues()
+    journal_crud_response_issues = journal_crud_response_contract_issues()
     category_list_response_issues = category_list_response_contract_issues()
     export_response_issues = export_response_contract_issues()
     rag_response_issues = rag_response_contract_issues()
@@ -1031,6 +1053,7 @@ def main() -> int:
         or error_response_issues
         or semantic_error_status_issues
         or journal_list_response_issues
+        or journal_crud_response_issues
         or category_list_response_issues
         or export_response_issues
         or rag_response_issues
@@ -1077,6 +1100,10 @@ def main() -> int:
         if journal_list_response_issues:
             print("api contract journal list response issues:", file=sys.stderr)
             for issue in journal_list_response_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if journal_crud_response_issues:
+            print("api contract journal crud response issues:", file=sys.stderr)
+            for issue in journal_crud_response_issues:
                 print(f"- {issue}", file=sys.stderr)
         if category_list_response_issues:
             print("api contract category list response issues:", file=sys.stderr)

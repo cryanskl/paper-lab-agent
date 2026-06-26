@@ -180,7 +180,7 @@ def list_journals(
     return page([serialize(dict_from_row(row)) for row in rows], total, page_num, page_size)
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=JournalResponse)
 def create_journal(body: JournalIn) -> dict:
     with get_conn() as conn:
         cursor = conn.execute(
@@ -209,7 +209,7 @@ def create_journal(body: JournalIn) -> dict:
     return serialize(dict_from_row(row))
 
 
-@router.get("/{journal_id}")
+@router.get("/{journal_id}", response_model=JournalResponse)
 def get_journal(journal_id: int) -> dict:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM journals WHERE id=?", (journal_id,)).fetchone()
@@ -218,7 +218,7 @@ def get_journal(journal_id: int) -> dict:
     return serialize(dict_from_row(row))
 
 
-@router.put("/{journal_id}")
+@router.put("/{journal_id}", response_model=JournalResponse)
 def update_journal(journal_id: int, body: JournalUpdate) -> dict:
     data = body.model_dump(exclude_unset=True)
     if "keywords" in data:
@@ -239,7 +239,7 @@ def update_journal(journal_id: int, body: JournalUpdate) -> dict:
     return get_journal(journal_id)
 
 
-@router.delete("/{journal_id}")
+@router.delete("/{journal_id}", response_model=JournalResponse)
 def delete_journal(journal_id: int) -> dict:
     with get_conn() as conn:
         result = conn.execute("UPDATE journals SET active=0, updated_at=datetime('now') WHERE id=?", (journal_id,))

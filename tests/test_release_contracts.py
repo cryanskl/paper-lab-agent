@@ -1115,6 +1115,14 @@ def test_api_contract_journal_list_response_exposes_typed_whitelist_items():
     assert issues == []
 
 
+def test_api_contract_journal_crud_responses_expose_typed_whitelist_items():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.journal_crud_response_contract_issues()
+
+    assert issues == []
+
+
 def test_api_contract_category_list_response_exposes_typed_tree_items():
     validate_api_contract = load_validate_api_contract()
 
@@ -1312,6 +1320,65 @@ def test_api_contract_validator_reports_missing_journal_list_item_field():
     issues = validate_api_contract.journal_list_response_contract_issues(openapi=openapi)
 
     assert issues == ["GET /api/v1/journals item fields missing: updated_at"]
+
+
+def test_api_contract_validator_reports_missing_journal_crud_response_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/journals/{journal_id}": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "id",
+                                            "name",
+                                            "publisher",
+                                            "platform",
+                                            "url",
+                                            "issn_print",
+                                            "issn_electronic",
+                                            "keywords",
+                                            "year_from",
+                                            "year_to",
+                                            "sci_zone",
+                                            "impact_factor",
+                                            "active",
+                                            "created_at",
+                                        ],
+                                        "properties": {
+                                            "id": {"type": "integer"},
+                                            "name": {"type": "string"},
+                                            "publisher": {"type": "string"},
+                                            "platform": {"type": "string"},
+                                            "url": {"type": "string"},
+                                            "issn_print": {"type": "string"},
+                                            "issn_electronic": {"type": "string"},
+                                            "keywords": {"type": "array"},
+                                            "year_from": {"type": "integer"},
+                                            "year_to": {"type": "integer"},
+                                            "sci_zone": {"type": "string"},
+                                            "impact_factor": {"type": "number"},
+                                            "active": {"type": "boolean"},
+                                            "created_at": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.journal_crud_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/journals/{} missing response fields: updated_at"]
 
 
 def test_api_contract_export_response_exposes_delivery_metadata():
