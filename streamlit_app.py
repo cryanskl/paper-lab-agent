@@ -623,7 +623,12 @@ with documents_tab:
         st.info("暂无文档，请先上传 PDF。")
     else:
         selected = st.selectbox("文档", docs, format_func=document_option_label)
-        document_detail = api_get(f"/documents/{selected['id']}")
+        try:
+            document_detail = api_get(f"/documents/{selected['id']}")
+        except FrontendApiError as exc:
+            st.error(format_error_payload(exc.payload, exc.status_code))
+            st.json(exc.payload)
+            st.stop()
         if document_detail.get("parse_error"):
             st.warning(f"parse_error: {document_detail['parse_error']}")
         for document_asset in document_asset_downloads(document_detail):

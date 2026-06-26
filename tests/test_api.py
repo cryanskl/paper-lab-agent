@@ -12414,6 +12414,25 @@ def test_streamlit_documents_list_errors_show_payload_details():
         assert required in documents_section
 
 
+def test_streamlit_document_detail_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    detail_section = documents_section[
+        documents_section.index('selected = st.selectbox("文档", docs, format_func=document_option_label)') :
+        documents_section.index('if document_detail.get("parse_error"):')
+    ]
+
+    for required in [
+        'document_detail = api_get(f"/documents/{selected[\'id\']}")',
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
+    ]:
+        assert required in detail_section
+
+
 def test_streamlit_documents_tab_exposes_pagination_controls():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
