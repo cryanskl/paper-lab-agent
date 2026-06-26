@@ -2379,6 +2379,29 @@ def test_validate_release_package_rejects_windows_traversal_artifact_name(tmp_pa
     assert "release package contains unsafe artifact names: ['..\\\\evil.txt']" in report["issues"]
 
 
+def test_validate_release_package_rejects_windows_rooted_artifact_name(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_release_package.py"
+    spec = importlib.util.spec_from_file_location("validate_release_package_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_release_package = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_release_package)
+    package_path = tmp_path / "paper-lab-agent-release.zip"
+    with zipfile.ZipFile(package_path, mode="w") as archive:
+        archive.writestr("demo-summary.json", "{}")
+        archive.writestr("openapi.json", "{}")
+        archive.writestr("release-manifest.json", "{}")
+        archive.writestr("\\evil.txt", "unsafe")
+
+    report = validate_release_package.validate_release_package(package_path)
+
+    assert report["ok"] is False
+    assert "release package contains unsafe artifact names: ['\\\\evil.txt']" in report["issues"]
+
+
 def test_release_check_derives_expected_runtime_version_from_app_version():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")

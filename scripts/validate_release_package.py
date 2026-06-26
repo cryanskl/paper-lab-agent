@@ -23,6 +23,8 @@ def is_unsafe_archive_name(name: str) -> bool:
     return (
         posix_path.is_absolute()
         or windows_path.is_absolute()
+        or bool(windows_path.drive)
+        or bool(windows_path.root)
         or ".." in posix_path.parts
         or ".." in windows_path.parts
     )
