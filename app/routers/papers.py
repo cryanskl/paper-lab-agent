@@ -224,7 +224,7 @@ def get_paper(paper_id: int) -> dict:
         }
 
 
-@router.post("/{paper_id}/resolve-oa")
+@router.post("/{paper_id}/resolve-oa", response_model=PaperDetailResponse)
 async def resolve_oa(paper_id: int) -> dict:
     settings = get_settings()
     with get_conn() as conn:
@@ -257,7 +257,7 @@ async def resolve_oa(paper_id: int) -> dict:
     return get_paper(paper_id)
 
 
-@router.post("/{paper_id}/classify")
+@router.post("/{paper_id}/classify", response_model=PaperDetailResponse)
 def classify_paper(paper_id: int) -> dict:
     settings = get_settings()
     with get_conn() as conn:
@@ -285,7 +285,7 @@ def classify_paper(paper_id: int) -> dict:
     return get_paper(paper_id)
 
 
-@router.put("/{paper_id}/categories")
+@router.put("/{paper_id}/categories", response_model=PaperDetailResponse)
 def override_categories(paper_id: int, body: CategoryOverrideIn) -> dict:
     category_ids = list(dict.fromkeys(body.category_ids))
     with get_conn() as conn:

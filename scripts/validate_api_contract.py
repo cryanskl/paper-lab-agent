@@ -245,6 +245,11 @@ TRANSLATION_RESPONSE_FIELDS = (
 )
 PAPER_DETAIL_RESPONSE_ROUTE = ("GET", "/api/v1/papers/{}")
 PAPER_LIST_RESPONSE_ROUTE = ("GET", "/api/v1/papers")
+PAPER_MUTATION_RESPONSE_ROUTES = (
+    ("POST", "/api/v1/papers/{}/resolve-oa"),
+    ("POST", "/api/v1/papers/{}/classify"),
+    ("PUT", "/api/v1/papers/{}/categories"),
+)
 PAPER_DETAIL_RESPONSE_FIELDS = (
     "id",
     "doi",
@@ -854,6 +859,32 @@ def paper_detail_response_contract_issues(openapi: dict | None = None) -> list[s
     return []
 
 
+def paper_mutation_response_contract_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    specs = normalized_openapi_specs(source_openapi.get("paths", {}))
+    issues: list[str] = []
+    for method, path in PAPER_MUTATION_RESPONSE_ROUTES:
+        spec = specs.get((method, path))
+        if spec is None:
+            continue
+        schema = response_schema(spec, source_openapi)
+        missing = [
+            field for field in PAPER_DETAIL_RESPONSE_FIELDS if not schema_declares_fields(schema, (field,))
+        ]
+        if missing:
+            issues.append(f"{method} {path} missing response fields: {', '.join(missing)}")
+            continue
+
+        categories_schema = schema_property(schema, "category_details", source_openapi)
+        category_schema = effective_schema(categories_schema.get("items", {}), source_openapi)
+        missing_category = [
+            field for field in PAPER_CATEGORY_DETAIL_FIELDS if not schema_declares_fields(category_schema, (field,))
+        ]
+        if missing_category:
+            issues.append(f"{method} {path} category detail fields missing: {', '.join(missing_category)}")
+    return issues
+
+
 def paper_list_response_contract_issues(openapi: dict | None = None) -> list[str]:
     source_openapi = openapi if openapi is not None else app_openapi()
     specs = normalized_openapi_specs(source_openapi.get("paths", {}))
@@ -1072,6 +1103,7 @@ def main() -> int:
     chunk_list_response_issues = chunk_list_response_contract_issues()
     translation_response_issues = translation_response_contract_issues()
     paper_detail_response_issues = paper_detail_response_contract_issues()
+    paper_mutation_response_issues = paper_mutation_response_contract_issues()
     paper_list_response_issues = paper_list_response_contract_issues()
     crawl_job_detail_response_issues = crawl_job_detail_response_contract_issues()
     crawl_job_list_response_issues = crawl_job_list_response_contract_issues()
@@ -1101,6 +1133,7 @@ def main() -> int:
         or chunk_list_response_issues
         or translation_response_issues
         or paper_detail_response_issues
+        or paper_mutation_response_issues
         or paper_list_response_issues
         or crawl_job_detail_response_issues
         or crawl_job_list_response_issues
@@ -1195,6 +1228,10 @@ def main() -> int:
         if paper_detail_response_issues:
             print("api contract paper detail response issues:", file=sys.stderr)
             for issue in paper_detail_response_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if paper_mutation_response_issues:
+            print("api contract paper mutation response issues:", file=sys.stderr)
+            for issue in paper_mutation_response_issues:
                 print(f"- {issue}", file=sys.stderr)
         if paper_list_response_issues:
             print("api contract paper list response issues:", file=sys.stderr)

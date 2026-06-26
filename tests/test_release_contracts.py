@@ -1917,6 +1917,14 @@ def test_api_contract_paper_detail_response_exposes_metadata_and_categories():
     assert issues == []
 
 
+def test_api_contract_paper_mutation_responses_expose_metadata_and_categories():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.paper_mutation_response_contract_issues()
+
+    assert issues == []
+
+
 def test_api_contract_paper_list_response_exposes_typed_search_items():
     validate_api_contract = load_validate_api_contract()
 
@@ -2431,6 +2439,45 @@ def test_api_contract_validator_reports_missing_paper_detail_response_field():
     issues = validate_api_contract.paper_detail_response_contract_issues(openapi=openapi)
 
     assert issues == ["GET /api/v1/papers/{} missing response fields: raw_metadata"]
+
+
+def test_api_contract_validator_reports_missing_paper_mutation_response_field():
+    validate_api_contract = load_validate_api_contract()
+    response_fields = [
+        field for field in validate_api_contract.PAPER_DETAIL_RESPONSE_FIELDS if field != "raw_metadata"
+    ]
+    schema = {
+        "type": "object",
+        "required": response_fields,
+        "properties": {field: {"type": "string"} for field in response_fields},
+    }
+    schema["properties"]["category_details"] = {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "required": list(validate_api_contract.PAPER_CATEGORY_DETAIL_FIELDS),
+            "properties": {
+                field: {"type": "string"} for field in validate_api_contract.PAPER_CATEGORY_DETAIL_FIELDS
+            },
+        },
+    }
+    openapi = {
+        "paths": {
+            "/api/v1/papers/{paper_id}/classify": {
+                "post": {
+                    "responses": {
+                        "200": {
+                            "content": {"application/json": {"schema": schema}},
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.paper_mutation_response_contract_issues(openapi=openapi)
+
+    assert issues == ["POST /api/v1/papers/{}/classify missing response fields: raw_metadata"]
 
 
 def test_api_contract_validator_reports_missing_paper_category_detail_field():
