@@ -87,6 +87,14 @@ def is_iso8601_timestamp(value: Any) -> bool:
 def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool = False) -> dict[str, Any]:
     artifact_dir = artifact_dir.resolve()
     issues: list[str] = []
+    if artifact_dir.exists():
+        unexpected_files = sorted(
+            path.name
+            for path in artifact_dir.iterdir()
+            if path.name not in EXPECTED_ARTIFACTS.values()
+        )
+        if unexpected_files:
+            issues.append(f"release artifact directory contains unexpected files: {unexpected_files!r}")
     manifest = read_json(artifact_dir / EXPECTED_ARTIFACTS["manifest"], "release manifest", issues)
     openapi = read_json(artifact_dir / EXPECTED_ARTIFACTS["openapi"], "OpenAPI artifact", issues)
     demo_summary = read_json(artifact_dir / EXPECTED_ARTIFACTS["demo_summary"], "demo summary", issues)

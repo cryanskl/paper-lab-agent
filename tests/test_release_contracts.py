@@ -1262,6 +1262,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert "artifact_names" in readme
     assert "reaction_set_verified_by" in readme
     assert "reaction_set_verified_at" in readme
+    assert "额外文件" in readme
     assert "system` tag metadata" in readme
     assert "ErrorResponse` schema" in readme
     assert "python scripts/export_release_artifacts.py --output-dir out/release --compact" in checklist
@@ -1271,6 +1272,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert "artifact_names" in checklist
     assert "reaction_set_verified_by" in checklist
     assert "reaction_set_verified_at" in checklist
+    assert "unexpected extra files" in checklist
     assert "system` tag metadata" in checklist
     assert "ErrorResponse` schema" in checklist
     assert "--require-clean-source" in checklist
@@ -1672,6 +1674,62 @@ def test_validate_release_artifacts_requires_handoff_openapi_metadata(tmp_path):
 
     assert "OpenAPI missing system tag metadata" in report["issues"]
     assert "OpenAPI missing ErrorResponse schema" in report["issues"]
+
+
+def test_validate_release_artifacts_rejects_unexpected_handoff_files(tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    validate_release_artifacts = load_validate_release_artifacts()
+    artifact_dir = tmp_path / "release"
+    artifact_dir.mkdir()
+    openapi = {
+        "info": {"title": "paper-lab-agent", "version": "0.1.0"},
+        "paths": {"/api/v1/health": {}},
+        "tags": [{"name": "system", "description": "System status"}],
+        "components": {"schemas": {"ErrorResponse": {"type": "object"}}},
+    }
+    demo_summary = {
+        "ready": True,
+        "export_formats": ["json", "txt", "bolsig"],
+        "export_audit_entry_counts": {"json": 1, "txt": 1, "bolsig": 1},
+        "reaction_set_verified_by": "prepare-demo-data",
+        "reaction_set_verified_at": "2026-06-26T12:00:00",
+    }
+    manifest = {
+        "service": "paper-lab-agent",
+        "version": "0.1.0",
+        "artifacts": {
+            "openapi": "openapi.json",
+            "demo_summary": "demo-summary.json",
+            "manifest": "release-manifest.json",
+        },
+        "demo_ready": True,
+        "demo_export_formats": ["json", "txt", "bolsig"],
+        "demo_export_audit_entry_counts": {"json": 1, "txt": 1, "bolsig": 1},
+        "demo_reaction_set_verified_by": "prepare-demo-data",
+        "demo_reaction_set_verified_at": "2026-06-26T12:00:00",
+        "openapi_path_count": 1,
+        "source": {
+            "git_commit": "a" * 40,
+            "git_branch": "phase/5-experiment-lab-artifacts",
+            "git_dirty": False,
+        },
+        "checksums": {
+            "openapi.json": "",
+            "demo-summary.json": "",
+            "release-manifest.json": "",
+        },
+    }
+    (artifact_dir / "openapi.json").write_text(json.dumps(openapi), encoding="utf-8")
+    (artifact_dir / "demo-summary.json").write_text(json.dumps(demo_summary), encoding="utf-8")
+    manifest["checksums"]["openapi.json"] = export_release_artifacts.sha256_file(artifact_dir / "openapi.json")
+    manifest["checksums"]["demo-summary.json"] = export_release_artifacts.sha256_file(artifact_dir / "demo-summary.json")
+    manifest["checksums"]["release-manifest.json"] = export_release_artifacts.manifest_checksum(manifest)
+    (artifact_dir / "release-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (artifact_dir / "old-demo-summary.json").write_text("{}", encoding="utf-8")
+
+    report = validate_release_artifacts.validate_release_artifacts(artifact_dir)
+
+    assert "release artifact directory contains unexpected files: ['old-demo-summary.json']" in report["issues"]
 
 
 def test_validate_release_artifacts_script_rejects_tampered_artifact(tmp_path):
