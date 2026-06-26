@@ -525,6 +525,21 @@ def test_openalex_rejects_invalid_publication_date_string():
     assert work["published_year"] == 2026
 
 
+def test_openalex_expands_missing_publication_date_from_year():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-year-only",
+            "title": "Year only publication",
+            "publication_year": 2026,
+        }
+    )
+
+    assert work["published_date"] == "2026-01-01"
+    assert work["published_year"] == 2026
+
+
 def test_openalex_rejects_out_of_range_publication_year():
     client = OpenAlexClient()
 
