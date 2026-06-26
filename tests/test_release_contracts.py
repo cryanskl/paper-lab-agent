@@ -812,6 +812,7 @@ def test_release_checklist_documents_publish_gates():
         "python scripts/health_check.py --require-frontend",
         "python scripts/health_check.py --require-grobid",
         "python scripts/export_openapi.py --output out/openapi.json",
+        "python scripts/export_release_artifacts.py --output-dir out/release --compact",
         "workflow_dispatch",
     ]:
         assert required in checklist
@@ -1180,6 +1181,23 @@ def test_release_check_validates_openapi_export_script():
     assert "scripts/export_openapi.py --help" in release_check
 
 
+def test_release_check_validates_release_artifact_bundle():
+    repo = Path(__file__).resolve().parent.parent
+    release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+    readme = (repo / "README.md").read_text(encoding="utf-8")
+    checklist = (repo / "docs" / "release-checklist.md").read_text(encoding="utf-8")
+
+    assert "scripts/export_release_artifacts.py" in release_check
+    assert "scripts/export_release_artifacts.py --help" in release_check
+    assert "RELEASE_ARTIFACTS_JSON" in release_check
+    assert "release-manifest.json" in release_check
+    assert "demo-summary.json" in release_check
+    assert "openapi.json" in release_check
+    assert "release manifest version does not match OpenAPI version" in release_check
+    assert "python scripts/export_release_artifacts.py --output-dir out/release --compact" in readme
+    assert "python scripts/export_release_artifacts.py --output-dir out/release --compact" in checklist
+
+
 def test_release_check_validates_prepare_demo_data_output_artifact():
     repo = Path(__file__).resolve().parent.parent
     release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
@@ -1227,6 +1245,58 @@ def test_export_openapi_script_runs_as_file(tmp_path):
     assert result.returncode == 0, result.stderr
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["info"]["title"] == "paper-lab-agent"
+
+
+def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    stdout_manifest = json.loads(result.stdout)
+    manifest = json.loads((output_dir / "release-manifest.json").read_text(encoding="utf-8"))
+    demo_summary = json.loads((output_dir / "demo-summary.json").read_text(encoding="utf-8"))
+    openapi = json.loads((output_dir / "openapi.json").read_text(encoding="utf-8"))
+
+    assert stdout_manifest == manifest
+    assert manifest["service"] == "paper-lab-agent"
+    assert manifest["version"] == openapi["info"]["version"]
+    assert manifest["artifacts"]["openapi"] == "openapi.json"
+    assert manifest["artifacts"]["demo_summary"] == "demo-summary.json"
+    assert demo_summary["ready"] is True
+    assert demo_summary["export_formats"] == ["json", "txt", "bolsig"]
+    assert "/api/v1/health" in openapi["paths"]
 
 
 def test_release_check_derives_expected_runtime_version_from_app_version():

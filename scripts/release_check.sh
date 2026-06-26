@@ -14,10 +14,11 @@ fi
 bash -n scripts/env.sh
 bash -n scripts/dev.sh
 "${PYTHON_CMD[@]}" -m compileall -q app scripts tests streamlit_app.py
-"${PYTHON_CMD[@]}" -m py_compile scripts/doctor.py scripts/export_openapi.py scripts/health_check.py scripts/import_fixtures.py scripts/prepare_demo_data.py scripts/smoke_check.py scripts/validate_api_contract.py scripts/validate_bug_docs.py scripts/validate_docs_links.py scripts/validate_env_example.py scripts/validate_readme_commands.py scripts/validate_release_hygiene.py scripts/validate_requirements.py scripts/validate_schema.py streamlit_app.py
+"${PYTHON_CMD[@]}" -m py_compile scripts/doctor.py scripts/export_openapi.py scripts/export_release_artifacts.py scripts/health_check.py scripts/import_fixtures.py scripts/prepare_demo_data.py scripts/smoke_check.py scripts/validate_api_contract.py scripts/validate_bug_docs.py scripts/validate_docs_links.py scripts/validate_env_example.py scripts/validate_readme_commands.py scripts/validate_release_hygiene.py scripts/validate_requirements.py scripts/validate_schema.py streamlit_app.py
 "${PYTHON_CMD[@]}" scripts/doctor.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact
 "${PYTHON_CMD[@]}" scripts/export_openapi.py --help >/dev/null
+"${PYTHON_CMD[@]}" scripts/export_release_artifacts.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/health_check.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/prepare_demo_data.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/validate_api_contract.py
@@ -282,6 +283,77 @@ print(json.dumps(payload, ensure_ascii=False))
 PY
 )"
 printf '%s\n' "${PREPARE_DEMO_JSON}"
+RELEASE_ARTIFACTS_JSON="$("${PYTHON_CMD[@]}" - <<'PY'
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = os.path.join(release_dir, "data")
+    output_dir = Path(release_dir) / "out" / "release"
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+    manifest = json.loads(result.stdout)
+    manifest_path = output_dir / "release-manifest.json"
+    demo_summary_path = output_dir / "demo-summary.json"
+    openapi_path = output_dir / "openapi.json"
+    file_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    demo_summary = json.loads(demo_summary_path.read_text(encoding="utf-8"))
+    openapi = json.loads(openapi_path.read_text(encoding="utf-8"))
+    if manifest != file_manifest:
+        print("release_check failed: release-manifest.json differs from stdout manifest", file=sys.stderr)
+        raise SystemExit(1)
+    if manifest.get("service") != "paper-lab-agent":
+        print(f"release_check failed: release manifest service={manifest.get('service')!r}", file=sys.stderr)
+        raise SystemExit(1)
+    if manifest.get("version") != openapi.get("info", {}).get("version"):
+        print("release_check failed: release manifest version does not match OpenAPI version", file=sys.stderr)
+        raise SystemExit(1)
+    if manifest.get("artifacts") != {
+        "openapi": "openapi.json",
+        "demo_summary": "demo-summary.json",
+        "manifest": "release-manifest.json",
+    }:
+        print(f"release_check failed: release manifest artifacts={manifest.get('artifacts')!r}", file=sys.stderr)
+        raise SystemExit(1)
+    if manifest.get("demo_ready") is not True or demo_summary.get("ready") is not True:
+        print("release_check failed: release handoff demo summary is not ready", file=sys.stderr)
+        raise SystemExit(1)
+    if manifest.get("demo_export_formats") != ["json", "txt", "bolsig"]:
+        print(f"release_check failed: release manifest demo_export_formats={manifest.get('demo_export_formats')!r}", file=sys.stderr)
+        raise SystemExit(1)
+    if "/api/v1/health" not in openapi.get("paths", {}):
+        print("release_check failed: release handoff OpenAPI missing /api/v1/health", file=sys.stderr)
+        raise SystemExit(1)
+print(json.dumps(manifest, ensure_ascii=False))
+PY
+)"
+printf '%s\n' "${RELEASE_ARTIFACTS_JSON}"
 SMOKE_JSON="$("${PYTHON_CMD[@]}" -m scripts.smoke_check)"
 printf '%s\n' "${SMOKE_JSON}"
 SMOKE_JSON="${SMOKE_JSON}" "${PYTHON_CMD[@]}" - <<'PY'

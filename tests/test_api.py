@@ -7133,6 +7133,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     for compiled_script in [
         "scripts/health_check.py",
         "scripts/import_fixtures.py",
+        "scripts/export_release_artifacts.py",
         "scripts/prepare_demo_data.py",
         "scripts/smoke_check.py",
         "scripts/validate_api_contract.py",
@@ -7147,6 +7148,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     ]:
         assert compiled_script in release_text
     assert "scripts/health_check.py --help" in release_text
+    assert "scripts/export_release_artifacts.py --help" in release_text
     assert "scripts/prepare_demo_data.py --help" in release_text
     assert "scripts/validate_api_contract.py" in release_text
     assert "scripts/validate_bug_docs.py" in release_text
@@ -7276,6 +7278,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "python scripts/prepare_demo_data.py",
         "python scripts/prepare_demo_data.py --compact",
         "python scripts/prepare_demo_data.py --summary-only --compact",
+        "python scripts/export_release_artifacts.py --output-dir out/release --compact",
         "`summary.ready`",
         "`release_ready`",
         "`frontend_ok`",

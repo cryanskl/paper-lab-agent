@@ -52,9 +52,10 @@ API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
 
 ```bash
 python scripts/export_openapi.py --output out/openapi.json
+python scripts/export_release_artifacts.py --output-dir out/release --compact
 ```
 
-服务启动后也可以直接访问 live schema 与交互文档：`http://127.0.0.1:8000/openapi.json`、`http://127.0.0.1:8000/docs` 和 `http://127.0.0.1:8000/redoc`。`python scripts/health_check.py --check-openapi` 会探测 live `/openapi.json` 并校验基础 schema 契约；`--require-openapi` 会在 schema 不可访问或缺少必需路径、tag、错误响应模型时返回非零。
+`scripts/export_release_artifacts.py` 会一次性生成 `openapi.json`、`demo-summary.json` 和 `release-manifest.json`，用于前后端、评审或发布交接。服务启动后也可以直接访问 live schema 与交互文档：`http://127.0.0.1:8000/openapi.json`、`http://127.0.0.1:8000/docs` 和 `http://127.0.0.1:8000/redoc`。`python scripts/health_check.py --check-openapi` 会探测 live `/openapi.json` 并校验基础 schema 契约；`--require-openapi` 会在 schema 不可访问或缺少必需路径、tag、错误响应模型时返回非零。
 
 导入离线样例论文和 PDF 文档：
 
