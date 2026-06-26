@@ -1,5 +1,6 @@
 import json
 import re
+import string
 from pathlib import Path
 
 
@@ -1196,6 +1197,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert "demo-summary.json" in release_check
     assert "openapi.json" in release_check
     assert "release manifest version does not match OpenAPI version" in release_check
+    assert "checksums" in release_check
     assert "python scripts/export_release_artifacts.py --output-dir out/release --compact" in readme
     assert "python scripts/validate_release_artifacts.py --artifact-dir out/release --compact" in readme
     assert "python scripts/export_release_artifacts.py --output-dir out/release --compact" in checklist
@@ -1298,6 +1300,11 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     assert manifest["version"] == openapi["info"]["version"]
     assert manifest["artifacts"]["openapi"] == "openapi.json"
     assert manifest["artifacts"]["demo_summary"] == "demo-summary.json"
+    assert set(manifest["checksums"]) == {"openapi.json", "demo-summary.json", "release-manifest.json"}
+    assert all(
+        len(value) == 64 and all(character in string.hexdigits for character in value)
+        for value in manifest["checksums"].values()
+    )
     assert demo_summary["ready"] is True
     assert demo_summary["export_formats"] == ["json", "txt", "bolsig"]
     assert "/api/v1/health" in openapi["paths"]
@@ -1363,6 +1370,68 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     assert payload["demo_ready"] is True
     assert payload["demo_export_formats"] == ["json", "txt", "bolsig"]
     assert payload["openapi_path_count"] == 28
+
+
+def test_validate_release_artifacts_script_rejects_tampered_artifact(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    export_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert export_result.returncode == 0, export_result.stderr
+
+    demo_summary_path = output_dir / "demo-summary.json"
+    demo_summary = json.loads(demo_summary_path.read_text(encoding="utf-8"))
+    demo_summary["ready"] = False
+    demo_summary_path.write_text(json.dumps(demo_summary, ensure_ascii=False), encoding="utf-8")
+
+    validate_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_artifacts.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert validate_result.returncode == 1
+    payload = json.loads(validate_result.stdout)
+    assert payload["ok"] is False
+    assert any("checksum mismatch: demo-summary.json" in issue for issue in payload["issues"])
 
 
 def test_release_check_derives_expected_runtime_version_from_app_version():

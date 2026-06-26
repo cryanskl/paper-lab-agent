@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -22,6 +23,19 @@ EXPECTED_ARTIFACTS = {
     "manifest": "release-manifest.json",
 }
 EXPECTED_EXPORT_FORMATS = ["json", "txt", "bolsig"]
+
+
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def manifest_checksum(payload: dict[str, Any]) -> str:
+    canonical = json.loads(json.dumps(payload))
+    checksums = canonical.get("checksums")
+    if isinstance(checksums, dict):
+        checksums[EXPECTED_ARTIFACTS["manifest"]] = ""
+    encoded = json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def read_json(path: Path, label: str, issues: list[str]) -> dict[str, Any]:
@@ -69,6 +83,19 @@ def validate_release_artifacts(artifact_dir: Path) -> dict[str, Any]:
             issues.append(
                 f"release manifest openapi_path_count mismatch: {manifest.get('openapi_path_count')!r}"
             )
+        checksums = manifest.get("checksums")
+        if not isinstance(checksums, dict):
+            issues.append("release manifest checksums must be an object")
+        else:
+            expected_checksum_names = set(EXPECTED_ARTIFACTS.values())
+            if set(checksums) != expected_checksum_names:
+                issues.append(f"release manifest checksums keys mismatch: {sorted(checksums)!r}")
+            for artifact_name in (EXPECTED_ARTIFACTS["openapi"], EXPECTED_ARTIFACTS["demo_summary"]):
+                artifact_path = artifact_dir / artifact_name
+                if artifact_path.exists() and checksums.get(artifact_name) != sha256_file(artifact_path):
+                    issues.append(f"checksum mismatch: {artifact_name}")
+            if checksums.get(EXPECTED_ARTIFACTS["manifest"]) != manifest_checksum(manifest):
+                issues.append(f"checksum mismatch: {EXPECTED_ARTIFACTS['manifest']}")
 
     if openapi:
         if openapi.get("info", {}).get("title") != EXPECTED_SERVICE:
@@ -90,6 +117,7 @@ def validate_release_artifacts(artifact_dir: Path) -> dict[str, Any]:
         "demo_ready": manifest.get("demo_ready"),
         "demo_export_formats": manifest.get("demo_export_formats") or [],
         "openapi_path_count": openapi_path_count,
+        "checksums": manifest.get("checksums") if isinstance(manifest.get("checksums"), dict) else {},
         "issues": issues,
     }
 

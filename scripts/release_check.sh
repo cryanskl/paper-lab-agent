@@ -367,6 +367,10 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     if validation.get("ok") is not True:
         print(f"release_check failed: release artifact validation={validation!r}", file=sys.stderr)
         raise SystemExit(1)
+    checksums = validation.get("checksums") or {}
+    if sorted(checksums) != ["demo-summary.json", "openapi.json", "release-manifest.json"]:
+        print(f"release_check failed: release artifact checksums={checksums!r}", file=sys.stderr)
+        raise SystemExit(1)
 print(json.dumps(validation, ensure_ascii=False))
 PY
 )"

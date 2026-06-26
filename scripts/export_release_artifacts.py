@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -15,6 +16,19 @@ if str(ROOT) not in sys.path:
 from app import __version__
 from scripts.export_openapi import write_openapi
 from scripts.prepare_demo_data import prepare_demo_data
+
+
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def manifest_checksum(payload: dict[str, Any]) -> str:
+    canonical = json.loads(json.dumps(payload))
+    checksums = canonical.get("checksums")
+    if isinstance(checksums, dict):
+        checksums["release-manifest.json"] = ""
+    encoded = json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def write_json(path: Path, payload: dict[str, Any], *, compact: bool = False) -> None:
@@ -50,7 +64,13 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
         "demo_ready": demo_summary.get("ready") is True,
         "demo_export_formats": demo_summary.get("export_formats") or [],
         "openapi_path_count": len(json.loads(openapi_path.read_text(encoding="utf-8")).get("paths", {})),
+        "checksums": {
+            openapi_path.name: sha256_file(openapi_path),
+            demo_summary_path.name: sha256_file(demo_summary_path),
+            manifest_path.name: "",
+        },
     }
+    manifest["checksums"][manifest_path.name] = manifest_checksum(manifest)
     write_json(manifest_path, manifest, compact=compact)
     return manifest
 
