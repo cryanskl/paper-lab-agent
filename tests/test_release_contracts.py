@@ -1554,6 +1554,21 @@ def test_api_contract_app_routes_are_documented():
     assert undocumented == []
 
 
+def test_api_contract_validator_reports_duplicate_documented_routes(tmp_path):
+    validate_api_contract = load_validate_api_contract()
+    repo = Path(__file__).resolve().parent.parent
+    contract_path = tmp_path / "接口设计文档.md"
+    contract_text = (repo / "docs" / "接口设计文档.md").read_text(encoding="utf-8")
+    contract_path.write_text(
+        contract_text + "\n| GET | `/health` | duplicate row |\n",
+        encoding="utf-8",
+    )
+
+    duplicates = validate_api_contract.duplicate_documented_routes(contract_path)
+
+    assert duplicates == ["GET /api/v1/health documented 2 times"]
+
+
 def test_api_contract_app_routes_expose_openapi_tags():
     validate_api_contract = load_validate_api_contract()
 

@@ -396,6 +396,21 @@ def missing_documented_routes(contract_path: Path = DEFAULT_CONTRACT_PATH) -> li
     return missing
 
 
+def duplicate_documented_routes(contract_path: Path = DEFAULT_CONTRACT_PATH) -> list[str]:
+    seen: dict[tuple[str, str], tuple[str, int]] = {}
+    for method, display, normalized in documented_routes(contract_path):
+        key = (method, normalized)
+        if key not in seen:
+            seen[key] = (display, 0)
+        first_display, count = seen[key]
+        seen[key] = (first_display, count + 1)
+    return [
+        f"{method} {display} documented {count} times"
+        for (method, _normalized), (display, count) in sorted(seen.items())
+        if count > 1
+    ]
+
+
 def undocumented_app_routes(contract_path: Path = DEFAULT_CONTRACT_PATH) -> list[str]:
     documented = {(method, normalized) for method, _display, normalized in documented_routes(contract_path)}
     undocumented: list[str] = []
@@ -1214,6 +1229,7 @@ def main() -> int:
     args = parser.parse_args()
 
     missing = missing_documented_routes(Path(args.contract_path))
+    duplicates = duplicate_documented_routes(Path(args.contract_path))
     undocumented = undocumented_app_routes(Path(args.contract_path))
     pagination_issues = pagination_contract_issues(Path(args.contract_path))
     pagination_response_issues = pagination_response_contract_issues(Path(args.contract_path))
@@ -1249,6 +1265,7 @@ def main() -> int:
     tag_metadata_issues = openapi_tag_metadata_issues()
     if (
         missing
+        or duplicates
         or undocumented
         or pagination_issues
         or pagination_response_issues
@@ -1286,6 +1303,10 @@ def main() -> int:
         if missing:
             print("api contract missing routes:", file=sys.stderr)
             for route in missing:
+                print(f"- {route}", file=sys.stderr)
+        if duplicates:
+            print("api contract duplicate documented routes:", file=sys.stderr)
+            for route in duplicates:
                 print(f"- {route}", file=sys.stderr)
         if undocumented:
             print("api contract undocumented app routes:", file=sys.stderr)
