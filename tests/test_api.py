@@ -12411,7 +12411,7 @@ def test_streamlit_crawl_run_surfaces_success_and_error_states():
         "crawl_journal_choice = crawl_col1.selectbox(",
         '"抓取期刊"',
         "crawl_journal_options(journals)",
-        'format_func=lambda option: option["label"]',
+        "format_func=crawl_journal_option_label",
         'selected_crawl_journal_id = crawl_journal_choice["journal_id"]',
         "crawl_date_error = date_from and date_to and date_from > date_to",
         "if crawl_date_error:",
@@ -12427,6 +12427,7 @@ def test_streamlit_crawl_run_surfaces_success_and_error_states():
     ]:
         assert required in search_section
     assert 'number_input("journal_id"' not in search_section
+    assert "format_func=lambda option" not in search_section
 
 
 def test_streamlit_search_results_show_dedupe_strategy():

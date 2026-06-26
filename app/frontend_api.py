@@ -131,6 +131,10 @@ def crawl_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]
     return options
 
 
+def crawl_journal_option_label(option: dict[str, Any]) -> str:
+    return str(option.get("label") or "期刊选项")
+
+
 def journal_option_label(journal: dict[str, Any]) -> str:
     return f"#{journal['id']} {journal.get('name') or 'Journal'} · active={bool(journal.get('active'))}"
 

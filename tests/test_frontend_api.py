@@ -887,6 +887,24 @@ def test_crawl_journal_options_label_whitelist_choices_for_manual_runs():
     ]
 
 
+def test_crawl_journal_option_label_returns_prebuilt_label():
+    from app import frontend_api
+
+    label = frontend_api.crawl_journal_option_label(
+        {"label": "#2 · Plasma Sources Science and Technology", "journal_id": 2}
+    )
+
+    assert label == "#2 · Plasma Sources Science and Technology"
+
+
+def test_crawl_journal_option_label_uses_fallback_for_missing_label():
+    from app import frontend_api
+
+    label = frontend_api.crawl_journal_option_label({"journal_id": None})
+
+    assert label == "期刊选项"
+
+
 def test_journal_option_label_summarizes_whitelist_status():
     from app import frontend_api
 

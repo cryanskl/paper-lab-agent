@@ -8,6 +8,7 @@ from app.frontend_api import (
     crawl_job_diagnostic_rows,
     crawl_job_option_label,
     crawl_job_rows,
+    crawl_journal_option_label,
     crawl_journal_options,
     document_asset_downloads,
     document_chunk_rows,
@@ -312,7 +313,7 @@ with search_tab:
     crawl_journal_choice = crawl_col1.selectbox(
         "抓取期刊",
         crawl_journal_options(journals),
-        format_func=lambda option: option["label"],
+        format_func=crawl_journal_option_label,
     )
     selected_crawl_journal_id = crawl_journal_choice["journal_id"]
     date_from = crawl_col2.text_input("date_from", value="")
