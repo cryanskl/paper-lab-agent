@@ -36,6 +36,15 @@ PYTHON_DEPENDENCIES = (
     ("streamlit", "streamlit"),
     ("pytest", "pytest"),
 )
+REQUIRED_ENV_EXAMPLE_KEYS = (
+    "OPENALEX_MAILTO",
+    "UNPAYWALL_EMAIL",
+    "GROBID_URL",
+    "LLM_API_KEY",
+    "EMBEDDING_MODEL",
+    "VECTOR_DB_PATH",
+    "DATABASE_PATH",
+)
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -88,7 +97,7 @@ def check_env_example(repo: Path) -> dict[str, Any]:
     issues = []
     if path.exists() and path.is_file():
         text = path.read_text(encoding="utf-8")
-        for key in ("DATABASE_PATH", "GROBID_URL", "OPENALEX_MAILTO", "UNPAYWALL_EMAIL", "LLM_API_KEY"):
+        for key in REQUIRED_ENV_EXAMPLE_KEYS:
             if f"{key}=" not in text:
                 issues.append(
                     {

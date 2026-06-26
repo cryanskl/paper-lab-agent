@@ -16,6 +16,19 @@ def load_validate_env_example():
     return validate_env_example
 
 
+def load_doctor():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+    return doctor
+
+
 def load_validate_release_hygiene():
     import importlib.util
 
@@ -740,6 +753,28 @@ def test_doctor_script_reports_missing_required_project_files(tmp_path):
     assert "docs/schema.sql" in missing
     assert "scripts/dev.sh" in missing
     assert "streamlit_app.py" in missing
+
+
+def test_doctor_env_example_check_matches_required_runtime_keys(tmp_path):
+    doctor = load_doctor()
+    validate_env_example = load_validate_env_example()
+    repo = Path(__file__).resolve().parent.parent
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_path = tmp_path / ".env.example"
+
+    for key in validate_env_example.REQUIRED_ENV_KEYS:
+        env_path.write_text(
+            re.sub(rf"^{re.escape(key)}=.*\n?", "", env_text, flags=re.MULTILINE),
+            encoding="utf-8",
+        )
+
+        check = doctor.check_env_example(tmp_path)
+
+        assert {
+            "code": "missing_env_example_key",
+            "key": key,
+            "message": f".env.example must document {key}",
+        } in check["issues"]
 
 
 def test_doctor_script_reports_missing_python_dependencies(monkeypatch):
