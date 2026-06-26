@@ -131,6 +131,15 @@ def sections_from_tei(tei: str) -> list[dict]:
                 rows.append(" ".join(cell for cell in cells if cell))
         return rows
 
+    def child_notes(node: ET.Element) -> list[str]:
+        notes = []
+        for child in list(node):
+            if local_name(child) == "note":
+                note = text_content(child)
+                if note:
+                    notes.append(note)
+        return notes
+
     def title_from_head_or_label(node: ET.Element, fallback: str) -> str:
         head = find(node, "tei:head")
         if head is not None:
@@ -234,6 +243,7 @@ def sections_from_tei(tei: str) -> list[dict]:
                 content_parts.append(text_content(caption))
             if nested_table is not None:
                 content_parts.extend(table_rows(nested_table))
+                content_parts.extend(child_notes(figure))
             else:
                 fallback_content = content_without_children(figure, [head, label, caption])
                 if fallback_content:
@@ -253,10 +263,11 @@ def sections_from_tei(tei: str) -> list[dict]:
     def append_table(table: ET.Element) -> None:
         head = find(table, "tei:head")
         label = find(table, "tei:label")
-        rows = table_rows(table)
+        content_parts = table_rows(table)
+        content_parts.extend(child_notes(table))
         append_section(
             title_from_head_or_label(table, f"Table {len(sections) + 1}"),
-            "\n".join(rows) or content_without_children(table, [head, label]),
+            "\n".join(content_parts) or content_without_children(table, [head, label]),
             "table",
         )
 
