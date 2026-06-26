@@ -12129,6 +12129,25 @@ def test_streamlit_document_sections_errors_show_payload_details():
         assert required in sections_load_section
 
 
+def test_streamlit_document_chunks_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    chunks_load_section = documents_section[
+        documents_section.index("chunks = api_get(") :
+        documents_section.index("index_status = chunks.get")
+    ]
+
+    for required in [
+        "chunks = api_get(",
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
+    ]:
+        assert required in chunks_load_section
+
+
 def test_streamlit_document_parse_surfaces_success_and_error_states():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

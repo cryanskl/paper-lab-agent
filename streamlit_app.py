@@ -719,11 +719,16 @@ with documents_tab:
             st.json(exc.payload)
             st.stop()
         sections = sections_response["items"]
-        chunks = api_get(
-            f"/documents/{selected['id']}/chunks",
-            page=int(chunks_page),
-            page_size=int(chunks_page_size),
-        )
+        try:
+            chunks = api_get(
+                f"/documents/{selected['id']}/chunks",
+                page=int(chunks_page),
+                page_size=int(chunks_page_size),
+            )
+        except FrontendApiError as exc:
+            st.error(format_error_payload(exc.payload, exc.status_code))
+            st.json(exc.payload)
+            st.stop()
         index_status = chunks.get("index_status") or ("indexed" if chunks["indexed"] else "not_indexed")
         st.caption(f"index_status: {index_status} · chunks: {chunks['total']}")
         st.dataframe(document_status_rows(document_detail, chunks), use_container_width=True)
