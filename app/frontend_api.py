@@ -307,6 +307,12 @@ def document_section_rows(sections: list[dict[str, Any]]) -> list[dict[str, Any]
     return rows
 
 
+def document_section_option_label(section: dict[str, Any]) -> str:
+    section_ref = section.get("seq") if section.get("seq") is not None else section.get("id")
+    label = section.get("title") or section.get("section_type") or "section"
+    return f"{section_ref}. {label}"
+
+
 def translation_status_rows(
     translation: dict[str, Any], *, preview_text: Optional[str] = None
 ) -> list[dict[str, Any]]:

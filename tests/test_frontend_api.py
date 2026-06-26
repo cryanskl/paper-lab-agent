@@ -1061,6 +1061,24 @@ def test_document_section_rows_surface_location_and_preview():
     ]
 
 
+def test_document_section_option_label_uses_sequence_and_title():
+    from app import frontend_api
+
+    label = frontend_api.document_section_option_label(
+        {"id": 21, "seq": 2, "title": "Reaction kinetics", "section_type": "body"}
+    )
+
+    assert label == "2. Reaction kinetics"
+
+
+def test_document_section_option_label_falls_back_to_type_and_id():
+    from app import frontend_api
+
+    label = frontend_api.document_section_option_label({"id": 22, "section_type": "table"})
+
+    assert label == "22. table"
+
+
 def test_document_chunk_rows_surface_vector_backlinks_and_preview():
     from app import frontend_api
 

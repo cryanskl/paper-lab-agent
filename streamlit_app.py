@@ -14,6 +14,7 @@ from app.frontend_api import (
     document_asset_downloads,
     document_chunk_rows,
     document_option_label,
+    document_section_option_label,
     document_section_rows,
     document_status_rows,
     journal_option_label,
@@ -685,7 +686,7 @@ with documents_tab:
                 section_preview = st.selectbox(
                     "section_preview",
                     sections,
-                    format_func=lambda section: f"{section.get('seq')}. {section.get('title') or section.get('section_type')}",
+                    format_func=document_section_option_label,
                 )
                 st.markdown(f"### {section_preview.get('title') or 'Section'}")
                 st.write(section_preview.get("content") or "")
