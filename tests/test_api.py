@@ -12818,6 +12818,24 @@ def test_streamlit_search_results_can_trigger_classification():
         assert required in search_section
 
 
+def test_streamlit_search_classification_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    classify_section = search_section[
+        search_section.index('if st.button("触发分类"') :
+        search_section.index('if st.button(\n                "重新解析 OA"')
+    ]
+
+    for required in [
+        'status_code, classified_paper = api_post(f"/papers/{paper[\'id\']}/classify")',
+        "else:",
+        "st.warning(format_error_payload(classified_paper, status_code))",
+        "st.json(classified_paper)",
+    ]:
+        assert required in classify_section
+
+
 def test_streamlit_search_results_can_override_categories_manually():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

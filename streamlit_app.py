@@ -284,6 +284,7 @@ with search_tab:
                     st.success(format_category_summary(classified_paper))
                 else:
                     st.warning(format_error_payload(classified_paper, status_code))
+                    st.json(classified_paper)
             if st.button(
                 "重新解析 OA",
                 key=f"resolve-oa-{paper['id']}",
