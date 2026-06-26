@@ -384,6 +384,42 @@ def test_bug_doc_validator_reports_pending_release_gate_evidence(tmp_path):
     ) in issues
 
 
+def test_bug_doc_validator_reports_release_gate_without_passed_count(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_bug_docs.py"
+    spec = importlib.util.spec_from_file_location("validate_bug_docs_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_bug_docs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_bug_docs)
+
+    bug_dir = tmp_path / "docs" / "bug"
+    bug_dir.mkdir(parents=True)
+    (bug_dir / "README.md").write_text("# Bug 记录约定\n", encoding="utf-8")
+    (bug_dir / "2026-06-26-no-gate-count.md").write_text(
+        "# Missing gate count\n\n"
+        "## 现象\n\n"
+        "- observed\n\n"
+        "## 原因\n\n"
+        "- reason\n\n"
+        "## 修复\n\n"
+        "- fix\n\n"
+        "## 验证\n\n"
+        "- RED 证据：failed first\n"
+        "- GREEN 证据：target test passed\n"
+        "- 完整 gate：`bash scripts/release_check.sh`\n",
+        encoding="utf-8",
+    )
+
+    issues = validate_bug_docs.bug_doc_issues(tmp_path)
+
+    assert (
+        "docs/bug/2026-06-26-no-gate-count.md: incomplete release gate evidence"
+    ) in issues
+
+
 def test_release_hygiene_validator_reports_tracked_generated_artifacts():
     validate_release_hygiene = load_validate_release_hygiene()
 

@@ -22,4 +22,4 @@
 - RED：`python -m pytest tests/test_release_contracts.py::test_requirements_validator_ignores_standard_library_imports -q` 在 fallback 缺少 `email` 时失败。
 - GREEN：`python -m pytest tests/test_release_contracts.py::test_requirements_validator_ignores_standard_library_imports -q`
 - validator：`python scripts/validate_requirements.py`
-- 完整 gate：`bash scripts/release_check.sh`
+- 完整 gate：`bash scripts/release_check.sh` 通过，`707 passed`。
