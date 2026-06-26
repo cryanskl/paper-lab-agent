@@ -19,6 +19,7 @@ from app.frontend_api import (
     reaction_export_rows,
     reaction_review_payload,
     reaction_review_rows,
+    reaction_set_review_state,
     reaction_set_rows,
     request_json,
     request_json_status,
@@ -897,34 +898,20 @@ with chemistry_tab:
 
     detail = st.session_state.get("reaction_set_detail")
     if detail:
-        reactions = detail.get("reactions", [])
-        unverified_reactions = [reaction for reaction in reactions if not reaction.get("verified")]
-        reaction_count = detail.get("reaction_count", len(reactions))
-        verified_count = detail.get("verified_count", reaction_count - len(unverified_reactions))
-        unverified_count = detail.get("unverified_count", len(unverified_reactions))
-        export_ready = detail.get("export_ready", reaction_count > 0 and unverified_count == 0)
-        st.caption(
-            f"status: {detail.get('status')} · "
-            f"reactions: {reaction_count} · "
-            f"verified: {verified_count} · "
-            f"未复核: {unverified_count} · "
-            f"export_ready: {export_ready} · "
-            f"gas_mixture: {detail.get('gas_mixture') or '-'} · "
-            f"lxcat_db: {detail.get('lxcat_db') or '-'} · "
-            f"verified_by: {detail.get('verified_by') or '-'} · "
-            f"verified_at: {detail.get('verified_at') or '-'}"
-        )
-        if detail.get("source_note"):
-            st.caption(f"source_note: {detail.get('source_note')}")
+        review_state = reaction_set_review_state(detail)
+        reactions = review_state["reactions"]
+        unverified_reactions = review_state["unverified_reactions"]
+        reaction_count = review_state["reaction_count"]
+        export_blocked = review_state["export_blocked"]
+        st.caption(review_state["summary"])
+        if review_state.get("source_note"):
+            st.caption(f"source_note: {review_state['source_note']}")
         show_only_unverified = st.checkbox("只显示未复核", value=False, key="show_only_unverified")
         if unverified_reactions:
             st.subheader("未复核反应")
             st.dataframe(reaction_review_rows(reactions, only_unverified=True), use_container_width=True)
-        export_blocked = not export_ready
-        if reaction_count == 0:
-            st.info("没有可导出的反应。")
-        elif export_blocked:
-            st.info("未全复核不可导出：请先完成所有反应复核。")
+        if review_state["export_message"]:
+            st.info(review_state["export_message"])
         export_format = st.selectbox("导出格式", ["json", "txt", "bolsig"], key="reaction_export_format")
         if st.button("导出反应集", key="export-reaction-set", disabled=export_blocked):
             status, payload = api_post(f"/reaction-sets/{rs_id}/export?format={export_format}", json=None)

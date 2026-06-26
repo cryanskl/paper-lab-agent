@@ -457,6 +457,78 @@ def test_reaction_export_download_returns_none_for_missing_output_file(tmp_path)
     assert frontend_api.reaction_export_download({"output_path": str(missing_path)}) is None
 
 
+def test_reaction_set_review_state_blocks_empty_reaction_sets():
+    from app import frontend_api
+
+    state = frontend_api.reaction_set_review_state(
+        {
+            "id": 7,
+            "status": "pending",
+            "reaction_count": 0,
+            "verified_count": 0,
+            "unverified_count": 0,
+            "export_ready": False,
+            "gas_mixture": "Ar/O2",
+            "lxcat_db": "Biagi",
+            "verified_by": None,
+            "verified_at": None,
+            "source_note": "Appendix table A1",
+            "reactions": [],
+        }
+    )
+
+    assert state == {
+        "reactions": [],
+        "unverified_reactions": [],
+        "reaction_count": 0,
+        "verified_count": 0,
+        "unverified_count": 0,
+        "export_ready": False,
+        "export_blocked": True,
+        "export_message": "没有可导出的反应。",
+        "source_note": "Appendix table A1",
+        "summary": (
+            "status: pending · reactions: 0 · verified: 0 · 未复核: 0 · "
+            "export_ready: False · gas_mixture: Ar/O2 · lxcat_db: Biagi · "
+            "verified_by: - · verified_at: -"
+        ),
+    }
+
+
+def test_reaction_set_review_state_derives_unverified_counts_and_export_gate():
+    from app import frontend_api
+
+    reactions = [
+        {"id": 1, "reaction": "e + Ar -> e + Ar", "verified": True},
+        {"id": 2, "reaction": "e + Ar -> 2e + Ar+", "verified": False},
+    ]
+
+    state = frontend_api.reaction_set_review_state(
+        {
+            "status": "pending",
+            "gas_mixture": None,
+            "lxcat_db": None,
+            "verified_by": "reviewer",
+            "verified_at": "2026-06-26T10:00:00",
+            "reactions": reactions,
+        }
+    )
+
+    assert state["reactions"] == reactions
+    assert state["unverified_reactions"] == [reactions[1]]
+    assert state["reaction_count"] == 2
+    assert state["verified_count"] == 1
+    assert state["unverified_count"] == 1
+    assert state["export_ready"] is False
+    assert state["export_blocked"] is True
+    assert state["export_message"] == "未全复核不可导出：请先完成所有反应复核。"
+    assert state["summary"] == (
+        "status: pending · reactions: 2 · verified: 1 · 未复核: 1 · "
+        "export_ready: False · gas_mixture: - · lxcat_db: - · "
+        "verified_by: reviewer · verified_at: 2026-06-26T10:00:00"
+    )
+
+
 def test_reaction_audit_rows_flatten_field_changes_for_review():
     from app import frontend_api
 

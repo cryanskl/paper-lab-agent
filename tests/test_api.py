@@ -11053,12 +11053,11 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         "show_only_unverified",
         "export_blocked",
         "disabled=export_blocked",
-        "detail.get('verified_by')",
-        "detail.get('verified_at')",
-        "detail.get('gas_mixture')",
-        "detail.get('lxcat_db')",
-        "detail.get('source_note')",
-        "未全复核不可导出",
+        "reaction_set_review_state(detail)",
+        "review_state",
+        'st.caption(review_state["summary"])',
+        'review_state.get("source_note")',
+        'review_state["export_message"]',
         "未复核",
         "bolsig",
         "format={export_format}",
@@ -11266,11 +11265,11 @@ def test_streamlit_chemistry_export_blocks_empty_reaction_sets():
     chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
 
     for required in [
-        'export_ready = detail.get("export_ready"',
-        "export_blocked = not export_ready",
-        "if reaction_count == 0:",
-        "没有可导出的反应。",
-        "elif export_blocked:",
+        "reaction_set_review_state(detail)",
+        "review_state",
+        'export_blocked = review_state["export_blocked"]',
+        'if review_state["export_message"]:',
+        'st.info(review_state["export_message"])',
         "disabled=export_blocked",
     ]:
         assert required in chemistry_section

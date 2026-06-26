@@ -489,6 +489,50 @@ def reaction_export_download(payload: dict[str, Any]) -> Optional[dict[str, Any]
     }
 
 
+def int_or_default(value: Any, default: int) -> int:
+    return default if value is None else int(value)
+
+
+def reaction_set_review_state(detail: dict[str, Any]) -> dict[str, Any]:
+    reactions = detail.get("reactions") or []
+    unverified_reactions = [reaction for reaction in reactions if not reaction.get("verified")]
+    reaction_count = int_or_default(detail.get("reaction_count"), len(reactions))
+    verified_count = int_or_default(detail.get("verified_count"), reaction_count - len(unverified_reactions))
+    unverified_count = int_or_default(detail.get("unverified_count"), len(unverified_reactions))
+    export_ready_value = detail.get("export_ready")
+    export_ready = bool(export_ready_value) if export_ready_value is not None else reaction_count > 0 and unverified_count == 0
+    export_blocked = not export_ready
+    if reaction_count == 0:
+        export_message = "没有可导出的反应。"
+    elif export_blocked:
+        export_message = "未全复核不可导出：请先完成所有反应复核。"
+    else:
+        export_message = None
+    summary = (
+        f"status: {detail.get('status')} · "
+        f"reactions: {reaction_count} · "
+        f"verified: {verified_count} · "
+        f"未复核: {unverified_count} · "
+        f"export_ready: {export_ready} · "
+        f"gas_mixture: {detail.get('gas_mixture') or '-'} · "
+        f"lxcat_db: {detail.get('lxcat_db') or '-'} · "
+        f"verified_by: {detail.get('verified_by') or '-'} · "
+        f"verified_at: {detail.get('verified_at') or '-'}"
+    )
+    return {
+        "reactions": reactions,
+        "unverified_reactions": unverified_reactions,
+        "reaction_count": reaction_count,
+        "verified_count": verified_count,
+        "unverified_count": unverified_count,
+        "export_ready": export_ready,
+        "export_blocked": export_blocked,
+        "export_message": export_message,
+        "source_note": detail.get("source_note"),
+        "summary": summary,
+    }
+
+
 def reaction_audit_rows(audit_log: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for audit in audit_log:
