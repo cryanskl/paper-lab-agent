@@ -209,8 +209,13 @@ with st.sidebar:
 
 with search_tab:
     st.caption("可先运行 `python scripts/import_fixtures.py` 导入离线样例。")
-    journals = api_get("/journals", active=True, page_size=100)["items"]
-    categories = api_get("/categories")["items"]
+    try:
+        journals = api_get("/journals", active=True, page_size=100)["items"]
+        categories = api_get("/categories")["items"]
+    except FrontendApiError as exc:
+        st.error(format_error_payload(exc.payload, exc.status_code))
+        st.json(exc.payload)
+        st.stop()
     col1, col2, col3, col4, col5, col6, col7 = st.columns([2, 1, 1, 1, 1, 1, 1])
     q = col1.text_input("关键词", value="plasma")
     journal_names = ["全部"] + [j["name"] for j in journals]

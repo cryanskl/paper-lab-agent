@@ -12592,6 +12592,22 @@ def test_streamlit_crawl_run_surfaces_success_and_error_states():
     assert "format_func=lambda option" not in search_section
 
 
+def test_streamlit_search_filter_metadata_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    for required in [
+        'journals = api_get("/journals", active=True, page_size=100)["items"]',
+        'categories = api_get("/categories")["items"]',
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
+    ]:
+        assert required in search_section
+
+
 def test_streamlit_search_results_show_dedupe_strategy():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
