@@ -27,7 +27,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
     demo_export_audit_entry_counts: dict[str, Any] = {}
     demo_reaction_set_verified_by = None
     demo_reaction_set_verified_at = None
-    package_sha256 = sha256_file(package_path) if package_path.exists() else None
+    package_sha256 = None
 
     if not package_path.exists():
         issues.append(f"release package missing: {package_path}")
@@ -45,6 +45,25 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "demo_reaction_set_verified_at": demo_reaction_set_verified_at,
             "issues": issues,
         }
+
+    if not package_path.is_file():
+        issues.append(f"release package is not a file: {package_path}")
+        return {
+            "ok": False,
+            "package_path": str(package_path),
+            "package_sha256": package_sha256,
+            "artifact_count": 0,
+            "artifact_names": artifact_names,
+            "source": source,
+            "demo_ready": demo_ready,
+            "demo_export_formats": demo_export_formats,
+            "demo_export_audit_entry_counts": demo_export_audit_entry_counts,
+            "demo_reaction_set_verified_by": demo_reaction_set_verified_by,
+            "demo_reaction_set_verified_at": demo_reaction_set_verified_at,
+            "issues": issues,
+        }
+
+    package_sha256 = sha256_file(package_path)
 
     expected_names = artifact_filenames()
     try:
