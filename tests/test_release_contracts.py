@@ -1090,6 +1090,59 @@ def test_api_contract_document_responses_expose_associated_paper_summary():
     assert issues == []
 
 
+def test_api_contract_translation_response_exposes_status_and_output_path():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.translation_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_translation_response_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/documents/{document_id}/translation": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "id",
+                                            "document_id",
+                                            "source_lang",
+                                            "target_lang",
+                                            "status",
+                                            "error",
+                                            "created_at",
+                                        ],
+                                        "properties": {
+                                            "id": {"type": "integer"},
+                                            "document_id": {"type": "integer"},
+                                            "source_lang": {"type": "string"},
+                                            "target_lang": {"type": "string"},
+                                            "status": {"type": "string"},
+                                            "error": {"type": "string"},
+                                            "created_at": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.translation_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/documents/{}/translation missing response fields: output_path"]
+
+
 def test_api_contract_validator_reports_missing_document_response_field():
     validate_api_contract = load_validate_api_contract()
     openapi = {

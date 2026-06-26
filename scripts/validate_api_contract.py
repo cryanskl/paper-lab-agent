@@ -169,6 +169,17 @@ DOCUMENT_RESPONSE_FIELDS = (
     "paper",
 )
 DOCUMENT_PAPER_FIELDS = ("id", "doi", "title", "journal_name", "published_date")
+TRANSLATION_RESPONSE_ROUTE = ("GET", "/api/v1/documents/{}/translation")
+TRANSLATION_RESPONSE_FIELDS = (
+    "id",
+    "document_id",
+    "source_lang",
+    "target_lang",
+    "status",
+    "output_path",
+    "error",
+    "created_at",
+)
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -496,6 +507,22 @@ def document_response_contract_issues(openapi: dict | None = None) -> list[str]:
     return []
 
 
+def translation_response_contract_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    specs = normalized_openapi_specs(source_openapi.get("paths", {}))
+    spec = specs.get(TRANSLATION_RESPONSE_ROUTE)
+    if spec is None:
+        return []
+    schema = response_schema(spec, source_openapi)
+    method, path = TRANSLATION_RESPONSE_ROUTE
+    missing = [
+        field for field in TRANSLATION_RESPONSE_FIELDS if not schema_declares_fields(schema, (field,))
+    ]
+    if missing:
+        return [f"{method} {path} missing response fields: {', '.join(missing)}"]
+    return []
+
+
 def pagination_response_contract_issues(
     contract_path: Path = DEFAULT_CONTRACT_PATH,
     openapi_paths: dict | None = None,
@@ -588,6 +615,7 @@ def main() -> int:
     system_status_response_issues = system_status_response_contract_issues()
     reaction_set_detail_response_issues = reaction_set_detail_response_contract_issues()
     document_response_issues = document_response_contract_issues()
+    translation_response_issues = translation_response_contract_issues()
     async_issues = async_response_contract_issues(Path(args.contract_path))
     async_body_issues = async_response_body_contract_issues(Path(args.contract_path))
     if (
@@ -602,6 +630,7 @@ def main() -> int:
         or system_status_response_issues
         or reaction_set_detail_response_issues
         or document_response_issues
+        or translation_response_issues
         or async_issues
         or async_body_issues
     ):
@@ -648,6 +677,10 @@ def main() -> int:
         if document_response_issues:
             print("api contract document response issues:", file=sys.stderr)
             for issue in document_response_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if translation_response_issues:
+            print("api contract translation response issues:", file=sys.stderr)
+            for issue in translation_response_issues:
                 print(f"- {issue}", file=sys.stderr)
         if async_issues:
             print("api contract async response issues:", file=sys.stderr)

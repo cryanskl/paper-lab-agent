@@ -56,6 +56,17 @@ class DocumentResponse(BaseModel):
     paper: Optional[PaperSummaryResponse] = None
 
 
+class TranslationResponse(BaseModel):
+    id: int
+    document_id: int
+    source_lang: Optional[str] = None
+    target_lang: str
+    status: str
+    output_path: Optional[str] = None
+    error: Optional[str] = None
+    created_at: str
+
+
 async def ensure_pdf_upload(file: UploadFile) -> None:
     suffix = Path(file.filename or "").suffix.lower()
     header = await file.read(5)
@@ -211,7 +222,7 @@ def translate(document_id: int, body: TranslateIn, background_tasks: BackgroundT
     }
 
 
-@router.get("/{document_id}/translation")
+@router.get("/{document_id}/translation", response_model=TranslationResponse)
 def get_translation(document_id: int) -> dict:
     get_document_or_404(document_id)
     with get_conn() as conn:
