@@ -378,6 +378,30 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
     ]
 
 
+def test_reaction_set_option_label_summarizes_review_and_export_state():
+    from app import frontend_api
+
+    label = frontend_api.reaction_set_option_label(
+        {
+            "id": 3,
+            "name": "Ar chemistry",
+            "status": "pending",
+            "export_ready": False,
+            "unverified_count": 2,
+        }
+    )
+
+    assert label == "#3 · pending · export_ready False · 未复核 2 · Ar chemistry"
+
+
+def test_reaction_set_option_label_uses_fallbacks_for_sparse_items():
+    from app import frontend_api
+
+    label = frontend_api.reaction_set_option_label({"id": 8})
+
+    assert label == "#8 · unknown · export_ready False · 未复核 0 · Reaction set"
+
+
 def test_reaction_review_payload_normalizes_edit_form_values():
     from app import frontend_api
 

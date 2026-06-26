@@ -11042,9 +11042,8 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         "document_reaction_sets",
         "/documents/{chemistry_document_id}/reaction-sets",
         "reaction_count",
-        "verified_count",
-        "unverified_count",
-        "export_ready",
+        "reaction_set_rows",
+        "reaction_set_option_label",
         "unverified_reactions",
         "show_only_unverified",
         "export_blocked",
@@ -11158,9 +11157,8 @@ def test_streamlit_chemistry_tab_exposes_reaction_set_pagination_controls():
         "document_reaction_sets['page_size']",
         "document_reaction_sets['total']",
         "reaction_set_rows",
-        "reaction_count",
-        "verified_count",
-        "unverified_count",
+        "reaction_set_option_label",
+        "format_func=reaction_set_option_label",
         "st.dataframe(reaction_set_rows",
     ]:
         assert required in chemistry_section

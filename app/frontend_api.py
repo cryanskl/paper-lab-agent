@@ -450,6 +450,14 @@ def reaction_display_state(reaction: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def reaction_set_option_label(item: dict[str, Any]) -> str:
+    return (
+        f"#{item['id']} · {item.get('status') or 'unknown'} · "
+        f"export_ready {bool(item.get('export_ready'))} · "
+        f"未复核 {item.get('unverified_count', 0)} · {item.get('name') or 'Reaction set'}"
+    )
+
+
 def normalize_optional_text(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None

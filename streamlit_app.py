@@ -21,6 +21,7 @@ from app.frontend_api import (
     reaction_review_form_state,
     reaction_review_payload,
     reaction_review_rows,
+    reaction_set_option_label,
     reaction_set_review_state,
     reaction_set_rows,
     request_json,
@@ -882,11 +883,7 @@ with chemistry_tab:
             selected_reaction_set = st.selectbox(
                 "document_reaction_sets",
                 reaction_set_items,
-                format_func=lambda item: (
-                    f"#{item['id']} · {item.get('status') or 'unknown'} · "
-                    f"export_ready {bool(item.get('export_ready'))} · "
-                    f"未复核 {item.get('unverified_count', 0)} · {item.get('name') or 'Reaction set'}"
-                ),
+                format_func=reaction_set_option_label,
             )
             selected_reaction_set_id = selected_reaction_set["id"]
 
