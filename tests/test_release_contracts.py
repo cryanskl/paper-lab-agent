@@ -762,7 +762,7 @@ def test_doctor_env_example_check_matches_required_runtime_keys(tmp_path):
     env_text = (repo / ".env.example").read_text(encoding="utf-8")
     env_path = tmp_path / ".env.example"
 
-    for key in validate_env_example.REQUIRED_ENV_KEYS:
+    for key in validate_env_example.required_env_keys():
         env_path.write_text(
             re.sub(rf"^{re.escape(key)}=.*\n?", "", env_text, flags=re.MULTILINE),
             encoding="utf-8",
@@ -779,16 +779,19 @@ def test_doctor_env_example_check_matches_required_runtime_keys(tmp_path):
 
 def test_doctor_env_example_check_ignores_comments_and_similar_key_names(tmp_path):
     doctor = load_doctor()
-    env_text = "\n".join(
-        [
-            "MY_OPENALEX_MAILTO=lab@example.test",
-            "# UNPAYWALL_EMAIL=ops@example.test",
-            "GROBID_URL=http://127.0.0.1:8070",
-            "LLM_API_KEY=",
-            "EMBEDDING_MODEL=local-hash",
-            "VECTOR_DB_PATH=./data/vector-index.json",
-            "DATABASE_PATH=./data/plasma.db",
-        ]
+    repo = Path(__file__).resolve().parent.parent
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_text = re.sub(
+        r"^OPENALEX_MAILTO=.*$",
+        "MY_OPENALEX_MAILTO=lab@example.test",
+        env_text,
+        flags=re.MULTILINE,
+    )
+    env_text = re.sub(
+        r"^UNPAYWALL_EMAIL=.*$",
+        "# UNPAYWALL_EMAIL=ops@example.test",
+        env_text,
+        flags=re.MULTILINE,
     )
     (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
 
