@@ -596,7 +596,12 @@ with documents_tab:
         value=50,
         key="documents-page-size",
     )
-    documents_response = api_get("/documents", page=int(documents_page), page_size=int(documents_page_size))
+    try:
+        documents_response = api_get("/documents", page=int(documents_page), page_size=int(documents_page_size))
+    except FrontendApiError as exc:
+        st.error(format_error_payload(exc.payload, exc.status_code))
+        st.json(exc.payload)
+        st.stop()
     docs = documents_response["items"]
     st.caption(
         f"documents page {documents_response['page']} · "
