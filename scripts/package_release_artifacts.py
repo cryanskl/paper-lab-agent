@@ -31,7 +31,25 @@ def package_release_artifacts(
     *,
     require_clean_source: bool = False,
 ) -> dict[str, Any]:
+    requested_artifact_dir = artifact_dir
     requested_output_path = output_path
+    if requested_artifact_dir.is_symlink():
+        artifact_dir_path = requested_artifact_dir.absolute()
+        return {
+            "ok": False,
+            "artifact_dir": str(artifact_dir_path),
+            "package_path": str(output_path.absolute()),
+            "artifact_count": 0,
+            "artifact_names": [],
+            "package_sha256": None,
+            "source": {},
+            "demo_ready": None,
+            "demo_export_formats": [],
+            "demo_export_audit_entry_counts": {},
+            "demo_reaction_set_verified_by": None,
+            "demo_reaction_set_verified_at": None,
+            "issues": [f"release artifact directory is not a regular directory: {artifact_dir_path}"],
+        }
     artifact_dir = artifact_dir.resolve()
     if requested_output_path.is_symlink():
         package_path = requested_output_path.absolute()
