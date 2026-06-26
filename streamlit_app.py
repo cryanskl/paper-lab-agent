@@ -897,7 +897,9 @@ with chemistry_tab:
             selected_reaction_set_id = selected_reaction_set["id"]
 
     rs_id = st.number_input("reaction_set_id", min_value=1, value=int(selected_reaction_set_id or 1))
-    if st.button("加载反应集") or "reaction_set_detail" not in st.session_state:
+    load_reaction_set = st.button("加载反应集")
+    should_load_reaction_set = load_reaction_set or selected_reaction_set_id is not None
+    if should_load_reaction_set:
         try:
             st.session_state["reaction_set_detail"] = api_get(f"/reaction-sets/{rs_id}")
         except Exception as exc:

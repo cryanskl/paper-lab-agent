@@ -12,8 +12,12 @@
 
 ## 修复
 
-待修复。建议只在用户点击“加载反应集”或从文档反应集列表选中有效 `reaction_set_id` 后再请求详情。
+已修复。化学库 tab 现在只在用户点击“加载反应集”或从文档反应集列表选中有效 `reaction_set_id` 后请求详情，不再因为 `reaction_set_detail` 缺失而自动加载默认 ID 1。
 
 ## 验证
 
 发现于 UI 验证：临时数据目录启动服务后打开 `http://127.0.0.1:8622`，FastAPI 日志出现 `GET /api/v1/reaction-sets/1` `404 Not Found`。
+
+RED：`.venv/bin/python -m pytest tests/test_api.py::test_streamlit_chemistry_tab_does_not_auto_load_missing_reaction_set -q` 在修复前失败。
+
+GREEN：`.venv/bin/python -m pytest tests/test_api.py::test_streamlit_chemistry_tab_does_not_auto_load_missing_reaction_set -q`

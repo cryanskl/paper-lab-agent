@@ -11317,6 +11317,20 @@ def test_streamlit_chemistry_document_reaction_sets_show_empty_state():
     assert "该文档暂无反应集。" in chemistry_section
 
 
+def test_streamlit_chemistry_tab_does_not_auto_load_missing_reaction_set():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    for required in [
+        'load_reaction_set = st.button("加载反应集")',
+        "should_load_reaction_set = load_reaction_set or selected_reaction_set_id is not None",
+        "if should_load_reaction_set:",
+    ]:
+        assert required in chemistry_section
+    assert '"reaction_set_detail" not in st.session_state' not in chemistry_section
+
+
 def test_document_chunks_endpoint_reports_index_status(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
