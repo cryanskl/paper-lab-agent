@@ -780,7 +780,12 @@ with rag_tab:
         value=100,
         key="rag-documents-page-size",
     )
-    rag_documents_response = api_get("/documents", page=int(rag_documents_page), page_size=int(rag_documents_page_size))
+    try:
+        rag_documents_response = api_get("/documents", page=int(rag_documents_page), page_size=int(rag_documents_page_size))
+    except FrontendApiError as exc:
+        st.error(format_error_payload(exc.payload, exc.status_code))
+        st.json(exc.payload)
+        st.stop()
     rag_documents = rag_documents_response["items"]
     st.caption(
         f"RAG documents page {rag_documents_response['page']} · "

@@ -12335,6 +12335,21 @@ def test_streamlit_rag_tab_exposes_document_pagination_controls():
         assert required in rag_section
 
 
+def test_streamlit_rag_documents_list_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+
+    for required in [
+        'rag_documents_response = api_get("/documents", page=int(rag_documents_page), page_size=int(rag_documents_page_size))',
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
+    ]:
+        assert required in rag_section
+
+
 def test_streamlit_document_upload_shows_duplicate_result():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
