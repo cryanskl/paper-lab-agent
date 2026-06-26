@@ -38,11 +38,13 @@ The output is generated under `out/`, which is ignored by Git. Do not hand-edit 
 After starting the app with `bash scripts/dev.sh`, run:
 
 ```bash
+python scripts/health_check.py --summary-only --compact
 python scripts/health_check.py --require-release-ready
 python scripts/health_check.py --require-frontend
 python scripts/health_check.py --require-openapi
 ```
 
+Use the compact summary first to inspect `release_ready` and `release_blockers`, then run the required gates to fail fast.
 `--require-release-ready` checks storage writability, no failed workflow backlog, no config warnings, and demo data readiness. `--require-frontend` verifies the Streamlit health endpoint. `--require-openapi` verifies the live `/openapi.json` schema used by frontend handoff.
 
 ## 5. Optional External Gate

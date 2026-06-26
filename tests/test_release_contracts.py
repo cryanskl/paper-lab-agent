@@ -582,6 +582,7 @@ def test_release_checklist_documents_publish_gates():
     for required in [
         "bash scripts/release_check.sh",
         "python scripts/prepare_demo_data.py --summary-only --compact",
+        "python scripts/health_check.py --summary-only --compact",
         "python scripts/health_check.py --require-release-ready",
         "python scripts/health_check.py --require-frontend",
         "python scripts/health_check.py --require-grobid",
