@@ -11268,6 +11268,21 @@ def test_streamlit_chemistry_review_surfaces_save_success_state():
         assert required in chemistry_section
 
 
+def test_streamlit_chemistry_review_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    review_save_section = chemistry_section[chemistry_section.index("status_code, result = api_put(") :]
+
+    for required in [
+        'status_code, result = api_put(f"/reactions/{reaction[\'id\']}/verify", json=payload)',
+        "else:",
+        "st.warning(format_error_payload(result, status_code))",
+        "st.json(result)",
+    ]:
+        assert required in review_save_section
+
+
 def test_streamlit_chemistry_export_offers_download():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

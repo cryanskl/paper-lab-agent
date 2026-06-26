@@ -1087,3 +1087,4 @@ with chemistry_tab:
                         st.rerun()
                     else:
                         st.warning(format_error_payload(result, status_code))
+                        st.json(result)
