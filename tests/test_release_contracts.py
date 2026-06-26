@@ -871,6 +871,29 @@ def test_doctor_env_example_check_rejects_frontend_url_runtime_drift(tmp_path):
     } in check["issues"]
 
 
+def test_doctor_env_example_check_rejects_dev_ready_timeout_runtime_drift(tmp_path):
+    doctor = load_doctor()
+    repo = Path(__file__).resolve().parent.parent
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_text = env_text.replace("DEV_READY_TIMEOUT=30\n", "DEV_READY_TIMEOUT=10\n")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "dev.sh").write_text(
+        'DEV_READY_TIMEOUT="${DEV_READY_TIMEOUT:-30}"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
+
+    check = doctor.check_env_example(tmp_path)
+
+    assert {
+        "code": "env_example_runtime_default_drift",
+        "key": "DEV_READY_TIMEOUT",
+        "expected": "30",
+        "actual": "10",
+        "message": ".env.example DEV_READY_TIMEOUT must match runtime default 30",
+    } in check["issues"]
+
+
 def test_doctor_script_reports_missing_python_dependencies(monkeypatch):
     import importlib.util
 

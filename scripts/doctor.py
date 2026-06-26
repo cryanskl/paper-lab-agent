@@ -188,6 +188,9 @@ def check_env_example(repo: Path) -> dict[str, Any]:
         frontend_url_issue = frontend_url_runtime_issue(values)
         if frontend_url_issue is not None:
             issues.append(frontend_url_issue)
+        dev_ready_timeout_issue = dev_ready_timeout_runtime_issue(values, repo / "scripts/dev.sh")
+        if dev_ready_timeout_issue is not None:
+            issues.append(dev_ready_timeout_issue)
     return {
         "name": "env_example",
         "status": status_from_issues(issues),
@@ -270,6 +273,29 @@ def frontend_url_runtime_issue(values: dict[str, str]) -> dict[str, str] | None:
         "expected": expected,
         "actual": frontend_url,
         "message": f".env.example FRONTEND_URL must match runtime default {expected}",
+    }
+
+
+def dev_ready_timeout_default(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    match = re.search(r'DEV_READY_TIMEOUT="\$\{DEV_READY_TIMEOUT:-([^}]+)\}"', path.read_text(encoding="utf-8"))
+    if not match:
+        return None
+    return match.group(1)
+
+
+def dev_ready_timeout_runtime_issue(values: dict[str, str], dev_script_path: Path) -> dict[str, str] | None:
+    expected = dev_ready_timeout_default(dev_script_path)
+    actual = values.get("DEV_READY_TIMEOUT")
+    if not expected or not actual or actual == expected:
+        return None
+    return {
+        "code": "env_example_runtime_default_drift",
+        "key": "DEV_READY_TIMEOUT",
+        "expected": expected,
+        "actual": actual,
+        "message": f".env.example DEV_READY_TIMEOUT must match runtime default {expected}",
     }
 
 
