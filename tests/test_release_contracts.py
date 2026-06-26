@@ -1115,6 +1115,134 @@ def test_api_contract_journal_list_response_exposes_typed_whitelist_items():
     assert issues == []
 
 
+def test_api_contract_category_list_response_exposes_typed_tree_items():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.category_list_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_category_list_item_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/categories": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "name",
+                                                        "slug",
+                                                        "description",
+                                                        "parent_id",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "name": {"type": "string"},
+                                                        "slug": {"type": "string"},
+                                                        "description": {"type": "string"},
+                                                        "parent_id": {"type": "integer"},
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.category_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/categories item fields missing: children"]
+
+
+def test_api_contract_validator_reports_missing_category_child_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/categories": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "name",
+                                                        "slug",
+                                                        "description",
+                                                        "parent_id",
+                                                        "children",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "name": {"type": "string"},
+                                                        "slug": {"type": "string"},
+                                                        "description": {"type": "string"},
+                                                        "parent_id": {"type": "integer"},
+                                                        "children": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "required": ["id", "name", "slug", "description"],
+                                                                "properties": {
+                                                                    "id": {"type": "integer"},
+                                                                    "name": {"type": "string"},
+                                                                    "slug": {"type": "string"},
+                                                                    "description": {"type": "string"},
+                                                                },
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.category_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/categories item child fields missing: parent_id, children"]
+
+
 def test_api_contract_validator_reports_missing_journal_list_item_field():
     validate_api_contract = load_validate_api_contract()
     openapi = {

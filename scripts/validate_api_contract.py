@@ -58,6 +58,8 @@ JOURNAL_RESPONSE_FIELDS = (
     "created_at",
     "updated_at",
 )
+CATEGORY_LIST_RESPONSE_ROUTE = ("GET", "/api/v1/categories")
+CATEGORY_RESPONSE_FIELDS = ("id", "name", "slug", "description", "parent_id", "children")
 EXPORT_RESPONSE_FIELDS = (
     "reaction_set_id",
     "format",
@@ -502,6 +504,32 @@ def journal_list_response_contract_issues(openapi: dict | None = None) -> list[s
     return []
 
 
+def category_list_response_contract_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    specs = normalized_openapi_specs(source_openapi.get("paths", {}))
+    spec = specs.get(CATEGORY_LIST_RESPONSE_ROUTE)
+    if spec is None:
+        return []
+    schema = response_schema(spec, source_openapi)
+    method, path = CATEGORY_LIST_RESPONSE_ROUTE
+    missing_page = [field for field in PAGINATION_RESPONSE_FIELDS if not schema_declares_fields(schema, (field,))]
+    if missing_page:
+        return [f"{method} {path} missing response fields: {', '.join(missing_page)}"]
+
+    items_schema = schema_property(schema, "items", source_openapi)
+    item_schema = effective_schema(items_schema.get("items", {}), source_openapi)
+    missing_item = [field for field in CATEGORY_RESPONSE_FIELDS if not schema_declares_fields(item_schema, (field,))]
+    if missing_item:
+        return [f"{method} {path} item fields missing: {', '.join(missing_item)}"]
+
+    children_schema = schema_property(item_schema, "children", source_openapi)
+    child_schema = effective_schema(children_schema.get("items", {}), source_openapi)
+    missing_child = [field for field in CATEGORY_RESPONSE_FIELDS if not schema_declares_fields(child_schema, (field,))]
+    if missing_child:
+        return [f"{method} {path} item child fields missing: {', '.join(missing_child)}"]
+    return []
+
+
 def export_response_contract_issues(openapi: dict | None = None) -> list[str]:
     source_openapi = openapi if openapi is not None else app_openapi()
     specs = normalized_openapi_specs(source_openapi.get("paths", {}))
@@ -880,6 +908,7 @@ def main() -> int:
     error_response_issues = error_response_contract_issues()
     semantic_error_status_issues = semantic_error_status_contract_issues()
     journal_list_response_issues = journal_list_response_contract_issues()
+    category_list_response_issues = category_list_response_contract_issues()
     export_response_issues = export_response_contract_issues()
     rag_response_issues = rag_response_contract_issues()
     system_status_response_issues = system_status_response_contract_issues()
@@ -902,6 +931,7 @@ def main() -> int:
         or error_response_issues
         or semantic_error_status_issues
         or journal_list_response_issues
+        or category_list_response_issues
         or export_response_issues
         or rag_response_issues
         or system_status_response_issues
@@ -944,6 +974,10 @@ def main() -> int:
         if journal_list_response_issues:
             print("api contract journal list response issues:", file=sys.stderr)
             for issue in journal_list_response_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if category_list_response_issues:
+            print("api contract category list response issues:", file=sys.stderr)
+            for issue in category_list_response_issues:
                 print(f"- {issue}", file=sys.stderr)
         if export_response_issues:
             print("api contract export response issues:", file=sys.stderr)
