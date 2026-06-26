@@ -858,11 +858,16 @@ with chemistry_tab:
         value=100,
         key="chemistry-documents-page-size",
     )
-    chemistry_documents_response = api_get(
-        "/documents",
-        page=int(chemistry_documents_page),
-        page_size=int(chemistry_documents_page_size),
-    )
+    try:
+        chemistry_documents_response = api_get(
+            "/documents",
+            page=int(chemistry_documents_page),
+            page_size=int(chemistry_documents_page_size),
+        )
+    except FrontendApiError as exc:
+        st.error(format_error_payload(exc.payload, exc.status_code))
+        st.json(exc.payload)
+        st.stop()
     chemistry_documents = chemistry_documents_response["items"]
     st.caption(
         f"chemistry documents page {chemistry_documents_response['page']} · "
