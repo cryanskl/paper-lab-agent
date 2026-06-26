@@ -12800,6 +12800,22 @@ def test_streamlit_config_tab_normalizes_journal_keywords_for_dataframe():
         assert required in config_section
 
 
+def test_streamlit_config_metadata_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+
+    for required in [
+        'journals_response = api_get("/journals", page=int(config_journals_page), page_size=int(config_journals_page_size))',
+        'categories_response = api_get("/categories", page=1, page_size=100)',
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
+    ]:
+        assert required in config_section
+
+
 def test_streamlit_config_tab_exposes_journal_pagination_controls():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

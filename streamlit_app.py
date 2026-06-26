@@ -410,8 +410,13 @@ with config_tab:
         value=100,
         key="config-journals-page-size",
     )
-    journals_response = api_get("/journals", page=int(config_journals_page), page_size=int(config_journals_page_size))
-    categories_response = api_get("/categories", page=1, page_size=100)
+    try:
+        journals_response = api_get("/journals", page=int(config_journals_page), page_size=int(config_journals_page_size))
+        categories_response = api_get("/categories", page=1, page_size=100)
+    except FrontendApiError as exc:
+        st.error(format_error_payload(exc.payload, exc.status_code))
+        st.json(exc.payload)
+        st.stop()
     journals_all = journals_response["items"]
     categories_all = categories_response["items"]
 
