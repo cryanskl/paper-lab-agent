@@ -12629,6 +12629,25 @@ def test_streamlit_crawl_jobs_list_errors_show_payload_details():
         assert required in crawl_jobs_section
 
 
+def test_streamlit_crawl_job_detail_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+    crawl_job_detail_section = search_section[
+        search_section.index("selected_job = st.selectbox(") :
+        search_section.index("st.dataframe(crawl_job_diagnostic_rows(job_detail), use_container_width=True)")
+    ]
+
+    for required in [
+        'job_detail = api_get(f"/crawl/jobs/{selected_job[\'id\']}")',
+        "except FrontendApiError as exc:",
+        "st.warning(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "if job_detail:",
+    ]:
+        assert required in crawl_job_detail_section
+
+
 def test_streamlit_crawl_run_surfaces_success_and_error_states():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

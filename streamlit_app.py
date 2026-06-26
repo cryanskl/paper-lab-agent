@@ -387,18 +387,24 @@ with search_tab:
             jobs,
             format_func=crawl_job_option_label,
         )
-        job_detail = api_get(f"/crawl/jobs/{selected_job['id']}")
-        diagnostics = job_detail.get("diagnostics", {})
-        j1, j2, j3, j4 = st.columns(4)
-        j1.metric("found", diagnostics.get("papers_found", 0))
-        j2.metric("filtered", diagnostics.get("papers_filtered", 0))
-        j3.metric("accepted", diagnostics.get("papers_accepted", 0))
-        j4.metric("new", diagnostics.get("papers_new", 0))
-        st.caption(f"outcome: {diagnostics.get('outcome') or 'unknown'}")
-        if diagnostics.get("error"):
-            st.warning(diagnostics["error"])
-        st.dataframe(crawl_job_diagnostic_rows(job_detail), use_container_width=True)
-        st.json(job_detail)
+        try:
+            job_detail = api_get(f"/crawl/jobs/{selected_job['id']}")
+        except FrontendApiError as exc:
+            job_detail = None
+            st.warning(format_error_payload(exc.payload, exc.status_code))
+            st.json(exc.payload)
+        if job_detail:
+            diagnostics = job_detail.get("diagnostics", {})
+            j1, j2, j3, j4 = st.columns(4)
+            j1.metric("found", diagnostics.get("papers_found", 0))
+            j2.metric("filtered", diagnostics.get("papers_filtered", 0))
+            j3.metric("accepted", diagnostics.get("papers_accepted", 0))
+            j4.metric("new", diagnostics.get("papers_new", 0))
+            st.caption(f"outcome: {diagnostics.get('outcome') or 'unknown'}")
+            if diagnostics.get("error"):
+                st.warning(diagnostics["error"])
+            st.dataframe(crawl_job_diagnostic_rows(job_detail), use_container_width=True)
+            st.json(job_detail)
 
 with config_tab:
     config_journals_page_col, config_journals_page_size_col = st.columns(2)
