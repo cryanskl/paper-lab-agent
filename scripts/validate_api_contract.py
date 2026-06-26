@@ -147,6 +147,28 @@ REACTION_DETAIL_FIELDS = (
     "verified",
     "audit_log",
 )
+DOCUMENT_RESPONSE_ROUTES = (
+    ("GET", "/api/v1/documents/{}", "200"),
+    ("POST", "/api/v1/documents", "201"),
+)
+DOCUMENT_RESPONSE_FIELDS = (
+    "id",
+    "paper_id",
+    "file_path",
+    "file_hash",
+    "original_name",
+    "num_pages",
+    "parse_status",
+    "parse_error",
+    "index_status",
+    "index_error",
+    "chemistry_status",
+    "chemistry_error",
+    "tei_path",
+    "created_at",
+    "paper",
+)
+DOCUMENT_PAPER_FIELDS = ("id", "doi", "title", "journal_name", "published_date")
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -288,7 +310,21 @@ def schema_declares_fields(schema: dict, fields: tuple[str, ...]) -> bool:
 
 
 def schema_property(schema: dict, field: str, openapi: dict) -> dict:
-    return resolve_openapi_ref(schema.get("properties", {}).get(field, {}), openapi)
+    return effective_schema(resolve_openapi_ref(schema.get("properties", {}).get(field, {}), openapi), openapi)
+
+
+def effective_schema(schema: dict, openapi: dict) -> dict:
+    resolved = resolve_openapi_ref(schema, openapi)
+    if not isinstance(resolved, dict):
+        return {}
+    for key in ("anyOf", "oneOf"):
+        variants = resolved.get(key)
+        if isinstance(variants, list):
+            for variant in variants:
+                candidate = effective_schema(variant, openapi)
+                if candidate.get("type") != "null":
+                    return candidate
+    return resolved
 
 
 def pagination_contract_issues(
@@ -439,6 +475,27 @@ def reaction_set_detail_response_contract_issues(openapi: dict | None = None) ->
     return []
 
 
+def document_response_contract_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    specs = normalized_openapi_specs(source_openapi.get("paths", {}))
+    for method, path, status_code in DOCUMENT_RESPONSE_ROUTES:
+        spec = specs.get((method, path))
+        if spec is None:
+            continue
+        schema = response_schema(spec, source_openapi, status_code)
+        missing = [field for field in DOCUMENT_RESPONSE_FIELDS if not schema_declares_fields(schema, (field,))]
+        if missing:
+            return [f"{method} {path} missing response fields: {', '.join(missing)}"]
+
+        paper_schema = schema_property(schema, "paper", source_openapi)
+        missing_paper = [
+            field for field in DOCUMENT_PAPER_FIELDS if not schema_declares_fields(paper_schema, (field,))
+        ]
+        if missing_paper:
+            return [f"{method} {path} paper fields missing: {', '.join(missing_paper)}"]
+    return []
+
+
 def pagination_response_contract_issues(
     contract_path: Path = DEFAULT_CONTRACT_PATH,
     openapi_paths: dict | None = None,
@@ -530,6 +587,7 @@ def main() -> int:
     rag_response_issues = rag_response_contract_issues()
     system_status_response_issues = system_status_response_contract_issues()
     reaction_set_detail_response_issues = reaction_set_detail_response_contract_issues()
+    document_response_issues = document_response_contract_issues()
     async_issues = async_response_contract_issues(Path(args.contract_path))
     async_body_issues = async_response_body_contract_issues(Path(args.contract_path))
     if (
@@ -543,6 +601,7 @@ def main() -> int:
         or rag_response_issues
         or system_status_response_issues
         or reaction_set_detail_response_issues
+        or document_response_issues
         or async_issues
         or async_body_issues
     ):
@@ -585,6 +644,10 @@ def main() -> int:
         if reaction_set_detail_response_issues:
             print("api contract reaction set detail response issues:", file=sys.stderr)
             for issue in reaction_set_detail_response_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if document_response_issues:
+            print("api contract document response issues:", file=sys.stderr)
+            for issue in document_response_issues:
                 print(f"- {issue}", file=sys.stderr)
         if async_issues:
             print("api contract async response issues:", file=sys.stderr)

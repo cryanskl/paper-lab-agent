@@ -30,6 +30,32 @@ class TranslateIn(BaseModel):
         return normalized
 
 
+class PaperSummaryResponse(BaseModel):
+    id: int
+    doi: Optional[str] = None
+    title: Optional[str] = None
+    journal_name: Optional[str] = None
+    published_date: Optional[str] = None
+
+
+class DocumentResponse(BaseModel):
+    id: int
+    paper_id: Optional[int] = None
+    file_path: str
+    file_hash: Optional[str] = None
+    original_name: Optional[str] = None
+    num_pages: Optional[int] = None
+    parse_status: str
+    parse_error: Optional[str] = None
+    index_status: str
+    index_error: Optional[str] = None
+    chemistry_status: str
+    chemistry_error: Optional[str] = None
+    tei_path: Optional[str] = None
+    created_at: str
+    paper: Optional[PaperSummaryResponse] = None
+
+
 async def ensure_pdf_upload(file: UploadFile) -> None:
     suffix = Path(file.filename or "").suffix.lower()
     header = await file.read(5)
@@ -70,6 +96,7 @@ def get_document_or_404(document_id: int) -> dict:
 @router.post(
     "",
     status_code=201,
+    response_model=DocumentResponse,
     responses={
         409: {"description": "Duplicate document"},
         415: {"description": "Unsupported document type"},
@@ -107,7 +134,7 @@ def list_documents(
     return page(items, total, page_num, page_size)
 
 
-@router.get("/{document_id}")
+@router.get("/{document_id}", response_model=DocumentResponse)
 def get_document(document_id: int) -> dict:
     return get_document_or_404(document_id)
 
