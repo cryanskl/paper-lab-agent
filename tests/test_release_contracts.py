@@ -817,6 +817,24 @@ def test_doctor_env_example_check_rejects_secret_like_values(tmp_path):
     } in check["issues"]
 
 
+def test_doctor_env_example_check_rejects_settings_default_drift(tmp_path):
+    doctor = load_doctor()
+    repo = Path(__file__).resolve().parent.parent
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_text = env_text.replace("LLM_MODEL=gpt-4o-mini\n", "LLM_MODEL=legacy-model\n")
+    (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
+
+    check = doctor.check_env_example(tmp_path)
+
+    assert {
+        "code": "env_example_default_drift",
+        "key": "LLM_MODEL",
+        "expected": "gpt-4o-mini",
+        "actual": "legacy-model",
+        "message": ".env.example LLM_MODEL must match default gpt-4o-mini",
+    } in check["issues"]
+
+
 def test_doctor_script_reports_missing_python_dependencies(monkeypatch):
     import importlib.util
 

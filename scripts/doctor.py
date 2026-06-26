@@ -75,6 +75,30 @@ SECRET_LIKE_ENV_EXAMPLE_KEYS = (
     "UNPAYWALL_EMAIL",
     "LLM_API_KEY",
 )
+ENV_EXAMPLE_DEFAULTS = {
+    "PAPER_LAB_DATA_DIR": "data",
+    "DATABASE_PATH": "data/plasma.db",
+    "PAPER_LAB_PDF_DIR": "data/pdfs",
+    "PAPER_LAB_TEI_DIR": "data/tei",
+    "PAPER_LAB_TRANSLATION_DIR": "data/translations",
+    "PAPER_LAB_EXPORT_DIR": "data/exports",
+    "VECTOR_DB_PATH": "data/vector-index.json",
+    "VECTOR_DB_BACKEND": "local-json",
+    "GROBID_URL": "http://127.0.0.1:8070",
+    "LLM_BASE_URL": "https://api.openai.com/v1",
+    "LLM_MODEL": "gpt-4o-mini",
+    "EMBEDDING_MODEL": "local-hash",
+    "PAPER_LAB_SCHEDULER_ENABLED": "false",
+    "ACADEMIC_API_MAX_PAGES": "3",
+    "ACADEMIC_API_MAX_RETRIES": "3",
+    "ACADEMIC_API_RETRY_BACKOFF_SECONDS": "0.25",
+    "ACADEMIC_API_REQUEST_INTERVAL_SECONDS": "0.0",
+    "ACADEMIC_API_TIMEOUT_SECONDS": "20.0",
+    "UNPAYWALL_API_MAX_RETRIES": "3",
+    "UNPAYWALL_API_RETRY_BACKOFF_SECONDS": "0.25",
+    "UNPAYWALL_API_REQUEST_INTERVAL_SECONDS": "0.0",
+    "UNPAYWALL_API_TIMEOUT_SECONDS": "20.0",
+}
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -146,6 +170,18 @@ def check_env_example(repo: Path) -> dict[str, Any]:
                         "message": f".env.example must leave {key} blank",
                     }
                 )
+        for key, expected in ENV_EXAMPLE_DEFAULTS.items():
+            actual = values.get(key)
+            if actual is not None and not env_values_match(actual, expected):
+                issues.append(
+                    {
+                        "code": "env_example_default_drift",
+                        "key": key,
+                        "expected": expected,
+                        "actual": actual,
+                        "message": f".env.example {key} must match default {expected}",
+                    }
+                )
     return {
         "name": "env_example",
         "status": status_from_issues(issues),
@@ -170,6 +206,21 @@ def env_example_values(path: Path) -> dict[str, str]:
         if separator and ENV_KEY_PATTERN.fullmatch(key):
             values[key] = _value.strip().strip('"').strip("'")
     return values
+
+
+def normalize_env_value(value: str) -> str:
+    if value.startswith("./"):
+        return value[2:]
+    return value
+
+
+def env_values_match(actual: str, expected: str) -> bool:
+    if normalize_env_value(actual) == normalize_env_value(expected):
+        return True
+    try:
+        return float(actual) == float(expected)
+    except ValueError:
+        return False
 
 
 def check_python_dependencies() -> dict[str, Any]:
