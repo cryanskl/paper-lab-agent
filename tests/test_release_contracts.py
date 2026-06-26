@@ -1372,6 +1372,7 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     assert demo_summary["ready"] is True
     assert demo_summary["export_formats"] == ["json", "txt", "bolsig"]
     assert demo_summary["export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
+    assert manifest["demo_export_audit_entry_counts"] == demo_summary["export_audit_entry_counts"]
     assert "/api/v1/health" in openapi["paths"]
 
 
@@ -1445,6 +1446,55 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     assert payload["demo_export_formats"] == ["json", "txt", "bolsig"]
     assert payload["demo_export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
     assert payload["openapi_path_count"] == 28
+
+
+def test_validate_release_artifacts_reports_manifest_audit_count_mismatch(tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    validate_release_artifacts = load_validate_release_artifacts()
+    artifact_dir = tmp_path / "release"
+    artifact_dir.mkdir()
+    openapi = {
+        "info": {"title": "paper-lab-agent", "version": "0.1.0"},
+        "paths": {"/api/v1/health": {}},
+    }
+    demo_summary = {
+        "ready": True,
+        "export_formats": ["json", "txt", "bolsig"],
+        "export_audit_entry_counts": {"json": 1, "txt": 1, "bolsig": 1},
+    }
+    manifest = {
+        "service": "paper-lab-agent",
+        "version": "0.1.0",
+        "artifacts": {
+            "openapi": "openapi.json",
+            "demo_summary": "demo-summary.json",
+            "manifest": "release-manifest.json",
+        },
+        "demo_ready": True,
+        "demo_export_formats": ["json", "txt", "bolsig"],
+        "demo_export_audit_entry_counts": {"json": 0, "txt": 1, "bolsig": 1},
+        "openapi_path_count": 1,
+        "source": {
+            "git_commit": "a" * 40,
+            "git_branch": "phase/5-experiment-lab-artifacts",
+            "git_dirty": False,
+        },
+        "checksums": {
+            "openapi.json": "",
+            "demo-summary.json": "",
+            "release-manifest.json": "",
+        },
+    }
+    (artifact_dir / "openapi.json").write_text(json.dumps(openapi), encoding="utf-8")
+    (artifact_dir / "demo-summary.json").write_text(json.dumps(demo_summary), encoding="utf-8")
+    manifest["checksums"]["openapi.json"] = export_release_artifacts.sha256_file(artifact_dir / "openapi.json")
+    manifest["checksums"]["demo-summary.json"] = export_release_artifacts.sha256_file(artifact_dir / "demo-summary.json")
+    manifest["checksums"]["release-manifest.json"] = export_release_artifacts.manifest_checksum(manifest)
+    (artifact_dir / "release-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = validate_release_artifacts.validate_release_artifacts(artifact_dir)
+
+    assert "release manifest demo_export_audit_entry_counts mismatch: {'json': 0, 'txt': 1, 'bolsig': 1}" in report["issues"]
 
 
 def test_validate_release_artifacts_requires_demo_audit_summary(tmp_path):

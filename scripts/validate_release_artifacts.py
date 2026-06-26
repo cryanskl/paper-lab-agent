@@ -104,6 +104,11 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             issues.append(
                 f"release manifest demo_export_formats mismatch: {manifest.get('demo_export_formats')!r}"
             )
+        if manifest.get("demo_export_audit_entry_counts") != demo_export_audit_entry_counts:
+            issues.append(
+                "release manifest demo_export_audit_entry_counts mismatch: "
+                f"{manifest.get('demo_export_audit_entry_counts')!r}"
+            )
         if manifest.get("openapi_path_count") != openapi_path_count:
             issues.append(
                 f"release manifest openapi_path_count mismatch: {manifest.get('openapi_path_count')!r}"
@@ -158,7 +163,9 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
         "source": manifest.get("source") if isinstance(manifest.get("source"), dict) else {},
         "demo_ready": manifest.get("demo_ready"),
         "demo_export_formats": manifest.get("demo_export_formats") or [],
-        "demo_export_audit_entry_counts": demo_export_audit_entry_counts,
+        "demo_export_audit_entry_counts": manifest.get("demo_export_audit_entry_counts")
+        if isinstance(manifest.get("demo_export_audit_entry_counts"), dict)
+        else demo_export_audit_entry_counts,
         "openapi_path_count": openapi_path_count,
         "checksums": manifest.get("checksums") if isinstance(manifest.get("checksums"), dict) else {},
         "issues": issues,
