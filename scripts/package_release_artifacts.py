@@ -42,6 +42,9 @@ def package_release_artifacts(
             "artifact_count": 0,
             "package_sha256": None,
             "source": validation.get("source") or {},
+            "demo_ready": validation.get("demo_ready"),
+            "demo_export_formats": validation.get("demo_export_formats") or [],
+            "demo_export_audit_entry_counts": validation.get("demo_export_audit_entry_counts") or {},
             "issues": validation.get("issues") or ["release artifact validation failed"],
         }
 
@@ -57,6 +60,9 @@ def package_release_artifacts(
         "artifact_count": len(artifact_filenames()),
         "package_sha256": sha256_file(output_path),
         "source": validation.get("source") or {},
+        "demo_ready": validation.get("demo_ready"),
+        "demo_export_formats": validation.get("demo_export_formats") or [],
+        "demo_export_audit_entry_counts": validation.get("demo_export_audit_entry_counts") or {},
         "issues": [],
     }
 
