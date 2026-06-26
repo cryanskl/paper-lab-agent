@@ -777,6 +777,27 @@ def test_doctor_env_example_check_matches_required_runtime_keys(tmp_path):
         } in check["issues"]
 
 
+def test_doctor_env_example_check_ignores_comments_and_similar_key_names(tmp_path):
+    doctor = load_doctor()
+    env_text = "\n".join(
+        [
+            "MY_OPENALEX_MAILTO=lab@example.test",
+            "# UNPAYWALL_EMAIL=ops@example.test",
+            "GROBID_URL=http://127.0.0.1:8070",
+            "LLM_API_KEY=",
+            "EMBEDDING_MODEL=local-hash",
+            "VECTOR_DB_PATH=./data/vector-index.json",
+            "DATABASE_PATH=./data/plasma.db",
+        ]
+    )
+    (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
+
+    check = doctor.check_env_example(tmp_path)
+    missing_keys = [issue.get("key") for issue in check["issues"]]
+
+    assert missing_keys == ["OPENALEX_MAILTO", "UNPAYWALL_EMAIL"]
+
+
 def test_doctor_script_reports_missing_python_dependencies(monkeypatch):
     import importlib.util
 

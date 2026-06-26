@@ -96,9 +96,9 @@ def check_env_example(repo: Path) -> dict[str, Any]:
     path = repo / ".env.example"
     issues = []
     if path.exists() and path.is_file():
-        text = path.read_text(encoding="utf-8")
+        keys = env_example_keys(path)
         for key in REQUIRED_ENV_EXAMPLE_KEYS:
-            if f"{key}=" not in text:
+            if key not in keys:
                 issues.append(
                     {
                         "code": "missing_env_example_key",
@@ -111,6 +111,21 @@ def check_env_example(repo: Path) -> dict[str, Any]:
         "status": status_from_issues(issues),
         "issues": issues,
     }
+
+
+def env_example_keys(path: Path) -> set[str]:
+    keys: set[str] = set()
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line.removeprefix("export ").strip()
+        key, separator, _value = line.partition("=")
+        key = key.strip()
+        if separator and ENV_KEY_PATTERN.fullmatch(key):
+            keys.add(key)
+    return keys
 
 
 def check_python_dependencies() -> dict[str, Any]:
