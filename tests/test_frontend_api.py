@@ -1259,6 +1259,27 @@ def test_rag_source_rows_include_citation_and_location_labels():
     ]
 
 
+def test_rag_source_option_label_combines_citation_and_location():
+    from app import frontend_api
+
+    label = frontend_api.rag_source_option_label(
+        {
+            "citation": "[paper 7 · doc 3 · section 4 · chunk 19]",
+            "source_location": "paper 7 · doc 3 · section 4 · table · Reaction table",
+        }
+    )
+
+    assert label == "[paper 7 · doc 3 · section 4 · chunk 19] · paper 7 · doc 3 · section 4 · table · Reaction table"
+
+
+def test_rag_source_option_label_uses_stable_fallback():
+    from app import frontend_api
+
+    label = frontend_api.rag_source_option_label({})
+
+    assert label == "引用来源"
+
+
 def test_api_docs_links_use_service_root_when_api_base_includes_version_prefix():
     from app import frontend_api
 

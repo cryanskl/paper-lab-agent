@@ -16,6 +16,7 @@ from app.frontend_api import (
     document_section_rows,
     document_status_rows,
     journal_option_label,
+    rag_source_option_label,
     rag_source_rows,
     reaction_audit_rows,
     reaction_display_state,
@@ -796,7 +797,7 @@ with rag_tab:
                     source_preview = st.selectbox(
                         "source chunk",
                         sources,
-                        format_func=lambda source: f"{source.get('citation')} · {source.get('source_location')}",
+                        format_func=rag_source_option_label,
                     )
                     if source_preview.get("source_excerpt"):
                         st.code(source_preview.get("source_excerpt"))

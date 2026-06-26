@@ -12106,13 +12106,13 @@ def test_streamlit_rag_tab_separates_answer_and_sources():
         "rag_source_rows",
         "引用来源",
         "st.dataframe(sources",
+        "format_func=rag_source_option_label",
         "source_excerpt",
         'source_preview.get("source_excerpt")',
         "st.code(source_preview.get(\"source_excerpt\")",
-        "source_location",
-        "citation",
     ]:
         assert required in rag_section
+    assert "format_func=lambda source" not in rag_section
 
 
 def test_streamlit_rag_tab_validates_document_ids_before_query():

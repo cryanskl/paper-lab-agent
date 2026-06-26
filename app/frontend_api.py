@@ -411,6 +411,11 @@ def rag_source_rows(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
+def rag_source_option_label(source: dict[str, Any]) -> str:
+    label = " · ".join(compact_parts([source.get("citation"), source.get("source_location")]))
+    return label or "引用来源"
+
+
 def reaction_set_rows(reaction_sets: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for item in reaction_sets:
