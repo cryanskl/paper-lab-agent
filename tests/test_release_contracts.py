@@ -1090,6 +1090,122 @@ def test_api_contract_rag_query_response_exposes_cited_sources():
     assert issues == []
 
 
+def test_api_contract_system_status_response_exposes_release_readiness():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.system_status_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_system_status_top_level_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/system/status": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "database_path",
+                                            "runtime",
+                                            "config_warnings",
+                                            "storage",
+                                            "storage_health",
+                                            "external_capabilities",
+                                            "status_counts",
+                                            "counts",
+                                            "demo_data",
+                                        ],
+                                        "properties": {
+                                            "database_path": {"type": "string"},
+                                            "runtime": {"type": "object"},
+                                            "config_warnings": {"type": "array"},
+                                            "storage": {"type": "object"},
+                                            "storage_health": {"type": "object"},
+                                            "external_capabilities": {"type": "object"},
+                                            "status_counts": {"type": "object"},
+                                            "counts": {"type": "object"},
+                                            "demo_data": {"type": "object"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.system_status_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/system/status missing response fields: release_readiness"]
+
+
+def test_api_contract_validator_reports_missing_system_status_nested_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/system/status": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "database_path",
+                                            "runtime",
+                                            "config_warnings",
+                                            "storage",
+                                            "storage_health",
+                                            "external_capabilities",
+                                            "status_counts",
+                                            "counts",
+                                            "demo_data",
+                                            "release_readiness",
+                                        ],
+                                        "properties": {
+                                            "database_path": {"type": "string"},
+                                            "runtime": {
+                                                "type": "object",
+                                                "required": ["api_prefix", "scheduler_enabled", "scheduler_jobs"],
+                                                "properties": {
+                                                    "api_prefix": {"type": "string"},
+                                                    "scheduler_enabled": {"type": "boolean"},
+                                                    "scheduler_jobs": {"type": "array"},
+                                                },
+                                            },
+                                            "config_warnings": {"type": "array"},
+                                            "storage": {"type": "object"},
+                                            "storage_health": {"type": "object"},
+                                            "external_capabilities": {"type": "object"},
+                                            "status_counts": {"type": "object"},
+                                            "counts": {"type": "object"},
+                                            "demo_data": {"type": "object"},
+                                            "release_readiness": {"type": "object"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.system_status_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/system/status runtime missing fields: version"]
+
+
 def test_api_contract_validator_reports_missing_rag_response_field():
     validate_api_contract = load_validate_api_contract()
     openapi = {

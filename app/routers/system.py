@@ -1,8 +1,10 @@
 import json
 import os
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter
+from pydantic import BaseModel
 
 from app import __version__
 from app.clients.grobid import GrobidClient
@@ -32,6 +34,110 @@ RELEASE_STORAGE_WRITABLE_KEYS = [
     "database_parent",
     "vector_db_parent",
 ]
+
+
+class SchedulerJobResponse(BaseModel):
+    id: str
+    period: str
+    trigger: str
+    schedule: str
+    timezone: str
+
+
+class RuntimeStatusResponse(BaseModel):
+    api_prefix: str
+    scheduler_enabled: bool
+    scheduler_jobs: list[SchedulerJobResponse]
+    version: str
+
+
+class ConfigWarningResponse(BaseModel):
+    code: str
+    capability: str
+    message: str
+
+
+class StoragePathsResponse(BaseModel):
+    data_dir: str
+    pdf_dir: str
+    tei_dir: str
+    translation_dir: str
+    export_dir: str
+    vector_db_path: str
+
+
+class PathHealthResponse(BaseModel):
+    path: str
+    exists: bool
+    writable: bool
+
+
+class VectorStoreHealthResponse(BaseModel):
+    path: str
+    exists: bool
+    readable: bool
+    writable: bool
+    valid_json: Optional[bool] = None
+    error: Optional[str] = None
+
+
+class StorageHealthResponse(BaseModel):
+    data_dir: PathHealthResponse
+    pdf_dir: PathHealthResponse
+    tei_dir: PathHealthResponse
+    translation_dir: PathHealthResponse
+    export_dir: PathHealthResponse
+    database: PathHealthResponse
+    database_parent: PathHealthResponse
+    vector_db_parent: PathHealthResponse
+    vector_db: VectorStoreHealthResponse
+
+
+class GrobidCapabilityResponse(BaseModel):
+    url: str
+    available: Optional[bool] = None
+    status_code: Optional[int] = None
+    error: Optional[str] = None
+
+
+class ExternalCapabilitiesResponse(BaseModel):
+    openalex_mailto: bool
+    unpaywall_email: bool
+    grobid_url: str
+    grobid: GrobidCapabilityResponse
+    llm_api_key: bool
+    translation_adapter: str
+    llm_model: str
+    embedding_model: str
+    vector_db_backend: str
+
+
+class DemoDataStatusResponse(BaseModel):
+    ready: bool
+    requirements: dict[str, int]
+    missing: list[str]
+    counts: dict[str, int]
+
+
+class ReleaseReadinessResponse(BaseModel):
+    ready: bool
+    demo_data_missing: list[str]
+    failed_workflows: list[str]
+    config_warning_codes: list[str]
+    storage_errors: list[str]
+
+
+class SystemStatusResponse(BaseModel):
+    database_path: str
+    runtime: RuntimeStatusResponse
+    config_warnings: list[ConfigWarningResponse]
+    storage: StoragePathsResponse
+    storage_health: StorageHealthResponse
+    external_capabilities: ExternalCapabilitiesResponse
+    status_counts: dict[str, dict[str, int]]
+    counts: dict[str, int]
+    demo_data: DemoDataStatusResponse
+    release_readiness: ReleaseReadinessResponse
 
 
 def normalize_grobid_status(detail: dict, fallback_url: str) -> dict:
@@ -232,7 +338,7 @@ def release_readiness_status(
     }
 
 
-@router.get("/status")
+@router.get("/status", response_model=SystemStatusResponse)
 async def status(check_external: bool = False) -> dict:
     settings = get_settings()
     grobid = normalize_grobid_status({}, settings.grobid_url)

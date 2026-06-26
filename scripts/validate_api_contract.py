@@ -64,6 +64,52 @@ RAG_SOURCE_FIELDS = (
     "source_excerpt",
 )
 RAG_RESPONSE_ROUTE = ("POST", "/api/v1/rag/query")
+SYSTEM_STATUS_RESPONSE_ROUTE = ("GET", "/api/v1/system/status")
+SYSTEM_STATUS_RESPONSE_FIELDS = (
+    "database_path",
+    "runtime",
+    "config_warnings",
+    "storage",
+    "storage_health",
+    "external_capabilities",
+    "status_counts",
+    "counts",
+    "demo_data",
+    "release_readiness",
+)
+SYSTEM_STATUS_NESTED_FIELDS = {
+    "runtime": ("api_prefix", "scheduler_enabled", "scheduler_jobs", "version"),
+    "demo_data": ("ready", "requirements", "missing", "counts"),
+    "release_readiness": (
+        "ready",
+        "demo_data_missing",
+        "failed_workflows",
+        "config_warning_codes",
+        "storage_errors",
+    ),
+    "external_capabilities": (
+        "openalex_mailto",
+        "unpaywall_email",
+        "grobid_url",
+        "grobid",
+        "llm_api_key",
+        "translation_adapter",
+        "llm_model",
+        "embedding_model",
+        "vector_db_backend",
+    ),
+    "storage_health": (
+        "data_dir",
+        "pdf_dir",
+        "tei_dir",
+        "translation_dir",
+        "export_dir",
+        "database",
+        "database_parent",
+        "vector_db_parent",
+        "vector_db",
+    ),
+}
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -204,6 +250,10 @@ def schema_declares_fields(schema: dict, fields: tuple[str, ...]) -> bool:
     return all(field in present for field in fields)
 
 
+def schema_property(schema: dict, field: str, openapi: dict) -> dict:
+    return resolve_openapi_ref(schema.get("properties", {}).get(field, {}), openapi)
+
+
 def pagination_contract_issues(
     contract_path: Path = DEFAULT_CONTRACT_PATH,
     openapi_paths: dict | None = None,
@@ -301,6 +351,32 @@ def rag_response_contract_issues(openapi: dict | None = None) -> list[str]:
     return []
 
 
+def system_status_response_contract_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    specs = normalized_openapi_specs(source_openapi.get("paths", {}))
+    spec = specs.get(SYSTEM_STATUS_RESPONSE_ROUTE)
+    if spec is None:
+        return []
+    schema = response_schema(spec, source_openapi)
+    method, path = SYSTEM_STATUS_RESPONSE_ROUTE
+    missing = [
+        field for field in SYSTEM_STATUS_RESPONSE_FIELDS if not schema_declares_fields(schema, (field,))
+    ]
+    if missing:
+        return [f"{method} {path} missing response fields: {', '.join(missing)}"]
+
+    for field, nested_fields in SYSTEM_STATUS_NESTED_FIELDS.items():
+        nested_schema = schema_property(schema, field, source_openapi)
+        missing_nested = [
+            nested_field
+            for nested_field in nested_fields
+            if not schema_declares_fields(nested_schema, (nested_field,))
+        ]
+        if missing_nested:
+            return [f"{method} {path} {field} missing fields: {', '.join(missing_nested)}"]
+    return []
+
+
 def pagination_response_contract_issues(
     contract_path: Path = DEFAULT_CONTRACT_PATH,
     openapi_paths: dict | None = None,
@@ -390,6 +466,7 @@ def main() -> int:
     semantic_error_status_issues = semantic_error_status_contract_issues()
     export_response_issues = export_response_contract_issues()
     rag_response_issues = rag_response_contract_issues()
+    system_status_response_issues = system_status_response_contract_issues()
     async_issues = async_response_contract_issues(Path(args.contract_path))
     async_body_issues = async_response_body_contract_issues(Path(args.contract_path))
     if (
@@ -401,6 +478,7 @@ def main() -> int:
         or semantic_error_status_issues
         or export_response_issues
         or rag_response_issues
+        or system_status_response_issues
         or async_issues
         or async_body_issues
     ):
@@ -435,6 +513,10 @@ def main() -> int:
         if rag_response_issues:
             print("api contract rag response issues:", file=sys.stderr)
             for issue in rag_response_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if system_status_response_issues:
+            print("api contract system status response issues:", file=sys.stderr)
+            for issue in system_status_response_issues:
                 print(f"- {issue}", file=sys.stderr)
         if async_issues:
             print("api contract async response issues:", file=sys.stderr)
