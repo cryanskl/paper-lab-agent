@@ -1107,6 +1107,43 @@ def test_api_contract_semantic_error_statuses_are_documented():
     assert issues == []
 
 
+def test_api_contract_health_response_exposes_probe_metadata():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.health_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_health_response_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/health": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["status"],
+                                        "properties": {"status": {"type": "string"}},
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.health_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/health missing response fields: service"]
+
+
 def test_api_contract_journal_list_response_exposes_typed_whitelist_items():
     validate_api_contract = load_validate_api_contract()
 

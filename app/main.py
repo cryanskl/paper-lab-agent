@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from pydantic import BaseModel
 
 from app import __version__
 from app.config import get_settings
@@ -8,6 +9,11 @@ from app.db import init_db
 from app.errors import install_error_handlers, install_openapi_error_schema
 from app.routers import categories, crawl, documents, journals, papers, rag, reactions, system
 from app.scheduler import create_scheduler
+
+
+class HealthResponse(BaseModel):
+    status: str
+    service: str
 
 
 @asynccontextmanager
@@ -29,11 +35,11 @@ def create_app() -> FastAPI:
     app = FastAPI(title="paper-lab-agent", version=__version__, lifespan=lifespan)
     install_error_handlers(app)
 
-    @app.get("/health")
+    @app.get("/health", response_model=HealthResponse)
     def health() -> dict:
         return {"status": "ok", "service": "paper-lab-agent"}
 
-    @app.get(f"{settings.api_prefix}/health")
+    @app.get(f"{settings.api_prefix}/health", response_model=HealthResponse)
     def api_health() -> dict:
         return {"status": "ok", "service": "paper-lab-agent"}
 
