@@ -13,9 +13,13 @@ from urllib.request import urlopen
 HEALTH_PATH = "/api/v1/health"
 STATUS_PATH = "/api/v1/system/status"
 EXTERNAL_STATUS_PATH = "/api/v1/system/status?check_external=true"
+OPENAPI_PATH = "/openapi.json"
 EXPECTED_API_PREFIX = "/api/v1"
 EXPECTED_SERVICE = "paper-lab-agent"
 SUPPORTED_TRANSLATION_ADAPTERS = {"local-echo", "openai-compatible"}
+OPENAPI_REQUIRED_TAGS = {"system"}
+OPENAPI_REQUIRED_PATHS = {"/api/v1/health"}
+OPENAPI_REQUIRED_SCHEMAS = {"ErrorResponse"}
 STATUS_REQUIRED_KEYS = {
     "database_path",
     "runtime",
@@ -199,6 +203,73 @@ def probe_frontend(frontend_url: str, timeout: float) -> dict:
         return {"url": url, "status_code": fetch_status(url, timeout)}
     except (OSError, URLError) as exc:
         return {"url": url, "status_code": None, "error": str(exc)}
+
+
+def validate_openapi_schema(openapi: dict) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(openapi, dict):
+        return ["openapi must be an object"]
+
+    info = openapi.get("info")
+    if not isinstance(info, dict):
+        errors.append("info must be an object")
+    elif info.get("title") != EXPECTED_SERVICE:
+        errors.append(f"info.title must be {EXPECTED_SERVICE}")
+
+    paths = openapi.get("paths")
+    if not isinstance(paths, dict):
+        errors.append("paths must be an object")
+    else:
+        missing_paths = sorted(OPENAPI_REQUIRED_PATHS - set(paths))
+        if missing_paths:
+            errors.append(f"missing paths: {', '.join(missing_paths)}")
+
+    tags = openapi.get("tags")
+    if not isinstance(tags, list):
+        errors.append("tags must be a list")
+    else:
+        tag_names = {
+            tag.get("name")
+            for tag in tags
+            if isinstance(tag, dict) and isinstance(tag.get("name"), str)
+        }
+        missing_tags = sorted(OPENAPI_REQUIRED_TAGS - tag_names)
+        if missing_tags:
+            errors.append(f"missing tags: {', '.join(missing_tags)}")
+
+    components = openapi.get("components")
+    schemas = components.get("schemas") if isinstance(components, dict) else None
+    if not isinstance(schemas, dict):
+        errors.append("components.schemas must be an object")
+    else:
+        missing_schemas = sorted(OPENAPI_REQUIRED_SCHEMAS - set(schemas))
+        if missing_schemas:
+            errors.append(f"missing schemas: {', '.join(missing_schemas)}")
+    return errors
+
+
+def probe_openapi(base_url: str, timeout: float) -> dict:
+    url = f"{base_url}{OPENAPI_PATH}"
+    try:
+        payload = fetch_json(url, timeout)
+    except (OSError, URLError, json.JSONDecodeError) as exc:
+        return {"url": url, "ok": False, "error": str(exc), "path_count": 0, "tag_names": []}
+
+    errors = validate_openapi_schema(payload)
+    paths = payload.get("paths") if isinstance(payload, dict) else {}
+    tags = payload.get("tags") if isinstance(payload, dict) else []
+    tag_names = sorted(
+        tag.get("name")
+        for tag in tags
+        if isinstance(tag, dict) and isinstance(tag.get("name"), str)
+    )
+    return {
+        "url": url,
+        "ok": errors == [],
+        "error": "; ".join(errors) if errors else None,
+        "path_count": len(paths) if isinstance(paths, dict) else 0,
+        "tag_names": tag_names,
+    }
 
 
 def validate_system_status(status: dict) -> list[str]:
@@ -588,13 +659,20 @@ def probe_blocker(prefix: str, detail: Optional[dict]) -> Optional[str]:
         return None
     if prefix == "grobid" and detail.get("available") is True:
         return None
+    if prefix == "openapi" and detail.get("ok") is True:
+        return None
     reason = detail.get("error")
     if not reason:
         reason = f"status_code={detail.get('status_code')}"
     return f"{prefix}:{reason}"
 
 
-def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) -> dict:
+def health_summary(
+    health: dict,
+    status: dict,
+    frontend: Optional[dict] = None,
+    openapi: Optional[dict] = None,
+) -> dict:
     safe_status = status if isinstance(status, dict) else {}
     runtime = safe_status.get("runtime")
     if not isinstance(runtime, dict):
@@ -634,6 +712,7 @@ def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) 
     external_capabilities = safe_status.get("external_capabilities")
     grobid = external_capabilities.get("grobid") if isinstance(external_capabilities, dict) else None
     frontend_blocker = probe_blocker("frontend", frontend)
+    openapi_blocker = probe_blocker("openapi", openapi)
     grobid_blocker = (
         probe_blocker("grobid", grobid)
         if isinstance(grobid, dict)
@@ -643,6 +722,8 @@ def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) 
     release_blockers = [*readiness_blockers]
     if frontend_blocker:
         release_blockers.append(frontend_blocker)
+    if openapi_blocker:
+        release_blockers.append(openapi_blocker)
     if grobid_blocker:
         release_blockers.append(grobid_blocker)
     summary = {
@@ -670,6 +751,15 @@ def health_summary(health: dict, status: dict, frontend: Optional[dict] = None) 
                 "frontend_ok": frontend.get("status_code") == 200,
             }
         )
+    if openapi is not None:
+        summary.update(
+            {
+                "openapi_url": openapi.get("url"),
+                "openapi_ok": openapi.get("ok") is True,
+                "openapi_path_count": openapi.get("path_count"),
+                "openapi_tag_names": openapi.get("tag_names") or [],
+            }
+        )
     if isinstance(grobid, dict) and any(
         grobid.get(key) is not None for key in ("available", "status_code", "error")
     ):
@@ -691,6 +781,8 @@ def main() -> int:
     parser.add_argument("--check-frontend", action="store_true", help="Also check Streamlit frontend health")
     parser.add_argument("--frontend-url", default=default_frontend_url(), help="Streamlit base URL")
     parser.add_argument("--require-frontend", action="store_true", help="Fail when Streamlit frontend is unavailable")
+    parser.add_argument("--check-openapi", action="store_true", help="Also check live OpenAPI JSON schema")
+    parser.add_argument("--require-openapi", action="store_true", help="Fail when OpenAPI JSON schema is unavailable or invalid")
     parser.add_argument("--check-external", action="store_true", help="Also check configured external services")
     parser.add_argument("--require-grobid", action="store_true", help="Fail when GROBID is unavailable")
     parser.add_argument("--require-storage-writable", action="store_true", help="Fail when local storage paths are missing or not writable")
@@ -717,14 +809,17 @@ def main() -> int:
         print(f"health_check failed: {exc}", file=sys.stderr)
         return 1
     frontend = probe_frontend(args.frontend_url, args.timeout) if args.check_frontend or args.require_frontend else None
+    openapi = probe_openapi(base_url, args.timeout) if args.check_openapi or args.require_openapi else None
 
     config_warnings = status.get("config_warnings", []) if isinstance(status, dict) else []
     output = {"health": health, "status": status, "config_warnings": config_warnings}
     if frontend is not None:
         output["frontend"] = frontend
+    if openapi is not None:
+        output["openapi"] = openapi
     print(
         json.dumps(
-            health_summary(health, status, frontend) if args.summary_only else output,
+            health_summary(health, status, frontend, openapi) if args.summary_only else output,
             ensure_ascii=False,
             indent=None if args.compact else 2,
         )
@@ -775,6 +870,10 @@ def main() -> int:
         detail = frontend.get("error") or f"status_code={frontend.get('status_code')}"
         print(f"health_check failed: frontend is required but unavailable ({detail})", file=sys.stderr)
         return 1
+    if args.require_openapi and isinstance(openapi, dict) and openapi.get("ok") is not True:
+        detail = openapi.get("error") or "invalid OpenAPI schema"
+        print(f"health_check failed: OpenAPI schema is unavailable or invalid ({detail})", file=sys.stderr)
+        return 1
     if args.require_grobid:
         grobid = status["external_capabilities"]["grobid"]
         if grobid.get("available") is not True:
@@ -785,6 +884,13 @@ def main() -> int:
         detail = frontend.get("error") or f"status_code={frontend['status_code']}"
         print(
             f"health_check failed: Streamlit frontend is unavailable ({detail})",
+            file=sys.stderr,
+        )
+        return 1
+    if args.check_openapi and isinstance(openapi, dict) and openapi.get("ok") is not True:
+        detail = openapi.get("error") or "invalid OpenAPI schema"
+        print(
+            f"health_check failed: OpenAPI schema is unavailable or invalid ({detail})",
             file=sys.stderr,
         )
         return 1

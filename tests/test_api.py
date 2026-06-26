@@ -7223,6 +7223,11 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "python scripts/health_check.py --require-no-config-warnings",
         "python scripts/health_check.py --require-demo-data",
         "python scripts/health_check.py --require-release-ready",
+        "python scripts/health_check.py --check-openapi",
+        "python scripts/health_check.py --require-openapi",
+        "curl http://127.0.0.1:8000/openapi.json",
+        "http://127.0.0.1:8000/docs",
+        "http://127.0.0.1:8000/redoc",
         "python scripts/import_fixtures.py",
         "python scripts/prepare_demo_data.py",
         "python scripts/prepare_demo_data.py --compact",
@@ -7923,6 +7928,131 @@ def test_health_check_fails_when_runtime_status_is_missing(monkeypatch, capsys):
     assert health_check.main() == 1
     captured = capsys.readouterr()
     assert "runtime" in captured.err
+
+
+def test_health_check_can_probe_openapi_schema(monkeypatch, capsys):
+    import importlib.util
+    import json
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_openapi", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        if url.endswith("/api/v1/system/status"):
+            return {
+                "database_path": "/tmp/plasma.db",
+                "runtime": health_check_runtime(),
+                "config_warnings": [],
+                "storage": {
+                    "data_dir": "/tmp/data",
+                    "pdf_dir": "/tmp/data/pdfs",
+                    "tei_dir": "/tmp/data/tei",
+                    "translation_dir": "/tmp/data/translations",
+                    "export_dir": "/tmp/data/exports",
+                    "vector_db_path": "/tmp/data/vector-index.json",
+                },
+                "storage_health": health_check_storage_health(),
+                "external_capabilities": {
+                    "openalex_mailto": True,
+                    "unpaywall_email": True,
+                    "grobid_url": "http://127.0.0.1:8070",
+                    "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                    "llm_api_key": True,
+                    "translation_adapter": "local-echo",
+                    "llm_model": "gpt-4o-mini",
+                    "embedding_model": "local-hash",
+                    "vector_db_backend": "local-json",
+                },
+                "counts": health_check_counts(),
+                "demo_data": health_check_demo_data(),
+                "release_readiness": health_check_release_readiness(),
+                "status_counts": health_check_status_counts(),
+            }
+        if url.endswith("/openapi.json"):
+            return {
+                "info": {"title": "paper-lab-agent", "version": "0.1.0"},
+                "paths": {"/api/v1/health": {"get": {}}},
+                "tags": [{"name": "system", "description": "System endpoints"}],
+                "components": {"schemas": {"ErrorResponse": {"type": "object"}}},
+            }
+        raise AssertionError(url)
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["health_check.py", "--base-url", "http://api.test", "--check-openapi", "--summary-only", "--compact"],
+    )
+
+    assert health_check.main() == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["openapi_ok"] is True
+    assert summary["openapi_path_count"] == 1
+    assert summary["openapi_tag_names"] == ["system"]
+
+
+def test_health_check_requires_openapi_schema(monkeypatch, capsys):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_require_openapi", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        if url.endswith("/api/v1/system/status"):
+            return {
+                "database_path": "/tmp/plasma.db",
+                "runtime": health_check_runtime(),
+                "config_warnings": [],
+                "storage": {
+                    "data_dir": "/tmp/data",
+                    "pdf_dir": "/tmp/data/pdfs",
+                    "tei_dir": "/tmp/data/tei",
+                    "translation_dir": "/tmp/data/translations",
+                    "export_dir": "/tmp/data/exports",
+                    "vector_db_path": "/tmp/data/vector-index.json",
+                },
+                "storage_health": health_check_storage_health(),
+                "external_capabilities": {
+                    "openalex_mailto": True,
+                    "unpaywall_email": True,
+                    "grobid_url": "http://127.0.0.1:8070",
+                    "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                    "llm_api_key": True,
+                    "translation_adapter": "local-echo",
+                    "llm_model": "gpt-4o-mini",
+                    "embedding_model": "local-hash",
+                    "vector_db_backend": "local-json",
+                },
+                "counts": health_check_counts(),
+                "demo_data": health_check_demo_data(),
+                "release_readiness": health_check_release_readiness(),
+                "status_counts": health_check_status_counts(),
+            }
+        if url.endswith("/openapi.json"):
+            return {"info": {"title": "paper-lab-agent"}, "paths": {}, "tags": [], "components": {"schemas": {}}}
+        raise AssertionError(url)
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(sys, "argv", ["health_check.py", "--base-url", "http://api.test", "--require-openapi"])
+
+    assert health_check.main() == 1
+    assert "OpenAPI" in capsys.readouterr().err
 
 
 def test_health_check_requires_runtime_version():

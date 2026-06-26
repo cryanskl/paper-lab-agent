@@ -38,6 +38,9 @@ python scripts/health_check.py --require-release-ready
 python scripts/health_check.py --check-frontend
 python scripts/health_check.py --require-frontend
 python scripts/health_check.py --check-frontend --frontend-url http://127.0.0.1:8501
+python scripts/health_check.py --check-openapi
+python scripts/health_check.py --require-openapi
+curl http://127.0.0.1:8000/openapi.json
 API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
 ```
 
@@ -50,6 +53,8 @@ API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
 ```bash
 python scripts/export_openapi.py --output out/openapi.json
 ```
+
+服务启动后也可以直接访问 live schema 与交互文档：`http://127.0.0.1:8000/openapi.json`、`http://127.0.0.1:8000/docs` 和 `http://127.0.0.1:8000/redoc`。`python scripts/health_check.py --check-openapi` 会探测 live `/openapi.json` 并校验基础 schema 契约；`--require-openapi` 会在 schema 不可访问或缺少必需路径、tag、错误响应模型时返回非零。
 
 导入离线样例论文和 PDF 文档：
 
@@ -115,8 +120,9 @@ bash scripts/release_check.sh
 发布或演示前的完整检查顺序见 [docs/release-checklist.md](docs/release-checklist.md)。
 
 `python scripts/health_check.py --check-frontend` 会额外探测 Streamlit `/_stcore/health`，用于确认 `scripts/dev.sh` 启动后的后端和前端都可访问。
-`python scripts/health_check.py --summary-only --compact` 会输出短摘要，包含 `release_ready`、`release_blockers`、`api_status`、`demo_data_ready`、`failed_workflows`、`workflows_ok`、`config_warning_count`、`config_ready`、`config_warning_codes`、`storage_writable` 和 `storage_errors`，适合发布或演示前快速确认 live 环境；搭配 `--check-frontend` 时还会返回 `frontend_ok`、`frontend_status_code` 和 `frontend_url`，搭配 `--check-external` 时还会返回 `grobid_available`、`grobid_status_code`、`grobid_url` 和 `grobid_error`。如果这些显式探测失败，`release_blockers` 也会追加 `frontend:*` 或 `grobid:*` 阻断项。
+`python scripts/health_check.py --summary-only --compact` 会输出短摘要，包含 `release_ready`、`release_blockers`、`api_status`、`demo_data_ready`、`failed_workflows`、`workflows_ok`、`config_warning_count`、`config_ready`、`config_warning_codes`、`storage_writable` 和 `storage_errors`，适合发布或演示前快速确认 live 环境；搭配 `--check-frontend` 时还会返回 `frontend_ok`、`frontend_status_code` 和 `frontend_url`，搭配 `--check-openapi` 时还会返回 `openapi_ok`、`openapi_path_count` 和 `openapi_tag_names`，搭配 `--check-external` 时还会返回 `grobid_available`、`grobid_status_code`、`grobid_url` 和 `grobid_error`。如果这些显式探测失败，`release_blockers` 也会追加 `frontend:*`、`openapi:*` 或 `grobid:*` 阻断项。
 `python scripts/health_check.py --require-frontend` 会主动探测 Streamlit，并在前端健康探针不是 200 时返回非零，适合 `scripts/dev.sh` 启动后做发布或演示前门禁。
+`python scripts/health_check.py --require-openapi` 会主动探测 live `/openapi.json`，并在 OpenAPI schema 不可访问或基础契约不完整时返回非零，适合接口交付或前端联调前门禁。
 `python scripts/health_check.py --require-storage-writable` 会在数据目录、PDF/TEI/翻译/导出目录、数据库父目录或向量索引父目录不可写，或已存在的本地向量索引 JSON 损坏时返回非零，适合发布前预检本机运行环境。
 `python scripts/health_check.py --require-no-failed-workflows` 会在抓取、解析、索引、翻译、化学抽取或反应集复核状态统计中存在 failed 项时返回非零，适合部署前确认没有已知失败积压。
 `python scripts/health_check.py --require-no-config-warnings` 会在 OpenAlex、Unpaywall、LLM、向量后端等配置告警存在时返回非零，适合正式演示或部署前确认外部能力已按预期配置。

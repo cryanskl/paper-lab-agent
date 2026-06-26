@@ -40,9 +40,10 @@ After starting the app with `bash scripts/dev.sh`, run:
 ```bash
 python scripts/health_check.py --require-release-ready
 python scripts/health_check.py --require-frontend
+python scripts/health_check.py --require-openapi
 ```
 
-`--require-release-ready` checks storage writability, no failed workflow backlog, no config warnings, and demo data readiness. `--require-frontend` verifies the Streamlit health endpoint.
+`--require-release-ready` checks storage writability, no failed workflow backlog, no config warnings, and demo data readiness. `--require-frontend` verifies the Streamlit health endpoint. `--require-openapi` verifies the live `/openapi.json` schema used by frontend handoff.
 
 ## 5. Optional External Gate
 
