@@ -15,6 +15,11 @@ def normalize_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
+def normalize_keyword_text(value: Any) -> str:
+    text = re.sub(r"[^0-9a-zA-Z]+", " ", str(value or "").strip().lower())
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def normalize_keyword_config(keyword_config: Any) -> tuple[str, list[str]]:
     if isinstance(keyword_config, dict):
         mode = str(keyword_config.get("mode") or "or").strip().lower()
@@ -24,7 +29,7 @@ def normalize_keyword_config(keyword_config: Any) -> tuple[str, list[str]]:
         terms = keyword_config or []
     if isinstance(terms, str):
         terms = [terms]
-    normalized_terms = [normalize_text(term) for term in terms if normalize_text(term)]
+    normalized_terms = [normalize_keyword_text(term) for term in terms if normalize_keyword_text(term)]
     return ("and" if mode == "and" else "or", normalized_terms)
 
 
@@ -32,7 +37,7 @@ def matches_keywords(work: dict[str, Any], keywords: Any) -> bool:
     mode, terms = normalize_keyword_config(keywords)
     if not terms:
         return True
-    haystack = normalize_text(f"{work.get('title') or ''}\n{work.get('abstract') or ''}")
+    haystack = normalize_keyword_text(f"{work.get('title') or ''}\n{work.get('abstract') or ''}")
     if mode == "and":
         return all(term in haystack for term in terms)
     return any(term in haystack for term in terms)

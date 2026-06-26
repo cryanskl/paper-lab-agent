@@ -183,6 +183,18 @@ def test_crawl_keyword_matching_collapses_internal_whitespace():
     assert matches_keywords(work, {"mode": "and", "terms": ["plasma   chemistry", "argon   discharge"]}) is True
 
 
+def test_crawl_keyword_matching_treats_punctuation_as_word_boundaries():
+    from app.services.crawl import matches_keywords
+
+    work = {
+        "title": "Low temperature plasma-chemistry model",
+        "abstract": "Ar/O2 global discharge benchmark",
+    }
+
+    assert matches_keywords(work, ["plasma chemistry"]) is True
+    assert matches_keywords(work, {"mode": "and", "terms": ["ar o2", "global discharge"]}) is True
+
+
 def test_crawl_keyword_matching_strips_mode_whitespace():
     from app.services.crawl import matches_keywords, normalize_keyword_config
 
