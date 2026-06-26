@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -124,6 +125,74 @@ def check_python_dependencies() -> dict[str, Any]:
     }
 
 
+def storage_path_config(repo: Path, env: dict[str, str] | None = None) -> dict[str, Path]:
+    env = env if env is not None else os.environ
+    data_dir = Path(env.get("PAPER_LAB_DATA_DIR") or "data")
+    database_path = Path(env.get("DATABASE_PATH") or data_dir / "plasma.db")
+    pdf_dir = Path(env.get("PAPER_LAB_PDF_DIR") or data_dir / "pdfs")
+    tei_dir = Path(env.get("PAPER_LAB_TEI_DIR") or data_dir / "tei")
+    translation_dir = Path(env.get("PAPER_LAB_TRANSLATION_DIR") or data_dir / "translations")
+    export_dir = Path(env.get("PAPER_LAB_EXPORT_DIR") or data_dir / "exports")
+    vector_db_path = Path(env.get("VECTOR_DB_PATH") or data_dir / "vector-index.json")
+    paths = {
+        "data_dir": data_dir,
+        "database_parent": database_path.parent,
+        "pdf_dir": pdf_dir,
+        "tei_dir": tei_dir,
+        "translation_dir": translation_dir,
+        "export_dir": export_dir,
+        "vector_db_parent": vector_db_path.parent,
+    }
+    return {
+        key: path if path.is_absolute() else repo / path
+        for key, path in paths.items()
+    }
+
+
+def check_writable_directory(key: str, path: Path) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    try:
+        if path.exists() and not path.is_dir():
+            return [
+                {
+                    "code": "storage_path_not_directory",
+                    "key": key,
+                    "path": str(path),
+                    "message": f"{key} must be a writable directory: {path}",
+                }
+            ]
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".paper-lab-doctor-write-test"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+    except OSError as exc:
+        issues.append(
+            {
+                "code": "storage_path_not_writable",
+                "key": key,
+                "path": str(path),
+                "message": f"{key} must be writable: {exc}",
+            }
+        )
+    return issues
+
+
+def check_local_storage(repo: Path, env: dict[str, str] | None = None) -> dict[str, Any]:
+    repo = repo.resolve()
+    paths = storage_path_config(repo, env)
+    issues = [
+        issue
+        for key, path in paths.items()
+        for issue in check_writable_directory(key, path)
+    ]
+    return {
+        "name": "local_storage",
+        "status": status_from_issues(issues),
+        "paths": {key: str(path) for key, path in paths.items()},
+        "issues": issues,
+    }
+
+
 def run_checks(repo: Path = Path(".")) -> dict[str, Any]:
     repo = repo.resolve()
     checks = [
@@ -131,6 +200,7 @@ def run_checks(repo: Path = Path(".")) -> dict[str, Any]:
         check_required_files(repo),
         check_env_example(repo),
         check_python_dependencies(),
+        check_local_storage(repo),
     ]
     return {
         "ok": all(check["status"] == "pass" for check in checks),

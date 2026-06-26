@@ -663,6 +663,62 @@ def test_doctor_script_reports_missing_python_dependencies(monkeypatch):
     } in check["issues"]
 
 
+def test_doctor_script_reports_local_storage_preflight_paths(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+
+    data_dir = tmp_path / "local-data"
+
+    check = doctor.check_local_storage(repo, env={"PAPER_LAB_DATA_DIR": str(data_dir)})
+
+    assert check["name"] == "local_storage"
+    assert check["status"] == "pass"
+    assert check["issues"] == []
+    assert check["paths"]["data_dir"] == str(data_dir)
+    assert check["paths"]["database_parent"] == str(data_dir)
+    assert check["paths"]["pdf_dir"] == str(data_dir / "pdfs")
+    assert check["paths"]["vector_db_parent"] == str(data_dir)
+    assert data_dir.exists()
+
+
+def test_doctor_script_reports_storage_parent_that_is_not_directory(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+
+    blocked_parent = tmp_path / "not-a-directory"
+    blocked_parent.write_text("file blocks database parent", encoding="utf-8")
+
+    check = doctor.check_local_storage(
+        repo,
+        env={
+            "PAPER_LAB_DATA_DIR": str(tmp_path / "data"),
+            "DATABASE_PATH": str(blocked_parent / "plasma.db"),
+        },
+    )
+
+    assert check["status"] == "fail"
+    assert {
+        "code": "storage_path_not_directory",
+        "key": "database_parent",
+        "path": str(blocked_parent),
+        "message": f"database_parent must be a writable directory: {blocked_parent}",
+    } in check["issues"]
+
+
 def test_doctor_preflight_is_documented_and_in_release_gate():
     repo = Path(__file__).resolve().parent.parent
     readme = (repo / "README.md").read_text(encoding="utf-8")
@@ -671,7 +727,9 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
 
     assert "python scripts/doctor.py --compact" in readme
     assert "python scripts/doctor.py --strict --compact" in readme
+    assert "本地存储目录可创建和可写" in readme
     assert "python scripts/doctor.py --strict --compact" in checklist
+    assert "local storage paths are creatable and writable" in checklist
     assert "scripts/doctor.py" in release_check
     assert "scripts/doctor.py --help" in release_check
     assert "scripts/doctor.py --strict --compact" in release_check
