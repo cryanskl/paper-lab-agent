@@ -55,6 +55,24 @@ def read_json(path: Path, label: str, issues: list[str]) -> dict[str, Any]:
     return payload
 
 
+def demo_audit_entry_count_issues(demo_summary: dict[str, Any]) -> list[str]:
+    counts = demo_summary.get("export_audit_entry_counts")
+    if not isinstance(counts, dict):
+        missing = EXPECTED_EXPORT_FORMATS
+    else:
+        missing = [
+            fmt
+            for fmt in EXPECTED_EXPORT_FORMATS
+            if not isinstance(counts.get(fmt), int) or isinstance(counts.get(fmt), bool) or counts.get(fmt) <= 0
+        ]
+    if missing:
+        return [
+            "demo summary export_audit_entry_counts must include positive counts for: "
+            + ", ".join(missing)
+        ]
+    return []
+
+
 def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool = False) -> dict[str, Any]:
     artifact_dir = artifact_dir.resolve()
     issues: list[str] = []
@@ -65,6 +83,11 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
     paths = openapi.get("paths", {}) if isinstance(openapi.get("paths"), dict) else {}
     openapi_path_count = len(paths)
     demo_export_formats = demo_summary.get("export_formats") or []
+    demo_export_audit_entry_counts = (
+        demo_summary.get("export_audit_entry_counts")
+        if isinstance(demo_summary.get("export_audit_entry_counts"), dict)
+        else {}
+    )
 
     if manifest:
         if manifest.get("service") != EXPECTED_SERVICE:
@@ -125,6 +148,7 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             issues.append("demo summary ready must be true")
         if demo_export_formats != EXPECTED_EXPORT_FORMATS:
             issues.append(f"demo summary export_formats mismatch: {demo_export_formats!r}")
+        issues.extend(demo_audit_entry_count_issues(demo_summary))
 
     return {
         "ok": not issues,
@@ -134,6 +158,7 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
         "source": manifest.get("source") if isinstance(manifest.get("source"), dict) else {},
         "demo_ready": manifest.get("demo_ready"),
         "demo_export_formats": manifest.get("demo_export_formats") or [],
+        "demo_export_audit_entry_counts": demo_export_audit_entry_counts,
         "openapi_path_count": openapi_path_count,
         "checksums": manifest.get("checksums") if isinstance(manifest.get("checksums"), dict) else {},
         "issues": issues,

@@ -24,7 +24,7 @@ python scripts/prepare_demo_data.py --summary-only --compact
 python scripts/prepare_demo_data.py --summary-only --compact --output out/demo-summary.json
 ```
 
-The compact summary should report `ready: true`, parsed/indexed/extracted/done statuses, a verified reaction set, and `json`, `txt`, `bolsig` export formats. Use `--output out/demo-summary.json` when you need a handoff artifact alongside the OpenAPI export.
+The compact summary should report `ready: true`, parsed/indexed/extracted/done statuses, a verified reaction set, `json`, `txt`, `bolsig` export formats, and positive `export_audit_entry_counts` for each export format. Use `--output out/demo-summary.json` when you need a handoff artifact alongside the OpenAPI export.
 
 ## 3. API Contract Handoff
 
@@ -38,7 +38,7 @@ python scripts/package_release_artifacts.py --artifact-dir out/release --output 
 python scripts/validate_release_package.py --package out/paper-lab-agent-release.zip --compact
 ```
 
-The combined release artifact command writes `openapi.json`, `demo-summary.json`, and `release-manifest.json` into the target directory. The manifest records source git commit/branch, source dirty state, and file checksums. Validate the directory before handoff so missing files, checksum mismatches, edited summaries, version drift, or malformed manifests fail before sharing. Package the validated directory when you need a single handoff file, then validate the zip so the package can be unpacked and rechecked before delivery. For final handoff after committing, add `--require-clean-source` to validation or packaging to fail if the manifest was exported from a dirty worktree. The output is generated under `out/`, which is ignored by Git. Do not hand-edit the exported schema or summary; regenerate them from the app.
+The combined release artifact command writes `openapi.json`, `demo-summary.json`, and `release-manifest.json` into the target directory. The manifest records source git commit/branch, source dirty state, and file checksums. Validate the directory before handoff so missing files, checksum mismatches, edited summaries, missing export audit counts, version drift, or malformed manifests fail before sharing. Package the validated directory when you need a single handoff file, then validate the zip so the package can be unpacked and rechecked before delivery. For final handoff after committing, add `--require-clean-source` to validation or packaging to fail if the manifest was exported from a dirty worktree. The output is generated under `out/`, which is ignored by Git. Do not hand-edit the exported schema or summary; regenerate them from the app.
 
 ## 4. Live Runtime
 

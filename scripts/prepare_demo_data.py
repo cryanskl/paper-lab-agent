@@ -103,6 +103,10 @@ def demo_summary(
         "reaction_set_status": reaction_set.get("status"),
         "reaction_count": reaction_set.get("reaction_count", 0),
         "export_formats": list(exports),
+        "export_audit_entry_counts": {
+            fmt: int(export_payload.get("audit_entry_count") or 0)
+            for fmt, export_payload in exports.items()
+        },
         "counts": counts,
     }
 

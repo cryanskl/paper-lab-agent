@@ -1612,6 +1612,11 @@ def test_prepare_demo_data_script_populates_walking_skeleton(tmp_path):
     assert payload["summary"]["reaction_set_status"] == "verified"
     assert payload["summary"]["reaction_count"] == payload["reaction_set"]["reaction_count"]
     assert payload["summary"]["export_formats"] == ["json", "txt", "bolsig"]
+    assert payload["summary"]["export_audit_entry_counts"] == {
+        fmt: export_payload["audit_entry_count"]
+        for fmt, export_payload in payload["exports"].items()
+    }
+    assert all(count >= 1 for count in payload["summary"]["export_audit_entry_counts"].values())
     assert payload["summary"]["counts"] == payload["counts"]
     assert payload["exports"]["json"]["reaction_count"] >= 1
     assert Path(payload["exports"]["json"]["output_path"]).exists()
@@ -1653,6 +1658,7 @@ def test_prepare_demo_data_script_can_print_summary_only(tmp_path):
     assert summary["translation_status"] == "done"
     assert summary["reaction_set_status"] == "verified"
     assert summary["export_formats"] == ["json", "txt", "bolsig"]
+    assert summary["export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
     assert "document" not in summary
     assert "exports" not in summary
 
@@ -1697,6 +1703,7 @@ def test_prepare_demo_data_script_can_write_summary_output_file(tmp_path):
     summary = json.loads(output_path.read_text(encoding="utf-8"))
     assert summary["ready"] is True
     assert summary["export_formats"] == ["json", "txt", "bolsig"]
+    assert summary["export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
     assert "document" not in summary
     assert "exports" not in summary
 

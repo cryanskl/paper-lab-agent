@@ -148,6 +148,19 @@ def load_export_release_artifacts():
     return export_release_artifacts
 
 
+def load_validate_release_artifacts():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_release_artifacts.py"
+    spec = importlib.util.spec_from_file_location("validate_release_artifacts_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_release_artifacts = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_release_artifacts)
+    return validate_release_artifacts
+
+
 def test_env_example_contains_required_external_dependency_keys():
     validate_env_example = load_validate_env_example()
     env_path = Path(__file__).resolve().parent.parent / ".env.example"
@@ -1358,6 +1371,7 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     )
     assert demo_summary["ready"] is True
     assert demo_summary["export_formats"] == ["json", "txt", "bolsig"]
+    assert demo_summary["export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
     assert "/api/v1/health" in openapi["paths"]
 
 
@@ -1429,7 +1443,32 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     assert isinstance(payload["source"]["git_dirty"], bool)
     assert payload["demo_ready"] is True
     assert payload["demo_export_formats"] == ["json", "txt", "bolsig"]
+    assert payload["demo_export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
     assert payload["openapi_path_count"] == 28
+
+
+def test_validate_release_artifacts_requires_demo_audit_summary(tmp_path):
+    validate_release_artifacts = load_validate_release_artifacts()
+    artifact_dir = tmp_path / "release"
+    artifact_dir.mkdir()
+    (artifact_dir / "openapi.json").write_text(
+        json.dumps(
+            {
+                "info": {"title": "paper-lab-agent", "version": "0.1.0"},
+                "paths": {"/api/v1/health": {}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (artifact_dir / "demo-summary.json").write_text(
+        json.dumps({"ready": True, "export_formats": ["json", "txt", "bolsig"]}),
+        encoding="utf-8",
+    )
+    (artifact_dir / "release-manifest.json").write_text("{}", encoding="utf-8")
+
+    report = validate_release_artifacts.validate_release_artifacts(artifact_dir)
+
+    assert "demo summary export_audit_entry_counts must include positive counts for: json, txt, bolsig" in report["issues"]
 
 
 def test_validate_release_artifacts_script_rejects_tampered_artifact(tmp_path):
