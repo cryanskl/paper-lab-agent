@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import logging
 
@@ -40,6 +40,17 @@ class PageResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class AsyncJobResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    job_id: int
+    status: Literal["pending"]
+
+
+class AsyncJobsResponse(BaseModel):
+    jobs: list[AsyncJobResponse]
 
 
 def install_openapi_error_schema(app: FastAPI) -> None:

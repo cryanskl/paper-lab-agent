@@ -34,6 +34,8 @@ ASYNC_POST_PATHS = {
     "/api/v1/documents/{}/index",
     "/api/v1/documents/{}/extract-chemistry",
 }
+ASYNC_RESPONSE_FIELDS = ("job_id", "status")
+ASYNC_JOBS_RESPONSE_PATHS = {"/api/v1/crawl/run"}
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -263,6 +265,39 @@ def async_response_contract_issues(
     return issues
 
 
+def async_response_body_contract_issues(
+    contract_path: Path = DEFAULT_CONTRACT_PATH,
+    openapi_paths: dict | None = None,
+    openapi: dict | None = None,
+) -> list[str]:
+    source_openapi = openapi if openapi is not None else (app_openapi() if openapi_paths is None else {})
+    paths = openapi_paths if openapi_paths is not None else source_openapi.get("paths", {})
+    specs = normalized_openapi_specs(paths)
+    issues: list[str] = []
+    for method, display, normalized, _description in documented_route_rows(contract_path):
+        if method != "POST" or normalized not in ASYNC_POST_PATHS:
+            continue
+        spec = specs.get((method, normalized))
+        if spec is None:
+            continue
+        schema = response_schema(spec, source_openapi, "202")
+        if normalized in ASYNC_JOBS_RESPONSE_PATHS:
+            missing = [] if schema_declares_fields(schema, ("jobs",)) else ["jobs"]
+            if missing:
+                issues.append(f"{method} {display} missing 202 response fields: {', '.join(missing)}")
+                continue
+            jobs_schema = resolve_openapi_ref(schema.get("properties", {}).get("jobs", {}), source_openapi)
+            item_schema = resolve_openapi_ref(jobs_schema.get("items", {}), source_openapi)
+            missing_job_fields = [name for name in ASYNC_RESPONSE_FIELDS if not schema_declares_fields(item_schema, (name,))]
+            if missing_job_fields:
+                issues.append(f"{method} {display} missing 202 response job fields: {', '.join(missing_job_fields)}")
+            continue
+        missing = [name for name in ASYNC_RESPONSE_FIELDS if not schema_declares_fields(schema, (name,))]
+        if missing:
+            issues.append(f"{method} {display} missing 202 response fields: {', '.join(missing)}")
+    return issues
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate documented API endpoints against FastAPI routes.")
     parser.add_argument("contract_path", nargs="?", default=str(DEFAULT_CONTRACT_PATH))
@@ -274,7 +309,16 @@ def main() -> int:
     pagination_response_issues = pagination_response_contract_issues(Path(args.contract_path))
     error_response_issues = error_response_contract_issues()
     async_issues = async_response_contract_issues(Path(args.contract_path))
-    if missing or undocumented or pagination_issues or pagination_response_issues or error_response_issues or async_issues:
+    async_body_issues = async_response_body_contract_issues(Path(args.contract_path))
+    if (
+        missing
+        or undocumented
+        or pagination_issues
+        or pagination_response_issues
+        or error_response_issues
+        or async_issues
+        or async_body_issues
+    ):
         if missing:
             print("api contract missing routes:", file=sys.stderr)
             for route in missing:
@@ -298,6 +342,10 @@ def main() -> int:
         if async_issues:
             print("api contract async response issues:", file=sys.stderr)
             for issue in async_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if async_body_issues:
+            print("api contract async response body issues:", file=sys.stderr)
+            for issue in async_body_issues:
                 print(f"- {issue}", file=sys.stderr)
         return 1
     return 0
