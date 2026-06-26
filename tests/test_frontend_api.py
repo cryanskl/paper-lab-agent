@@ -923,6 +923,24 @@ def test_journal_option_label_uses_unknown_name_and_false_active_fallback():
     assert label == "#8 Journal · active=False"
 
 
+def test_category_parent_option_label_returns_none_label():
+    from app import frontend_api
+
+    label = frontend_api.category_parent_option_label(None)
+
+    assert label == "无"
+
+
+def test_category_parent_option_label_summarizes_category_identity():
+    from app import frontend_api
+
+    label = frontend_api.category_parent_option_label(
+        {"id": 3, "slug": "chemistry", "name": "等离子体化学"}
+    )
+
+    assert label == "#3 chemistry"
+
+
 def test_document_option_label_surfaces_processing_states():
     from app import frontend_api
 

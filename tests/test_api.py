@@ -12663,3 +12663,13 @@ def test_streamlit_config_tab_can_create_journal_with_year_to():
         "year_from must be less than or equal to year_to",
     ]:
         assert required in create_section
+
+
+def test_streamlit_config_tab_uses_category_parent_option_label_helper():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+
+    assert "category_parent_option_label" in streamlit
+    assert "format_func=category_parent_option_label" in config_section
+    assert "format_func=lambda category" not in config_section

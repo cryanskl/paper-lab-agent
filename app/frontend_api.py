@@ -139,6 +139,12 @@ def journal_option_label(journal: dict[str, Any]) -> str:
     return f"#{journal['id']} {journal.get('name') or 'Journal'} · active={bool(journal.get('active'))}"
 
 
+def category_parent_option_label(category: Optional[dict[str, Any]]) -> str:
+    if category is None:
+        return "无"
+    return f"#{category['id']} {category.get('slug') or 'category'}"
+
+
 def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for job in jobs:

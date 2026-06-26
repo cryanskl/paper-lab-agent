@@ -5,6 +5,7 @@ import streamlit as st
 
 from app.frontend_api import (
     api_docs_links,
+    category_parent_option_label,
     crawl_job_diagnostic_rows,
     crawl_job_option_label,
     crawl_job_rows,
@@ -525,7 +526,7 @@ with config_tab:
         parent_choice = st.selectbox(
             "parent_id",
             parent_options,
-            format_func=lambda category: "无" if category is None else f"#{category['id']} {category['slug']}",
+            format_func=category_parent_option_label,
             key="new-category-parent",
         )
         create_category = st.form_submit_button("新增分类")
