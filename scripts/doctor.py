@@ -185,6 +185,9 @@ def check_env_example(repo: Path) -> dict[str, Any]:
         api_base_url_issue = api_base_url_runtime_issue(values)
         if api_base_url_issue is not None:
             issues.append(api_base_url_issue)
+        frontend_url_issue = frontend_url_runtime_issue(values)
+        if frontend_url_issue is not None:
+            issues.append(frontend_url_issue)
     return {
         "name": "env_example",
         "status": status_from_issues(issues),
@@ -249,6 +252,24 @@ def api_base_url_runtime_issue(values: dict[str, str]) -> dict[str, str] | None:
         "expected": expected,
         "actual": api_base_url,
         "message": f".env.example API_BASE_URL must match runtime default {expected}",
+    }
+
+
+def frontend_url_runtime_issue(values: dict[str, str]) -> dict[str, str] | None:
+    streamlit_host = values.get("STREAMLIT_HOST")
+    streamlit_port = values.get("STREAMLIT_PORT")
+    frontend_url = values.get("FRONTEND_URL")
+    if not streamlit_host or not streamlit_port or not frontend_url:
+        return None
+    expected = f"http://{url_host(connect_host(streamlit_host))}:{streamlit_port}"
+    if frontend_url == expected:
+        return None
+    return {
+        "code": "env_example_runtime_default_drift",
+        "key": "FRONTEND_URL",
+        "expected": expected,
+        "actual": frontend_url,
+        "message": f".env.example FRONTEND_URL must match runtime default {expected}",
     }
 
 
