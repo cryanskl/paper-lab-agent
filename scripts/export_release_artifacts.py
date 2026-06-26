@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,27 @@ def manifest_checksum(payload: dict[str, Any]) -> str:
         checksums["release-manifest.json"] = ""
     encoded = json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def git_value(args: list[str]) -> str:
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+    return result.stdout.strip() or "unknown"
+
+
+def source_metadata() -> dict[str, str]:
+    return {
+        "git_commit": git_value(["rev-parse", "HEAD"]),
+        "git_branch": git_value(["branch", "--show-current"]),
+    }
 
 
 def write_json(path: Path, payload: dict[str, Any], *, compact: bool = False) -> None:
@@ -64,6 +86,7 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
         "demo_ready": demo_summary.get("ready") is True,
         "demo_export_formats": demo_summary.get("export_formats") or [],
         "openapi_path_count": len(json.loads(openapi_path.read_text(encoding="utf-8")).get("paths", {})),
+        "source": source_metadata(),
         "checksums": {
             openapi_path.name: sha256_file(openapi_path),
             demo_summary_path.name: sha256_file(demo_summary_path),

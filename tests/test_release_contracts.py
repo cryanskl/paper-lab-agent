@@ -1300,6 +1300,22 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     assert manifest["version"] == openapi["info"]["version"]
     assert manifest["artifacts"]["openapi"] == "openapi.json"
     assert manifest["artifacts"]["demo_summary"] == "demo-summary.json"
+    expected_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    expected_branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert manifest["source"]["git_commit"] == expected_commit
+    assert manifest["source"]["git_branch"] == expected_branch
     assert set(manifest["checksums"]) == {"openapi.json", "demo-summary.json", "release-manifest.json"}
     assert all(
         len(value) == 64 and all(character in string.hexdigits for character in value)
@@ -1367,6 +1383,14 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     assert payload["artifact_dir"] == str(output_dir)
     assert payload["service"] == "paper-lab-agent"
     assert payload["version"] == "0.1.0"
+    assert payload["source"]["git_commit"]
+    assert payload["source"]["git_branch"] == subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
     assert payload["demo_ready"] is True
     assert payload["demo_export_formats"] == ["json", "txt", "bolsig"]
     assert payload["openapi_path_count"] == 28

@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ EXPECTED_ARTIFACTS = {
     "manifest": "release-manifest.json",
 }
 EXPECTED_EXPORT_FORMATS = ["json", "txt", "bolsig"]
+GIT_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def sha256_file(path: Path) -> str:
@@ -83,6 +85,16 @@ def validate_release_artifacts(artifact_dir: Path) -> dict[str, Any]:
             issues.append(
                 f"release manifest openapi_path_count mismatch: {manifest.get('openapi_path_count')!r}"
             )
+        source = manifest.get("source")
+        if not isinstance(source, dict):
+            issues.append("release manifest source must be an object")
+        else:
+            git_commit = source.get("git_commit")
+            git_branch = source.get("git_branch")
+            if not isinstance(git_commit, str) or not GIT_COMMIT_RE.fullmatch(git_commit):
+                issues.append(f"release manifest source.git_commit invalid: {git_commit!r}")
+            if not isinstance(git_branch, str) or not git_branch.strip():
+                issues.append(f"release manifest source.git_branch invalid: {git_branch!r}")
         checksums = manifest.get("checksums")
         if not isinstance(checksums, dict):
             issues.append("release manifest checksums must be an object")
@@ -114,6 +126,7 @@ def validate_release_artifacts(artifact_dir: Path) -> dict[str, Any]:
         "artifact_dir": str(artifact_dir),
         "service": manifest.get("service"),
         "version": manifest.get("version"),
+        "source": manifest.get("source") if isinstance(manifest.get("source"), dict) else {},
         "demo_ready": manifest.get("demo_ready"),
         "demo_export_formats": manifest.get("demo_export_formats") or [],
         "openapi_path_count": openapi_path_count,
