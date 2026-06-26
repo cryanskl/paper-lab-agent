@@ -11862,11 +11862,13 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
         "document_status_rows(document_detail, chunks)",
         "section_preview",
         "format_func=document_section_option_label",
+        "format_func=document_chunk_option_label",
         "parse_error",
         "vector_id",
     ]:
         assert required in documents_section
     assert "format_func=lambda section" not in documents_section
+    assert "format_func=lambda chunk" not in documents_section
     assert 'type=["pdf"]' in documents_section
     assert 'type=["pdf", "txt"]' not in documents_section
 

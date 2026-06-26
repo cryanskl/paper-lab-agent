@@ -377,6 +377,11 @@ def document_chunk_rows(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
+def document_chunk_option_label(chunk: dict[str, Any]) -> str:
+    chunk_ref = chunk.get("vector_id") or chunk.get("id")
+    return f"{chunk_ref} · {chunk.get('section_title') or '-'}"
+
+
 def rag_source_rows(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for source in sources:

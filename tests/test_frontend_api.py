@@ -1127,6 +1127,24 @@ def test_document_chunk_rows_surface_vector_backlinks_and_preview():
     ]
 
 
+def test_document_chunk_option_label_uses_vector_and_section_title():
+    from app import frontend_api
+
+    label = frontend_api.document_chunk_option_label(
+        {"id": 31, "vector_id": "doc-5-section-21-chunk-31", "section_title": "Reaction kinetics"}
+    )
+
+    assert label == "doc-5-section-21-chunk-31 · Reaction kinetics"
+
+
+def test_document_chunk_option_label_falls_back_to_id_and_dash_title():
+    from app import frontend_api
+
+    label = frontend_api.document_chunk_option_label({"id": 32})
+
+    assert label == "32 · -"
+
+
 def test_document_asset_downloads_read_pdf_bytes_and_tei_text(tmp_path):
     from app import frontend_api
 

@@ -13,6 +13,7 @@ from app.frontend_api import (
     crawl_journal_options,
     document_asset_downloads,
     document_chunk_rows,
+    document_chunk_option_label,
     document_option_label,
     document_section_option_label,
     document_section_rows,
@@ -736,7 +737,7 @@ with documents_tab:
                 chunk_preview = st.selectbox(
                     "chunk / vector_id",
                     chunks["items"],
-                    format_func=lambda chunk: f"{chunk.get('vector_id') or chunk.get('id')} · {chunk.get('section_title') or '-'}",
+                    format_func=document_chunk_option_label,
                 )
                 st.code(chunk_preview.get("text") or "")
             st.caption(f"chunks page {chunks['page']} · page_size {chunks['page_size']} · total {chunks['total']}")
