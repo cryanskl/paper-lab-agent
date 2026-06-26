@@ -379,6 +379,60 @@ def test_reaction_review_payload_clears_disabled_and_blank_fields():
     }
 
 
+def test_reaction_review_form_state_normalizes_unknown_types_and_zero_threshold():
+    from app import frontend_api
+
+    state = frontend_api.reaction_review_form_state(
+        {
+            "id": 11,
+            "reaction_type": "unknown",
+            "rate_type": "unknown",
+            "threshold_ev": 0,
+            "rate_value": "original value",
+            "cross_section_url": "https://example.test/cross-section",
+            "verified": True,
+        }
+    )
+
+    assert state == {
+        "reaction_type_options": ["", "elastic", "excitation", "ionization", "attachment", "recombination"],
+        "rate_type_options": ["", "cross_section", "arrhenius", "constant"],
+        "reaction_type_value": "",
+        "reaction_type_index": 0,
+        "rate_type_value": "",
+        "rate_type_index": 0,
+        "include_threshold_ev": True,
+        "threshold_ev_value": 0.0,
+        "rate_value": "original value",
+        "cross_section_url": "https://example.test/cross-section",
+        "verified": True,
+        "verified_by": "streamlit",
+    }
+
+
+def test_reaction_review_form_state_preserves_known_type_indexes_and_blank_text():
+    from app import frontend_api
+
+    state = frontend_api.reaction_review_form_state(
+        {
+            "reaction_type": "ionization",
+            "rate_type": "cross_section",
+            "rate_value": None,
+            "cross_section_url": None,
+            "verified": False,
+        }
+    )
+
+    assert state["reaction_type_index"] == 3
+    assert state["rate_type_index"] == 1
+    assert state["include_threshold_ev"] is False
+    assert state["threshold_ev_value"] == 0.0
+    assert state["rate_value"] == ""
+    assert state["cross_section_url"] == ""
+    assert state["verified"] is False
+    assert state["verified_by"] == "streamlit"
+
+
 def test_reaction_export_rows_summarize_download_and_audit_metadata():
     from app import frontend_api
 

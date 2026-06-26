@@ -433,6 +433,40 @@ def normalize_optional_text(value: Optional[str]) -> Optional[str]:
     return normalized or None
 
 
+REACTION_TYPE_OPTIONS = ["", "elastic", "excitation", "ionization", "attachment", "recombination"]
+RATE_TYPE_OPTIONS = ["", "cross_section", "arrhenius", "constant"]
+
+
+def option_index(options: list[str], value: str) -> int:
+    return options.index(value) if value in options else 0
+
+
+def normalized_option_value(value: Any) -> str:
+    normalized = str(value or "")
+    return "" if normalized == "unknown" else normalized
+
+
+def reaction_review_form_state(reaction: dict[str, Any]) -> dict[str, Any]:
+    reaction_type_value = normalized_option_value(reaction.get("reaction_type"))
+    rate_type_value = normalized_option_value(reaction.get("rate_type"))
+    include_threshold_ev = reaction.get("threshold_ev") is not None
+    threshold_ev_value = float(reaction["threshold_ev"]) if include_threshold_ev else 0.0
+    return {
+        "reaction_type_options": REACTION_TYPE_OPTIONS,
+        "rate_type_options": RATE_TYPE_OPTIONS,
+        "reaction_type_value": reaction_type_value,
+        "reaction_type_index": option_index(REACTION_TYPE_OPTIONS, reaction_type_value),
+        "rate_type_value": rate_type_value,
+        "rate_type_index": option_index(RATE_TYPE_OPTIONS, rate_type_value),
+        "include_threshold_ev": include_threshold_ev,
+        "threshold_ev_value": threshold_ev_value,
+        "rate_value": reaction.get("rate_value") or "",
+        "cross_section_url": reaction.get("cross_section_url") or "",
+        "verified": bool(reaction.get("verified")),
+        "verified_by": "streamlit",
+    }
+
+
 def reaction_review_payload(
     *,
     verified: bool,

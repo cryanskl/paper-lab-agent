@@ -17,6 +17,7 @@ from app.frontend_api import (
     reaction_audit_rows,
     reaction_export_download,
     reaction_export_rows,
+    reaction_review_form_state,
     reaction_review_payload,
     reaction_review_rows,
     reaction_set_review_state,
@@ -959,54 +960,50 @@ with chemistry_tab:
                     f"reference: {reaction.get('reference') or '-'}"
                 )
                 c1, c2, c3 = st.columns(3)
-                reaction_type_options = ["", "elastic", "excitation", "ionization", "attachment", "recombination"]
-                rate_type_options = ["", "cross_section", "arrhenius", "constant"]
-                reaction_type_value = reaction.get("reaction_type") or ""
-                rate_type_value = reaction.get("rate_type") or ""
-                if reaction_type_value == "unknown":
-                    reaction_type_value = ""
-                if rate_type_value == "unknown":
-                    rate_type_value = ""
+                form_state = reaction_review_form_state(reaction)
                 reaction_type = c1.selectbox(
                     "reaction_type",
-                    reaction_type_options,
-                    index=reaction_type_options.index(reaction_type_value)
-                    if reaction_type_value in reaction_type_options
-                    else 0,
+                    form_state["reaction_type_options"],
+                    index=form_state["reaction_type_index"],
                     key=f"reaction-type-{reaction['id']}",
                 )
                 rate_type = c2.selectbox(
                     "rate_type",
-                    rate_type_options,
-                    index=rate_type_options.index(rate_type_value) if rate_type_value in rate_type_options else 0,
+                    form_state["rate_type_options"],
+                    index=form_state["rate_type_index"],
                     key=f"rate-type-{reaction['id']}",
                 )
                 include_threshold_ev = c3.checkbox(
                     "include_threshold_ev",
-                    value=reaction.get("threshold_ev") is not None,
+                    value=form_state["include_threshold_ev"],
                     key=f"include-threshold-ev-{reaction['id']}",
-                )
-                threshold_ev_value = (
-                    float(reaction["threshold_ev"]) if reaction.get("threshold_ev") is not None else 0.0
                 )
                 threshold_ev = c3.number_input(
                     "threshold_ev",
-                    value=threshold_ev_value,
+                    value=form_state["threshold_ev_value"],
                     disabled=not include_threshold_ev,
                     key=f"threshold-ev-{reaction['id']}",
                 )
                 rate_value = st.text_area(
                     "rate_value",
-                    value=reaction.get("rate_value") or "",
+                    value=form_state["rate_value"],
                     key=f"rate-value-{reaction['id']}",
                 )
                 cross_section_url = st.text_input(
                     "cross_section_url",
-                    value=reaction.get("cross_section_url") or "",
+                    value=form_state["cross_section_url"],
                     key=f"cross-section-url-{reaction['id']}",
                 )
-                verified_by = st.text_input("verified_by", value="streamlit", key=f"verified-by-{reaction['id']}")
-                verified = st.checkbox("verified", value=bool(reaction.get("verified")), key=f"verified-{reaction['id']}")
+                verified_by = st.text_input(
+                    "verified_by",
+                    value=form_state["verified_by"],
+                    key=f"verified-by-{reaction['id']}",
+                )
+                verified = st.checkbox(
+                    "verified",
+                    value=form_state["verified"],
+                    key=f"verified-{reaction['id']}",
+                )
                 if reaction.get("audit_log"):
                     with st.expander("audit_log"):
                         st.dataframe(reaction_audit_rows(reaction["audit_log"]), use_container_width=True)

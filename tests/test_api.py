@@ -11224,12 +11224,12 @@ def test_streamlit_chemistry_review_uses_controlled_type_options():
     chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
 
     for required in [
-        'reaction_type_options = ["", "elastic", "excitation", "ionization", "attachment", "recombination"]',
-        'rate_type_options = ["", "cross_section", "arrhenius", "constant"]',
-        'reaction_type_value = reaction.get("reaction_type") or ""',
-        'rate_type_value = reaction.get("rate_type") or ""',
-        'if reaction_type_value == "unknown":',
-        'if rate_type_value == "unknown":',
+        "reaction_review_form_state(reaction)",
+        "form_state",
+        'form_state["reaction_type_options"]',
+        'form_state["reaction_type_index"]',
+        'form_state["rate_type_options"]',
+        'form_state["rate_type_index"]',
         'c1.selectbox(',
         'c2.selectbox(',
         "reaction_review_payload(",
@@ -11247,9 +11247,8 @@ def test_streamlit_chemistry_review_can_preserve_zero_threshold():
     for required in [
         'include_threshold_ev = c3.checkbox(',
         '"include_threshold_ev"',
-        'value=reaction.get("threshold_ev") is not None',
-        "threshold_ev_value = (",
-        'float(reaction["threshold_ev"]) if reaction.get("threshold_ev") is not None else 0.0',
+        'value=form_state["include_threshold_ev"]',
+        'value=form_state["threshold_ev_value"]',
         'disabled=not include_threshold_ev',
         "include_threshold_ev=include_threshold_ev",
         "threshold_ev=threshold_ev",
