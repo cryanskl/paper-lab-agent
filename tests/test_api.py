@@ -12310,6 +12310,17 @@ def test_streamlit_document_upload_shows_duplicate_result():
         assert required in documents_section
 
 
+def test_streamlit_document_upload_shows_error_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    upload_error_section = documents_section[
+        documents_section.index("else:\n            st.warning(format_error_payload(payload, status))") :
+    ]
+
+    assert "st.json(payload)" in upload_error_section
+
+
 def test_streamlit_documents_tab_shows_empty_state():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

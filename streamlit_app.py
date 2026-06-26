@@ -567,6 +567,7 @@ with documents_tab:
             st.json(duplicate_document)
         else:
             st.warning(format_error_payload(payload, status))
+            st.json(payload)
     documents_page_col, documents_page_size_col = st.columns(2)
     documents_page = documents_page_col.number_input("documents_page", min_value=1, value=1, key="documents-page")
     documents_page_size = documents_page_size_col.number_input(
