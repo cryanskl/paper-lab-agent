@@ -945,6 +945,10 @@ def test_dev_script_documents_help_mode_without_starting_services():
         "DEV_READY_TIMEOUT",
         "PAPER_LAB_SCHEDULER_ENABLED",
         "python scripts/health_check.py --require-frontend",
+        "python scripts/health_check.py --require-openapi",
+        "/openapi.json",
+        "/docs",
+        "/redoc",
     ]:
         assert required in dev_script
 

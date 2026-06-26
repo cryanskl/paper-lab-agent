@@ -19,8 +19,14 @@ Environment variables:
   DEV_EXIT_AFTER_READY           Set true to exit after both services are ready.
   PAPER_LAB_SCHEDULER_ENABLED    Set true to enable APScheduler crawl jobs.
 
-After startup, verify the live frontend gate with:
+After startup, verify the live gates with:
   python scripts/health_check.py --require-frontend
+  python scripts/health_check.py --require-openapi
+
+FastAPI docs:
+  http://127.0.0.1:8000/openapi.json
+  http://127.0.0.1:8000/docs
+  http://127.0.0.1:8000/redoc
 EOF
   exit 0
 fi
