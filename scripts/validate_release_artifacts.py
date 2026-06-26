@@ -93,6 +93,17 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
 
     paths = openapi.get("paths", {}) if isinstance(openapi.get("paths"), dict) else {}
     openapi_path_count = len(paths)
+    openapi_tag_names = {
+        tag.get("name")
+        for tag in openapi.get("tags", [])
+        if isinstance(tag, dict) and isinstance(tag.get("name"), str)
+    }
+    openapi_schemas = (
+        openapi.get("components", {}).get("schemas", {})
+        if isinstance(openapi.get("components"), dict)
+        and isinstance(openapi.get("components", {}).get("schemas"), dict)
+        else {}
+    )
     demo_export_formats = demo_summary.get("export_formats") or []
     demo_export_audit_entry_counts = (
         demo_summary.get("export_audit_entry_counts")
@@ -170,6 +181,10 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             issues.append(f"OpenAPI title mismatch: {openapi.get('info', {}).get('title')!r}")
         if "/api/v1/health" not in paths:
             issues.append("OpenAPI missing /api/v1/health")
+        if "system" not in openapi_tag_names:
+            issues.append("OpenAPI missing system tag metadata")
+        if "ErrorResponse" not in openapi_schemas:
+            issues.append("OpenAPI missing ErrorResponse schema")
 
     if demo_summary:
         if demo_summary.get("ready") is not True:
