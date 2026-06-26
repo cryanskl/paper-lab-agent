@@ -1484,6 +1484,23 @@ def test_export_release_artifacts_rejects_output_dir_symlink(tmp_path):
     assert not (outside_dir / "demo-summary.json").exists()
 
 
+def test_export_release_artifacts_rejects_output_dir_symlink_parent(tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    outside_dir = tmp_path / "outside-release-parent"
+    linked_parent = tmp_path / "linked-parent"
+    output_dir = linked_parent / "release"
+    outside_dir.mkdir()
+    linked_parent.symlink_to(outside_dir, target_is_directory=True)
+
+    report = export_release_artifacts.export_release_artifacts(output_dir, compact=True)
+
+    assert report["ok"] is False
+    assert f"release artifact output directory parent is not a regular directory: {linked_parent}" in report["issues"]
+    assert linked_parent.is_symlink()
+    assert not (outside_dir / "release" / "openapi.json").exists()
+    assert not (outside_dir / "release" / "demo-summary.json").exists()
+
+
 def test_export_release_artifacts_rejects_dirty_output_dir(tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     output_dir = tmp_path / "release"

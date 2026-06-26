@@ -91,6 +91,15 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
             "output_dir": str(output_dir),
             "issues": [f"release artifact output directory is not a regular directory: {output_dir}"],
         }
+    if requested_output_dir.parent.is_symlink():
+        return {
+            "ok": False,
+            "output_dir": str(requested_output_dir.absolute()),
+            "issues": [
+                "release artifact output directory parent is not a regular directory: "
+                f"{requested_output_dir.parent}"
+            ],
+        }
     output_dir = output_dir.resolve()
     if output_dir.exists() and not output_dir.is_dir():
         return {
