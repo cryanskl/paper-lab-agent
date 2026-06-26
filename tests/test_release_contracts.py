@@ -3960,6 +3960,23 @@ def test_readme_commands_validator_reports_missing_scripts_module(tmp_path):
     assert issues == ["README.md: command target missing: scripts/missing_check.py"]
 
 
+def test_readme_commands_validator_checks_release_checklist_commands(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (tmp_path / "README.md").write_text("# Test\n", encoding="utf-8")
+    (docs_dir / "release-checklist.md").write_text(
+        "```bash\npython scripts/missing_release_gate.py\n```\n",
+        encoding="utf-8",
+    )
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == [
+        "docs/release-checklist.md: command target missing: scripts/missing_release_gate.py"
+    ]
+
+
 def test_readme_commands_validator_reports_unknown_python_script_option(tmp_path):
     validate_readme_commands = load_validate_readme_commands()
     scripts_dir = tmp_path / "scripts"

@@ -272,10 +272,18 @@ def missing_uvicorn_targets(readme_path: Path) -> list[str]:
     ]
 
 
-def missing_python_script_options(repo: Path, readme_path: Path) -> list[str]:
+def missing_uvicorn_targets_for_doc(doc_path: Path, label: str) -> list[str]:
+    return [
+        f"{label}: uvicorn target missing: {target}"
+        for target in uvicorn_app_refs(doc_path)
+        if not uvicorn_target_exists(target)
+    ]
+
+
+def missing_python_script_options_for_doc(repo: Path, doc_path: Path, label: str) -> list[str]:
     issues: list[str] = []
     help_cache: dict[str, str | None] = {}
-    for script, option in python_script_option_refs(readme_path):
+    for script, option in python_script_option_refs(doc_path):
         script_path = repo / script
         if not script_path.exists():
             continue
@@ -290,7 +298,33 @@ def missing_python_script_options(repo: Path, readme_path: Path) -> list[str]:
             help_cache[script] = result.stdout + result.stderr if result.returncode == 0 else None
         help_text = help_cache[script]
         if help_text is not None and option not in help_text:
-            issues.append(f"README.md: option {option} not found in {script} --help")
+            issues.append(f"{label}: option {option} not found in {script} --help")
+    return issues
+
+
+def missing_python_script_options(repo: Path, readme_path: Path) -> list[str]:
+    return missing_python_script_options_for_doc(repo, readme_path, "README.md")
+
+
+def command_doc_paths(repo: Path) -> list[tuple[Path, str]]:
+    docs = [(repo / "README.md", "README.md")]
+    release_checklist = repo / "docs" / "release-checklist.md"
+    if release_checklist.exists():
+        docs.append((release_checklist, "docs/release-checklist.md"))
+    return docs
+
+
+def missing_command_targets_for_doc(repo: Path, doc_path: Path, label: str) -> list[str]:
+    issues: list[str] = []
+    for target in command_targets(doc_path):
+        if not (repo / target).exists():
+            issues.append(f"{label}: command target missing: {target}")
+    issues.extend(missing_python_script_options_for_doc(repo, doc_path, label))
+    issues.extend(missing_uvicorn_targets_for_doc(doc_path, label))
+    actual_routes = app_routes()
+    for method, path in documented_local_curl_routes(doc_path):
+        if (method, path) not in actual_routes:
+            issues.append(f"{label}: curl route missing: {method} {path}")
     return issues
 
 
@@ -300,15 +334,8 @@ def missing_command_targets(repo: Path) -> list[str]:
         return ["README.md: missing"]
 
     issues: list[str] = []
-    for target in command_targets(readme_path):
-        if not (repo / target).exists():
-            issues.append(f"README.md: command target missing: {target}")
-    issues.extend(missing_python_script_options(repo, readme_path))
-    issues.extend(missing_uvicorn_targets(readme_path))
-    actual_routes = app_routes()
-    for method, path in documented_local_curl_routes(readme_path):
-        if (method, path) not in actual_routes:
-            issues.append(f"README.md: curl route missing: {method} {path}")
+    for doc_path, label in command_doc_paths(repo):
+        issues.extend(missing_command_targets_for_doc(repo, doc_path, label))
     return issues
 
 
