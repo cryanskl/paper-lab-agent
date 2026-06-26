@@ -1101,6 +1101,37 @@ def empty_success_response_schema_issues(openapi: dict | None = None) -> list[st
     return issues
 
 
+def bare_success_response_schema_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    issues: list[str] = []
+    for path, methods in source_openapi.get("paths", {}).items():
+        if not str(path).startswith("/api/v1"):
+            continue
+        normalized_path = normalize_path(str(path))
+        for method, spec in methods.items():
+            method_upper = method.upper()
+            if method_upper not in HTTP_METHODS:
+                continue
+            for status_code, response in spec.get("responses", {}).items():
+                if not str(status_code).isdigit() or not (200 <= int(status_code) < 300):
+                    continue
+                schema = (
+                    response.get("content", {})
+                    .get("application/json", {})
+                    .get("schema")
+                )
+                if not schema:
+                    continue
+                resolved = resolve_openapi_ref(schema, source_openapi)
+                if (
+                    resolved.get("type") == "object"
+                    and resolved.get("additionalProperties") is True
+                    and not resolved.get("properties")
+                ):
+                    issues.append(f"{method_upper} {normalized_path} {status_code} response must not use a bare dict schema")
+    return issues
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate documented API endpoints against FastAPI routes.")
     parser.add_argument("contract_path", nargs="?", default=str(DEFAULT_CONTRACT_PATH))
@@ -1136,6 +1167,7 @@ def main() -> int:
     async_issues = async_response_contract_issues(Path(args.contract_path))
     async_body_issues = async_response_body_contract_issues(Path(args.contract_path))
     empty_success_schema_issues = empty_success_response_schema_issues()
+    bare_success_schema_issues = bare_success_response_schema_issues()
     if (
         missing
         or undocumented
@@ -1167,6 +1199,7 @@ def main() -> int:
         or async_issues
         or async_body_issues
         or empty_success_schema_issues
+        or bare_success_schema_issues
     ):
         if missing:
             print("api contract missing routes:", file=sys.stderr)
@@ -1287,6 +1320,10 @@ def main() -> int:
         if empty_success_schema_issues:
             print("api contract empty success response schema issues:", file=sys.stderr)
             for issue in empty_success_schema_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if bare_success_schema_issues:
+            print("api contract bare success response schema issues:", file=sys.stderr)
+            for issue in bare_success_schema_issues:
                 print(f"- {issue}", file=sys.stderr)
         return 1
     return 0

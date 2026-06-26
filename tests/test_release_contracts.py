@@ -1037,6 +1037,14 @@ def test_api_contract_success_responses_do_not_use_empty_generic_schema():
     assert issues == []
 
 
+def test_api_contract_success_responses_do_not_use_bare_dict_schema():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.bare_success_response_schema_issues()
+
+    assert issues == []
+
+
 def test_api_contract_validator_reports_empty_success_response_schema():
     validate_api_contract = load_validate_api_contract()
     openapi = {
@@ -1060,6 +1068,34 @@ def test_api_contract_validator_reports_empty_success_response_schema():
     issues = validate_api_contract.empty_success_response_schema_issues(openapi=openapi)
 
     assert issues == ["POST /api/v1/crawl/run 202 response must declare a non-empty schema"]
+
+
+def test_api_contract_validator_reports_bare_success_response_schema():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/things": {
+                "post": {
+                    "responses": {
+                        "201": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "additionalProperties": True,
+                                    },
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.bare_success_response_schema_issues(openapi=openapi)
+
+    assert issues == ["POST /api/v1/things 201 response must not use a bare dict schema"]
 
 
 def test_api_contract_validator_reports_missing_async_response_field(tmp_path):
