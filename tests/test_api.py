@@ -6669,6 +6669,48 @@ def test_reaction_verify_records_audit_for_unchanged_review(tmp_path):
     assert repeated_audit["field_changes"] == {}
 
 
+def test_reaction_verify_reconciles_reaction_set_status_on_unchanged_review(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("stale-set-status.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+    reaction_id = detail["reactions"][0]["id"]
+
+    verified = client.put(
+        f"/api/v1/reactions/{reaction_id}/verify",
+        json={"verified": True, "verified_by": "chemist-a"},
+    ).json()
+    assert verified["status"] == "verified"
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE reaction_sets SET status='pending', verified_by=NULL, verified_at=NULL WHERE id=?",
+            (reaction_set["id"],),
+        )
+
+    reconciled = client.put(
+        f"/api/v1/reactions/{reaction_id}/verify",
+        json={"verified": True, "verified_by": "chemist-b"},
+    ).json()
+
+    assert reconciled["status"] == "verified"
+    assert reconciled["verified_by"] == "chemist-b"
+    assert reconciled["verified_at"]
+    assert reconciled["export_ready"] is True
+    assert reconciled["verified_count"] == reconciled["reaction_count"] == 1
+    assert reconciled["unverified_count"] == 0
+    assert reconciled["reactions"][0]["audit_log"][0]["verified_by"] == "chemist-b"
+    assert reconciled["reactions"][0]["audit_log"][0]["field_changes"] == {}
+
+
 def test_reaction_verify_can_clear_optional_review_fields(tmp_path):
     client = make_client(tmp_path)
     response = client.post(

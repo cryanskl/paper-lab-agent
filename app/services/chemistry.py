@@ -343,6 +343,23 @@ def reaction_set_detail(reaction_set: dict, conn=None) -> dict:
     return reaction_set
 
 
+def reconcile_reaction_set_review_state(conn, reaction_set_id: int, verified_by: Optional[str]) -> None:
+    remaining = conn.execute(
+        "SELECT COUNT(*) AS n FROM reactions WHERE reaction_set_id=? AND verified=0",
+        (reaction_set_id,),
+    ).fetchone()["n"]
+    if remaining == 0:
+        conn.execute(
+            "UPDATE reaction_sets SET status='verified', verified_by=?, verified_at=? WHERE id=?",
+            (verified_by, now_iso(), reaction_set_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE reaction_sets SET status='pending', verified_by=NULL, verified_at=NULL WHERE id=?",
+            (reaction_set_id,),
+        )
+
+
 def verify_reaction(
     reaction_id: int,
     verified: bool,
@@ -395,6 +412,7 @@ def verify_reaction(
                     verified_by,
                 ),
             )
+            reconcile_reaction_set_review_state(conn, reaction_set_id, verified_by)
             rs = conn.execute("SELECT * FROM reaction_sets WHERE id=?", (reaction_set_id,)).fetchone()
             return reaction_set_detail(dict_from_row(rs), conn)
         assignments = ", ".join(f"{key}=?" for key in changed_updates)
@@ -414,20 +432,7 @@ def verify_reaction(
             """,
             (reaction_id, "verify" if verified else "unverify", json.dumps(audit_changes, ensure_ascii=False), verified_by),
         )
-        remaining = conn.execute(
-            "SELECT COUNT(*) AS n FROM reactions WHERE reaction_set_id=? AND verified=0",
-            (reaction_set_id,),
-        ).fetchone()["n"]
-        if remaining == 0:
-            conn.execute(
-                "UPDATE reaction_sets SET status='verified', verified_by=?, verified_at=? WHERE id=?",
-                (verified_by, now_iso(), reaction_set_id),
-            )
-        else:
-            conn.execute(
-                "UPDATE reaction_sets SET status='pending', verified_by=NULL, verified_at=NULL WHERE id=?",
-                (reaction_set_id,),
-            )
+        reconcile_reaction_set_review_state(conn, reaction_set_id, verified_by)
         rs = conn.execute("SELECT * FROM reaction_sets WHERE id=?", (reaction_set_id,)).fetchone()
         return reaction_set_detail(dict_from_row(rs), conn)
 
