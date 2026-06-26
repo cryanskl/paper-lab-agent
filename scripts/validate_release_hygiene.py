@@ -46,6 +46,7 @@ REQUIRED_GITIGNORE_PATTERNS = [
 REQUIRED_CI_WORKFLOW = Path(".github/workflows/ci.yml")
 REQUIRED_CI_RELEASE_CHECK = "bash scripts/release_check.sh"
 REQUIRED_CI_REQUIREMENTS_INSTALL = "python -m pip install -r requirements.txt"
+REQUIRED_CI_PYTHON_SETUP = "actions/setup-python@v5"
 REQUIRED_CI_TRIGGERS = ["push", "pull_request", "workflow_dispatch"]
 REQUIRED_CI_TIMEOUT = "timeout-minutes: 15"
 FORBIDDEN_TRACKED_PATTERNS = [
@@ -133,6 +134,8 @@ def missing_required_ci_release_gate(repo: Path) -> list[str]:
         missing.append("ci_runs_release_check")
     if REQUIRED_CI_REQUIREMENTS_INSTALL not in workflow_text:
         missing.append("ci_installs_requirements")
+    if REQUIRED_CI_PYTHON_SETUP not in workflow_text:
+        missing.append("ci_sets_up_python")
     if REQUIRED_CI_TIMEOUT not in workflow_text:
         missing.append("ci_timeout_minutes")
     return missing
