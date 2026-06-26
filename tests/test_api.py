@@ -13113,6 +13113,27 @@ def test_streamlit_config_tab_can_create_journal_with_year_to():
         assert required in create_section
 
 
+def test_streamlit_config_create_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    create_journal_section = streamlit[
+        streamlit.index('with st.form("create-journal-form")') :
+        streamlit.index("if journals_all:")
+    ]
+    create_category_section = streamlit[
+        streamlit.index('with st.form("create-category-form")') :
+        streamlit.index("with documents_tab:")
+    ]
+
+    for section, endpoint in [
+        (create_journal_section, 'api_post("/journals"'),
+        (create_category_section, 'api_post("/categories"'),
+    ]:
+        assert endpoint in section
+        assert "st.warning(format_error_payload(result, status_code))" in section
+        assert "st.json(result)" in section
+
+
 def test_streamlit_config_tab_uses_category_parent_option_label_helper():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

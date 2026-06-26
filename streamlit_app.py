@@ -489,6 +489,7 @@ with config_tab:
                     st.rerun()
                 else:
                     st.warning(format_error_payload(result, status_code))
+                    st.json(result)
 
     if journals_all:
         selected_journal = st.selectbox(
@@ -581,6 +582,7 @@ with config_tab:
                 st.rerun()
             else:
                 st.warning(format_error_payload(result, status_code))
+                st.json(result)
 
 with documents_tab:
     uploaded = st.file_uploader("PDF", type=["pdf"])
