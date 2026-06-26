@@ -1,6 +1,5 @@
 import json
 import os
-from pathlib import Path
 
 import streamlit as st
 
@@ -9,6 +8,7 @@ from app.frontend_api import (
     crawl_job_diagnostic_rows,
     crawl_job_rows,
     crawl_journal_options,
+    document_asset_downloads,
     document_chunk_rows,
     document_option_label,
     document_section_rows,
@@ -576,28 +576,16 @@ with documents_tab:
         document_detail = api_get(f"/documents/{selected['id']}")
         if document_detail.get("parse_error"):
             st.warning(f"parse_error: {document_detail['parse_error']}")
-        if document_detail.get("file_path"):
-            pdf_path = Path(document_detail.get("file_path"))
-            if pdf_path.exists():
+        for document_asset in document_asset_downloads(document_detail):
+            if document_asset["exists"]:
                 st.download_button(
-                    "下载原始 PDF",
-                    data=pdf_path.read_bytes(),
-                    file_name=pdf_path.name,
-                    mime="application/pdf",
+                    document_asset["label"],
+                    data=document_asset["data"],
+                    file_name=document_asset["file_name"],
+                    mime=document_asset["mime"],
                 )
             else:
-                st.warning(f"PDF 文件不存在: {pdf_path}")
-        if document_detail.get("tei_path"):
-            tei_path = Path(document_detail.get("tei_path"))
-            if tei_path.exists():
-                st.download_button(
-                    "下载 TEI XML",
-                    data=tei_path.read_text(encoding="utf-8"),
-                    file_name=tei_path.name,
-                    mime="application/xml",
-                )
-            else:
-                st.warning(f"TEI 文件不存在: {tei_path}")
+                st.warning(document_asset["missing_message"])
         st.caption(f"chemistry_status: {document_detail.get('chemistry_status') or 'unknown'}")
         if document_detail.get("chemistry_error"):
             st.warning(f"chemistry_error: {document_detail['chemistry_error']}")

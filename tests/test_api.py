@@ -11892,11 +11892,14 @@ def test_streamlit_documents_tab_offers_tei_xml_download():
     documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
 
     for required in [
-        'document_detail.get("tei_path")',
-        'tei_path = Path(document_detail.get("tei_path"))',
-        "tei_path.exists()",
-        "下载 TEI XML",
-        "TEI 文件不存在",
+        "document_asset_downloads(document_detail)",
+        "document_asset",
+        'document_asset["exists"]',
+        'document_asset["label"]',
+        'data=document_asset["data"]',
+        'file_name=document_asset["file_name"]',
+        'mime=document_asset["mime"]',
+        'st.warning(document_asset["missing_message"])',
     ]:
         assert required in documents_section
 
@@ -11907,11 +11910,14 @@ def test_streamlit_documents_tab_offers_original_pdf_download():
     documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
 
     for required in [
-        'document_detail.get("file_path")',
-        'pdf_path = Path(document_detail.get("file_path"))',
-        "pdf_path.exists()",
-        "下载原始 PDF",
-        "PDF 文件不存在",
+        "document_asset_downloads(document_detail)",
+        "document_asset",
+        'document_asset["exists"]',
+        'document_asset["label"]',
+        'data=document_asset["data"]',
+        'file_name=document_asset["file_name"]',
+        'mime=document_asset["mime"]',
+        'st.warning(document_asset["missing_message"])',
     ]:
         assert required in documents_section
 

@@ -217,6 +217,39 @@ def document_status_rows(document: dict[str, Any], chunks: Optional[dict[str, An
     return [{"field": field, "value": value} for field, value in rows]
 
 
+def document_asset_downloads(document: dict[str, Any]) -> list[dict[str, Any]]:
+    assets = [
+        ("pdf", "file_path", "下载原始 PDF", "application/pdf", "PDF 文件不存在", "bytes"),
+        ("tei", "tei_path", "下载 TEI XML", "application/xml", "TEI 文件不存在", "text"),
+    ]
+    downloads = []
+    for kind, field, label, mime, missing_label, data_mode in assets:
+        raw_path = document.get(field)
+        if not isinstance(raw_path, str) or not raw_path:
+            continue
+        path = Path(raw_path)
+        exists = path.exists() and path.is_file()
+        if exists and data_mode == "bytes":
+            data = path.read_bytes()
+        elif exists:
+            data = path.read_text(encoding="utf-8")
+        else:
+            data = None
+        downloads.append(
+            {
+                "kind": kind,
+                "label": label,
+                "data": data,
+                "file_name": path.name,
+                "mime": mime,
+                "path": str(path),
+                "exists": exists,
+                "missing_message": None if exists else f"{missing_label}: {path}",
+            }
+        )
+    return downloads
+
+
 def document_section_rows(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for section in sections:

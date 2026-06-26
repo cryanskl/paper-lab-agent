@@ -822,6 +822,76 @@ def test_document_chunk_rows_surface_vector_backlinks_and_preview():
     ]
 
 
+def test_document_asset_downloads_read_pdf_bytes_and_tei_text(tmp_path):
+    from app import frontend_api
+
+    pdf_path = tmp_path / "paper.pdf"
+    tei_path = tmp_path / "paper.tei.xml"
+    pdf_path.write_bytes(b"%PDF plasma")
+    tei_path.write_text("<TEI>plasma</TEI>", encoding="utf-8")
+
+    downloads = frontend_api.document_asset_downloads(
+        {"file_path": str(pdf_path), "tei_path": str(tei_path)}
+    )
+
+    assert downloads == [
+        {
+            "kind": "pdf",
+            "label": "下载原始 PDF",
+            "data": b"%PDF plasma",
+            "file_name": "paper.pdf",
+            "mime": "application/pdf",
+            "path": str(pdf_path),
+            "exists": True,
+            "missing_message": None,
+        },
+        {
+            "kind": "tei",
+            "label": "下载 TEI XML",
+            "data": "<TEI>plasma</TEI>",
+            "file_name": "paper.tei.xml",
+            "mime": "application/xml",
+            "path": str(tei_path),
+            "exists": True,
+            "missing_message": None,
+        },
+    ]
+
+
+def test_document_asset_downloads_report_missing_files(tmp_path):
+    from app import frontend_api
+
+    missing_pdf = tmp_path / "missing.pdf"
+    missing_tei = tmp_path / "missing.tei.xml"
+
+    downloads = frontend_api.document_asset_downloads(
+        {"file_path": str(missing_pdf), "tei_path": str(missing_tei)}
+    )
+
+    assert downloads == [
+        {
+            "kind": "pdf",
+            "label": "下载原始 PDF",
+            "data": None,
+            "file_name": "missing.pdf",
+            "mime": "application/pdf",
+            "path": str(missing_pdf),
+            "exists": False,
+            "missing_message": f"PDF 文件不存在: {missing_pdf}",
+        },
+        {
+            "kind": "tei",
+            "label": "下载 TEI XML",
+            "data": None,
+            "file_name": "missing.tei.xml",
+            "mime": "application/xml",
+            "path": str(missing_tei),
+            "exists": False,
+            "missing_message": f"TEI 文件不存在: {missing_tei}",
+        },
+    ]
+
+
 def test_translation_status_rows_summarize_output_file_preview():
     from app import frontend_api
 
