@@ -13134,6 +13134,27 @@ def test_streamlit_config_create_errors_show_payload_details():
         assert "st.json(result)" in section
 
 
+def test_streamlit_config_update_delete_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    update_section = streamlit[
+        streamlit.index('if st.button("更新期刊"') :
+        streamlit.index('if st.button("停用期刊"')
+    ]
+    delete_section = streamlit[
+        streamlit.index('if st.button("停用期刊"') :
+        streamlit.index("st.divider()", streamlit.index('if st.button("停用期刊"'))
+    ]
+
+    for section, endpoint in [
+        (update_section, "status_code, result = api_put("),
+        (delete_section, 'status_code, result = api_delete(f"/journals/{selected_journal[\'id\']}")'),
+    ]:
+        assert endpoint in section
+        assert "st.warning(format_error_payload(result, status_code))" in section
+        assert "st.json(result)" in section
+
+
 def test_streamlit_config_tab_uses_category_parent_option_label_helper():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

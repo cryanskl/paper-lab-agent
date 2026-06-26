@@ -545,12 +545,14 @@ with config_tab:
                     st.rerun()
                 else:
                     st.warning(format_error_payload(result, status_code))
+                    st.json(result)
         if st.button("停用期刊", key=f"delete-journal-{selected_journal['id']}"):
             status_code, result = api_delete(f"/journals/{selected_journal['id']}")
             if status_code < 400:
                 st.rerun()
             else:
                 st.warning(format_error_payload(result, status_code))
+                st.json(result)
 
     st.divider()
     st.subheader("分类")
