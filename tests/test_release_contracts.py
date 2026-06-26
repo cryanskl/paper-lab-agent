@@ -1455,6 +1455,21 @@ def test_export_release_artifacts_reports_output_dir_not_directory(tmp_path):
     assert "Traceback" not in result.stderr
 
 
+def test_export_release_artifacts_rejects_dirty_output_dir(tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    output_dir = tmp_path / "release"
+    output_dir.mkdir()
+    stale_path = output_dir / "old-demo-summary.json"
+    stale_path.write_text("stale", encoding="utf-8")
+
+    report = export_release_artifacts.export_release_artifacts(output_dir, compact=True)
+
+    assert report["ok"] is False
+    assert f"release artifact output directory contains unexpected files: ['old-demo-summary.json']" in report["issues"]
+    assert stale_path.read_text(encoding="utf-8") == "stale"
+    assert not (output_dir / "openapi.json").exists()
+
+
 def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     import os
     import subprocess

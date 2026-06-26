@@ -19,6 +19,9 @@ from scripts.export_openapi import write_openapi
 from scripts.prepare_demo_data import prepare_demo_data
 
 
+EXPECTED_ARTIFACT_NAMES = {"openapi.json", "demo-summary.json", "release-manifest.json"}
+
+
 def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -87,6 +90,18 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
             "output_dir": str(output_dir),
             "issues": [f"release artifact output directory is not a directory: {output_dir}"],
         }
+    if output_dir.exists():
+        unexpected_files = sorted(
+            path.name for path in output_dir.iterdir() if path.name not in EXPECTED_ARTIFACT_NAMES
+        )
+        if unexpected_files:
+            return {
+                "ok": False,
+                "output_dir": str(output_dir),
+                "issues": [
+                    f"release artifact output directory contains unexpected files: {unexpected_files!r}"
+                ],
+            }
     output_dir.mkdir(parents=True, exist_ok=True)
     openapi_path = output_dir / "openapi.json"
     demo_summary_path = output_dir / "demo-summary.json"
