@@ -1227,6 +1227,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert "release-manifest.json" in release_check
     assert "demo-summary.json" in release_check
     assert "openapi.json" in release_check
+    assert 'package.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]' in release_check
     assert 'package.get("demo_ready") is not True' in release_check
     assert 'package.get("demo_export_formats") != ["json", "txt", "bolsig"]' in release_check
     assert 'package.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}' in release_check
@@ -1713,6 +1714,11 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert payload["ok"] is True
     assert payload["package_path"] == str(package_path)
     assert payload["artifact_count"] == 3
+    assert payload["artifact_names"] == [
+        "demo-summary.json",
+        "openapi.json",
+        "release-manifest.json",
+    ]
     assert len(payload["package_sha256"]) == 64
     assert payload["source"]["git_commit"]
     assert payload["demo_ready"] is True

@@ -399,6 +399,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     if (
         package.get("ok") is not True
         or package.get("artifact_count") != 3
+        or package.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]
         or package.get("demo_ready") is not True
         or package.get("demo_export_formats") != ["json", "txt", "bolsig"]
         or package.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}
