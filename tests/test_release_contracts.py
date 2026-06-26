@@ -1162,10 +1162,13 @@ def test_release_check_requires_no_doi_dedupe_smoke_path():
 def test_release_check_requires_document_list_and_detail_smoke_paths():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+    smoke_text = (repo / "scripts" / "smoke_check.py").read_text(encoding="utf-8")
 
     assert '"document_list_total": 1' in release_text
     assert '"document_detail_parse_status": "uploaded"' in release_text
     assert '"document_detail_has_paper": True' in release_text
+    assert '"duplicate_document_matches_original": True' in release_text
+    assert '"duplicate_document_matches_original"' in smoke_text
     assert '"section_list_first_type": "body"' in release_text
     assert '"section_list_has_content": True' in release_text
     assert '"chunk_list_index_status": "indexed"' in release_text

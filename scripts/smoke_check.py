@@ -726,6 +726,7 @@ def run_smoke() -> dict:
             "duplicate_upload_status": duplicate_upload.status_code,
             "unsupported_document_status": unsupported_document.status_code,
             "duplicate_document_id": duplicate_document["id"],
+            "duplicate_document_matches_original": duplicate_document["id"] == document_id,
             "error_response_count": len(error_responses),
             "error_response_codes": error_responses,
             "sections": counts["sections"],

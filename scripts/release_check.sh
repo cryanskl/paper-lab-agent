@@ -288,6 +288,7 @@ expected = {
     "document_detail_has_paper": True,
     "document_detail_parse_status": "uploaded",
     "document_list_total": 1,
+    "duplicate_document_matches_original": True,
     "duplicate_upload_status": 409,
     "unsupported_document_status": 415,
     "error_response_count": 4,
