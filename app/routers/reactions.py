@@ -153,7 +153,7 @@ def get_reaction_set(reaction_set_id: int) -> dict:
         return reaction_set_detail(dict_from_row(row), conn)
 
 
-@router.put("/reactions/{reaction_id}/verify")
+@router.put("/reactions/{reaction_id}/verify", response_model=ReactionSetDetailResponse)
 def verify(reaction_id: int, body: VerifyIn) -> dict:
     try:
         clear_fields = {

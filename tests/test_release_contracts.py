@@ -2769,6 +2769,14 @@ def test_api_contract_reaction_set_detail_response_exposes_review_gate():
     assert issues == []
 
 
+def test_api_contract_reaction_verify_response_exposes_review_gate():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.reaction_verify_response_contract_issues()
+
+    assert issues == []
+
+
 def test_api_contract_validator_reports_missing_reaction_set_detail_field():
     validate_api_contract = load_validate_api_contract()
     openapi = {
@@ -2924,6 +2932,38 @@ def test_api_contract_validator_reports_missing_reaction_set_detail_reaction_fie
     issues = validate_api_contract.reaction_set_detail_response_contract_issues(openapi=openapi)
 
     assert issues == ["GET /api/v1/reaction-sets/{} reaction fields missing: source_excerpt"]
+
+
+def test_api_contract_validator_reports_missing_reaction_verify_response_field():
+    validate_api_contract = load_validate_api_contract()
+    response_fields = [
+        field for field in validate_api_contract.REACTION_SET_DETAIL_RESPONSE_FIELDS if field != "export_ready"
+    ]
+    openapi = {
+        "paths": {
+            "/api/v1/reactions/{reaction_id}/verify": {
+                "put": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": response_fields,
+                                        "properties": {field: {"type": "string"} for field in response_fields},
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.reaction_verify_response_contract_issues(openapi=openapi)
+
+    assert issues == ["PUT /api/v1/reactions/{}/verify missing response fields: export_ready"]
 
 
 def test_api_contract_rag_query_response_exposes_cited_sources():
