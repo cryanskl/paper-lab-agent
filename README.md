@@ -54,9 +54,10 @@ API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
 python scripts/export_openapi.py --output out/openapi.json
 python scripts/export_release_artifacts.py --output-dir out/release --compact
 python scripts/validate_release_artifacts.py --artifact-dir out/release --compact
+python scripts/package_release_artifacts.py --artifact-dir out/release --output out/paper-lab-agent-release.zip --compact
 ```
 
-`scripts/export_release_artifacts.py` 会一次性生成 `openapi.json`、`demo-summary.json` 和 `release-manifest.json`，用于前后端、评审或发布交接。manifest 会记录来源 git commit/branch、导出时 worktree 是否 dirty，以及三个文件的 SHA256 校验和；`scripts/validate_release_artifacts.py` 会校验交接包文件是否齐全、校验和是否匹配、版本是否一致、演示摘要是否 ready，以及 OpenAPI 是否包含基础路径。正式交接前可追加 `--require-clean-source`，要求 manifest 里的 `source.git_dirty=false`。服务启动后也可以直接访问 live schema 与交互文档：`http://127.0.0.1:8000/openapi.json`、`http://127.0.0.1:8000/docs` 和 `http://127.0.0.1:8000/redoc`。`python scripts/health_check.py --check-openapi` 会探测 live `/openapi.json` 并校验基础 schema 契约；`--require-openapi` 会在 schema 不可访问或缺少必需路径、tag、错误响应模型时返回非零。
+`scripts/export_release_artifacts.py` 会一次性生成 `openapi.json`、`demo-summary.json` 和 `release-manifest.json`，用于前后端、评审或发布交接。manifest 会记录来源 git commit/branch、导出时 worktree 是否 dirty，以及三个文件的 SHA256 校验和；`scripts/validate_release_artifacts.py` 会校验交接包文件是否齐全、校验和是否匹配、版本是否一致、演示摘要是否 ready，以及 OpenAPI 是否包含基础路径。`scripts/package_release_artifacts.py` 会先校验目录，再打包为单个 zip 并输出包的 SHA256。正式交接前可追加 `--require-clean-source`，要求 manifest 里的 `source.git_dirty=false`。服务启动后也可以直接访问 live schema 与交互文档：`http://127.0.0.1:8000/openapi.json`、`http://127.0.0.1:8000/docs` 和 `http://127.0.0.1:8000/redoc`。`python scripts/health_check.py --check-openapi` 会探测 live `/openapi.json` 并校验基础 schema 契约；`--require-openapi` 会在 schema 不可访问或缺少必需路径、tag、错误响应模型时返回非零。
 
 导入离线样例论文和 PDF 文档：
 

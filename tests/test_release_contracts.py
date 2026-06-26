@@ -1,6 +1,7 @@
 import json
 import re
 import string
+import zipfile
 from pathlib import Path
 
 
@@ -1203,6 +1204,8 @@ def test_release_check_validates_release_artifact_bundle():
 
     assert "scripts/export_release_artifacts.py" in release_check
     assert "scripts/export_release_artifacts.py --help" in release_check
+    assert "scripts/package_release_artifacts.py" in release_check
+    assert "scripts/package_release_artifacts.py --help" in release_check
     assert "scripts/validate_release_artifacts.py" in release_check
     assert "scripts/validate_release_artifacts.py --help" in release_check
     assert "RELEASE_ARTIFACTS_JSON" in release_check
@@ -1215,8 +1218,10 @@ def test_release_check_validates_release_artifact_bundle():
     assert "python scripts/export_release_artifacts.py --output-dir out/release --compact" in readme
     assert "python scripts/validate_release_artifacts.py --artifact-dir out/release --compact" in readme
     assert "--require-clean-source" in readme
+    assert "python scripts/package_release_artifacts.py --artifact-dir out/release --output out/paper-lab-agent-release.zip --compact" in readme
     assert "python scripts/export_release_artifacts.py --output-dir out/release --compact" in checklist
     assert "python scripts/validate_release_artifacts.py --artifact-dir out/release --compact" in checklist
+    assert "python scripts/package_release_artifacts.py --artifact-dir out/release --output out/paper-lab-agent-release.zip --compact" in checklist
     assert "--require-clean-source" in checklist
 
 
@@ -1548,6 +1553,76 @@ def test_validate_release_artifacts_script_can_require_clean_source(tmp_path):
     payload = json.loads(validate_result.stdout)
     assert payload["ok"] is False
     assert "release manifest source.git_dirty must be false for clean-source validation" in payload["issues"]
+
+
+def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    package_path = tmp_path / "paper-lab-agent-release.zip"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    export_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert export_result.returncode == 0, export_result.stderr
+
+    package_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/package_release_artifacts.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--output",
+            str(package_path),
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert package_result.returncode == 0, package_result.stderr
+    payload = json.loads(package_result.stdout)
+    assert payload["ok"] is True
+    assert payload["package_path"] == str(package_path)
+    assert payload["artifact_count"] == 3
+    assert len(payload["package_sha256"]) == 64
+    assert payload["source"]["git_commit"]
+    assert package_path.exists()
+    with zipfile.ZipFile(package_path) as archive:
+        assert sorted(archive.namelist()) == [
+            "demo-summary.json",
+            "openapi.json",
+            "release-manifest.json",
+        ]
 
 
 def test_release_check_derives_expected_runtime_version_from_app_version():
@@ -4526,7 +4601,7 @@ def test_requirements_validator_ignores_standard_library_imports(tmp_path):
     source_dir = tmp_path / "scripts"
     source_dir.mkdir()
     (source_dir / "uses_stdlib.py").write_text(
-        "import email.utils\nimport fnmatch\nimport importlib.util\nimport shlex\nimport subprocess\n",
+        "import email.utils\nimport fnmatch\nimport importlib.util\nimport shlex\nimport subprocess\nimport zipfile\n",
         encoding="utf-8",
     )
     requirements_path = tmp_path / "requirements.txt"
