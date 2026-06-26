@@ -161,6 +161,19 @@ def load_validate_release_artifacts():
     return validate_release_artifacts
 
 
+def load_package_release_artifacts():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "package_release_artifacts.py"
+    spec = importlib.util.spec_from_file_location("package_release_artifacts_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    package_release_artifacts = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(package_release_artifacts)
+    return package_release_artifacts
+
+
 def test_env_example_contains_required_external_dependency_keys():
     validate_env_example = load_validate_env_example()
     env_path = Path(__file__).resolve().parent.parent / ".env.example"
@@ -1837,6 +1850,20 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert validate_payload["demo_export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
     assert validate_payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
     assert validate_payload["demo_reaction_set_verified_at"]
+
+
+def test_package_release_artifacts_removes_stale_output_on_validation_failure(tmp_path):
+    package_release_artifacts = load_package_release_artifacts()
+    artifact_dir = tmp_path / "invalid-release"
+    output_path = tmp_path / "paper-lab-agent-release.zip"
+    artifact_dir.mkdir()
+    output_path.write_bytes(b"stale release package")
+
+    report = package_release_artifacts.package_release_artifacts(artifact_dir, output_path)
+
+    assert report["ok"] is False
+    assert not output_path.exists()
+    assert any("missing" in issue for issue in report["issues"])
 
 
 def test_validate_release_package_script_rejects_tampered_zip_artifact(tmp_path):

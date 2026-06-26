@@ -35,6 +35,7 @@ def package_release_artifacts(
     output_path = output_path.resolve()
     validation = validate_release_artifacts(artifact_dir, require_clean_source=require_clean_source)
     if validation.get("ok") is not True:
+        output_path.unlink(missing_ok=True)
         return {
             "ok": False,
             "artifact_dir": str(artifact_dir),
