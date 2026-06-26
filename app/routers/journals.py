@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.db import dict_from_row, get_conn
-from app.errors import AppError, PageResponse, page
+from app.errors import AppError, page
 from app.utils import json_dumps, json_loads, to_int
 
 router = APIRouter(prefix="/journals", tags=["journals"])
@@ -126,13 +126,38 @@ class JournalUpdate(BaseModel):
         return self
 
 
+class JournalResponse(BaseModel):
+    id: int
+    name: str
+    publisher: Optional[str] = None
+    platform: Optional[str] = None
+    url: Optional[str] = None
+    issn_print: Optional[str] = None
+    issn_electronic: Optional[str] = None
+    keywords: KeywordConfig
+    year_from: int
+    year_to: Optional[int] = None
+    sci_zone: Optional[str] = None
+    impact_factor: Optional[float] = None
+    active: bool
+    created_at: str
+    updated_at: str
+
+
+class JournalListResponse(BaseModel):
+    items: list[JournalResponse]
+    total: int
+    page: int
+    page_size: int
+
+
 def serialize(row: dict) -> dict:
     row["keywords"] = json_loads(row.get("keywords"), [])
     row["active"] = bool(row.get("active"))
     return row
 
 
-@router.get("", response_model=PageResponse)
+@router.get("", response_model=JournalListResponse)
 def list_journals(
     active: Optional[bool] = None,
     page_num: int = Query(1, alias="page", ge=1),

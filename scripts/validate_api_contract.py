@@ -40,6 +40,24 @@ REQUIRED_SEMANTIC_ERROR_RESPONSES = {
     ("POST", "/api/v1/documents"): ("409", "415"),
     ("POST", "/api/v1/reaction-sets/{}/export"): ("400", "409"),
 }
+JOURNAL_LIST_RESPONSE_ROUTE = ("GET", "/api/v1/journals")
+JOURNAL_RESPONSE_FIELDS = (
+    "id",
+    "name",
+    "publisher",
+    "platform",
+    "url",
+    "issn_print",
+    "issn_electronic",
+    "keywords",
+    "year_from",
+    "year_to",
+    "sci_zone",
+    "impact_factor",
+    "active",
+    "created_at",
+    "updated_at",
+)
 EXPORT_RESPONSE_FIELDS = (
     "reaction_set_id",
     "format",
@@ -464,6 +482,26 @@ def semantic_error_status_contract_issues(openapi: dict | None = None) -> list[s
     return issues
 
 
+def journal_list_response_contract_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    specs = normalized_openapi_specs(source_openapi.get("paths", {}))
+    spec = specs.get(JOURNAL_LIST_RESPONSE_ROUTE)
+    if spec is None:
+        return []
+    schema = response_schema(spec, source_openapi)
+    method, path = JOURNAL_LIST_RESPONSE_ROUTE
+    missing_page = [field for field in PAGINATION_RESPONSE_FIELDS if not schema_declares_fields(schema, (field,))]
+    if missing_page:
+        return [f"{method} {path} missing response fields: {', '.join(missing_page)}"]
+
+    items_schema = schema_property(schema, "items", source_openapi)
+    item_schema = effective_schema(items_schema.get("items", {}), source_openapi)
+    missing_item = [field for field in JOURNAL_RESPONSE_FIELDS if not schema_declares_fields(item_schema, (field,))]
+    if missing_item:
+        return [f"{method} {path} item fields missing: {', '.join(missing_item)}"]
+    return []
+
+
 def export_response_contract_issues(openapi: dict | None = None) -> list[str]:
     source_openapi = openapi if openapi is not None else app_openapi()
     specs = normalized_openapi_specs(source_openapi.get("paths", {}))
@@ -841,6 +879,7 @@ def main() -> int:
     pagination_response_issues = pagination_response_contract_issues(Path(args.contract_path))
     error_response_issues = error_response_contract_issues()
     semantic_error_status_issues = semantic_error_status_contract_issues()
+    journal_list_response_issues = journal_list_response_contract_issues()
     export_response_issues = export_response_contract_issues()
     rag_response_issues = rag_response_contract_issues()
     system_status_response_issues = system_status_response_contract_issues()
@@ -862,6 +901,7 @@ def main() -> int:
         or pagination_response_issues
         or error_response_issues
         or semantic_error_status_issues
+        or journal_list_response_issues
         or export_response_issues
         or rag_response_issues
         or system_status_response_issues
@@ -900,6 +940,10 @@ def main() -> int:
         if semantic_error_status_issues:
             print("api contract semantic error status issues:", file=sys.stderr)
             for issue in semantic_error_status_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if journal_list_response_issues:
+            print("api contract journal list response issues:", file=sys.stderr)
+            for issue in journal_list_response_issues:
                 print(f"- {issue}", file=sys.stderr)
         if export_response_issues:
             print("api contract export response issues:", file=sys.stderr)
