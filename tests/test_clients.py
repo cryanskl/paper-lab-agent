@@ -414,6 +414,20 @@ def test_openalex_tolerates_malformed_title_fields():
     assert object_title["title"] == "Untitled"
 
 
+def test_openalex_falls_back_to_display_name_for_missing_title():
+    client = OpenAlexClient()
+
+    work = client.normalize(
+        {
+            "id": "https://openalex.org/W-display-name-title",
+            "title": None,
+            "display_name": "  Plasma chemistry in argon oxygen discharges  ",
+        }
+    )
+
+    assert work["title"] == "Plasma chemistry in argon oxygen discharges"
+
+
 def test_openalex_strips_text_fields():
     client = OpenAlexClient()
 

@@ -171,9 +171,11 @@ class OpenAlexClient:
         names = [item.strip() for item in value if isinstance(item, str) and item.strip()]
         return "; ".join(names) if names else None
 
-    def normalize_title(self, value: Any) -> str:
+    def normalize_title(self, value: Any, fallback: Any = None) -> str:
         if isinstance(value, str) and value.strip():
             return value.strip()
+        if isinstance(fallback, str) and fallback.strip():
+            return fallback.strip()
         return "Untitled"
 
     def normalize_publication_date(self, value: Any) -> Optional[str]:
@@ -243,7 +245,7 @@ class OpenAlexClient:
         abstract = self.abstract_text(item)
         return {
             "doi": doi,
-            "title": self.normalize_title(item.get("title")),
+            "title": self.normalize_title(item.get("title"), item.get("display_name")),
             "abstract": abstract,
             "authors": authors,
             "journal_name": self.normalize_optional_text(source.get("display_name"))
