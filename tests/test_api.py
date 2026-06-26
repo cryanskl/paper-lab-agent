@@ -12856,6 +12856,25 @@ def test_streamlit_search_results_can_override_categories_manually():
     assert "format_func=lambda category" not in search_section
 
 
+def test_streamlit_search_manual_category_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    manual_category_section = search_section[
+        search_section.index('if st.button("保存人工分类"') :
+        search_section.index("links = []")
+    ]
+
+    for required in [
+        "status_code, updated_paper = api_put(",
+        'f"/papers/{paper[\'id\']}/categories"',
+        "else:",
+        "st.warning(format_error_payload(updated_paper, status_code))",
+        "st.json(updated_paper)",
+    ]:
+        assert required in manual_category_section
+
+
 def test_streamlit_search_results_can_resolve_oa_manually():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

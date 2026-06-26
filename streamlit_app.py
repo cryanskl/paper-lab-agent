@@ -322,6 +322,7 @@ with search_tab:
                         st.success(format_category_summary(updated_paper))
                     else:
                         st.warning(format_error_payload(updated_paper, status_code))
+                        st.json(updated_paper)
             links = []
             if paper.get("oa_pdf_url"):
                 links.append(f"[OA PDF]({paper['oa_pdf_url']})")
