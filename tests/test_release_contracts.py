@@ -1029,6 +1029,39 @@ def test_api_contract_async_routes_expose_pending_response_shape():
     assert issues == []
 
 
+def test_api_contract_success_responses_do_not_use_empty_generic_schema():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.empty_success_response_schema_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_empty_success_response_schema():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/crawl/run": {
+                "post": {
+                    "responses": {
+                        "202": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {},
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.empty_success_response_schema_issues(openapi=openapi)
+
+    assert issues == ["POST /api/v1/crawl/run 202 response must declare a non-empty schema"]
+
+
 def test_api_contract_validator_reports_missing_async_response_field(tmp_path):
     validate_api_contract = load_validate_api_contract()
     contract_path = tmp_path / "接口设计文档.md"
