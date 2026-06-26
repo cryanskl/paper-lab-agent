@@ -856,6 +856,7 @@ with rag_tab:
             )
             if status >= 400:
                 st.warning(format_error_payload(rag_payload, status))
+                st.json(rag_payload)
             else:
                 answer = rag_payload.get("answer") or ""
                 st.markdown(answer)

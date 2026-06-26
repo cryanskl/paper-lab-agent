@@ -12371,6 +12371,25 @@ def test_streamlit_rag_tab_validates_document_ids_before_query():
         assert required in rag_section
 
 
+def test_streamlit_rag_query_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+    rag_query_section = rag_section[
+        rag_section.index("status, rag_payload = api_post(") :
+        rag_section.index("answer = rag_payload.get")
+    ]
+
+    for required in [
+        'status, rag_payload = api_post(',
+        '"/rag/query"',
+        "if status >= 400:",
+        "st.warning(format_error_payload(rag_payload, status))",
+        "st.json(rag_payload)",
+    ]:
+        assert required in rag_query_section
+
+
 def test_streamlit_rag_tab_exposes_top_k_control():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
