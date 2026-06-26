@@ -364,6 +364,7 @@ expected = {
     "extracted_rate_type": "cross_section",
     "reaction_set_detail_export_ready_after_verify": True,
     "reaction_set_detail_audit_entries_after_verify": 1,
+    "verified_export_has_smoke_check_audit": True,
     "verified_export_txt_has_verification_metadata": True,
     "verified_export_bolsig_has_verification_metadata": True,
     "verified_export_txt_has_confidence": True,
