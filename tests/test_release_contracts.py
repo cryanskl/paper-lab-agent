@@ -2026,6 +2026,20 @@ def test_package_release_artifacts_removes_stale_output_on_validation_failure(tm
     assert any("missing" in issue for issue in report["issues"])
 
 
+def test_package_release_artifacts_reports_output_path_not_file(tmp_path):
+    package_release_artifacts = load_package_release_artifacts()
+    artifact_dir = tmp_path / "invalid-release"
+    output_path = tmp_path / "paper-lab-agent-release.zip"
+    artifact_dir.mkdir()
+    output_path.mkdir()
+
+    report = package_release_artifacts.package_release_artifacts(artifact_dir, output_path)
+
+    assert report["ok"] is False
+    assert f"release package output is not a file: {output_path.resolve()}" in report["issues"]
+    assert output_path.is_dir()
+
+
 def test_package_release_artifacts_rejects_output_inside_artifact_dir(tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     package_release_artifacts = load_package_release_artifacts()
