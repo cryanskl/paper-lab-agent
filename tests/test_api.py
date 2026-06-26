@@ -12268,6 +12268,24 @@ def test_streamlit_translation_preview_offers_download():
         assert required in translation_section
 
 
+def test_streamlit_translation_preview_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    translation_section = documents_section[
+        documents_section.index("with translation_tab:") : documents_section.index("with chunks_tab:")
+    ]
+
+    for required in [
+        'translation_preview = api_get(f"/documents/{selected[\'id\']}/translation")',
+        "except FrontendApiError as exc:",
+        "st.warning(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "except Exception as exc:",
+    ]:
+        assert required in translation_section
+
+
 def test_streamlit_translation_preview_warns_when_output_file_is_missing():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

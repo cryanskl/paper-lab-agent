@@ -782,6 +782,10 @@ with documents_tab:
                 else:
                     st.dataframe(translation_status_rows(translation_preview), use_container_width=True)
                     st.json(translation_preview)
+            except FrontendApiError as exc:
+                translation_preview = None
+                st.warning(format_error_payload(exc.payload, exc.status_code))
+                st.json(exc.payload)
             except Exception as exc:
                 translation_preview = None
                 st.info(f"translation_preview unavailable: {exc}")
