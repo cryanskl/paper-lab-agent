@@ -1123,6 +1123,167 @@ def test_api_contract_document_responses_expose_associated_paper_summary():
     assert issues == []
 
 
+def test_api_contract_document_list_response_exposes_typed_document_items():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.document_list_response_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_document_list_item_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/documents": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "paper_id",
+                                                        "file_path",
+                                                        "file_hash",
+                                                        "original_name",
+                                                        "num_pages",
+                                                        "parse_status",
+                                                        "parse_error",
+                                                        "index_status",
+                                                        "index_error",
+                                                        "chemistry_status",
+                                                        "chemistry_error",
+                                                        "tei_path",
+                                                        "created_at",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "paper_id": {"type": "integer"},
+                                                        "file_path": {"type": "string"},
+                                                        "file_hash": {"type": "string"},
+                                                        "original_name": {"type": "string"},
+                                                        "num_pages": {"type": "integer"},
+                                                        "parse_status": {"type": "string"},
+                                                        "parse_error": {"type": "string"},
+                                                        "index_status": {"type": "string"},
+                                                        "index_error": {"type": "string"},
+                                                        "chemistry_status": {"type": "string"},
+                                                        "chemistry_error": {"type": "string"},
+                                                        "tei_path": {"type": "string"},
+                                                        "created_at": {"type": "string"},
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.document_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/documents item fields missing: paper"]
+
+
+def test_api_contract_validator_reports_missing_document_list_paper_field():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/documents": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items", "total", "page", "page_size"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "paper_id",
+                                                        "file_path",
+                                                        "file_hash",
+                                                        "original_name",
+                                                        "num_pages",
+                                                        "parse_status",
+                                                        "parse_error",
+                                                        "index_status",
+                                                        "index_error",
+                                                        "chemistry_status",
+                                                        "chemistry_error",
+                                                        "tei_path",
+                                                        "created_at",
+                                                        "paper",
+                                                    ],
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "paper_id": {"type": "integer"},
+                                                        "file_path": {"type": "string"},
+                                                        "file_hash": {"type": "string"},
+                                                        "original_name": {"type": "string"},
+                                                        "num_pages": {"type": "integer"},
+                                                        "parse_status": {"type": "string"},
+                                                        "parse_error": {"type": "string"},
+                                                        "index_status": {"type": "string"},
+                                                        "index_error": {"type": "string"},
+                                                        "chemistry_status": {"type": "string"},
+                                                        "chemistry_error": {"type": "string"},
+                                                        "tei_path": {"type": "string"},
+                                                        "created_at": {"type": "string"},
+                                                        "paper": {
+                                                            "type": "object",
+                                                            "required": ["id", "doi", "title", "journal_name"],
+                                                            "properties": {
+                                                                "id": {"type": "integer"},
+                                                                "doi": {"type": "string"},
+                                                                "title": {"type": "string"},
+                                                                "journal_name": {"type": "string"},
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "page": {"type": "integer"},
+                                            "page_size": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.document_list_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/documents item paper fields missing: published_date"]
+
+
 def test_api_contract_translation_response_exposes_status_and_output_path():
     validate_api_contract = load_validate_api_contract()
 

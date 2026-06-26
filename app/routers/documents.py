@@ -56,6 +56,13 @@ class DocumentResponse(BaseModel):
     paper: Optional[PaperSummaryResponse] = None
 
 
+class DocumentListResponse(BaseModel):
+    items: list[DocumentResponse]
+    total: int
+    page: int
+    page_size: int
+
+
 class TranslationResponse(BaseModel):
     id: int
     document_id: int
@@ -132,7 +139,7 @@ async def upload_document(file: UploadFile = File(...), paper_id: Optional[int] 
     return document
 
 
-@router.get("", response_model=PageResponse)
+@router.get("", response_model=DocumentListResponse)
 def list_documents(
     page_num: int = Query(1, alias="page", ge=1),
     page_size: int = Query(20, ge=1, le=100),

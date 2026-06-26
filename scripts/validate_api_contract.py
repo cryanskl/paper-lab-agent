@@ -151,6 +151,7 @@ DOCUMENT_RESPONSE_ROUTES = (
     ("GET", "/api/v1/documents/{}", "200"),
     ("POST", "/api/v1/documents", "201"),
 )
+DOCUMENT_LIST_RESPONSE_ROUTE = ("GET", "/api/v1/documents")
 DOCUMENT_RESPONSE_FIELDS = (
     "id",
     "paper_id",
@@ -571,6 +572,33 @@ def document_response_contract_issues(openapi: dict | None = None) -> list[str]:
     return []
 
 
+def document_list_response_contract_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    specs = normalized_openapi_specs(source_openapi.get("paths", {}))
+    spec = specs.get(DOCUMENT_LIST_RESPONSE_ROUTE)
+    if spec is None:
+        return []
+    schema = response_schema(spec, source_openapi)
+    method, path = DOCUMENT_LIST_RESPONSE_ROUTE
+    missing_page = [field for field in PAGINATION_RESPONSE_FIELDS if not schema_declares_fields(schema, (field,))]
+    if missing_page:
+        return [f"{method} {path} missing response fields: {', '.join(missing_page)}"]
+
+    items_schema = schema_property(schema, "items", source_openapi)
+    item_schema = effective_schema(items_schema.get("items", {}), source_openapi)
+    missing_item = [field for field in DOCUMENT_RESPONSE_FIELDS if not schema_declares_fields(item_schema, (field,))]
+    if missing_item:
+        return [f"{method} {path} item fields missing: {', '.join(missing_item)}"]
+
+    paper_schema = schema_property(item_schema, "paper", source_openapi)
+    missing_paper = [
+        field for field in DOCUMENT_PAPER_FIELDS if not schema_declares_fields(paper_schema, (field,))
+    ]
+    if missing_paper:
+        return [f"{method} {path} item paper fields missing: {', '.join(missing_paper)}"]
+    return []
+
+
 def translation_response_contract_issues(openapi: dict | None = None) -> list[str]:
     source_openapi = openapi if openapi is not None else app_openapi()
     specs = normalized_openapi_specs(source_openapi.get("paths", {}))
@@ -818,6 +846,7 @@ def main() -> int:
     system_status_response_issues = system_status_response_contract_issues()
     reaction_set_detail_response_issues = reaction_set_detail_response_contract_issues()
     document_response_issues = document_response_contract_issues()
+    document_list_response_issues = document_list_response_contract_issues()
     translation_response_issues = translation_response_contract_issues()
     paper_detail_response_issues = paper_detail_response_contract_issues()
     paper_list_response_issues = paper_list_response_contract_issues()
@@ -838,6 +867,7 @@ def main() -> int:
         or system_status_response_issues
         or reaction_set_detail_response_issues
         or document_response_issues
+        or document_list_response_issues
         or translation_response_issues
         or paper_detail_response_issues
         or paper_list_response_issues
@@ -890,6 +920,10 @@ def main() -> int:
         if document_response_issues:
             print("api contract document response issues:", file=sys.stderr)
             for issue in document_response_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if document_list_response_issues:
+            print("api contract document list response issues:", file=sys.stderr)
+            for issue in document_list_response_issues:
                 print(f"- {issue}", file=sys.stderr)
         if translation_response_issues:
             print("api contract translation response issues:", file=sys.stderr)
