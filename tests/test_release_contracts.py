@@ -1066,6 +1066,34 @@ def test_api_contract_error_responses_expose_unified_shape():
     assert issues == []
 
 
+def test_api_contract_semantic_error_statuses_are_documented():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.semantic_error_status_contract_issues()
+
+    assert issues == []
+
+
+def test_api_contract_validator_reports_missing_semantic_error_status():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/reaction-sets/{reaction_set_id}/export": {
+                "post": {
+                    "responses": {
+                        "200": {"description": "OK"},
+                        "422": {"description": "Validation Error"},
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.semantic_error_status_contract_issues(openapi=openapi)
+
+    assert issues == ["POST /api/v1/reaction-sets/{}/export missing error responses: 400, 409"]
+
+
 def test_api_contract_validator_reports_default_fastapi_validation_error_schema():
     validate_api_contract = load_validate_api_contract()
     openapi = {

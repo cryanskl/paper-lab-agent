@@ -116,7 +116,13 @@ def verify(reaction_id: int, body: VerifyIn) -> dict:
         raise AppError(500, "reaction_verify_failed", str(exc))
 
 
-@router.post("/reaction-sets/{reaction_set_id}/export")
+@router.post(
+    "/reaction-sets/{reaction_set_id}/export",
+    responses={
+        400: {"description": "Unsupported export format"},
+        409: {"description": "Reaction set is not fully verified"},
+    },
+)
 def export(reaction_set_id: int, format: str = Query("json")) -> dict:
     try:
         return export_reaction_set(reaction_set_id, format)

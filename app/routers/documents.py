@@ -67,7 +67,14 @@ def get_document_or_404(document_id: int) -> dict:
         return serialize_document(row, conn)
 
 
-@router.post("", status_code=201)
+@router.post(
+    "",
+    status_code=201,
+    responses={
+        409: {"description": "Duplicate document"},
+        415: {"description": "Unsupported document type"},
+    },
+)
 async def upload_document(file: UploadFile = File(...), paper_id: Optional[int] = Form(None)) -> dict:
     await ensure_pdf_upload(file)
     if paper_id is not None:
