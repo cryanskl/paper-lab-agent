@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import hashlib
 import json
 import re
@@ -71,6 +72,16 @@ def demo_audit_entry_count_issues(demo_summary: dict[str, Any]) -> list[str]:
             + ", ".join(missing)
         ]
     return []
+
+
+def is_iso8601_timestamp(value: Any) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
 
 
 def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool = False) -> dict[str, Any]:
@@ -170,6 +181,8 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             issues.append("demo summary reaction_set_verified_by must be a non-empty string")
         if not isinstance(demo_reaction_set_verified_at, str) or not demo_reaction_set_verified_at.strip():
             issues.append("demo summary reaction_set_verified_at must be a non-empty string")
+        elif not is_iso8601_timestamp(demo_reaction_set_verified_at):
+            issues.append("demo summary reaction_set_verified_at must be an ISO8601 timestamp")
 
     return {
         "ok": not issues,

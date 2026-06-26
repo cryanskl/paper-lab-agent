@@ -1268,7 +1268,11 @@ def test_release_check_validates_prepare_demo_data_output_artifact():
     assert '"--summary-only"' in release_check
     assert '"--compact"' in release_check
     assert '"--output"' in release_check
-    assert "summary_output_payload != summary" in release_check
+    assert "stable_prepare_demo_summary(summary_payload) != stable_prepare_demo_summary(summary)" in release_check
+    assert "stable_prepare_demo_summary(summary_output_payload) != stable_prepare_demo_summary(summary)" in release_check
+    assert "validate_prepare_demo_summary_reviewer(summary, \"payload.summary\")" in release_check
+    assert "validate_prepare_demo_summary_reviewer(summary_payload, \"--summary-only output\")" in release_check
+    assert "validate_prepare_demo_summary_reviewer(summary_output_payload, \"--output summary\")" in release_check
     assert "python scripts/prepare_demo_data.py --summary-only --compact --output out/demo-summary.json" in readme
     assert "python scripts/prepare_demo_data.py --summary-only --compact --output out/demo-summary.json" in checklist
 
@@ -1542,6 +1546,59 @@ def test_validate_release_artifacts_requires_demo_audit_summary(tmp_path):
     report = validate_release_artifacts.validate_release_artifacts(artifact_dir)
 
     assert "demo summary export_audit_entry_counts must include positive counts for: json, txt, bolsig" in report["issues"]
+
+
+def test_validate_release_artifacts_requires_demo_reviewer_timestamp(tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    validate_release_artifacts = load_validate_release_artifacts()
+    artifact_dir = tmp_path / "release"
+    artifact_dir.mkdir()
+    openapi = {
+        "info": {"title": "paper-lab-agent", "version": "0.1.0"},
+        "paths": {"/api/v1/health": {}},
+    }
+    demo_summary = {
+        "ready": True,
+        "export_formats": ["json", "txt", "bolsig"],
+        "export_audit_entry_counts": {"json": 1, "txt": 1, "bolsig": 1},
+        "reaction_set_verified_by": "prepare-demo-data",
+        "reaction_set_verified_at": "not-a-timestamp",
+    }
+    manifest = {
+        "service": "paper-lab-agent",
+        "version": "0.1.0",
+        "artifacts": {
+            "openapi": "openapi.json",
+            "demo_summary": "demo-summary.json",
+            "manifest": "release-manifest.json",
+        },
+        "demo_ready": True,
+        "demo_export_formats": ["json", "txt", "bolsig"],
+        "demo_export_audit_entry_counts": {"json": 1, "txt": 1, "bolsig": 1},
+        "demo_reaction_set_verified_by": "prepare-demo-data",
+        "demo_reaction_set_verified_at": "not-a-timestamp",
+        "openapi_path_count": 1,
+        "source": {
+            "git_commit": "a" * 40,
+            "git_branch": "phase/5-experiment-lab-artifacts",
+            "git_dirty": False,
+        },
+        "checksums": {
+            "openapi.json": "",
+            "demo-summary.json": "",
+            "release-manifest.json": "",
+        },
+    }
+    (artifact_dir / "openapi.json").write_text(json.dumps(openapi), encoding="utf-8")
+    (artifact_dir / "demo-summary.json").write_text(json.dumps(demo_summary), encoding="utf-8")
+    manifest["checksums"]["openapi.json"] = export_release_artifacts.sha256_file(artifact_dir / "openapi.json")
+    manifest["checksums"]["demo-summary.json"] = export_release_artifacts.sha256_file(artifact_dir / "demo-summary.json")
+    manifest["checksums"]["release-manifest.json"] = export_release_artifacts.manifest_checksum(manifest)
+    (artifact_dir / "release-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = validate_release_artifacts.validate_release_artifacts(artifact_dir)
+
+    assert "demo summary reaction_set_verified_at must be an ISO8601 timestamp" in report["issues"]
 
 
 def test_validate_release_artifacts_script_rejects_tampered_artifact(tmp_path):

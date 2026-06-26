@@ -163,6 +163,38 @@ import os
 import subprocess
 import sys
 import tempfile
+from datetime import datetime
+
+
+def stable_prepare_demo_summary(summary):
+    return {key: value for key, value in summary.items() if key != "reaction_set_verified_at"}
+
+
+def validate_prepare_demo_summary_reviewer(summary, label):
+    if summary.get("reaction_set_verified_by") != "prepare-demo-data":
+        print(
+            f"release_check failed: prepare_demo_data {label}.reaction_set_verified_by="
+            f"{summary.get('reaction_set_verified_by')!r}, expected 'prepare-demo-data'",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    verified_at = summary.get("reaction_set_verified_at")
+    if not isinstance(verified_at, str) or not verified_at.strip():
+        print(
+            f"release_check failed: prepare_demo_data {label}.reaction_set_verified_at={verified_at!r}, "
+            "expected ISO8601 timestamp",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    try:
+        datetime.fromisoformat(verified_at.strip().replace("Z", "+00:00"))
+    except ValueError:
+        print(
+            f"release_check failed: prepare_demo_data {label}.reaction_set_verified_at={verified_at!r}, "
+            "expected ISO8601 timestamp",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
 with tempfile.TemporaryDirectory(prefix="paper-lab-demo-") as demo_dir:
     env = os.environ.copy()
@@ -234,10 +266,13 @@ if summary.get("ready") is not True:
         file=sys.stderr,
     )
     raise SystemExit(1)
-if summary_payload != summary:
+validate_prepare_demo_summary_reviewer(summary, "payload.summary")
+validate_prepare_demo_summary_reviewer(summary_payload, "--summary-only output")
+validate_prepare_demo_summary_reviewer(summary_output_payload, "--output summary")
+if stable_prepare_demo_summary(summary_payload) != stable_prepare_demo_summary(summary):
     print("release_check failed: prepare_demo_data --summary-only output does not match payload.summary", file=sys.stderr)
     raise SystemExit(1)
-if summary_output_payload != summary:
+if stable_prepare_demo_summary(summary_output_payload) != stable_prepare_demo_summary(summary):
     print("release_check failed: prepare_demo_data --output summary does not match payload.summary", file=sys.stderr)
     raise SystemExit(1)
 if any(key in summary_payload for key in ("document", "exports")):
