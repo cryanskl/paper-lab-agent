@@ -70,6 +70,11 @@ REQUIRED_ENV_EXAMPLE_KEYS = (
     "FRONTEND_URL",
     "DEV_READY_TIMEOUT",
 )
+SECRET_LIKE_ENV_EXAMPLE_KEYS = (
+    "OPENALEX_MAILTO",
+    "UNPAYWALL_EMAIL",
+    "LLM_API_KEY",
+)
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -121,7 +126,8 @@ def check_env_example(repo: Path) -> dict[str, Any]:
     path = repo / ".env.example"
     issues = []
     if path.exists() and path.is_file():
-        keys = env_example_keys(path)
+        values = env_example_values(path)
+        keys = set(values)
         for key in REQUIRED_ENV_EXAMPLE_KEYS:
             if key not in keys:
                 issues.append(
@@ -129,6 +135,15 @@ def check_env_example(repo: Path) -> dict[str, Any]:
                         "code": "missing_env_example_key",
                         "key": key,
                         "message": f".env.example must document {key}",
+                    }
+                )
+        for key in SECRET_LIKE_ENV_EXAMPLE_KEYS:
+            if values.get(key):
+                issues.append(
+                    {
+                        "code": "non_empty_env_example_secret",
+                        "key": key,
+                        "message": f".env.example must leave {key} blank",
                     }
                 )
     return {
@@ -139,7 +154,11 @@ def check_env_example(repo: Path) -> dict[str, Any]:
 
 
 def env_example_keys(path: Path) -> set[str]:
-    keys: set[str] = set()
+    return set(env_example_values(path))
+
+
+def env_example_values(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
@@ -149,8 +168,8 @@ def env_example_keys(path: Path) -> set[str]:
         key, separator, _value = line.partition("=")
         key = key.strip()
         if separator and ENV_KEY_PATTERN.fullmatch(key):
-            keys.add(key)
-    return keys
+            values[key] = _value.strip().strip('"').strip("'")
+    return values
 
 
 def check_python_dependencies() -> dict[str, Any]:

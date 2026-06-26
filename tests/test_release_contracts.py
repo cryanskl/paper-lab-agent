@@ -801,6 +801,22 @@ def test_doctor_env_example_check_ignores_comments_and_similar_key_names(tmp_pat
     assert missing_keys == ["OPENALEX_MAILTO", "UNPAYWALL_EMAIL"]
 
 
+def test_doctor_env_example_check_rejects_secret_like_values(tmp_path):
+    doctor = load_doctor()
+    repo = Path(__file__).resolve().parent.parent
+    env_text = (repo / ".env.example").read_text(encoding="utf-8")
+    env_text = env_text.replace("LLM_API_KEY=\n", "LLM_API_KEY=sk-test\n")
+    (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
+
+    check = doctor.check_env_example(tmp_path)
+
+    assert {
+        "code": "non_empty_env_example_secret",
+        "key": "LLM_API_KEY",
+        "message": ".env.example must leave LLM_API_KEY blank",
+    } in check["issues"]
+
+
 def test_doctor_script_reports_missing_python_dependencies(monkeypatch):
     import importlib.util
 
