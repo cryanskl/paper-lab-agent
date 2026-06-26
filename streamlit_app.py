@@ -91,9 +91,14 @@ search_tab, config_tab, documents_tab, rag_tab, chemistry_tab = st.tabs(["检索
 
 with st.sidebar:
     st.subheader("系统")
-    status = api_get("/system/status")
-    if st.button("检查 GROBID"):
-        status = api_get("/system/status", check_external=True)
+    try:
+        status = api_get("/system/status")
+        if st.button("检查 GROBID"):
+            status = api_get("/system/status", check_external=True)
+    except FrontendApiError as exc:
+        st.error(format_error_payload(exc.payload, exc.status_code))
+        st.json(exc.payload)
+        st.stop()
     st.metric("期刊", status["counts"]["journals"])
     st.metric("论文", status["counts"]["papers"])
     st.metric("文档", status["counts"]["documents"])

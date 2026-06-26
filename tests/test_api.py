@@ -11124,6 +11124,21 @@ def test_streamlit_sidebar_surfaces_release_readiness():
     assert 'if release_readiness.get("ready"):' not in sidebar_section
 
 
+def test_streamlit_sidebar_system_status_error_shows_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+
+    for required in [
+        'status = api_get("/system/status")',
+        "except FrontendApiError as exc:",
+        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
+        "st.stop()",
+    ]:
+        assert required in sidebar_section
+
+
 def test_streamlit_chemistry_export_surfaces_file_and_metadata_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
