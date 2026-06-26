@@ -83,6 +83,14 @@ def write_json(path: Path, payload: dict[str, Any], *, compact: bool = False) ->
 
 
 def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict[str, Any]:
+    requested_output_dir = output_dir
+    if requested_output_dir.is_symlink():
+        output_dir = requested_output_dir.absolute()
+        return {
+            "ok": False,
+            "output_dir": str(output_dir),
+            "issues": [f"release artifact output directory is not a regular directory: {output_dir}"],
+        }
     output_dir = output_dir.resolve()
     if output_dir.exists() and not output_dir.is_dir():
         return {

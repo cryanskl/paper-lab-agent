@@ -1468,6 +1468,22 @@ def test_export_release_artifacts_reports_output_dir_not_directory(tmp_path):
     assert "Traceback" not in result.stderr
 
 
+def test_export_release_artifacts_rejects_output_dir_symlink(tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    output_dir = tmp_path / "release"
+    outside_dir = tmp_path / "outside-release"
+    outside_dir.mkdir()
+    output_dir.symlink_to(outside_dir, target_is_directory=True)
+
+    report = export_release_artifacts.export_release_artifacts(output_dir, compact=True)
+
+    assert report["ok"] is False
+    assert f"release artifact output directory is not a regular directory: {output_dir}" in report["issues"]
+    assert output_dir.is_symlink()
+    assert not (outside_dir / "openapi.json").exists()
+    assert not (outside_dir / "demo-summary.json").exists()
+
+
 def test_export_release_artifacts_rejects_dirty_output_dir(tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     output_dir = tmp_path / "release"
