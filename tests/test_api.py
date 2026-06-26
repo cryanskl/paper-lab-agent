@@ -12662,10 +12662,14 @@ def test_streamlit_search_tab_handles_empty_results_and_api_errors():
         "sort=relevance requires q",
         'elif sort_choice == "relevance" and not q.strip():',
         "try:",
+        "except FrontendApiError as exc:",
+        "st.warning(format_error_payload(exc.payload, exc.status_code))",
+        "st.json(exc.payload)",
         'papers = {"items": [], "total": 0, "page": 1, "page_size": 20}',
         'if not search_error and papers["total"] == 0:',
     ]:
         assert required in search_section
+    assert 'st.warning(f"检索失败: {exc}")' not in search_section
 
 
 def test_streamlit_search_tab_exposes_year_filters():
