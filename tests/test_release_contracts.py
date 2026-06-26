@@ -2167,6 +2167,69 @@ def test_package_release_artifacts_reports_output_path_not_file(tmp_path):
     assert output_path.is_dir()
 
 
+def test_package_release_artifacts_rejects_output_symlink(tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    package_release_artifacts = load_package_release_artifacts()
+    artifact_dir = tmp_path / "release"
+    output_path = tmp_path / "paper-lab-agent-release.zip"
+    outside_path = tmp_path / "outside-package.zip"
+    artifact_dir.mkdir()
+    outside_path.write_bytes(b"do not overwrite")
+    output_path.symlink_to(outside_path)
+    openapi = {
+        "info": {"title": "paper-lab-agent", "version": "0.1.0"},
+        "paths": {"/api/v1/health": {}},
+        "tags": [{"name": "system", "description": "System status"}],
+        "components": {"schemas": {"ErrorResponse": {"type": "object"}}},
+    }
+    demo_summary = {
+        "ready": True,
+        "export_formats": ["json", "txt", "bolsig"],
+        "export_audit_entry_counts": {"json": 1, "txt": 1, "bolsig": 1},
+        "reaction_set_verified_by": "prepare-demo-data",
+        "reaction_set_verified_at": "2026-06-26T13:10:00",
+    }
+    manifest = {
+        "service": "paper-lab-agent",
+        "version": "0.1.0",
+        "artifacts": {
+            "openapi": "openapi.json",
+            "demo_summary": "demo-summary.json",
+            "manifest": "release-manifest.json",
+        },
+        "demo_ready": True,
+        "demo_export_formats": ["json", "txt", "bolsig"],
+        "demo_export_audit_entry_counts": {"json": 1, "txt": 1, "bolsig": 1},
+        "demo_reaction_set_verified_by": "prepare-demo-data",
+        "demo_reaction_set_verified_at": "2026-06-26T13:10:00",
+        "openapi_path_count": 1,
+        "source": {
+            "git_commit": "a" * 40,
+            "git_branch": "phase/5-experiment-lab-artifacts",
+            "git_dirty": False,
+        },
+        "checksums": {
+            "openapi.json": "",
+            "demo-summary.json": "",
+            "release-manifest.json": "",
+        },
+    }
+    openapi_path = artifact_dir / "openapi.json"
+    openapi_path.write_text(json.dumps(openapi), encoding="utf-8")
+    (artifact_dir / "demo-summary.json").write_text(json.dumps(demo_summary), encoding="utf-8")
+    manifest["checksums"]["openapi.json"] = export_release_artifacts.sha256_file(openapi_path)
+    manifest["checksums"]["demo-summary.json"] = export_release_artifacts.sha256_file(artifact_dir / "demo-summary.json")
+    manifest["checksums"]["release-manifest.json"] = export_release_artifacts.manifest_checksum(manifest)
+    (artifact_dir / "release-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = package_release_artifacts.package_release_artifacts(artifact_dir, output_path)
+
+    assert report["ok"] is False
+    assert f"release package output is not a regular file: {output_path}" in report["issues"]
+    assert outside_path.read_bytes() == b"do not overwrite"
+    assert output_path.is_symlink()
+
+
 def test_package_release_artifacts_reports_output_parent_not_directory(tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     package_release_artifacts = load_package_release_artifacts()
