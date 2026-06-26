@@ -11357,6 +11357,33 @@ def test_streamlit_high_frequency_actions_format_api_error_payloads():
         assert old_warning not in documents_section
 
 
+def test_streamlit_remaining_api_status_failures_format_error_payloads():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+
+    for required in [
+        "st.warning(format_error_payload(classified_paper, status_code))",
+        "st.warning(format_error_payload(resolved_paper, status_code))",
+        "st.warning(format_error_payload(updated_paper, status_code))",
+        "st.warning(format_error_payload(result, status_code))",
+        "st.warning(format_error_payload(payload, status))",
+        "st.warning(format_error_payload(rag_payload, status))",
+        "st.warning(format_error_payload(payload, status))",
+        "st.error(format_error_payload(payload, status))",
+    ]:
+        assert required in streamlit
+    for old_warning in [
+        "st.warning(classified_paper)",
+        "st.warning(resolved_paper)",
+        "st.warning(updated_paper)",
+        "st.warning(result)",
+        "st.warning(payload)",
+        "st.warning(rag_payload)",
+        "st.error(payload)",
+    ]:
+        assert old_warning not in streamlit
+
+
 def test_document_chunks_endpoint_reports_index_status(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
@@ -12647,12 +12674,12 @@ def test_streamlit_api_put_preserves_json_errors_for_callers():
     journals_section = streamlit[streamlit.index("更新期刊") : streamlit.index("st.divider()", streamlit.index("更新期刊"))]
     assert "status_code, result = api_put(" in journals_section
     assert "if status_code < 400:" in journals_section
-    assert "st.warning(result)" in journals_section
+    assert "st.warning(format_error_payload(result, status_code))" in journals_section
 
     reactions_section = streamlit[streamlit.index("with chemistry_tab:") :]
     assert "status_code, result = api_put(" in reactions_section
     assert "st.session_state[\"reaction_set_detail\"] = result" in reactions_section
-    assert "st.warning(result)" in reactions_section
+    assert "st.warning(format_error_payload(result, status_code))" in reactions_section
 
 
 def test_streamlit_config_tab_exposes_journal_and_category_management():

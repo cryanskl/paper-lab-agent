@@ -269,7 +269,7 @@ with search_tab:
                 if status_code < 400:
                     st.success(format_category_summary(classified_paper))
                 else:
-                    st.warning(classified_paper)
+                    st.warning(format_error_payload(classified_paper, status_code))
             if st.button(
                 "重新解析 OA",
                 key=f"resolve-oa-{paper['id']}",
@@ -282,7 +282,7 @@ with search_tab:
                     resolved_oa_pdf_url = resolved_paper.get("oa_pdf_url") or "-"
                     st.success(f"oa_status={resolved_oa_status} · oa_pdf_url={resolved_oa_pdf_url}")
                 else:
-                    st.warning(resolved_paper)
+                    st.warning(format_error_payload(resolved_paper, status_code))
             category_options_by_slug = {category["slug"]: category for category in categories}
             current_category_slugs = set(paper.get("categories") or [])
             default_categories = [
@@ -305,7 +305,7 @@ with search_tab:
                     if status_code < 400:
                         st.success(format_category_summary(updated_paper))
                     else:
-                        st.warning(updated_paper)
+                        st.warning(format_error_payload(updated_paper, status_code))
             links = []
             if paper.get("oa_pdf_url"):
                 links.append(f"[OA PDF]({paper['oa_pdf_url']})")
@@ -455,7 +455,7 @@ with config_tab:
                     st.success(f"journal #{result['id']}")
                     st.rerun()
                 else:
-                    st.warning(result)
+                    st.warning(format_error_payload(result, status_code))
 
     if journals_all:
         selected_journal = st.selectbox(
@@ -510,13 +510,13 @@ with config_tab:
                 if status_code < 400:
                     st.rerun()
                 else:
-                    st.warning(result)
+                    st.warning(format_error_payload(result, status_code))
         if st.button("停用期刊", key=f"delete-journal-{selected_journal['id']}"):
             status_code, result = api_delete(f"/journals/{selected_journal['id']}")
             if status_code < 400:
                 st.rerun()
             else:
-                st.warning(result)
+                st.warning(format_error_payload(result, status_code))
 
     st.divider()
     st.subheader("分类")
@@ -547,7 +547,7 @@ with config_tab:
                 st.success(f"category #{result['id']}")
                 st.rerun()
             else:
-                st.warning(result)
+                st.warning(format_error_payload(result, status_code))
 
 with documents_tab:
     uploaded = st.file_uploader("PDF", type=["pdf"])
@@ -566,7 +566,7 @@ with documents_tab:
             )
             st.json(duplicate_document)
         else:
-            st.warning(payload)
+            st.warning(format_error_payload(payload, status))
     documents_page_col, documents_page_size_col = st.columns(2)
     documents_page = documents_page_col.number_input("documents_page", min_value=1, value=1, key="documents-page")
     documents_page_size = documents_page_size_col.number_input(
@@ -792,7 +792,7 @@ with rag_tab:
                 json={"question": question, "document_ids": ids, "top_k": int(top_k)},
             )
             if status >= 400:
-                st.warning(rag_payload)
+                st.warning(format_error_payload(rag_payload, status))
             else:
                 answer = rag_payload.get("answer") or ""
                 st.markdown(answer)
@@ -927,9 +927,9 @@ with chemistry_tab:
         if st.button("导出反应集", key="export-reaction-set", disabled=export_blocked):
             status, payload = api_post(f"/reaction-sets/{rs_id}/export?format={export_format}", json=None)
             if status == 409:
-                st.warning(payload)
+                st.warning(format_error_payload(payload, status))
             elif status >= 400:
-                st.error(payload)
+                st.error(format_error_payload(payload, status))
             else:
                 st.success(payload["output_path"])
                 st.dataframe(reaction_export_rows(payload), use_container_width=True)
@@ -1019,4 +1019,4 @@ with chemistry_tab:
                         st.session_state["reaction_review_message"] = "已保存复核结果"
                         st.rerun()
                     else:
-                        st.warning(result)
+                        st.warning(format_error_payload(result, status_code))
