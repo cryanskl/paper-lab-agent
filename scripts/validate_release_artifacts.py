@@ -47,6 +47,9 @@ def read_json(path: Path, label: str, issues: list[str]) -> dict[str, Any]:
         return {}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        issues.append(f"{label} unreadable: {exc}")
+        return {}
     except json.JSONDecodeError as exc:
         issues.append(f"{label} invalid JSON: {exc}")
         return {}

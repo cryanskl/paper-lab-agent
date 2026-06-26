@@ -1262,6 +1262,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert "artifact_names" in readme
     assert "reaction_set_verified_by" in readme
     assert "reaction_set_verified_at" in readme
+    assert "是否可读取" in readme
     assert "额外文件" in readme
     assert "zip 输出路径必须放在 artifact 目录外" in readme
     assert "system` tag metadata" in readme
@@ -1273,6 +1274,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert "artifact_names" in checklist
     assert "reaction_set_verified_by" in checklist
     assert "reaction_set_verified_at" in checklist
+    assert "unreadable artifact paths" in checklist
     assert "unexpected extra files" in checklist
     assert "outside the artifact directory" in checklist
     assert "system` tag metadata" in checklist
@@ -1732,6 +1734,19 @@ def test_validate_release_artifacts_rejects_unexpected_handoff_files(tmp_path):
     report = validate_release_artifacts.validate_release_artifacts(artifact_dir)
 
     assert "release artifact directory contains unexpected files: ['old-demo-summary.json']" in report["issues"]
+
+
+def test_validate_release_artifacts_reports_unreadable_required_artifact(tmp_path):
+    validate_release_artifacts = load_validate_release_artifacts()
+    artifact_dir = tmp_path / "release"
+    artifact_dir.mkdir()
+    (artifact_dir / "openapi.json").mkdir()
+    (artifact_dir / "demo-summary.json").write_text("{}", encoding="utf-8")
+    (artifact_dir / "release-manifest.json").write_text("{}", encoding="utf-8")
+
+    report = validate_release_artifacts.validate_release_artifacts(artifact_dir)
+
+    assert any(issue.startswith("OpenAPI artifact unreadable:") for issue in report["issues"])
 
 
 def test_validate_release_artifacts_script_rejects_tampered_artifact(tmp_path):
