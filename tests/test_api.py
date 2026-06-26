@@ -11331,6 +11331,19 @@ def test_streamlit_chemistry_tab_does_not_auto_load_missing_reaction_set():
     assert '"reaction_set_detail" not in st.session_state' not in chemistry_section
 
 
+def test_streamlit_chemistry_api_errors_show_payload_details():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    helper_section = streamlit[: streamlit.index("st.set_page_config")]
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    assert "FrontendApiError" in helper_section
+    assert "except FrontendApiError as exc:" in chemistry_section
+    assert "st.warning(format_error_payload(exc.payload, exc.status_code))" in chemistry_section
+    assert chemistry_section.count("st.json(exc.payload)") >= 2
+    assert "st.warning(exc)" not in chemistry_section
+
+
 def test_streamlit_high_frequency_actions_format_api_error_payloads():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

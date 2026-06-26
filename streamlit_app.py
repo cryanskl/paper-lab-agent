@@ -4,6 +4,7 @@ import os
 import streamlit as st
 
 from app.frontend_api import (
+    FrontendApiError,
     api_docs_links,
     category_parent_option_label,
     crawl_job_diagnostic_rows,
@@ -874,8 +875,9 @@ with chemistry_tab:
                 page=int(reaction_sets_page),
                 page_size=int(reaction_sets_page_size),
             )
-        except Exception as exc:
-            st.warning(exc)
+        except FrontendApiError as exc:
+            st.warning(format_error_payload(exc.payload, exc.status_code))
+            st.json(exc.payload)
             st.session_state["document_reaction_sets"] = None
 
     selected_reaction_set_id = None
@@ -904,8 +906,9 @@ with chemistry_tab:
     if should_load_reaction_set:
         try:
             st.session_state["reaction_set_detail"] = api_get(f"/reaction-sets/{rs_id}")
-        except Exception as exc:
-            st.warning(exc)
+        except FrontendApiError as exc:
+            st.warning(format_error_payload(exc.payload, exc.status_code))
+            st.json(exc.payload)
             st.session_state["reaction_set_detail"] = None
 
     detail = st.session_state.get("reaction_set_detail")
