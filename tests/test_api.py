@@ -11117,8 +11117,11 @@ def test_streamlit_sidebar_surfaces_release_readiness():
         "failed workflows:",
         "config warnings:",
         "storage errors:",
+        'release_ready = release_readiness.get("ready") is True and not blockers',
+        "if release_ready:",
     ]:
         assert required in sidebar_section
+    assert 'if release_readiness.get("ready"):' not in sidebar_section
 
 
 def test_streamlit_chemistry_export_surfaces_file_and_metadata_status():

@@ -96,18 +96,19 @@ with st.sidebar:
     st.metric("文档", status["counts"]["documents"])
     release_readiness = status.get("release_readiness") or {}
     st.subheader("发布就绪")
-    if release_readiness.get("ready"):
+    blockers = []
+    blocker_groups = {
+        "demo_data_missing": "demo data missing:",
+        "failed_workflows": "failed workflows:",
+        "config_warning_codes": "config warnings:",
+        "storage_errors": "storage errors:",
+    }
+    for key in blocker_groups:
+        blockers.extend(str(item) for item in release_readiness.get(key) or [] if str(item).strip())
+    release_ready = release_readiness.get("ready") is True and not blockers
+    if release_ready:
         st.success("release ready")
     else:
-        blockers = []
-        blocker_groups = {
-            "demo_data_missing": "demo data missing:",
-            "failed_workflows": "failed workflows:",
-            "config_warning_codes": "config warnings:",
-            "storage_errors": "storage errors:",
-        }
-        for key in blocker_groups:
-            blockers.extend(str(item) for item in release_readiness.get(key) or [] if str(item).strip())
         blocker_label = ", ".join(blockers) if blockers else "unknown"
         st.warning(f"release blockers: {blocker_label}")
         st.caption("release blocker details")
