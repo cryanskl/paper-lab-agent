@@ -101,6 +101,8 @@ def demo_summary(
         "translation_status": translation.get("status"),
         "reaction_set_id": reaction_set.get("id"),
         "reaction_set_status": reaction_set.get("status"),
+        "reaction_set_verified_by": reaction_set.get("verified_by"),
+        "reaction_set_verified_at": reaction_set.get("verified_at"),
         "reaction_count": reaction_set.get("reaction_count", 0),
         "export_formats": list(exports),
         "export_audit_entry_counts": {
@@ -165,6 +167,8 @@ def prepare_demo_data(target_lang: str = "zh", verified_by: str = "prepare-demo-
     reaction_set_payload = {
         "id": verified_reaction_set.get("id"),
         "status": verified_reaction_set.get("status"),
+        "verified_by": verified_reaction_set.get("verified_by"),
+        "verified_at": verified_reaction_set.get("verified_at"),
         "reaction_count": len(verified_reaction_set.get("reactions") or []),
     }
     demo_data = demo_data_status(counts)

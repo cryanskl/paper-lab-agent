@@ -350,6 +350,12 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     if manifest.get("demo_export_formats") != ["json", "txt", "bolsig"]:
         print(f"release_check failed: release manifest demo_export_formats={manifest.get('demo_export_formats')!r}", file=sys.stderr)
         raise SystemExit(1)
+    if (
+        manifest.get("demo_reaction_set_verified_by") != "prepare-demo-data"
+        or not manifest.get("demo_reaction_set_verified_at")
+    ):
+        print(f"release_check failed: release manifest demo reviewer metadata={manifest!r}", file=sys.stderr)
+        raise SystemExit(1)
     if "/api/v1/health" not in openapi.get("paths", {}):
         print("release_check failed: release handoff OpenAPI missing /api/v1/health", file=sys.stderr)
         raise SystemExit(1)
@@ -403,6 +409,8 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package.get("demo_ready") is not True
         or package.get("demo_export_formats") != ["json", "txt", "bolsig"]
         or package.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}
+        or package.get("demo_reaction_set_verified_by") != "prepare-demo-data"
+        or not package.get("demo_reaction_set_verified_at")
         or not package_path.exists()
     ):
         print(f"release_check failed: release artifact package={package!r}", file=sys.stderr)
@@ -427,6 +435,8 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package_validation.get("demo_ready") is not True
         or package_validation.get("demo_export_formats") != ["json", "txt", "bolsig"]
         or package_validation.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}
+        or package_validation.get("demo_reaction_set_verified_by") != "prepare-demo-data"
+        or not package_validation.get("demo_reaction_set_verified_at")
     ):
         print(f"release_check failed: release package validation={package_validation!r}", file=sys.stderr)
         raise SystemExit(1)

@@ -1231,9 +1231,13 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package.get("demo_ready") is not True' in release_check
     assert 'package.get("demo_export_formats") != ["json", "txt", "bolsig"]' in release_check
     assert 'package.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}' in release_check
+    assert 'package.get("demo_reaction_set_verified_by") != "prepare-demo-data"' in release_check
+    assert 'not package.get("demo_reaction_set_verified_at")' in release_check
     assert 'package_validation.get("demo_ready") is not True' in release_check
     assert 'package_validation.get("demo_export_formats") != ["json", "txt", "bolsig"]' in release_check
     assert 'package_validation.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}' in release_check
+    assert 'package_validation.get("demo_reaction_set_verified_by") != "prepare-demo-data"' in release_check
+    assert 'not package_validation.get("demo_reaction_set_verified_at")' in release_check
     assert "release manifest version does not match OpenAPI version" in release_check
     assert "checksums" in release_check
     assert "git_dirty" in release_check
@@ -1243,11 +1247,15 @@ def test_release_check_validates_release_artifact_bundle():
     assert "python scripts/package_release_artifacts.py --artifact-dir out/release --output out/paper-lab-agent-release.zip --compact" in readme
     assert "python scripts/validate_release_package.py --package out/paper-lab-agent-release.zip --compact" in readme
     assert "artifact_names" in readme
+    assert "reaction_set_verified_by" in readme
+    assert "reaction_set_verified_at" in readme
     assert "python scripts/export_release_artifacts.py --output-dir out/release --compact" in checklist
     assert "python scripts/validate_release_artifacts.py --artifact-dir out/release --compact" in checklist
     assert "python scripts/package_release_artifacts.py --artifact-dir out/release --output out/paper-lab-agent-release.zip --compact" in checklist
     assert "python scripts/validate_release_package.py --package out/paper-lab-agent-release.zip --compact" in checklist
     assert "artifact_names" in checklist
+    assert "reaction_set_verified_by" in checklist
+    assert "reaction_set_verified_at" in checklist
     assert "--require-clean-source" in checklist
 
 
@@ -1381,7 +1389,11 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     assert demo_summary["ready"] is True
     assert demo_summary["export_formats"] == ["json", "txt", "bolsig"]
     assert demo_summary["export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
+    assert demo_summary["reaction_set_verified_by"] == "prepare-demo-data"
+    assert demo_summary["reaction_set_verified_at"]
     assert manifest["demo_export_audit_entry_counts"] == demo_summary["export_audit_entry_counts"]
+    assert manifest["demo_reaction_set_verified_by"] == demo_summary["reaction_set_verified_by"]
+    assert manifest["demo_reaction_set_verified_at"] == demo_summary["reaction_set_verified_at"]
     assert "/api/v1/health" in openapi["paths"]
 
 
@@ -1454,6 +1466,8 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     assert payload["demo_ready"] is True
     assert payload["demo_export_formats"] == ["json", "txt", "bolsig"]
     assert payload["demo_export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
+    assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
+    assert payload["demo_reaction_set_verified_at"]
     assert payload["openapi_path_count"] == 28
 
 
@@ -1726,6 +1740,8 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert payload["demo_ready"] is True
     assert payload["demo_export_formats"] == ["json", "txt", "bolsig"]
     assert payload["demo_export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
+    assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
+    assert payload["demo_reaction_set_verified_at"]
     assert package_path.exists()
     with zipfile.ZipFile(package_path) as archive:
         assert sorted(archive.namelist()) == [
@@ -1762,6 +1778,8 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert validate_payload["demo_ready"] is True
     assert validate_payload["demo_export_formats"] == ["json", "txt", "bolsig"]
     assert validate_payload["demo_export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
+    assert validate_payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
+    assert validate_payload["demo_reaction_set_verified_at"]
 
 
 def test_validate_release_package_script_rejects_tampered_zip_artifact(tmp_path):

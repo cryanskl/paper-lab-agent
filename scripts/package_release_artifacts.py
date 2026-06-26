@@ -46,6 +46,8 @@ def package_release_artifacts(
             "demo_ready": validation.get("demo_ready"),
             "demo_export_formats": validation.get("demo_export_formats") or [],
             "demo_export_audit_entry_counts": validation.get("demo_export_audit_entry_counts") or {},
+            "demo_reaction_set_verified_by": validation.get("demo_reaction_set_verified_by"),
+            "demo_reaction_set_verified_at": validation.get("demo_reaction_set_verified_at"),
             "issues": validation.get("issues") or ["release artifact validation failed"],
         }
 
@@ -65,6 +67,8 @@ def package_release_artifacts(
         "demo_ready": validation.get("demo_ready"),
         "demo_export_formats": validation.get("demo_export_formats") or [],
         "demo_export_audit_entry_counts": validation.get("demo_export_audit_entry_counts") or {},
+        "demo_reaction_set_verified_by": validation.get("demo_reaction_set_verified_by"),
+        "demo_reaction_set_verified_at": validation.get("demo_reaction_set_verified_at"),
         "issues": [],
     }
 

@@ -88,6 +88,8 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
         if isinstance(demo_summary.get("export_audit_entry_counts"), dict)
         else {}
     )
+    demo_reaction_set_verified_by = demo_summary.get("reaction_set_verified_by")
+    demo_reaction_set_verified_at = demo_summary.get("reaction_set_verified_at")
 
     if manifest:
         if manifest.get("service") != EXPECTED_SERVICE:
@@ -108,6 +110,16 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             issues.append(
                 "release manifest demo_export_audit_entry_counts mismatch: "
                 f"{manifest.get('demo_export_audit_entry_counts')!r}"
+            )
+        if manifest.get("demo_reaction_set_verified_by") != demo_reaction_set_verified_by:
+            issues.append(
+                "release manifest demo_reaction_set_verified_by mismatch: "
+                f"{manifest.get('demo_reaction_set_verified_by')!r}"
+            )
+        if manifest.get("demo_reaction_set_verified_at") != demo_reaction_set_verified_at:
+            issues.append(
+                "release manifest demo_reaction_set_verified_at mismatch: "
+                f"{manifest.get('demo_reaction_set_verified_at')!r}"
             )
         if manifest.get("openapi_path_count") != openapi_path_count:
             issues.append(
@@ -154,6 +166,10 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
         if demo_export_formats != EXPECTED_EXPORT_FORMATS:
             issues.append(f"demo summary export_formats mismatch: {demo_export_formats!r}")
         issues.extend(demo_audit_entry_count_issues(demo_summary))
+        if not isinstance(demo_reaction_set_verified_by, str) or not demo_reaction_set_verified_by.strip():
+            issues.append("demo summary reaction_set_verified_by must be a non-empty string")
+        if not isinstance(demo_reaction_set_verified_at, str) or not demo_reaction_set_verified_at.strip():
+            issues.append("demo summary reaction_set_verified_at must be a non-empty string")
 
     return {
         "ok": not issues,
@@ -166,6 +182,10 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
         "demo_export_audit_entry_counts": manifest.get("demo_export_audit_entry_counts")
         if isinstance(manifest.get("demo_export_audit_entry_counts"), dict)
         else demo_export_audit_entry_counts,
+        "demo_reaction_set_verified_by": manifest.get("demo_reaction_set_verified_by")
+        or demo_reaction_set_verified_by,
+        "demo_reaction_set_verified_at": manifest.get("demo_reaction_set_verified_at")
+        or demo_reaction_set_verified_at,
         "openapi_path_count": openapi_path_count,
         "checksums": manifest.get("checksums") if isinstance(manifest.get("checksums"), dict) else {},
         "issues": issues,

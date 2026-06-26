@@ -25,6 +25,8 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
     demo_ready = None
     demo_export_formats: list[str] = []
     demo_export_audit_entry_counts: dict[str, Any] = {}
+    demo_reaction_set_verified_by = None
+    demo_reaction_set_verified_at = None
     package_sha256 = sha256_file(package_path) if package_path.exists() else None
 
     if not package_path.exists():
@@ -39,6 +41,8 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "demo_ready": demo_ready,
             "demo_export_formats": demo_export_formats,
             "demo_export_audit_entry_counts": demo_export_audit_entry_counts,
+            "demo_reaction_set_verified_by": demo_reaction_set_verified_by,
+            "demo_reaction_set_verified_at": demo_reaction_set_verified_at,
             "issues": issues,
         }
 
@@ -69,6 +73,8 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
                     demo_ready = validation.get("demo_ready")
                     demo_export_formats = validation.get("demo_export_formats") or []
                     demo_export_audit_entry_counts = validation.get("demo_export_audit_entry_counts") or {}
+                    demo_reaction_set_verified_by = validation.get("demo_reaction_set_verified_by")
+                    demo_reaction_set_verified_at = validation.get("demo_reaction_set_verified_at")
                     issues.extend(validation.get("issues") or [])
     except zipfile.BadZipFile as exc:
         issues.append(f"release package invalid zip: {exc}")
@@ -83,6 +89,8 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
         "demo_ready": demo_ready,
         "demo_export_formats": demo_export_formats,
         "demo_export_audit_entry_counts": demo_export_audit_entry_counts,
+        "demo_reaction_set_verified_by": demo_reaction_set_verified_by,
+        "demo_reaction_set_verified_at": demo_reaction_set_verified_at,
         "issues": issues,
     }
 
