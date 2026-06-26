@@ -1045,6 +1045,14 @@ def test_api_contract_success_responses_do_not_use_bare_dict_schema():
     assert issues == []
 
 
+def test_api_contract_success_responses_use_named_component_schemas():
+    validate_api_contract = load_validate_api_contract()
+
+    issues = validate_api_contract.named_success_response_schema_issues()
+
+    assert issues == []
+
+
 def test_api_contract_validator_reports_empty_success_response_schema():
     validate_api_contract = load_validate_api_contract()
     openapi = {
@@ -1096,6 +1104,35 @@ def test_api_contract_validator_reports_bare_success_response_schema():
     issues = validate_api_contract.bare_success_response_schema_issues(openapi=openapi)
 
     assert issues == ["POST /api/v1/things 201 response must not use a bare dict schema"]
+
+
+def test_api_contract_validator_reports_inline_success_response_schema():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/things": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["id"],
+                                        "properties": {"id": {"type": "integer"}},
+                                    },
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.named_success_response_schema_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/things 200 response must use a named component schema"]
 
 
 def test_api_contract_validator_reports_missing_async_response_field(tmp_path):
