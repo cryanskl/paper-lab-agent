@@ -5,7 +5,7 @@ import argparse
 import sys
 import tempfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 
@@ -15,6 +15,17 @@ if str(ROOT) not in sys.path:
 
 from scripts.package_release_artifacts import artifact_filenames, sha256_file
 from scripts.validate_release_artifacts import format_report, validate_release_artifacts
+
+
+def is_unsafe_archive_name(name: str) -> bool:
+    posix_path = PurePosixPath(name)
+    windows_path = PureWindowsPath(name)
+    return (
+        posix_path.is_absolute()
+        or windows_path.is_absolute()
+        or ".." in posix_path.parts
+        or ".." in windows_path.parts
+    )
 
 
 def validate_release_package(package_path: Path, *, require_clean_source: bool = False) -> dict[str, Any]:
@@ -76,7 +87,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             unsafe_names = [
                 name
                 for name in archive.namelist()
-                if Path(name).is_absolute() or ".." in Path(name).parts
+                if is_unsafe_archive_name(name)
             ]
             if unsafe_names:
                 issues.append(f"release package contains unsafe artifact names: {unsafe_names!r}")
