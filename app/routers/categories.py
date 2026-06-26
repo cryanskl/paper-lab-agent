@@ -79,7 +79,7 @@ def list_categories(
     return {"items": items, "total": len(all_items), "page": page, "page_size": page_size}
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=CategoryResponse)
 def create_category(body: CategoryIn) -> dict:
     try:
         with get_conn() as conn:

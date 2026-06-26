@@ -65,6 +65,7 @@ JOURNAL_RESPONSE_FIELDS = (
     "updated_at",
 )
 CATEGORY_LIST_RESPONSE_ROUTE = ("GET", "/api/v1/categories")
+CATEGORY_CREATE_RESPONSE_ROUTE = ("POST", "/api/v1/categories", "201")
 CATEGORY_RESPONSE_FIELDS = ("id", "name", "slug", "description", "parent_id", "children")
 EXPORT_RESPONSE_FIELDS = (
     "reaction_set_id",
@@ -584,6 +585,20 @@ def category_list_response_contract_issues(openapi: dict | None = None) -> list[
     return []
 
 
+def category_create_response_contract_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    specs = normalized_openapi_specs(source_openapi.get("paths", {}))
+    method, path, status_code = CATEGORY_CREATE_RESPONSE_ROUTE
+    spec = specs.get((method, path))
+    if spec is None:
+        return []
+    schema = response_schema(spec, source_openapi, status_code)
+    missing = [field for field in CATEGORY_RESPONSE_FIELDS if not schema_declares_fields(schema, (field,))]
+    if missing:
+        return [f"{method} {path} missing response fields: {', '.join(missing)}"]
+    return []
+
+
 def export_response_contract_issues(openapi: dict | None = None) -> list[str]:
     source_openapi = openapi if openapi is not None else app_openapi()
     specs = normalized_openapi_specs(source_openapi.get("paths", {}))
@@ -1028,6 +1043,7 @@ def main() -> int:
     journal_list_response_issues = journal_list_response_contract_issues()
     journal_crud_response_issues = journal_crud_response_contract_issues()
     category_list_response_issues = category_list_response_contract_issues()
+    category_create_response_issues = category_create_response_contract_issues()
     export_response_issues = export_response_contract_issues()
     rag_response_issues = rag_response_contract_issues()
     system_status_response_issues = system_status_response_contract_issues()
@@ -1055,6 +1071,7 @@ def main() -> int:
         or journal_list_response_issues
         or journal_crud_response_issues
         or category_list_response_issues
+        or category_create_response_issues
         or export_response_issues
         or rag_response_issues
         or system_status_response_issues
@@ -1108,6 +1125,10 @@ def main() -> int:
         if category_list_response_issues:
             print("api contract category list response issues:", file=sys.stderr)
             for issue in category_list_response_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if category_create_response_issues:
+            print("api contract category create response issues:", file=sys.stderr)
+            for issue in category_create_response_issues:
                 print(f"- {issue}", file=sys.stderr)
         if export_response_issues:
             print("api contract export response issues:", file=sys.stderr)
