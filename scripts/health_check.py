@@ -644,12 +644,14 @@ def list_values(value) -> list[str]:
 
 
 def release_readiness_blockers(readiness: dict) -> list[str]:
-    if readiness.get("ready") is True:
-        return []
     blockers: list[str] = []
     for key in ("demo_data_missing", "failed_workflows", "config_warning_codes", "storage_errors"):
         blockers.extend(f"{key}:{value}" for value in readiness.get(key, []))
-    return blockers or ["ready=false"]
+    if blockers:
+        return blockers
+    if readiness.get("ready") is True:
+        return []
+    return ["ready=false"]
 
 
 def probe_blocker(prefix: str, detail: Optional[dict]) -> Optional[str]:

@@ -10166,6 +10166,44 @@ def test_health_check_summary_prefers_api_release_readiness():
     assert summary["storage_errors"] == ["pdf_dir.writable"]
 
 
+def test_health_check_summary_rejects_inconsistent_api_release_readiness():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_api_readiness_inconsistent", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [],
+        "storage_health": health_check_storage_health(),
+        "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+        "demo_data": {
+            "ready": True,
+            "requirements": {"papers": 1},
+            "missing": [],
+            "counts": {"papers": 1},
+        },
+        "status_counts": health_check_status_counts(),
+        "release_readiness": {
+            "ready": True,
+            "demo_data_missing": [],
+            "failed_workflows": [],
+            "config_warning_codes": ["missing_llm_api_key"],
+            "storage_errors": [],
+        },
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
+    assert summary["release_ready"] is False
+    assert summary["release_blockers"] == ["config_warning_codes:missing_llm_api_key"]
+
+
 def test_health_check_validates_release_readiness_shape():
     import importlib.util
 
