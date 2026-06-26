@@ -18,6 +18,7 @@ from app.frontend_api import (
     document_section_option_label,
     document_section_rows,
     document_status_rows,
+    format_error_payload,
     journal_option_label,
     paper_category_option_label,
     rag_source_option_label,
@@ -340,7 +341,7 @@ with search_tab:
             if status_code < 400:
                 st.success("已创建抓取任务")
             else:
-                st.warning(crawl_payload)
+                st.warning(format_error_payload(crawl_payload, status_code))
             st.json(crawl_payload)
     crawl_jobs_page_col, crawl_jobs_page_size_col = st.columns(2)
     crawl_jobs_page = crawl_jobs_page_col.number_input("crawl_jobs_page", min_value=1, value=1, key="crawl-jobs-page")
@@ -617,7 +618,7 @@ with documents_tab:
             if status_code < 400:
                 st.success("已创建解析任务")
             else:
-                st.warning(parse_payload)
+                st.warning(format_error_payload(parse_payload, status_code))
             st.json(parse_payload)
         translation_target_lang = c2.text_input(
             "target_lang",
@@ -632,21 +633,21 @@ with documents_tab:
             if status_code < 400:
                 st.success("已创建翻译任务")
             else:
-                st.warning(translate_payload)
+                st.warning(format_error_payload(translate_payload, status_code))
             st.json(translate_payload)
         if c3.button("索引"):
             status_code, index_payload = api_post(f"/documents/{selected['id']}/index")
             if status_code < 400:
                 st.success("已创建索引任务")
             else:
-                st.warning(index_payload)
+                st.warning(format_error_payload(index_payload, status_code))
             st.json(index_payload)
         if c4.button("抽取"):
             status_code, extract_payload = api_post(f"/documents/{selected['id']}/extract-chemistry")
             if status_code < 400:
                 st.success("已创建化学抽取任务")
             else:
-                st.warning(extract_payload)
+                st.warning(format_error_payload(extract_payload, status_code))
             st.json(extract_payload)
         sections_page_col, sections_page_size_col = st.columns(2)
         sections_page = sections_page_col.number_input("sections_page", min_value=1, value=1, key=f"sections-page-{selected['id']}")

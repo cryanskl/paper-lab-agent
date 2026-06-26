@@ -11331,6 +11331,32 @@ def test_streamlit_chemistry_tab_does_not_auto_load_missing_reaction_set():
     assert '"reaction_set_detail" not in st.session_state' not in chemistry_section
 
 
+def test_streamlit_high_frequency_actions_format_api_error_payloads():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    assert "format_error_payload" in streamlit
+    for required in [
+        "st.warning(format_error_payload(crawl_payload, status_code))",
+        "st.warning(format_error_payload(parse_payload, status_code))",
+        "st.warning(format_error_payload(translate_payload, status_code))",
+        "st.warning(format_error_payload(index_payload, status_code))",
+        "st.warning(format_error_payload(extract_payload, status_code))",
+    ]:
+        assert required in streamlit
+    for old_warning in [
+        "st.warning(crawl_payload)",
+        "st.warning(parse_payload)",
+        "st.warning(translate_payload)",
+        "st.warning(index_payload)",
+        "st.warning(extract_payload)",
+    ]:
+        assert old_warning not in search_section
+        assert old_warning not in documents_section
+
+
 def test_document_chunks_endpoint_reports_index_status(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
@@ -12012,7 +12038,7 @@ def test_streamlit_document_parse_surfaces_success_and_error_states():
         "if status_code < 400:",
         "已创建解析任务",
         "else:",
-        "st.warning(parse_payload)",
+        "st.warning(format_error_payload(parse_payload, status_code))",
         "st.json(parse_payload)",
     ]:
         assert required in documents_section
@@ -12030,7 +12056,7 @@ def test_streamlit_document_translate_surfaces_success_and_error_states():
         "if status_code < 400:",
         "已创建翻译任务",
         "else:",
-        "st.warning(translate_payload)",
+        "st.warning(format_error_payload(translate_payload, status_code))",
         "st.json(translate_payload)",
     ]:
         assert required in documents_section
@@ -12046,7 +12072,7 @@ def test_streamlit_document_index_surfaces_success_and_error_states():
         "if status_code < 400:",
         "已创建索引任务",
         "else:",
-        "st.warning(index_payload)",
+        "st.warning(format_error_payload(index_payload, status_code))",
         "st.json(index_payload)",
     ]:
         assert required in documents_section
@@ -12062,7 +12088,7 @@ def test_streamlit_document_extract_surfaces_success_and_error_states():
         "if status_code < 400:",
         "已创建化学抽取任务",
         "else:",
-        "st.warning(extract_payload)",
+        "st.warning(format_error_payload(extract_payload, status_code))",
         "st.json(extract_payload)",
     ]:
         assert required in documents_section
@@ -12481,7 +12507,7 @@ def test_streamlit_crawl_run_surfaces_success_and_error_states():
         "if status_code < 400:",
         "已创建抓取任务",
         "else:",
-        "st.warning(crawl_payload)",
+        "st.warning(format_error_payload(crawl_payload, status_code))",
         "st.json(crawl_payload)",
     ]:
         assert required in search_section
