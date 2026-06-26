@@ -1242,10 +1242,12 @@ def test_release_check_validates_release_artifact_bundle():
     assert "--require-clean-source" in readme
     assert "python scripts/package_release_artifacts.py --artifact-dir out/release --output out/paper-lab-agent-release.zip --compact" in readme
     assert "python scripts/validate_release_package.py --package out/paper-lab-agent-release.zip --compact" in readme
+    assert "artifact_names" in readme
     assert "python scripts/export_release_artifacts.py --output-dir out/release --compact" in checklist
     assert "python scripts/validate_release_artifacts.py --artifact-dir out/release --compact" in checklist
     assert "python scripts/package_release_artifacts.py --artifact-dir out/release --output out/paper-lab-agent-release.zip --compact" in checklist
     assert "python scripts/validate_release_package.py --package out/paper-lab-agent-release.zip --compact" in checklist
+    assert "artifact_names" in checklist
     assert "--require-clean-source" in checklist
 
 
