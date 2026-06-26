@@ -14,6 +14,7 @@ from app.frontend_api import (
     document_option_label,
     document_section_rows,
     document_status_rows,
+    journal_option_label,
     rag_source_rows,
     reaction_audit_rows,
     reaction_display_state,
@@ -452,7 +453,7 @@ with config_tab:
         selected_journal = st.selectbox(
             "更新期刊",
             journals_all,
-            format_func=lambda journal: f"#{journal['id']} {journal['name']} · active={journal.get('active')}",
+            format_func=journal_option_label,
         )
         active = st.checkbox("active", value=bool(selected_journal.get("active")), key=f"journal-active-{selected_journal['id']}")
         jy1, jy2 = st.columns(2)

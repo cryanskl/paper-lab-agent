@@ -887,6 +887,24 @@ def test_crawl_journal_options_label_whitelist_choices_for_manual_runs():
     ]
 
 
+def test_journal_option_label_summarizes_whitelist_status():
+    from app import frontend_api
+
+    label = frontend_api.journal_option_label(
+        {"id": 4, "name": "Journal of Physics D", "active": True}
+    )
+
+    assert label == "#4 Journal of Physics D · active=True"
+
+
+def test_journal_option_label_uses_unknown_name_and_false_active_fallback():
+    from app import frontend_api
+
+    label = frontend_api.journal_option_label({"id": 8})
+
+    assert label == "#8 Journal · active=False"
+
+
 def test_document_option_label_surfaces_processing_states():
     from app import frontend_api
 

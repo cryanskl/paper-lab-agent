@@ -131,6 +131,10 @@ def crawl_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]
     return options
 
 
+def journal_option_label(journal: dict[str, Any]) -> str:
+    return f"#{journal['id']} {journal.get('name') or 'Journal'} · active={bool(journal.get('active'))}"
+
+
 def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for job in jobs:

@@ -12592,6 +12592,16 @@ def test_streamlit_config_tab_exposes_journal_and_category_management():
         assert required in config_section
 
 
+def test_streamlit_config_tab_uses_journal_option_label_helper():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+
+    assert "journal_option_label" in streamlit
+    assert "format_func=journal_option_label" in config_section
+    assert "format_func=lambda journal" not in config_section
+
+
 def test_streamlit_config_tab_normalizes_journal_keywords_for_dataframe():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
