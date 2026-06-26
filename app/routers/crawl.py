@@ -15,6 +15,50 @@ router = APIRouter(prefix="/crawl", tags=["crawl"])
 ALLOWED_PERIODS = {"manual", "daily", "weekly", "monthly"}
 
 
+class CrawlJobJournalResponse(BaseModel):
+    id: int
+    name: str
+    issn_print: Optional[str] = None
+    issn_electronic: Optional[str] = None
+    active: bool
+
+
+class CrawlJobDiagnosticsResponse(BaseModel):
+    journal_id: Optional[int] = None
+    journal_name: Optional[str] = None
+    period: Optional[str] = None
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    status: Optional[str] = None
+    papers_found: int
+    papers_filtered: int
+    papers_new: int
+    papers_accepted: int
+    papers_existing: int
+    outcome: str
+    keyword_mode: str
+    keyword_terms: list[str]
+    error: Optional[str] = None
+
+
+class CrawlJobDetailResponse(BaseModel):
+    id: int
+    journal_id: Optional[int] = None
+    period: Optional[str] = None
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    status: str
+    papers_found: int
+    papers_filtered: int
+    papers_new: int
+    error: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    created_at: str
+    journal: Optional[CrawlJobJournalResponse] = None
+    diagnostics: CrawlJobDiagnosticsResponse
+
+
 def crawl_job_outcome(status: Optional[str], papers_found: int, papers_filtered: int, papers_new: int) -> str:
     normalized_status = (status or "").strip().lower()
     if normalized_status in {"pending", "running", "failed"}:
@@ -144,7 +188,7 @@ def list_jobs(page_num: int = Query(1, alias="page", ge=1), page_size: int = Que
     return page(jobs, total, page_num, page_size)
 
 
-@router.get("/jobs/{job_id}")
+@router.get("/jobs/{job_id}", response_model=CrawlJobDetailResponse)
 def get_job(job_id: int) -> dict:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM crawl_jobs WHERE id=?", (job_id,)).fetchone()
