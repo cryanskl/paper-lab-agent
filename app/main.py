@@ -35,11 +35,11 @@ def create_app() -> FastAPI:
     app = FastAPI(title="paper-lab-agent", version=__version__, lifespan=lifespan)
     install_error_handlers(app)
 
-    @app.get("/health", response_model=HealthResponse)
+    @app.get("/health", response_model=HealthResponse, tags=["system"])
     def health() -> dict:
         return {"status": "ok", "service": "paper-lab-agent"}
 
-    @app.get(f"{settings.api_prefix}/health", response_model=HealthResponse)
+    @app.get(f"{settings.api_prefix}/health", response_model=HealthResponse, tags=["system"])
     def api_health() -> dict:
         return {"status": "ok", "service": "paper-lab-agent"}
 

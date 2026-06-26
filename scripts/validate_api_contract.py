@@ -1158,6 +1158,23 @@ def named_success_response_schema_issues(openapi: dict | None = None) -> list[st
     return issues
 
 
+def untagged_api_route_issues(openapi: dict | None = None) -> list[str]:
+    source_openapi = openapi if openapi is not None else app_openapi()
+    issues: list[str] = []
+    for path, methods in source_openapi.get("paths", {}).items():
+        if not str(path).startswith("/api/v1"):
+            continue
+        normalized_path = normalize_path(str(path))
+        for method, spec in methods.items():
+            method_upper = method.upper()
+            if method_upper not in HTTP_METHODS:
+                continue
+            tags = spec.get("tags")
+            if not isinstance(tags, list) or not any(isinstance(tag, str) and tag.strip() for tag in tags):
+                issues.append(f"{method_upper} {normalized_path} missing OpenAPI tags")
+    return issues
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate documented API endpoints against FastAPI routes.")
     parser.add_argument("contract_path", nargs="?", default=str(DEFAULT_CONTRACT_PATH))
@@ -1195,6 +1212,7 @@ def main() -> int:
     empty_success_schema_issues = empty_success_response_schema_issues()
     bare_success_schema_issues = bare_success_response_schema_issues()
     named_success_schema_issues = named_success_response_schema_issues()
+    untagged_route_issues = untagged_api_route_issues()
     if (
         missing
         or undocumented
@@ -1228,6 +1246,7 @@ def main() -> int:
         or empty_success_schema_issues
         or bare_success_schema_issues
         or named_success_schema_issues
+        or untagged_route_issues
     ):
         if missing:
             print("api contract missing routes:", file=sys.stderr)
@@ -1356,6 +1375,10 @@ def main() -> int:
         if named_success_schema_issues:
             print("api contract named success response schema issues:", file=sys.stderr)
             for issue in named_success_schema_issues:
+                print(f"- {issue}", file=sys.stderr)
+        if untagged_route_issues:
+            print("api contract untagged route issues:", file=sys.stderr)
+            for issue in untagged_route_issues:
                 print(f"- {issue}", file=sys.stderr)
         return 1
     return 0
