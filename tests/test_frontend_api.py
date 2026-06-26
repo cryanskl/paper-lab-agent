@@ -853,6 +853,31 @@ def test_translation_status_rows_summarize_output_file_preview():
     ]
 
 
+def test_translation_download_reads_markdown_for_streamlit_button(tmp_path):
+    from app import frontend_api
+
+    output_path = tmp_path / "document-5-zh.md"
+    output_path.write_text("# Plasma\n\n等离子体翻译\n", encoding="utf-8")
+
+    download = frontend_api.translation_download({"output_path": str(output_path)})
+
+    assert download == {
+        "label": "下载双语翻译",
+        "data": "# Plasma\n\n等离子体翻译\n",
+        "file_name": "document-5-zh.md",
+        "mime": "text/markdown",
+        "path": str(output_path),
+    }
+
+
+def test_translation_download_returns_none_for_missing_output_file(tmp_path):
+    from app import frontend_api
+
+    missing_path = tmp_path / "missing.md"
+
+    assert frontend_api.translation_download({"output_path": str(missing_path)}) is None
+
+
 def test_rag_source_rows_include_citation_and_location_labels():
     from app import frontend_api
 

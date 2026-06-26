@@ -264,6 +264,22 @@ def translation_status_rows(
     return [{"field": field, "value": value} for field, value in rows]
 
 
+def translation_download(translation: dict[str, Any]) -> Optional[dict[str, Any]]:
+    output_path = translation.get("output_path")
+    if not isinstance(output_path, str) or not output_path:
+        return None
+    path = Path(output_path)
+    if not path.exists() or not path.is_file():
+        return None
+    return {
+        "label": "下载双语翻译",
+        "data": path.read_text(encoding="utf-8"),
+        "file_name": path.name,
+        "mime": "text/markdown",
+        "path": str(path),
+    }
+
+
 def document_chunk_rows(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for chunk in chunks:

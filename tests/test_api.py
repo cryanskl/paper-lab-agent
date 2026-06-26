@@ -12054,10 +12054,13 @@ def test_streamlit_translation_preview_offers_download():
 
     for required in [
         "translation_text",
+        "translation_download(translation_preview)",
+        "translation_file",
         "st.download_button",
-        "下载双语翻译",
-        'mime="text/markdown"',
-        "file_name=output_path.name",
+        'translation_file["label"]',
+        'data=translation_file["data"]',
+        'file_name=translation_file["file_name"]',
+        'mime=translation_file["mime"]',
     ]:
         assert required in translation_section
 
@@ -12071,8 +12074,8 @@ def test_streamlit_translation_preview_warns_when_output_file_is_missing():
     ]
 
     for required in [
-        'output_path = Path(translation_preview.get("output_path"))',
-        "output_path.exists()",
+        "translation_download(translation_preview)",
+        "translation_file",
         "翻译文件不存在",
     ]:
         assert required in translation_section

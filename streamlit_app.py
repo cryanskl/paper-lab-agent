@@ -22,6 +22,7 @@ from app.frontend_api import (
     reaction_set_rows,
     request_json,
     request_json_status,
+    translation_download,
     translation_status_rows,
 )
 
@@ -707,22 +708,22 @@ with documents_tab:
                     st.dataframe(translation_status_rows(translation_preview), use_container_width=True)
                     st.json(translation_preview)
                 elif translation_preview.get("output_path"):
-                    output_path = Path(translation_preview.get("output_path"))
-                    if output_path.exists():
-                        translation_text = output_path.read_text(encoding="utf-8")
+                    translation_file = translation_download(translation_preview)
+                    if translation_file:
+                        translation_text = translation_file["data"]
                         st.dataframe(
                             translation_status_rows(translation_preview, preview_text=translation_text),
                             use_container_width=True,
                         )
                         st.download_button(
-                            "下载双语翻译",
-                            data=translation_text,
-                            file_name=output_path.name,
-                            mime="text/markdown",
+                            translation_file["label"],
+                            data=translation_file["data"],
+                            file_name=translation_file["file_name"],
+                            mime=translation_file["mime"],
                         )
                         st.markdown(translation_text[:4000])
                     else:
-                        st.warning(f"翻译文件不存在: {output_path}")
+                        st.warning(f"翻译文件不存在: {translation_preview.get('output_path')}")
                         st.dataframe(translation_status_rows(translation_preview), use_container_width=True)
                         st.json(translation_preview)
                 else:
