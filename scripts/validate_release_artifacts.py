@@ -88,6 +88,24 @@ def is_iso8601_timestamp(value: Any) -> bool:
 
 
 def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool = False) -> dict[str, Any]:
+    requested_artifact_dir = artifact_dir
+    if requested_artifact_dir.is_symlink():
+        artifact_dir = requested_artifact_dir.absolute()
+        return {
+            "ok": False,
+            "artifact_dir": str(artifact_dir),
+            "service": None,
+            "version": None,
+            "source": {},
+            "demo_ready": None,
+            "demo_export_formats": [],
+            "demo_export_audit_entry_counts": {},
+            "demo_reaction_set_verified_by": None,
+            "demo_reaction_set_verified_at": None,
+            "openapi_path_count": 0,
+            "checksums": {},
+            "issues": [f"release artifact directory is not a regular directory: {artifact_dir}"],
+        }
     artifact_dir = artifact_dir.resolve()
     issues: list[str] = []
     if artifact_dir.exists() and not artifact_dir.is_dir():
