@@ -102,6 +102,20 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
                     f"release artifact output directory contains unexpected files: {unexpected_files!r}"
                 ],
             }
+        non_file_artifacts = sorted(
+            str(path)
+            for path in (output_dir / name for name in EXPECTED_ARTIFACT_NAMES)
+            if path.exists() and not path.is_file()
+        )
+        if non_file_artifacts:
+            return {
+                "ok": False,
+                "output_dir": str(output_dir),
+                "issues": [
+                    f"release artifact output path is not a file: {path}"
+                    for path in non_file_artifacts
+                ],
+            }
     output_dir.mkdir(parents=True, exist_ok=True)
     openapi_path = output_dir / "openapi.json"
     demo_summary_path = output_dir / "demo-summary.json"
