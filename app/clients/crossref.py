@@ -32,6 +32,9 @@ class CrossrefClient:
         self.sleep = sleep
 
     async def works_by_issn(self, issn: str, date_from: str, date_to: str, max_pages: int = 3) -> list[dict[str, Any]]:
+        issn = issn.strip()
+        if not issn:
+            return []
         headers = {}
         if self.mailto:
             headers["User-Agent"] = f"paper-lab-agent (mailto:{self.mailto})"

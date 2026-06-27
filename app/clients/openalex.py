@@ -30,6 +30,9 @@ class OpenAlexClient:
         self.sleep = sleep
 
     async def works_by_issn(self, issn: str, date_from: str, date_to: str, max_pages: int = 3) -> list[dict[str, Any]]:
+        issn = issn.strip()
+        if not issn:
+            return []
         filters = [
             f"locations.source.issn:{issn}",
             f"from_publication_date:{date_from}",
