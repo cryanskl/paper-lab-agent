@@ -7080,6 +7080,17 @@ def test_readme_commands_validator_accepts_current_readme():
     assert issues == []
 
 
+def test_readme_commands_validator_rejects_symlinked_readme(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    outside_readme = tmp_path / "outside-readme.md"
+    outside_readme.write_text("# Outside README\n", encoding="utf-8")
+    (tmp_path / "README.md").symlink_to(outside_readme)
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == ["README.md: command doc is not a regular file"]
+
+
 def test_readme_commands_validator_reports_missing_script_target(tmp_path):
     validate_readme_commands = load_validate_readme_commands()
     (tmp_path / "README.md").write_text(

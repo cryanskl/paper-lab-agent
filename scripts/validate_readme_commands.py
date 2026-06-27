@@ -315,6 +315,9 @@ def command_doc_paths(repo: Path) -> list[tuple[Path, str]]:
 
 
 def missing_command_targets_for_doc(repo: Path, doc_path: Path, label: str) -> list[str]:
+    if doc_path.is_symlink() or not doc_path.is_file():
+        return [f"{label}: command doc is not a regular file"]
+
     issues: list[str] = []
     for target in command_targets(doc_path):
         if not (repo / target).exists():
