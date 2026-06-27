@@ -19,7 +19,7 @@ LXCAT_DB_RE = re.compile(r"LXCat(?:\s+database)?(?:(?:\s*(?::|=|-)\s*)|\s+)([A-Z
 GAS_FORMULA_PATTERN = r"(?:[A-ZＡ-Ｚ][a-zａ-ｚ]?[0-9０-９₀₁₂₃₄₅₆₇₈₉]*)+"
 GAS_MIXTURE_RE = re.compile(rf"\b({GAS_FORMULA_PATTERN}(?:\s*[/／]\s*{GAS_FORMULA_PATTERN})+)\b")
 THRESHOLD_EV_RE = re.compile(
-    r"\b(?:threshold(?:\s+energy)?|E\s*_\s*th)\s*(?:is|=|:)?\s*([0-9０-９]+(?:[.．][0-9０-９]+)?)\s*[eｅ][VＶ]\b",
+    r"\b(?:threshold(?:\s+energy)?|E(?:\s*_\s*th|ₜₕ))\s*(?:is|=|:)?\s*([0-9０-９]+(?:[.．][0-9０-９]+)?)\s*[eｅ][VＶ]\b",
     re.IGNORECASE,
 )
 RATE_VALUE_RE = re.compile(
