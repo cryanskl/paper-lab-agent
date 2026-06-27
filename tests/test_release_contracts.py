@@ -823,6 +823,34 @@ def test_release_hygiene_validator_rejects_symlinked_ci_workflow_parent(tmp_path
     assert missing == ["ci_workflow_parent_not_regular_directory"]
 
 
+def test_release_hygiene_validator_rejects_symlinked_ci_workflow_ancestor(tmp_path):
+    validate_release_hygiene = load_validate_release_hygiene()
+    outside_github_dir = tmp_path / "outside-github"
+    workflow_dir = outside_github_dir / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "ci.yml").write_text(
+        'name: ci\n'
+        'on: [push, pull_request, workflow_dispatch]\n'
+        'jobs:\n'
+        '  test:\n'
+        '    runs-on: ubuntu-latest\n'
+        '    timeout-minutes: 15\n'
+        '    steps:\n'
+        '      - uses: actions/checkout@v4\n'
+        '      - uses: actions/setup-python@v5\n'
+        '        with:\n'
+        '          python-version: "3.11"\n'
+        '      - run: python -m pip install -r requirements.txt\n'
+        '      - run: bash scripts/release_check.sh\n',
+        encoding="utf-8",
+    )
+    (tmp_path / ".github").symlink_to(outside_github_dir, target_is_directory=True)
+
+    missing = validate_release_hygiene.missing_required_ci_release_gate(tmp_path)
+
+    assert missing == ["ci_workflow_parent_not_regular_directory"]
+
+
 def test_release_hygiene_validator_reports_missing_ci_release_gate(tmp_path):
     validate_release_hygiene = load_validate_release_hygiene()
     workflow_dir = tmp_path / ".github" / "workflows"
