@@ -113,7 +113,7 @@ def demo_summary(
     }
 
 
-def write_output_file(path: Path, text: str) -> str | None:
+def output_path_error(path: Path) -> str | None:
     if path.is_symlink():
         return f"output path is not a regular file: {path}"
     symlink_parent = first_symlink_parent(path)
@@ -121,6 +121,13 @@ def write_output_file(path: Path, text: str) -> str | None:
         return f"output path parent is not a regular directory: {symlink_parent}"
     if path.exists() and not path.is_file():
         return f"output path is not a regular file: {path}"
+    return None
+
+
+def write_output_file(path: Path, text: str) -> str | None:
+    output_error = output_path_error(path)
+    if output_error:
+        return output_error
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"{text}\n", encoding="utf-8")
@@ -220,6 +227,12 @@ def main() -> int:
     parser.add_argument("--summary-only", action="store_true", help="Print only the release/demo summary object")
     parser.add_argument("--output", type=Path, help="Write the JSON payload to this path instead of stdout")
     args = parser.parse_args()
+
+    if args.output is not None:
+        output_error = output_path_error(args.output)
+        if output_error:
+            print(f"prepare_demo_data failed: {output_error}", file=sys.stderr)
+            return 1
 
     payload = prepare_demo_data(args.target_lang, args.verified_by)
     output = payload["summary"] if args.summary_only else payload

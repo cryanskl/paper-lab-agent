@@ -1897,6 +1897,7 @@ def test_prepare_demo_data_script_rejects_symlinked_output_file(tmp_path):
     assert result.returncode == 1
     assert f"prepare_demo_data failed: output path is not a regular file: {output_path}" in result.stderr
     assert outside_path.read_text(encoding="utf-8") == "outside-original"
+    assert not (tmp_path / "data").exists()
 
 
 def test_prepare_demo_data_script_rejects_symlinked_output_parent(tmp_path):
