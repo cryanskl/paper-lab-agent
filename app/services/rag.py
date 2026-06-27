@@ -119,7 +119,7 @@ def assert_safe_vector_store_path(path: Path) -> None:
 
 
 def is_vector_number(value) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def parse_vector_store_json(raw: str) -> dict:
@@ -133,8 +133,12 @@ def parse_vector_store_json(raw: str) -> dict:
         if not isinstance(record, dict):
             raise ValueError(f"vector store record must be an object: {vector_id}")
         embedding = record.get("embedding")
-        if not isinstance(embedding, list) or any(not is_vector_number(value) for value in embedding):
+        if not isinstance(embedding, list):
             raise ValueError(f"vector store record embedding must be a numeric array: {vector_id}")
+        if any(not isinstance(value, (int, float)) or isinstance(value, bool) for value in embedding):
+            raise ValueError(f"vector store record embedding must be a numeric array: {vector_id}")
+        if any(not is_vector_number(value) for value in embedding):
+            raise ValueError(f"vector store record embedding must be a finite numeric array: {vector_id}")
     return data
 
 
