@@ -313,6 +313,37 @@ def test_system_status_reports_symlinked_storage_dir_not_writable(tmp_path):
     assert "pdf_dir.writable" in payload["release_readiness"]["storage_errors"]
 
 
+def test_init_db_rejects_symlinked_database_path(tmp_path, monkeypatch):
+    import pytest
+
+    outside_dir = tmp_path / "outside-db"
+    outside_dir.mkdir()
+    outside_db = outside_dir / "plasma.db"
+    outside_db.write_bytes(b"")
+    linked_db = tmp_path / "linked-plasma.db"
+    linked_db.symlink_to(outside_db)
+
+    monkeypatch.setenv("PAPER_LAB_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("DATABASE_PATH", str(linked_db))
+    for key in [
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+    ]:
+        monkeypatch.delenv(key, raising=False)
+
+    from app.config import get_settings
+    from app.db import init_db
+
+    get_settings.cache_clear()
+    with pytest.raises(OSError, match="database path is not a regular file"):
+        init_db()
+
+    assert outside_db.read_bytes() == b""
+
+
 def test_paper_category_override_deduplicates_category_ids(tmp_path):
     client = make_client(tmp_path)
 
