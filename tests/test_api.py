@@ -8545,6 +8545,35 @@ def test_env_loader_preserves_existing_environment_values(tmp_path):
     assert result.stdout == "9000|8501|http://127.0.0.1:8000/api/v1"
 
 
+def test_env_loader_rejects_symlinked_env_file(tmp_path):
+    import subprocess
+
+    repo = Path(__file__).resolve().parent.parent
+    env_script = repo / "scripts" / "env.sh"
+    outside_env = tmp_path / "outside.env"
+    outside_env.write_text("API_PORT=9999\n", encoding="utf-8")
+    (tmp_path / ".env").symlink_to(outside_env)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                "set -euo pipefail; "
+                f"source {env_script}; "
+                "load_env_file_if_unset .env"
+            ),
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "env file is not a regular file: .env" in result.stderr
+
+
 def test_dev_api_base_url_tracks_runtime_port_override(tmp_path):
     import subprocess
 

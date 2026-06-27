@@ -33,6 +33,10 @@ strip_env_inline_comment() {
 
 load_env_file_if_unset() {
   local env_file="${1:-.env}"
+  if [[ -L "${env_file}" || ( -e "${env_file}" && ! -f "${env_file}" ) ]]; then
+    printf "env file is not a regular file: %s\n" "${env_file}" >&2
+    return 1
+  fi
   [[ -f "${env_file}" ]] || return 0
 
   local raw_line line key value
