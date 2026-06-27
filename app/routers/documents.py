@@ -313,7 +313,10 @@ def get_translation(document_id: int) -> dict:
 @router.post("/{document_id}/index", status_code=202, response_model=AsyncJobResponse, response_model_exclude_none=True)
 def index(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
-    mark_index_queued(document_id)
+    try:
+        mark_index_queued(document_id)
+    except Exception as exc:
+        raise AppError(500, "index_queue_failed", str(exc))
     background_tasks.add_task(index_document, document_id)
     return {"job_id": document_id, "document_id": document_id, "index_status": "indexing", "status": "pending"}
 

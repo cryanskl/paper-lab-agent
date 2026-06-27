@@ -15108,6 +15108,49 @@ def test_document_index_route_clears_stale_vectors_before_background_task_runs(t
     assert all(record["document_id"] != document_id for record in vector_index.values())
 
 
+def test_document_index_route_records_queue_failure_when_vector_store_is_corrupt(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    (tmp_path / "vector-index.json").write_text("{not valid json", encoding="utf-8")
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (str(tmp_path / "queued-index-corrupt-vector.pdf"), "queued-index-corrupt", "queued-index-corrupt.pdf"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Parsed section', 'fresh parsed text', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'old indexed text', 3, 'old-corrupt-vector-id', 1)
+            """,
+            (document_id, section_id),
+        )
+
+    response = client.post(f"/api/v1/documents/{document_id}/index")
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "index_queue_failed"
+    assert "vector store JSON is invalid" in payload["error"]["message"]
+    with get_conn() as conn:
+        document = conn.execute("SELECT index_status, index_error FROM documents WHERE id=?", (document_id,)).fetchone()
+        chunk_count = conn.execute("SELECT COUNT(*) AS n FROM chunks WHERE document_id=?", (document_id,)).fetchone()["n"]
+    assert chunk_count == 0
+    assert document["index_status"] == "failed"
+    assert "vector store JSON is invalid" in document["index_error"]
+
+
 def test_document_parse_route_clears_stale_vectors_before_background_task_runs(tmp_path):
     import json
     from fastapi import BackgroundTasks

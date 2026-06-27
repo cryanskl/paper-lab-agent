@@ -245,7 +245,16 @@ def chunk_text(text: str, max_words: int = 220) -> Iterable[str]:
 
 def mark_index_queued(document_id: int) -> None:
     settings = get_settings()
-    get_vector_store(settings).delete_document(document_id)
+    try:
+        get_vector_store(settings).delete_document(document_id)
+    except Exception as exc:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+            conn.execute(
+                "UPDATE documents SET index_status='failed', index_error=? WHERE id=?",
+                (str(exc), document_id),
+            )
+        raise
     with get_conn() as conn:
         conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
         conn.execute(
