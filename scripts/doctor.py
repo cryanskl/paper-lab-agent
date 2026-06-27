@@ -369,14 +369,31 @@ def env_file_issues(repo: Path) -> list[dict[str, Any]]:
     return []
 
 
+def env_file_lines(repo: Path) -> tuple[list[str], list[dict[str, Any]]]:
+    issues = env_file_issues(repo)
+    if issues:
+        return [], issues
+    env_path = repo / ".env"
+    if not env_path.exists() or not env_path.is_file():
+        return [], []
+    try:
+        return env_path.read_text(encoding="utf-8").splitlines(), []
+    except (OSError, UnicodeError) as exc:
+        return [], [
+            {
+                "code": "env_file_unreadable",
+                "path": str(env_path),
+                "message": f"failed to read .env: {exc}",
+            }
+        ]
+
+
 def env_with_file_values(repo: Path, env: dict[str, str] | None = None) -> dict[str, str]:
     merged = dict(os.environ if env is None else env)
-    env_path = repo / ".env"
-    if env_file_issues(repo):
+    lines, issues = env_file_lines(repo)
+    if issues:
         return merged
-    if not env_path.exists() or not env_path.is_file():
-        return merged
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+    for raw_line in lines:
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -484,7 +501,7 @@ def check_local_storage(repo: Path, env: dict[str, str] | None = None) -> dict[s
     repo = repo.resolve()
     paths = storage_path_config(repo, env)
     file_paths = storage_file_path_config(repo, env)
-    issues = env_file_issues(repo)
+    _, issues = env_file_lines(repo)
     issues.extend(
         issue
         for key, path in paths.items()

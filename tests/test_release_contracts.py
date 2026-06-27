@@ -1668,6 +1668,33 @@ def test_doctor_script_rejects_symlinked_env_file(tmp_path):
     assert check["paths"]["data_dir"] == str(project / "data")
 
 
+def test_doctor_script_reports_unreadable_env_file(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".env").write_bytes(b"\xff\xfe\x00bad-env")
+
+    check = doctor.check_local_storage(project, env={})
+
+    assert check["status"] == "fail"
+    assert any(
+        issue.get("code") == "env_file_unreadable"
+        and issue.get("path") == str(project / ".env")
+        and "failed to read .env" in issue.get("message", "")
+        for issue in check["issues"]
+    )
+    assert check["paths"]["data_dir"] == str(project / "data")
+
+
 def test_doctor_script_local_storage_preflight_keeps_environment_override(tmp_path):
     import importlib.util
 
