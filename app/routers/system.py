@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app import __version__
 from app.clients.grobid import GrobidClient
-from app.config import get_settings, is_safe_storage_directory
+from app.config import first_symlink_parent, get_settings, is_safe_storage_directory
 from app.db import fetch_one, get_conn
 from app.scheduler import scheduled_crawl_jobs
 from app.services.rag import SUPPORTED_EMBEDDING_MODELS, SUPPORTED_VECTOR_DB_BACKENDS, assert_safe_vector_store_path
@@ -181,13 +181,18 @@ def demo_data_status(counts: dict[str, int]) -> dict:
     }
 
 
-def storage_path_health(path: Path) -> dict:
+def storage_path_health(path: Path, *, expected_type: str = "directory") -> dict:
     exists = path.exists()
-    safe_path = is_safe_storage_directory(path)
+    if expected_type == "file":
+        safe_path = first_symlink_parent(path) is None and not path.is_symlink()
+        expected_shape = path.is_file()
+    else:
+        safe_path = is_safe_storage_directory(path)
+        expected_shape = path.is_dir()
     return {
         "path": str(path),
         "exists": exists,
-        "writable": bool(exists and safe_path and os.access(path, os.W_OK)),
+        "writable": bool(exists and expected_shape and safe_path and os.access(path, os.W_OK)),
     }
 
 
@@ -235,7 +240,7 @@ def storage_health(settings) -> dict:
         "tei_dir": storage_path_health(settings.tei_dir),
         "translation_dir": storage_path_health(settings.translation_dir),
         "export_dir": storage_path_health(settings.export_dir),
-        "database": storage_path_health(settings.database_path),
+        "database": storage_path_health(settings.database_path, expected_type="file"),
         "database_parent": storage_path_health(settings.database_path.parent),
         "vector_db_parent": storage_path_health(settings.vector_db_path.parent),
         "vector_db": vector_store_health(settings.vector_db_path),

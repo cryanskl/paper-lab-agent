@@ -97,6 +97,8 @@ class Settings(BaseSettings):
         ]:
             if not is_safe_storage_directory(path):
                 continue
+            if path.exists() and not path.is_dir():
+                continue
             path.mkdir(parents=True, exist_ok=True)
 
 

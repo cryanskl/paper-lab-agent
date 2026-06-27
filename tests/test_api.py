@@ -313,6 +313,23 @@ def test_system_status_reports_symlinked_storage_dir_not_writable(tmp_path):
     assert "pdf_dir.writable" in payload["release_readiness"]["storage_errors"]
 
 
+def test_system_status_reports_storage_dir_file_not_writable(tmp_path):
+    client = make_client(tmp_path)
+    pdf_dir = tmp_path / "pdfs"
+    pdf_dir.rmdir()
+    pdf_dir.write_text("not a directory", encoding="utf-8")
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    pdf_health = payload["storage_health"]["pdf_dir"]
+    assert pdf_health["path"] == str(pdf_dir)
+    assert pdf_health["exists"] is True
+    assert pdf_health["writable"] is False
+    assert "pdf_dir.writable" in payload["release_readiness"]["storage_errors"]
+
+
 def test_system_status_reports_symlinked_storage_parent_not_writable(tmp_path, monkeypatch):
     data_target = tmp_path / "outside-data"
     for child in ["pdfs", "tei", "translations", "exports"]:
