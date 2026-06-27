@@ -2534,6 +2534,8 @@ def test_release_check_validates_release_artifact_bundle():
     assert "demo-summary.json" in release_check
     assert "openapi.json" in release_check
     assert 'package.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]' in release_check
+    assert 'package.get("service") != "paper-lab-agent"' in release_check
+    assert 'package.get("version") != "0.1.0"' in release_check
     assert 'package.get("demo_ready") is not True' in release_check
     assert 'package.get("demo_export_formats") != ["json", "txt", "bolsig"]' in release_check
     assert 'package.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}' in release_check
@@ -2546,6 +2548,8 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package.get("demo_reaction_set_verified_by") != "prepare-demo-data"' in release_check
     assert 'not package.get("demo_reaction_set_verified_at")' in release_check
     assert 'package_validation.get("demo_ready") is not True' in release_check
+    assert 'package_validation.get("service") != "paper-lab-agent"' in release_check
+    assert 'package_validation.get("version") != "0.1.0"' in release_check
     assert 'package_validation.get("demo_export_formats") != ["json", "txt", "bolsig"]' in release_check
     assert 'package_validation.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}' in release_check
     assert 'package_validation.get("demo_export_audit_summary_formats") != ["json", "txt", "bolsig"]' in release_check
@@ -4036,6 +4040,8 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     ]
     assert len(payload["package_sha256"]) == 64
     assert payload["source"]["git_commit"]
+    assert payload["service"] == "paper-lab-agent"
+    assert payload["version"] == "0.1.0"
     assert payload["demo_ready"] is True
     assert payload["demo_export_formats"] == ["json", "txt", "bolsig"]
     assert payload["demo_export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
@@ -4080,6 +4086,8 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
         "release-manifest.json",
     ]
     assert validate_payload["source"]["git_commit"]
+    assert validate_payload["service"] == "paper-lab-agent"
+    assert validate_payload["version"] == "0.1.0"
     assert validate_payload["demo_ready"] is True
     assert validate_payload["demo_export_formats"] == ["json", "txt", "bolsig"]
     assert validate_payload["demo_export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}

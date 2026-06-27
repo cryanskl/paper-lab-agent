@@ -444,6 +444,8 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         package.get("ok") is not True
         or package.get("artifact_count") != 3
         or package.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]
+        or package.get("service") != "paper-lab-agent"
+        or package.get("version") != "0.1.0"
         or package.get("demo_ready") is not True
         or package.get("demo_export_formats") != ["json", "txt", "bolsig"]
         or package.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}
@@ -476,6 +478,8 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         package_validation.get("ok") is not True
         or package_validation.get("artifact_count") != 3
         or package_validation.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]
+        or package_validation.get("service") != "paper-lab-agent"
+        or package_validation.get("version") != "0.1.0"
         or package_validation.get("demo_ready") is not True
         or package_validation.get("demo_export_formats") != ["json", "txt", "bolsig"]
         or package_validation.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}
