@@ -218,6 +218,16 @@ def python_script_option_refs(readme_path: Path) -> list[tuple[str, str]]:
     return refs
 
 
+def safe_python_script_target(repo: Path, script: str) -> bool:
+    script_path = repo / script
+    return (
+        script_path.exists()
+        and first_symlink_parent(script_path) is None
+        and not script_path.is_symlink()
+        and script_path.is_file()
+    )
+
+
 def uvicorn_app_refs(readme_path: Path) -> list[str]:
     refs: list[str] = []
     for line in command_lines(readme_path):
@@ -284,8 +294,7 @@ def missing_python_script_options_for_doc(repo: Path, doc_path: Path, label: str
     issues: list[str] = []
     help_cache: dict[str, str | None] = {}
     for script, option in python_script_option_refs(doc_path):
-        script_path = repo / script
-        if not script_path.exists():
+        if not safe_python_script_target(repo, script):
             continue
         if script not in help_cache:
             result = subprocess.run(

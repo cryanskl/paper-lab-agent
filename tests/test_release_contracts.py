@@ -7388,6 +7388,26 @@ def test_readme_commands_validator_rejects_symlinked_script_target(tmp_path):
     assert issues == ["README.md: command target is not a regular file: scripts/tool.py"]
 
 
+def test_readme_commands_validator_does_not_execute_symlinked_script_target_help(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    marker = tmp_path / "executed.txt"
+    outside_script = tmp_path / "outside-tool.py"
+    outside_script.write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('executed', encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    (scripts_dir / "tool.py").symlink_to(outside_script)
+    (tmp_path / "README.md").write_text("```bash\npython scripts/tool.py --missing\n```\n", encoding="utf-8")
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == ["README.md: command target is not a regular file: scripts/tool.py"]
+    assert not marker.exists()
+
+
 def test_readme_commands_validator_rejects_symlinked_script_target_parent(tmp_path):
     validate_readme_commands = load_validate_readme_commands()
     outside_scripts = tmp_path / "outside-scripts"
