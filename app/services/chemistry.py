@@ -22,7 +22,7 @@ THRESHOLD_EV_RE = re.compile(
 )
 RATE_VALUE_RE = re.compile(
     r"\b(?:rate\s+(?:coefficient|constant)\s*(?:is|=|:)?|k\s*(?:=|:))\s*"
-    r"([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?\d+)?"
+    r"([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?\d+|[×x]\s*10\^?[+-]?\d+)?"
     r"(?:\s*(?:cm(?:\^?3|³)/s|m(?:\^?3|³)/s|s\^-?1|s-1|1/s))?)\b",
     re.IGNORECASE,
 )
