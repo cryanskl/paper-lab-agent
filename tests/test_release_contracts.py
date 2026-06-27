@@ -1381,6 +1381,23 @@ def test_doctor_env_example_check_rejects_dev_ready_timeout_runtime_drift(tmp_pa
     } in check["issues"]
 
 
+def test_doctor_env_example_check_rejects_symlinked_env_example(tmp_path):
+    doctor = load_doctor()
+    repo = Path(__file__).resolve().parent.parent
+    outside = tmp_path / "outside.env.example"
+    outside.write_text((repo / ".env.example").read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / ".env.example").symlink_to(outside)
+
+    check = doctor.check_env_example(tmp_path)
+
+    assert check["status"] == "fail"
+    assert {
+        "code": "env_example_not_regular",
+        "path": str(tmp_path / ".env.example"),
+        "message": f".env.example must be a regular file path: {tmp_path / '.env.example'}",
+    } in check["issues"]
+
+
 def test_doctor_env_example_check_reports_unreadable_env_example(tmp_path):
     doctor = load_doctor()
     (tmp_path / ".env.example").write_bytes(b"\xff\xfe\x00bad-env-example")

@@ -154,6 +154,14 @@ def check_required_files(repo: Path) -> dict[str, Any]:
 def check_env_example(repo: Path) -> dict[str, Any]:
     path = repo / ".env.example"
     issues = []
+    if path.exists() or path.is_symlink():
+        issues.extend(env_example_file_issues(path))
+        if issues:
+            return {
+                "name": "env_example",
+                "status": status_from_issues(issues),
+                "issues": issues,
+            }
     if path.exists() and path.is_file():
         values, read_issue = env_example_values(path)
         if read_issue is not None:
@@ -208,6 +216,27 @@ def check_env_example(repo: Path) -> dict[str, Any]:
         "status": status_from_issues(issues),
         "issues": issues,
     }
+
+
+def env_example_file_issues(path: Path) -> list[dict[str, Any]]:
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        return [
+            {
+                "code": "env_example_not_regular",
+                "path": str(path),
+                "message": f".env.example must be a regular file path: {path}",
+            }
+        ]
+    symlink_parent = first_symlink_parent(path)
+    if symlink_parent is not None:
+        return [
+            {
+                "code": "env_example_parent_not_regular",
+                "path": str(symlink_parent),
+                "message": f".env.example parent must be a regular directory: {symlink_parent}",
+            }
+        ]
+    return []
 
 
 def env_example_keys(path: Path) -> set[str]:
