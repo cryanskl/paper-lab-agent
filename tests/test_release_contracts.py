@@ -1631,6 +1631,31 @@ def test_doctor_env_example_check_rejects_symlinked_dev_script(tmp_path):
     } in check["issues"]
 
 
+def test_doctor_env_example_check_rejects_symlinked_dev_script_parent(tmp_path):
+    doctor = load_doctor()
+    repo = Path(__file__).resolve().parent.parent
+    (tmp_path / ".env.example").write_text(
+        (repo / ".env.example").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    outside_scripts = tmp_path / "outside-scripts"
+    outside_scripts.mkdir()
+    (outside_scripts / "dev.sh").write_text(
+        'DEV_READY_TIMEOUT="${DEV_READY_TIMEOUT:-30}"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "scripts").symlink_to(outside_scripts)
+
+    check = doctor.check_env_example(tmp_path)
+
+    assert check["status"] == "fail"
+    assert {
+        "code": "dev_script_parent_not_regular",
+        "path": str(tmp_path / "scripts"),
+        "message": f"scripts/dev.sh parent must be a regular directory: {tmp_path / 'scripts'}",
+    } in check["issues"]
+
+
 def test_doctor_env_example_check_rejects_symlinked_env_example(tmp_path):
     doctor = load_doctor()
     repo = Path(__file__).resolve().parent.parent

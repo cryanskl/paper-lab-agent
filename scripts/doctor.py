@@ -342,6 +342,13 @@ def dev_ready_timeout_runtime_issue(values: dict[str, str], dev_script_path: Pat
             "path": str(dev_script_path),
             "message": f"scripts/dev.sh must be a regular file path: {dev_script_path}",
         }
+    symlink_parent = first_symlink_parent(dev_script_path)
+    if symlink_parent is not None:
+        return {
+            "code": "dev_script_parent_not_regular",
+            "path": str(symlink_parent),
+            "message": f"scripts/dev.sh parent must be a regular directory: {symlink_parent}",
+        }
     try:
         expected = dev_ready_timeout_default(dev_script_path)
     except (OSError, UnicodeError) as exc:
