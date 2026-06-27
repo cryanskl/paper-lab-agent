@@ -156,6 +156,9 @@ def normalize_base_url(url: str) -> str:
 def write_output_file(path: Path, rendered: str) -> Optional[str]:
     if path.is_symlink():
         return f"output path is not a regular file: {path}"
+    symlink_parent = first_symlink_parent(path)
+    if symlink_parent is not None:
+        return f"output path parent is not a regular directory: {symlink_parent}"
     if path.exists() and not path.is_file():
         return f"output path is not a regular file: {path}"
     try:
@@ -163,6 +166,16 @@ def write_output_file(path: Path, rendered: str) -> Optional[str]:
         path.write_text(f"{rendered}\n", encoding="utf-8")
     except OSError as exc:
         return f"failed to write output file {path}: {exc}"
+    return None
+
+
+def first_symlink_parent(path: Path) -> Optional[Path]:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
     return None
 
 
