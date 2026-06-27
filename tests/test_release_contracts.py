@@ -4260,6 +4260,32 @@ def test_api_contract_validator_rejects_symlinked_contract_file(tmp_path):
     assert f"api contract file is not a regular file: {contract_path}" in result.stderr
 
 
+def test_api_contract_validator_rejects_symlinked_contract_parent(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_api_contract.py"
+    outside_docs = tmp_path / "outside-docs"
+    outside_docs.mkdir()
+    outside_contract = outside_docs / "接口设计文档.md"
+    outside_contract.write_text((repo / "docs" / "接口设计文档.md").read_text(encoding="utf-8"), encoding="utf-8")
+    docs_path = tmp_path / "docs"
+    docs_path.symlink_to(outside_docs, target_is_directory=True)
+    contract_path = docs_path / "接口设计文档.md"
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), str(contract_path)],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert f"api contract file parent is not a regular directory: {docs_path}" in result.stderr
+
+
 def test_api_contract_validator_reports_documented_route_missing_from_app(tmp_path):
     validate_api_contract = load_validate_api_contract()
     repo = Path(__file__).resolve().parent.parent
