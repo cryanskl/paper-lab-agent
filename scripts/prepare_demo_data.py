@@ -113,6 +113,19 @@ def demo_summary(
     }
 
 
+def write_output_file(path: Path, text: str) -> str | None:
+    if path.is_symlink():
+        return f"output path is not a regular file: {path}"
+    if path.exists() and not path.is_file():
+        return f"output path is not a regular file: {path}"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{text}\n", encoding="utf-8")
+    except OSError as exc:
+        return f"failed to write output file {path}: {exc}"
+    return None
+
+
 def prepare_demo_data(target_lang: str = "zh", verified_by: str = "prepare-demo-data") -> dict:
     configure_storage_defaults()
 
@@ -201,8 +214,10 @@ def main() -> int:
     if args.output is None:
         print(text)
     else:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(f"{text}\n", encoding="utf-8")
+        output_error = write_output_file(args.output, text)
+        if output_error:
+            print(f"prepare_demo_data failed: {output_error}", file=sys.stderr)
+            return 1
     return 0
 
 

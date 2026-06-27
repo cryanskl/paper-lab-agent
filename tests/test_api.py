@@ -1708,6 +1708,49 @@ def test_prepare_demo_data_script_can_write_summary_output_file(tmp_path):
     assert "exports" not in summary
 
 
+def test_prepare_demo_data_script_rejects_symlinked_output_file(tmp_path):
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(tmp_path / "data")
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+    outside_path = tmp_path / "outside-demo-summary.json"
+    outside_path.write_text("outside-original", encoding="utf-8")
+    output_path = tmp_path / "out" / "demo-summary.json"
+    output_path.parent.mkdir()
+    output_path.symlink_to(outside_path)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/prepare_demo_data.py",
+            "--summary-only",
+            "--compact",
+            "--output",
+            str(output_path),
+        ],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert f"prepare_demo_data failed: output path is not a regular file: {output_path}" in result.stderr
+    assert outside_path.read_text(encoding="utf-8") == "outside-original"
+
+
 def test_smoke_check_covers_translation_and_chemistry_chain():
     from scripts.smoke_check import run_smoke
 
