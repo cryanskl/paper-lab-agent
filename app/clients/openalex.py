@@ -33,7 +33,7 @@ class OpenAlexClient:
     async def works_by_issn(self, issn: str, date_from: str, date_to: str, max_pages: int = 3) -> list[dict[str, Any]]:
         if not isinstance(issn, str):
             return []
-        issn = issn.strip()
+        issn = unicodedata.normalize("NFKC", issn).strip()
         if not issn:
             return []
         filters = [

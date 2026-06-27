@@ -1007,6 +1007,22 @@ async def test_openalex_returns_no_works_for_non_string_issn_without_request():
 
 
 @pytest.mark.asyncio
+async def test_openalex_normalizes_fullwidth_issn_before_request():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["filter"] = request.url.params.get("filter")
+        return json_response({"results": [], "meta": {}})
+
+    client = OpenAlexClient(transport=httpx.MockTransport(handler))
+
+    works = await client.works_by_issn("１２３４－５６７８", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert works == []
+    assert "locations.source.issn:1234-5678" in captured["filter"]
+
+
+@pytest.mark.asyncio
 async def test_openalex_does_not_retry_permanent_http_errors():
     calls = 0
     sleep_calls = []
@@ -1196,6 +1212,22 @@ async def test_crossref_returns_no_works_for_non_string_issn_without_request():
     works = await client.works_by_issn(None, "2026-01-01", "2026-01-31", max_pages=1)
 
     assert works == []
+
+
+@pytest.mark.asyncio
+async def test_crossref_normalizes_fullwidth_issn_before_request():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        return json_response({"message": {"items": []}})
+
+    client = CrossrefClient(transport=httpx.MockTransport(handler))
+
+    works = await client.works_by_issn("１２３４－５６７８", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert works == []
+    assert captured["path"] == "/journals/1234-5678/works"
 
 
 @pytest.mark.asyncio
