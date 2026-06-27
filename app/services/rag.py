@@ -125,6 +125,9 @@ def parse_vector_store_json(raw: str) -> dict:
         raise ValueError(f"vector store JSON is invalid: {exc}") from exc
     if not isinstance(data, dict):
         raise ValueError("vector store JSON must be an object")
+    for vector_id, record in data.items():
+        if not isinstance(record, dict):
+            raise ValueError(f"vector store record must be an object: {vector_id}")
     return data
 
 
