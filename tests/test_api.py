@@ -8395,6 +8395,32 @@ def test_extract_chemistry_classifies_fullwidth_minus_negative_ions(tmp_path):
     assert reaction["reaction_type"] == "attachment"
 
 
+def test_extract_chemistry_handles_fullwidth_species_letters_and_digits(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={
+            "file": (
+                "fullwidth-species.pdf",
+                pdf_bytes("ｅ + Ｏ２ -> Ｏ－ + Ｏ .".encode("utf-8")),
+                "application/pdf",
+            )
+        },
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "ｅ + Ｏ２ -> Ｏ－ + Ｏ"
+    assert reaction["reactants"] == ["ｅ", "Ｏ２"]
+    assert reaction["products"] == ["Ｏ－", "Ｏ"]
+    assert reaction["reaction_type"] == "attachment"
+
+
 def test_extract_chemistry_infers_excitation_for_starred_product(tmp_path):
     client = make_client(tmp_path)
     response = client.post(

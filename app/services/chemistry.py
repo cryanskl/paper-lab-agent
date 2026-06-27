@@ -10,10 +10,10 @@ from app.db import dict_from_row, get_conn
 from app.utils import now_iso
 
 
-REACTION_SPECIES_CHARS = r"A-Za-z0-9+＋*()\-\s\u00b0-\u00b3\u00b7\u00b9\u0370-\u03ff\u1d00-\u1d7f\u2070-\u209f\u2212\uff0d"
+REACTION_SPECIES_CHARS = r"A-Za-z0-9Ａ-Ｚａ-ｚ０-９+＋*()\-\s\u00b0-\u00b3\u00b7\u00b9\u0370-\u03ff\u1d00-\u1d7f\u2070-\u209f\u2212\uff0d"
 REACTION_ARROWS = ("<->", "=>", "->", "→", "⇌", "↔")
 REACTION_RE = re.compile(rf"([{REACTION_SPECIES_CHARS}]+(?:{'|'.join(map(re.escape, REACTION_ARROWS))})[{REACTION_SPECIES_CHARS}]+)")
-SPECIES_SEPARATOR_RE = re.compile(r"\s*\+\s*(?=[A-Za-z0-9(\u0370-\u03ff\u2070-\u209f\u2212])")
+SPECIES_SEPARATOR_RE = re.compile(r"\s*[+＋]\s*(?=[A-Za-z0-9Ａ-Ｚａ-ｚ０-９(\u0370-\u03ff\u2070-\u209f\u2212])")
 URL_RE = re.compile(r"https?://[^\s),;]+")
 LXCAT_DB_RE = re.compile(r"LXCat\s+([A-Za-z0-9_.-]+)", re.IGNORECASE)
 GAS_FORMULA_PATTERN = r"(?:[A-ZＡ-Ｚ][a-zａ-ｚ]?[0-9０-９₀₁₂₃₄₅₆₇₈₉]*)+"
@@ -60,13 +60,19 @@ def normalize_reaction(reaction: str) -> tuple[str, list[str], list[str]]:
     return normalized, reactants, products
 
 
+def canonical_species(species: str) -> str:
+    return unicodedata.normalize("NFKC", species)
+
+
 def infer_reaction_type(reactants: list[str], products: list[str]) -> str:
-    reactant_electrons = sum(1 for species in reactants if species == "e")
-    product_electrons = sum(1 for species in products if species == "e")
-    consumes_positive_ion = any(species.endswith(("+", "⁺", "＋")) for species in reactants)
-    produces_positive_ion = any(species.endswith(("+", "⁺", "＋")) for species in products)
-    produces_negative_ion = any(species.endswith(("-", "⁻", "−", "－")) for species in products)
-    produces_excited_species = any(species.endswith("*") for species in products)
+    canonical_reactants = [canonical_species(species) for species in reactants]
+    canonical_products = [canonical_species(species) for species in products]
+    reactant_electrons = sum(1 for species in canonical_reactants if species == "e")
+    product_electrons = sum(1 for species in canonical_products if species == "e")
+    consumes_positive_ion = any(species.endswith(("+", "⁺", "＋")) for species in canonical_reactants)
+    produces_positive_ion = any(species.endswith(("+", "⁺", "＋")) for species in canonical_products)
+    produces_negative_ion = any(species.endswith(("-", "⁻", "−", "－")) for species in canonical_products)
+    produces_excited_species = any(species.endswith("*") for species in canonical_products)
     if reactant_electrons >= 1 and product_electrons > reactant_electrons and produces_positive_ion:
         return "ionization"
     if reactant_electrons >= 1 and produces_negative_ion:
@@ -75,7 +81,7 @@ def infer_reaction_type(reactants: list[str], products: list[str]) -> str:
         return "excitation"
     if reactant_electrons >= 1 and consumes_positive_ion and product_electrons == 0 and not produces_positive_ion:
         return "recombination"
-    if reactant_electrons >= 1 and Counter(reactants) == Counter(products):
+    if reactant_electrons >= 1 and Counter(canonical_reactants) == Counter(canonical_products):
         return "elastic"
     return "unknown"
 
