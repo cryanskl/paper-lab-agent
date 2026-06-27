@@ -145,6 +145,9 @@ def broken_doc_links(repo: Path) -> list[str]:
             if not is_within_repo(repo, target_path):
                 issues.append(f"{label}: link target escapes repository {target}")
                 continue
+            if first_symlink_parent(target_path) is not None:
+                issues.append(f"{label}: link target parent is not a regular directory {target}")
+                continue
             if target_path.is_symlink() or not target_path.is_file():
                 issues.append(f"{label}: link target is not a regular file {target}")
                 continue
@@ -162,6 +165,9 @@ def broken_doc_links(repo: Path) -> list[str]:
                 continue
             if not is_within_repo(repo, target_path):
                 issues.append(f"{label}: reference target escapes repository {target}")
+                continue
+            if first_symlink_parent(target_path) is not None:
+                issues.append(f"{label}: reference target parent is not a regular directory {target}")
                 continue
             if target_path.is_symlink() or not target_path.is_file():
                 issues.append(f"{label}: reference target is not a regular file {target}")

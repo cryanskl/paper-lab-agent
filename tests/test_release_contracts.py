@@ -7157,6 +7157,19 @@ def test_docs_links_validator_rejects_symlinked_markdown_link_target(tmp_path):
     assert issues == ["README.md: link target is not a regular file docs/schema.sql"]
 
 
+def test_docs_links_validator_rejects_symlinked_markdown_link_target_parent(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    real_docs_dir = tmp_path / "real-docs"
+    real_docs_dir.mkdir()
+    (real_docs_dir / "schema.sql").write_text("select 1;\n", encoding="utf-8")
+    (tmp_path / "docs").symlink_to(real_docs_dir, target_is_directory=True)
+    (tmp_path / "README.md").write_text("[Schema](docs/schema.sql)\n", encoding="utf-8")
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["README.md: link target parent is not a regular directory docs/schema.sql"]
+
+
 def test_docs_links_validator_rejects_absolute_local_markdown_link_target(tmp_path):
     validate_docs_links = load_validate_docs_links()
     repo = tmp_path / "repo"
@@ -7215,6 +7228,21 @@ def test_docs_links_validator_rejects_symlinked_backtick_reference_target(tmp_pa
     issues = validate_docs_links.broken_doc_links(tmp_path)
 
     assert issues == ["docs/guide.md: reference target is not a regular file scripts/tool.py"]
+
+
+def test_docs_links_validator_rejects_symlinked_backtick_reference_target_parent(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    docs_dir = tmp_path / "docs"
+    real_scripts_dir = tmp_path / "real-scripts"
+    docs_dir.mkdir()
+    real_scripts_dir.mkdir()
+    (real_scripts_dir / "tool.py").write_text("print('inside')\n", encoding="utf-8")
+    (tmp_path / "scripts").symlink_to(real_scripts_dir, target_is_directory=True)
+    (docs_dir / "guide.md").write_text("Run `scripts/tool.py` before release.\n", encoding="utf-8")
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["docs/guide.md: reference target parent is not a regular directory scripts/tool.py"]
 
 
 def test_docs_links_validator_rejects_absolute_local_backtick_reference_target(tmp_path):
