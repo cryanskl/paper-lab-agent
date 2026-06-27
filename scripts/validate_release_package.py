@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.package_release_artifacts import artifact_filenames, sha256_file
-from scripts.validate_release_artifacts import format_report, validate_release_artifacts
+from scripts.validate_release_artifacts import first_symlink_parent, format_report, validate_release_artifacts
 
 
 def is_unsafe_archive_name(name: str) -> bool:
@@ -48,7 +48,8 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "demo_reaction_set_verified_at": None,
             "issues": [f"release package is not a regular file: {package_path}"],
         }
-    if requested_package_path.parent.is_symlink():
+    symlink_parent = first_symlink_parent(requested_package_path)
+    if symlink_parent is not None:
         package_path = requested_package_path.absolute()
         return {
             "ok": False,
@@ -64,7 +65,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "demo_reaction_set_verified_at": None,
             "issues": [
                 "release package parent is not a regular directory: "
-                f"{requested_package_path.parent}"
+                f"{symlink_parent}"
             ],
         }
     package_path = package_path.resolve()
