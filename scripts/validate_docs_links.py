@@ -104,8 +104,11 @@ def broken_doc_links(repo: Path) -> list[str]:
     repo = repo.resolve()
     issues: list[str] = []
     for path in doc_files(repo):
-        text = path.read_text(encoding="utf-8")
         label = path.relative_to(repo).as_posix()
+        if path.is_symlink() or not path.is_file():
+            issues.append(f"{label}: doc source is not a regular file")
+            continue
+        text = path.read_text(encoding="utf-8")
 
         for raw_target in MARKDOWN_LINK_RE.findall(text):
             target = clean_link_target(raw_target)

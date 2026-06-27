@@ -6799,6 +6799,17 @@ def test_docs_links_validator_reports_missing_markdown_link(tmp_path):
     assert issues == ["README.md: missing link target docs/missing.md"]
 
 
+def test_docs_links_validator_rejects_symlinked_markdown_source(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    outside_readme = tmp_path / "outside-readme.md"
+    outside_readme.write_text("# External README\n", encoding="utf-8")
+    (tmp_path / "README.md").symlink_to(outside_readme)
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["README.md: doc source is not a regular file"]
+
+
 def test_docs_links_validator_reports_missing_markdown_anchor(tmp_path):
     validate_docs_links = load_validate_docs_links()
     docs_dir = tmp_path / "docs"
