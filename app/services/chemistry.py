@@ -15,7 +15,7 @@ REACTION_ARROWS = ("<->", "=>", "->", "＝＞", "－＞", "−>", "→", "⇌", 
 REACTION_RE = re.compile(rf"([{REACTION_SPECIES_CHARS}]+(?:{'|'.join(map(re.escape, REACTION_ARROWS))})[{REACTION_SPECIES_CHARS}]+)")
 SPECIES_SEPARATOR_RE = re.compile(r"\s*[+＋]\s*(?=[A-Za-z0-9Ａ-Ｚａ-ｚ０-９(\u0370-\u03ff\u2070-\u209f\u2212])")
 URL_RE = re.compile(r"https?://[^\s),;]+")
-LXCAT_DB_RE = re.compile(r"LXCat\s+([A-Za-z0-9_.-]+)", re.IGNORECASE)
+LXCAT_DB_RE = re.compile(r"LXCat\s*(?::|=|-)?\s+([A-Za-z0-9_.-]+)", re.IGNORECASE)
 GAS_FORMULA_PATTERN = r"(?:[A-ZＡ-Ｚ][a-zａ-ｚ]?[0-9０-９₀₁₂₃₄₅₆₇₈₉]*)+"
 GAS_MIXTURE_RE = re.compile(rf"\b({GAS_FORMULA_PATTERN}(?:\s*[/／]\s*{GAS_FORMULA_PATTERN})+)\b")
 THRESHOLD_EV_RE = re.compile(
