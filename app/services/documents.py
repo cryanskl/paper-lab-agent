@@ -28,6 +28,8 @@ def safe_original_filename(filename: Optional[str]) -> str:
 
 
 def mark_parse_queued(document_id: int) -> None:
+    settings = get_settings()
+    JsonVectorStore(settings.vector_db_path).delete_document(document_id)
     with get_conn() as conn:
         conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
         conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))
