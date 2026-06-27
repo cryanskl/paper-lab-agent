@@ -176,11 +176,51 @@ def sections_from_tei(tei: str) -> list[dict]:
             parts.append(child.tail or "")
         return clean_mixed_text(parts)
 
+    def content_without_descendants(
+        node: ET.Element, excluded: list[Optional[ET.Element]], include_targets: bool = True
+    ) -> str:
+        excluded_ids = {id(excluded_node) for excluded_node in excluded if excluded_node is not None}
+
+        def collect(current: ET.Element) -> str:
+            parts = [current.text or ""]
+            for child in list(current):
+                if id(child) in excluded_ids:
+                    parts.append(child.tail or "")
+                    continue
+                child_text = collect(child)
+                if include_targets and local_name(child) in {"ptr", "ref"}:
+                    target = clean_text(child.get("target") or "")
+                    if target:
+                        child_text = f"{child_text} ({target})" if child_text else target
+                parts.append(child_text)
+                parts.append(child.tail or "")
+            return clean_mixed_text(parts)
+
+        return collect(node)
+
+    def date_value(date: ET.Element) -> str:
+        text = text_content(date, include_targets=False)
+        if text:
+            return text
+        for attr in ["when", "from", "to", "notBefore", "notAfter"]:
+            value = clean_text(date.get(attr) or "")
+            if value:
+                return value
+        return ""
+
     def reference_text(bibl: ET.Element) -> str:
         id_nodes = findall(bibl, ".//tei:idno")
-        text = content_without_children(bibl, id_nodes, include_targets=False)
+        attribute_date_nodes = [
+            date for date in findall(bibl, ".//tei:date") if date_value(date) and not text_content(date, include_targets=False)
+        ]
+        text = content_without_descendants(bibl, [*id_nodes, *attribute_date_nodes], include_targets=False)
         parts = [text] if text else []
         seen_values = {text} if text else set()
+        for date_node in attribute_date_nodes:
+            value = date_value(date_node)
+            if value and value not in seen_values:
+                parts.append(value)
+                seen_values.add(value)
         for id_node in id_nodes:
             value = text_content(id_node, include_targets=False)
             if not value or value in seen_values:
