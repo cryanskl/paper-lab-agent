@@ -733,6 +733,13 @@ def health_summary(
         "api_status": health.get("status") if isinstance(health, dict) else None,
         "api_prefix": runtime.get("api_prefix"),
         "version": runtime.get("version"),
+        "scheduler_enabled": runtime.get("scheduler_enabled"),
+        "scheduler_job_count": len(runtime.get("scheduler_jobs") or []),
+        "scheduler_job_ids": [
+            job.get("id")
+            for job in (runtime.get("scheduler_jobs") or [])
+            if isinstance(job, dict) and isinstance(job.get("id"), str)
+        ],
         "release_ready": release_blockers == [],
         "release_blockers": release_blockers,
         "demo_data_ready": demo_data.get("ready") is True,

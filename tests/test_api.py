@@ -7346,6 +7346,9 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "`grobid_available`",
         "`workflows_ok`",
         "`config_ready`",
+        "`scheduler_enabled`",
+        "`scheduler_job_count`",
+        "`scheduler_job_ids`",
         "`release_blockers`",
         "`storage_errors`",
         "python scripts/health_check.py --require-frontend",
@@ -10229,6 +10232,9 @@ def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
         "api_status": "ok",
         "api_prefix": "/api/v1",
         "version": "0.1.0",
+        "scheduler_enabled": False,
+        "scheduler_job_count": 3,
+        "scheduler_job_ids": ["crawl-daily", "crawl-weekly", "crawl-monthly"],
         "release_ready": False,
         "release_blockers": ["failed_workflows:document_parse.failed=1", "config_warning_codes:missing_llm_api_key"],
         "demo_data_ready": True,
@@ -10275,6 +10281,9 @@ def test_health_check_summary_only_reports_release_ready_when_gates_are_clean():
 
     assert summary["release_ready"] is True
     assert summary["release_blockers"] == []
+    assert summary["scheduler_enabled"] is False
+    assert summary["scheduler_job_count"] == 3
+    assert summary["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert summary["demo_data_missing"] == []
     assert summary["workflows_ok"] is True
     assert summary["failed_workflows"] == []
