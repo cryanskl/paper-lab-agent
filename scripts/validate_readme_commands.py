@@ -332,8 +332,15 @@ def missing_command_targets_for_doc(repo: Path, doc_path: Path, label: str) -> l
 
     issues: list[str] = []
     for target in command_targets(doc_path):
-        if not (repo / target).exists():
+        target_path = repo / target
+        if not target_path.exists():
             issues.append(f"{label}: command target missing: {target}")
+            continue
+        if first_symlink_parent(target_path) is not None:
+            issues.append(f"{label}: command target parent is not a regular directory: {target}")
+            continue
+        if target_path.is_symlink() or not target_path.is_file():
+            issues.append(f"{label}: command target is not a regular file: {target}")
     issues.extend(missing_python_script_options_for_doc(repo, doc_path, label))
     issues.extend(missing_uvicorn_targets_for_doc(doc_path, label))
     actual_routes = app_routes()

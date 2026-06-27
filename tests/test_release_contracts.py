@@ -7374,6 +7374,33 @@ def test_readme_commands_validator_reports_missing_script_target(tmp_path):
     ]
 
 
+def test_readme_commands_validator_rejects_symlinked_script_target(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    outside_script = tmp_path / "outside-tool.py"
+    outside_script.write_text("print('outside')\n", encoding="utf-8")
+    (scripts_dir / "tool.py").symlink_to(outside_script)
+    (tmp_path / "README.md").write_text("```bash\npython scripts/tool.py\n```\n", encoding="utf-8")
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == ["README.md: command target is not a regular file: scripts/tool.py"]
+
+
+def test_readme_commands_validator_rejects_symlinked_script_target_parent(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    outside_scripts = tmp_path / "outside-scripts"
+    outside_scripts.mkdir()
+    (outside_scripts / "tool.py").write_text("print('outside')\n", encoding="utf-8")
+    (tmp_path / "scripts").symlink_to(outside_scripts, target_is_directory=True)
+    (tmp_path / "README.md").write_text("```bash\npython scripts/tool.py\n```\n", encoding="utf-8")
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == ["README.md: command target parent is not a regular directory: scripts/tool.py"]
+
+
 def test_readme_commands_validator_reports_missing_scripts_module(tmp_path):
     validate_readme_commands = load_validate_readme_commands()
     (tmp_path / "README.md").write_text("```bash\npython -m scripts.missing_check\n```\n", encoding="utf-8")
