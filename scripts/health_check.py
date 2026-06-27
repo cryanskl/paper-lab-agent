@@ -130,10 +130,19 @@ def clean_env_value(value: str) -> str:
     return cleaned
 
 
-def load_env_file(path: Path = Path(".env")) -> None:
+def load_env_file(path: Path = Path(".env")) -> Optional[str]:
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        return f"env file is not a regular file: {path}"
+    symlink_parent = first_symlink_parent(path)
+    if symlink_parent is not None:
+        return f"env file parent is not a regular directory: {symlink_parent}"
     if not path.exists():
-        return
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        return None
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        return f"failed to read env file {path}: {exc}"
+    for raw_line in lines:
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -144,6 +153,7 @@ def load_env_file(path: Path = Path(".env")) -> None:
         value = clean_env_value(value)
         if key not in os.environ:
             os.environ[key] = value
+    return None
 
 
 def normalize_base_url(url: str) -> str:
@@ -811,7 +821,10 @@ def health_summary(
 
 
 def main() -> int:
-    load_env_file()
+    env_error = load_env_file()
+    if env_error:
+        print(f"health_check failed: {env_error}", file=sys.stderr)
+        return 1
     parser = argparse.ArgumentParser(description="Check paper-lab-agent API health.")
     parser.add_argument("--base-url", default=default_base_url(), help="FastAPI base URL without /api/v1")
     parser.add_argument("--check-frontend", action="store_true", help="Also check Streamlit frontend health")

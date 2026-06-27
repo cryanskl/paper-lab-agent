@@ -12486,6 +12486,27 @@ def test_health_check_env_loader_ignores_invalid_key_names(monkeypatch, tmp_path
     assert "1BAD" not in os.environ
 
 
+def test_health_check_env_loader_rejects_symlinked_env_file(monkeypatch, tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_env_symlink", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    outside_env = tmp_path / "outside.env"
+    env_file = tmp_path / ".env"
+    outside_env.write_text("API_BASE_URL=http://outside.test:9001/api/v1\n", encoding="utf-8")
+    env_file.symlink_to(outside_env)
+    monkeypatch.delenv("API_BASE_URL", raising=False)
+
+    assert health_check.load_env_file(env_file) == f"env file is not a regular file: {env_file}"
+    assert "API_BASE_URL" not in os.environ
+
+
 def test_health_check_rejects_unexpected_api_prefix():
     import importlib.util
 
