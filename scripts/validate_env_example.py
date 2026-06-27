@@ -244,6 +244,10 @@ def main() -> int:
     ):
         print(f"settings config is not a regular file: {SETTINGS_CONFIG_PATH}", file=sys.stderr)
         return 1
+    settings_config_parent = first_symlink_parent(SETTINGS_CONFIG_PATH)
+    if settings_config_parent is not None:
+        print(f"settings config parent is not a regular directory: {settings_config_parent}", file=sys.stderr)
+        return 1
     if SETTINGS_CONFIG_PATH.exists():
         try:
             settings_config_text = SETTINGS_CONFIG_PATH.read_text(encoding="utf-8")
