@@ -3230,6 +3230,27 @@ def test_validate_release_package_reports_package_path_not_file(tmp_path):
     assert f"release package is not a file: {package_path.resolve()}" in report["issues"]
 
 
+def test_validate_release_package_reports_zip_read_failure(monkeypatch, tmp_path):
+    validate_release_package = load_validate_release_package()
+    package_path = tmp_path / "paper-lab-agent-release.zip"
+    package_path.write_bytes(b"zip bytes")
+
+    class FailingZipFile:
+        def __init__(self, *args, **kwargs):
+            raise OSError("input/output error")
+
+    monkeypatch.setattr(validate_release_package.zipfile, "ZipFile", FailingZipFile)
+
+    report = validate_release_package.validate_release_package(package_path)
+
+    assert report["ok"] is False
+    assert report["package_path"] == str(package_path.resolve())
+    assert len(report["package_sha256"]) == 64
+    assert report["artifact_count"] == 0
+    assert report["artifact_names"] == []
+    assert report["issues"] == ["release package unreadable: input/output error"]
+
+
 def test_validate_release_package_rejects_package_symlink(tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     validate_release_package = load_validate_release_package()

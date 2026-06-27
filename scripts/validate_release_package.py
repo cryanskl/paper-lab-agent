@@ -147,6 +147,8 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
                     issues.extend(validation.get("issues") or [])
     except zipfile.BadZipFile as exc:
         issues.append(f"release package invalid zip: {exc}")
+    except OSError as exc:
+        issues.append(f"release package unreadable: {exc}")
 
     return {
         "ok": not issues,
