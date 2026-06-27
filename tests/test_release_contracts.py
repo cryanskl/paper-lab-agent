@@ -2446,6 +2446,7 @@ def test_release_check_rejects_whitespace_errors():
     release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
 
     assert "git diff --check" in release_check
+    assert "git diff --cached --check" in release_check
 
 
 def test_release_check_validates_openapi_export_script():
