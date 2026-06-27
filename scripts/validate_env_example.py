@@ -251,6 +251,9 @@ def main() -> int:
             print(f"settings config invalid: {SETTINGS_CONFIG_PATH}: {exc}", file=sys.stderr)
             return 1
     if DEV_SCRIPT_PATH.exists():
+        if DEV_SCRIPT_PATH.is_symlink() or not DEV_SCRIPT_PATH.is_file():
+            print(f"dev script is not a regular file: {DEV_SCRIPT_PATH}", file=sys.stderr)
+            return 1
         try:
             DEV_SCRIPT_PATH.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
