@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import importlib.util
 import re
 import shlex
@@ -274,6 +275,61 @@ def isolated_module_cache(module_name: str):
         sys.modules.update(saved)
 
 
+def local_module_path(repo: Path, module_name: str) -> Path | None:
+    parts = module_name.split(".")
+    module_file = repo.joinpath(*parts).with_suffix(".py")
+    package_init = repo.joinpath(*parts, "__init__.py")
+    for candidate in [module_file, package_init]:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def top_level_names(path: Path) -> set[str]:
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return set()
+    names: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                names.update(assigned_names(target))
+        elif isinstance(node, ast.AnnAssign):
+            names.update(assigned_names(node.target))
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                names.add(alias.asname or alias.name.split(".", 1)[0])
+    return names
+
+
+def assigned_names(node: ast.AST) -> set[str]:
+    if isinstance(node, ast.Name):
+        return {node.id}
+    if isinstance(node, (ast.Tuple, ast.List)):
+        names: set[str] = set()
+        for element in node.elts:
+            names.update(assigned_names(element))
+        return names
+    return set()
+
+
+def local_uvicorn_target_issue(repo: Path, module_name: str, attribute_path: str, target: str, label: str) -> str | None:
+    module_path = local_module_path(repo, module_name)
+    if module_path is None:
+        return None
+    if not is_within_repo(repo, module_path):
+        return f"{label}: uvicorn target outside repository: {target}"
+    if first_symlink_parent(module_path) is not None or module_path.is_symlink() or not module_path.is_file():
+        return f"{label}: uvicorn target missing: {target}"
+    attribute = attribute_path.split(".", 1)[0]
+    if attribute not in top_level_names(module_path):
+        return f"{label}: uvicorn target missing: {target}"
+    return ""
+
+
 def uvicorn_app_refs(readme_path: Path) -> list[str]:
     refs: list[str] = []
     for line in command_lines(readme_path):
@@ -308,6 +364,9 @@ def uvicorn_target_issue(repo: Path, target: str, label: str) -> str | None:
     module_name, attribute_path = target.rsplit(":", 1)
     if not module_name or not attribute_path:
         return f"{label}: uvicorn target missing: {target}"
+    local_issue = local_uvicorn_target_issue(repo, module_name, attribute_path, target, label)
+    if local_issue is not None:
+        return None if local_issue == "" else local_issue
     with repo_on_sys_path(repo), isolated_module_cache(module_name):
         try:
             spec = importlib.util.find_spec(module_name)
