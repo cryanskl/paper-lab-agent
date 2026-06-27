@@ -196,3 +196,37 @@ def test_sections_from_tei_preserves_table_notes_with_rows():
             "section_type": "table",
         }
     ]
+
+
+def test_sections_from_tei_preserves_direct_body_and_div_notes():
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <note>Global note: source data kept in original units.</note>
+          <div>
+            <head>Rate data</head>
+            <p>Argon reaction rates are listed below.</p>
+            <note>Footnote: values copied from the source table.</note>
+          </div>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Section 1",
+            "content": "Global note: source data kept in original units.",
+            "section_type": "body",
+        },
+        {
+            "seq": 2,
+            "title": "Rate data",
+            "content": "Argon reaction rates are listed below. Footnote: values copied from the source table.",
+            "section_type": "body",
+        },
+    ]

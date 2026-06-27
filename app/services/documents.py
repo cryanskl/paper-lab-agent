@@ -313,7 +313,7 @@ def sections_from_tei(tei: str) -> list[dict]:
             child_name = local_name(child)
             if child_name == "head":
                 continue
-            if child_name in {"p", "formula", "equation"}:
+            if child_name in {"p", "formula", "equation", "note"}:
                 content_parts.append(text_content(child))
             elif child_name == "list":
                 content_parts.extend(text_content(item) for item in findall(child, "tei:item"))
@@ -388,7 +388,7 @@ def sections_from_tei(tei: str) -> list[dict]:
                 append_body_div(child)
             elif child_name == "p":
                 content_parts.append(text_content(child))
-            elif child_name in {"formula", "equation"}:
+            elif child_name in {"formula", "equation", "note"}:
                 content_parts.append(text_content(child))
             elif child_name == "list":
                 content_parts.extend(text_content(item) for item in findall(child, "tei:item"))
