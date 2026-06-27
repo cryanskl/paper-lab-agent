@@ -363,8 +363,17 @@ def dev_ready_timeout_runtime_issue(values: dict[str, str], dev_script_path: Pat
             "path": str(dev_script_path),
             "message": f"failed to read scripts/dev.sh: {exc}",
         }
+    if not expected:
+        return {
+            "code": "dev_script_missing_ready_timeout_default",
+            "path": str(dev_script_path),
+            "message": (
+                "scripts/dev.sh must define "
+                f'DEV_READY_TIMEOUT="${{DEV_READY_TIMEOUT:-...}}": {dev_script_path}'
+            ),
+        }
     actual = values.get("DEV_READY_TIMEOUT")
-    if not expected or not actual or actual == expected:
+    if not actual or actual == expected:
         return None
     return {
         "code": "env_example_runtime_default_drift",

@@ -1641,6 +1641,32 @@ def test_doctor_env_example_check_reports_missing_dev_script(tmp_path):
     } in check["issues"]
 
 
+def test_doctor_env_example_check_reports_dev_script_without_ready_timeout_default(tmp_path):
+    doctor = load_doctor()
+    repo = Path(__file__).resolve().parent.parent
+    (tmp_path / ".env.example").write_text(
+        (repo / ".env.example").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "dev.sh").write_text(
+        'API_PORT="${API_PORT:-8000}"\n',
+        encoding="utf-8",
+    )
+
+    check = doctor.check_env_example(tmp_path)
+
+    assert check["status"] == "fail"
+    assert {
+        "code": "dev_script_missing_ready_timeout_default",
+        "path": str(tmp_path / "scripts" / "dev.sh"),
+        "message": (
+            "scripts/dev.sh must define "
+            f'DEV_READY_TIMEOUT="${{DEV_READY_TIMEOUT:-...}}": {tmp_path / "scripts" / "dev.sh"}'
+        ),
+    } in check["issues"]
+
+
 def test_doctor_env_example_check_rejects_symlinked_dev_script(tmp_path):
     doctor = load_doctor()
     repo = Path(__file__).resolve().parent.parent
