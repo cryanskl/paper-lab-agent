@@ -7568,6 +7568,22 @@ def test_readme_commands_validator_reports_missing_inline_uvicorn_app_target(tmp
     assert issues == ["README.md: uvicorn target missing: app.missing:app"]
 
 
+def test_readme_commands_validator_resolves_uvicorn_target_from_repo_argument(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    package_dir = tmp_path / "demo_app"
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "main.py").write_text("app = object()\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text(
+        "```bash\nuvicorn demo_app.main:app --host 127.0.0.1 --port 8000\n```\n",
+        encoding="utf-8",
+    )
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == []
+
+
 def test_readme_commands_validator_rejects_uvicorn_target_outside_repo(tmp_path):
     validate_readme_commands = load_validate_readme_commands()
     (tmp_path / "README.md").write_text(

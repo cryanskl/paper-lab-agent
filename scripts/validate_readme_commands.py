@@ -7,6 +7,7 @@ import re
 import shlex
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -240,6 +241,39 @@ def is_within_repo(repo: Path, path: Path) -> bool:
     return True
 
 
+@contextmanager
+def repo_on_sys_path(repo: Path):
+    repo_path = str(repo.resolve())
+    inserted = False
+    if repo_path not in sys.path:
+        sys.path.insert(0, repo_path)
+        inserted = True
+    importlib.invalidate_caches()
+    try:
+        yield
+    finally:
+        if inserted:
+            try:
+                sys.path.remove(repo_path)
+            except ValueError:
+                pass
+        importlib.invalidate_caches()
+
+
+@contextmanager
+def isolated_module_cache(module_name: str):
+    names = [".".join(module_name.split(".")[:index]) for index in range(1, len(module_name.split(".")) + 1)]
+    saved = {name: sys.modules[name] for name in names if name in sys.modules}
+    for name in reversed(names):
+        sys.modules.pop(name, None)
+    try:
+        yield
+    finally:
+        for name in reversed(names):
+            sys.modules.pop(name, None)
+        sys.modules.update(saved)
+
+
 def uvicorn_app_refs(readme_path: Path) -> list[str]:
     refs: list[str] = []
     for line in command_lines(readme_path):
@@ -274,15 +308,19 @@ def uvicorn_target_issue(repo: Path, target: str, label: str) -> str | None:
     module_name, attribute_path = target.rsplit(":", 1)
     if not module_name or not attribute_path:
         return f"{label}: uvicorn target missing: {target}"
-    spec = importlib.util.find_spec(module_name)
-    if spec is None or spec.origin is None:
-        return f"{label}: uvicorn target missing: {target}"
-    if spec.origin not in {"built-in", "frozen"} and not is_within_repo(repo, Path(spec.origin)):
-        return f"{label}: uvicorn target outside repository: {target}"
-    try:
-        module = __import__(module_name, fromlist=["*"])
-    except Exception:
-        return f"{label}: uvicorn target missing: {target}"
+    with repo_on_sys_path(repo), isolated_module_cache(module_name):
+        try:
+            spec = importlib.util.find_spec(module_name)
+        except ModuleNotFoundError:
+            spec = None
+        if spec is None or spec.origin is None:
+            return f"{label}: uvicorn target missing: {target}"
+        if spec.origin not in {"built-in", "frozen"} and not is_within_repo(repo, Path(spec.origin)):
+            return f"{label}: uvicorn target outside repository: {target}"
+        try:
+            module = __import__(module_name, fromlist=["*"])
+        except Exception:
+            return f"{label}: uvicorn target missing: {target}"
     current = module
     for attribute in attribute_path.split("."):
         if not hasattr(current, attribute):
