@@ -1468,6 +1468,30 @@ def test_export_openapi_script_rejects_symlinked_output_file(tmp_path):
     assert outside_path.read_text(encoding="utf-8") == "outside-original"
 
 
+def test_export_openapi_script_rejects_symlinked_output_parent(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    outside_dir = tmp_path / "outside-out"
+    outside_dir.mkdir()
+    linked_parent = tmp_path / "out"
+    linked_parent.symlink_to(outside_dir, target_is_directory=True)
+    output_path = linked_parent / "openapi.json"
+
+    result = subprocess.run(
+        [sys.executable, "scripts/export_openapi.py", "--output", str(output_path), "--compact"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert f"export_openapi failed: output path parent is not a regular directory: {linked_parent}" in result.stderr
+    assert not (outside_dir / "openapi.json").exists()
+
+
 def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     import os
     import subprocess
