@@ -5719,6 +5719,48 @@ def test_sections_from_tei_preserves_reference_date_attributes():
     ]
 
 
+def test_sections_from_tei_preserves_reference_biblscope_attributes():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <back>
+          <listBibl>
+            <biblStruct>
+              <analytic>
+                <title level="a">Plasma sheath measurements</title>
+              </analytic>
+              <monogr>
+                <title level="j">Journal of Applied Plasma</title>
+                <imprint>
+                  <biblScope unit="volume">12</biblScope>
+                  <biblScope unit="page" from="101" to="109"/>
+                </imprint>
+              </monogr>
+              <idno type="DOI">10.1234/plasma.pages</idno>
+            </biblStruct>
+          </listBibl>
+        </back>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Reference 1",
+            "content": (
+                "Plasma sheath measurements Journal of Applied Plasma "
+                "12 101-109 DOI: 10.1234/plasma.pages"
+            ),
+            "section_type": "reference",
+        }
+    ]
+
+
 def test_sections_from_tei_preserves_inline_reference_targets():
     from app.services.documents import sections_from_tei
 

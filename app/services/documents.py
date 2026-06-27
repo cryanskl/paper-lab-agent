@@ -208,16 +208,37 @@ def sections_from_tei(tei: str) -> list[dict]:
                 return value
         return ""
 
+    def bibliographic_scope_value(scope: ET.Element) -> str:
+        text = text_content(scope, include_targets=False)
+        if text:
+            return text
+        start = clean_text(scope.get("from") or "")
+        end = clean_text(scope.get("to") or "")
+        if start and end:
+            return f"{start}-{end}"
+        return start or end
+
     def reference_text(bibl: ET.Element) -> str:
         id_nodes = findall(bibl, ".//tei:idno")
-        attribute_date_nodes = [
-            date for date in findall(bibl, ".//tei:date") if date_value(date) and not text_content(date, include_targets=False)
+        attribute_nodes = [
+            node
+            for node in bibl.iter()
+            if (
+                local_name(node) == "date"
+                and date_value(node)
+                and not text_content(node, include_targets=False)
+            )
+            or (
+                local_name(node) == "biblScope"
+                and bibliographic_scope_value(node)
+                and not text_content(node, include_targets=False)
+            )
         ]
-        text = content_without_descendants(bibl, [*id_nodes, *attribute_date_nodes], include_targets=False)
+        text = content_without_descendants(bibl, [*id_nodes, *attribute_nodes], include_targets=False)
         parts = [text] if text else []
         seen_values = {text} if text else set()
-        for date_node in attribute_date_nodes:
-            value = date_value(date_node)
+        for attr_node in attribute_nodes:
+            value = date_value(attr_node) if local_name(attr_node) == "date" else bibliographic_scope_value(attr_node)
             if value and value not in seen_values:
                 parts.append(value)
                 seen_values.add(value)
