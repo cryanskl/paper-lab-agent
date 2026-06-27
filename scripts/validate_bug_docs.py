@@ -70,8 +70,11 @@ def bug_doc_issues(repo: Path) -> list[str]:
         return ["docs/bug: bug directory is not a regular directory"]
 
     issues: list[str] = []
-    if not (bug_dir / "README.md").exists():
+    readme_path = bug_dir / "README.md"
+    if not readme_path.exists():
         issues.append("docs/bug/README.md: missing")
+    elif readme_path.is_symlink() or not readme_path.is_file():
+        issues.append("docs/bug/README.md: bug docs README is not a regular file")
 
     for path in sorted(bug_dir.glob("*.md")):
         if path.name == "README.md":
