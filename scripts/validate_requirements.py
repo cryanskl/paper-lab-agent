@@ -173,6 +173,16 @@ def missing_required_packages(path: Path = DEFAULT_REQUIREMENTS_PATH) -> list[st
     return [package for package in REQUIRED_PACKAGES if normalize_package_name(package) not in declared]
 
 
+def first_symlink_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate required package declarations in requirements.txt.")
     parser.add_argument("requirements_path", nargs="?", default=str(DEFAULT_REQUIREMENTS_PATH))
@@ -181,6 +191,10 @@ def main() -> int:
     requirements_path = Path(args.requirements_path)
     if not requirements_path.exists():
         print(f"requirements file not found: {requirements_path}", file=sys.stderr)
+        return 1
+    symlink_parent = first_symlink_parent(requirements_path)
+    if symlink_parent is not None:
+        print(f"requirements file parent is not a regular directory: {symlink_parent}", file=sys.stderr)
         return 1
     if requirements_path.is_symlink() or not requirements_path.is_file():
         print(f"requirements file is not a regular file: {requirements_path}", file=sys.stderr)

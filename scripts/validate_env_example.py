@@ -205,6 +205,16 @@ def script_runtime_default_mismatches(path: Path, dev_script_path: Path = DEV_SC
     return mismatches
 
 
+def first_symlink_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate required keys in .env.example")
     parser.add_argument("path", nargs="?", default=".env.example", help="Path to env example file")
@@ -213,6 +223,10 @@ def main() -> int:
     path = Path(args.path)
     if not path.exists():
         print(f"env example not found: {path}", file=sys.stderr)
+        return 1
+    symlink_parent = first_symlink_parent(path)
+    if symlink_parent is not None:
+        print(f"env example parent is not a regular directory: {symlink_parent}", file=sys.stderr)
         return 1
     if path.is_symlink() or not path.is_file():
         print(f"env example is not a regular file: {path}", file=sys.stderr)
