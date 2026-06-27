@@ -18,7 +18,7 @@ URL_RE = re.compile(r"https?://[^\s),;]+")
 LXCAT_DB_RE = re.compile(r"LXCat\s+([A-Za-z0-9_.-]+)", re.IGNORECASE)
 GAS_MIXTURE_RE = re.compile(r"\b([A-Z][a-z]?\d?(?:/[A-Z][a-z]?\d?)+)\b")
 THRESHOLD_EV_RE = re.compile(
-    r"\bthreshold(?:\s+energy)?\s*(?:is|=|:)?\s*([0-9０-９]+(?:[.．][0-9０-９]+)?)\s*eV\b",
+    r"\bthreshold(?:\s+energy)?\s*(?:is|=|:)?\s*([0-9０-９]+(?:[.．][0-9０-９]+)?)\s*[eｅ][VＶ]\b",
     re.IGNORECASE,
 )
 RATE_VALUE_RE = re.compile(
