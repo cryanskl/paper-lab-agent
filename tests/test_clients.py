@@ -1270,6 +1270,25 @@ async def test_unpaywall_returns_unknown_for_blank_doi_without_request():
 
 
 @pytest.mark.asyncio
+async def test_unpaywall_normalizes_fullwidth_doi_before_request():
+    seen_urls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_urls.append(str(request.url))
+        return json_response({"oa_status": "green"})
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.resolve("ＤＯＩ：１０.５５５５／ＡＢＣ．Ｄｅｆ")
+
+    assert seen_urls == ["https://api.unpaywall.org/v2/10.5555%2Fabc.def?email=dev%40example.test"]
+    assert result["oa_status"] == "green"
+
+
+@pytest.mark.asyncio
 async def test_unpaywall_does_not_retry_permanent_http_errors():
     calls = 0
     sleep_calls = []

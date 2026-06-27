@@ -1,4 +1,5 @@
 import asyncio
+import unicodedata
 from typing import Any, Optional
 from urllib.parse import quote, urlparse
 
@@ -34,7 +35,7 @@ class UnpaywallClient:
     async def resolve(self, doi: str) -> dict[str, Any]:
         if not self.email:
             return {"oa_status": "unknown", "oa_pdf_url": None, "error": "UNPAYWALL_EMAIL is not configured"}
-        normalized_doi = doi.strip()
+        normalized_doi = normalize_doi(doi)
         if not normalized_doi:
             return {"oa_status": "unknown", "oa_pdf_url": None, "error": "DOI is required for Unpaywall lookup"}
         headers = {"User-Agent": f"paper-lab-agent (mailto:{self.email})"}
@@ -87,6 +88,21 @@ class UnpaywallClient:
             if parsed_delay is not None:
                 return parsed_delay
         return self.retry_backoff_seconds * (attempt + 1)
+
+
+def normalize_doi(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    doi = unicodedata.normalize("NFKC", value).strip().lower()
+    if not doi:
+        return None
+    return (
+        doi.removeprefix("https://doi.org/")
+        .removeprefix("http://doi.org/")
+        .removeprefix("https://dx.doi.org/")
+        .removeprefix("http://dx.doi.org/")
+        .removeprefix("doi:")
+    ).strip()
 
 
 def oa_status(value: Any) -> str:
