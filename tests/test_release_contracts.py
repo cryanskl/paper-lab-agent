@@ -2430,7 +2430,8 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert "local storage paths are creatable and writable" in checklist
     assert "reads `.env`" in checklist
     assert "scripts/doctor.py" in release_check
-    assert "scripts/doctor.py --help" in release_check
+    assert "RELEASE_HELP_SCRIPTS=(" in release_check
+    assert '"${script}" --help' in release_check
     assert "scripts/doctor.py --strict --compact" in release_check
 
 
@@ -2463,7 +2464,19 @@ def test_release_check_validates_openapi_export_script():
     release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
 
     assert "scripts/export_openapi.py" in release_check
-    assert "scripts/export_openapi.py --help" in release_check
+    assert "RELEASE_HELP_SCRIPTS=(" in release_check
+    assert '"${script}" --help' in release_check
+
+
+def test_release_check_smokes_every_python_script_help():
+    repo = Path(__file__).resolve().parent.parent
+    release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+    scripts = sorted(path.relative_to(repo).as_posix() for path in (repo / "scripts").glob("*.py"))
+
+    assert "RELEASE_HELP_SCRIPTS=(" in release_check
+    for script in scripts:
+        assert script in release_check
+    assert '"${script}" --help' in release_check
 
 
 def test_release_check_validates_release_artifact_bundle():
@@ -2473,13 +2486,11 @@ def test_release_check_validates_release_artifact_bundle():
     checklist = (repo / "docs" / "release-checklist.md").read_text(encoding="utf-8")
 
     assert "scripts/export_release_artifacts.py" in release_check
-    assert "scripts/export_release_artifacts.py --help" in release_check
     assert "scripts/package_release_artifacts.py" in release_check
-    assert "scripts/package_release_artifacts.py --help" in release_check
     assert "scripts/validate_release_package.py" in release_check
-    assert "scripts/validate_release_package.py --help" in release_check
     assert "scripts/validate_release_artifacts.py" in release_check
-    assert "scripts/validate_release_artifacts.py --help" in release_check
+    assert "RELEASE_HELP_SCRIPTS=(" in release_check
+    assert '"${script}" --help' in release_check
     assert "RELEASE_ARTIFACTS_JSON" in release_check
     assert "release-manifest.json" in release_check
     assert "demo-summary.json" in release_check

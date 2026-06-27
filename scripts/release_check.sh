@@ -17,15 +17,30 @@ git diff --check
 git diff --cached --check
 "${PYTHON_CMD[@]}" -m compileall -q app scripts tests streamlit_app.py
 "${PYTHON_CMD[@]}" -m py_compile scripts/doctor.py scripts/export_openapi.py scripts/export_release_artifacts.py scripts/health_check.py scripts/import_fixtures.py scripts/package_release_artifacts.py scripts/prepare_demo_data.py scripts/smoke_check.py scripts/validate_api_contract.py scripts/validate_bug_docs.py scripts/validate_docs_links.py scripts/validate_env_example.py scripts/validate_readme_commands.py scripts/validate_release_artifacts.py scripts/validate_release_hygiene.py scripts/validate_release_package.py scripts/validate_requirements.py scripts/validate_schema.py streamlit_app.py
-"${PYTHON_CMD[@]}" scripts/doctor.py --help >/dev/null
+RELEASE_HELP_SCRIPTS=(
+  scripts/doctor.py
+  scripts/export_openapi.py
+  scripts/export_release_artifacts.py
+  scripts/health_check.py
+  scripts/import_fixtures.py
+  scripts/package_release_artifacts.py
+  scripts/prepare_demo_data.py
+  scripts/smoke_check.py
+  scripts/validate_api_contract.py
+  scripts/validate_bug_docs.py
+  scripts/validate_docs_links.py
+  scripts/validate_env_example.py
+  scripts/validate_readme_commands.py
+  scripts/validate_release_artifacts.py
+  scripts/validate_release_hygiene.py
+  scripts/validate_release_package.py
+  scripts/validate_requirements.py
+  scripts/validate_schema.py
+)
+for script in "${RELEASE_HELP_SCRIPTS[@]}"; do
+  "${PYTHON_CMD[@]}" "${script}" --help >/dev/null
+done
 "${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact
-"${PYTHON_CMD[@]}" scripts/export_openapi.py --help >/dev/null
-"${PYTHON_CMD[@]}" scripts/export_release_artifacts.py --help >/dev/null
-"${PYTHON_CMD[@]}" scripts/health_check.py --help >/dev/null
-"${PYTHON_CMD[@]}" scripts/package_release_artifacts.py --help >/dev/null
-"${PYTHON_CMD[@]}" scripts/prepare_demo_data.py --help >/dev/null
-"${PYTHON_CMD[@]}" scripts/validate_release_artifacts.py --help >/dev/null
-"${PYTHON_CMD[@]}" scripts/validate_release_package.py --help >/dev/null
 "${PYTHON_CMD[@]}" scripts/validate_api_contract.py
 "${PYTHON_CMD[@]}" scripts/validate_bug_docs.py
 "${PYTHON_CMD[@]}" scripts/validate_docs_links.py
