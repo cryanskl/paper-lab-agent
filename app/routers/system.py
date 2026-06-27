@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app import __version__
 from app.clients.grobid import GrobidClient
-from app.config import get_settings
+from app.config import get_settings, is_safe_storage_directory
 from app.db import fetch_one, get_conn
 from app.scheduler import scheduled_crawl_jobs
 from app.services.rag import SUPPORTED_EMBEDDING_MODELS, SUPPORTED_VECTOR_DB_BACKENDS, assert_safe_vector_store_path
@@ -183,10 +183,11 @@ def demo_data_status(counts: dict[str, int]) -> dict:
 
 def storage_path_health(path: Path) -> dict:
     exists = path.exists()
+    safe_path = is_safe_storage_directory(path)
     return {
         "path": str(path),
         "exists": exists,
-        "writable": bool(exists and not path.is_symlink() and os.access(path, os.W_OK)),
+        "writable": bool(exists and safe_path and os.access(path, os.W_OK)),
     }
 
 

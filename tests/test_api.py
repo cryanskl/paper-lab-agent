@@ -313,6 +313,40 @@ def test_system_status_reports_symlinked_storage_dir_not_writable(tmp_path):
     assert "pdf_dir.writable" in payload["release_readiness"]["storage_errors"]
 
 
+def test_system_status_reports_symlinked_storage_parent_not_writable(tmp_path, monkeypatch):
+    data_target = tmp_path / "outside-data"
+    for child in ["pdfs", "tei", "translations", "exports"]:
+        (data_target / child).mkdir(parents=True, exist_ok=True)
+    linked_data = tmp_path / "linked-data"
+    linked_data.symlink_to(data_target, target_is_directory=True)
+
+    monkeypatch.setenv("PAPER_LAB_DATA_DIR", str(linked_data))
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "test.db"))
+    for key in [
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+    ]:
+        monkeypatch.delenv(key, raising=False)
+
+    from app.config import get_settings
+    from app.db import init_db
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    get_settings.cache_clear()
+    init_db()
+    response = TestClient(app).get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    for key in ["data_dir", "pdf_dir", "tei_dir", "translation_dir", "export_dir", "vector_db_parent"]:
+        assert payload["storage_health"][key]["writable"] is False
+        assert f"{key}.writable" in payload["release_readiness"]["storage_errors"]
+
+
 def test_init_db_rejects_symlinked_database_path(tmp_path, monkeypatch):
     import pytest
 
