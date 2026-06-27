@@ -4163,6 +4163,31 @@ def test_crawl_run_rejects_invalid_period_and_reversed_dates(tmp_path):
     assert reversed_dates.json()["error"]["code"] == "validation_error"
 
 
+def test_crawl_run_rejects_derived_reversed_incremental_date_range(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO crawl_jobs (journal_id, period, date_from, date_to, status, finished_at)
+            VALUES (2, 'manual', '2026-12-01', '2026-12-31', 'success', '2026-12-31T00:00:00')
+            """
+        )
+
+    response = client.post(
+        "/api/v1/crawl/run",
+        json={"journal_ids": [2], "period": "manual", "date_to": "2026-01-31"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_crawl_date_range"
+    with get_conn() as conn:
+        pending_count = conn.execute("SELECT COUNT(*) AS n FROM crawl_jobs WHERE status='pending'").fetchone()["n"]
+    assert pending_count == 0
+
+
 def test_crawl_run_accepts_missing_body_with_default_all_active_journals(tmp_path, monkeypatch):
     client = make_client(tmp_path)
 

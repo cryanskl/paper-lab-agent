@@ -1,5 +1,6 @@
 import hashlib
 import re
+from datetime import date
 from typing import Any, Optional
 
 from app.clients.crossref import CrossrefClient
@@ -319,6 +320,8 @@ def create_jobs(journal_ids: Optional[list[int]], period: str, date_from: Option
                     (journal["id"],),
                 ).fetchone()
                 start = last["date_to"] if last else f"{journal.get('year_from') or 1990}-01-01"
+            if date.fromisoformat(start) > date.fromisoformat(date_to):
+                raise ValueError(f"date_from must be before or equal to date_to for journal {journal['id']}")
             cursor = conn.execute(
                 """
                 INSERT INTO crawl_jobs (journal_id, period, date_from, date_to, status)

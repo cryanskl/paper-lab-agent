@@ -161,6 +161,8 @@ def run_crawl(background_tasks: BackgroundTasks, body: Optional[CrawlRunIn] = No
         jobs = create_jobs(body.journal_ids, body.period, body.date_from, body.date_to)
     except LookupError as exc:
         raise AppError(404, "journal_not_found", str(exc))
+    except ValueError as exc:
+        raise AppError(400, "invalid_crawl_date_range", str(exc))
     for job in jobs:
         background_tasks.add_task(run_crawl_job, job["job_id"], job["journal_id"], job["date_from"], job["date_to"])
     if not jobs:
