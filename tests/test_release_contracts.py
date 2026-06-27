@@ -1224,6 +1224,24 @@ def test_doctor_script_rejects_symlinked_required_project_file(tmp_path):
     } in check["issues"]
 
 
+def test_doctor_script_rejects_symlinked_required_project_file_parent(tmp_path):
+    doctor = load_doctor()
+
+    outside_docs = tmp_path / "outside-docs"
+    outside_docs.mkdir()
+    (outside_docs / "schema.sql").write_text("CREATE TABLE journals (id INTEGER PRIMARY KEY);\n", encoding="utf-8")
+    (tmp_path / "docs").symlink_to(outside_docs, target_is_directory=True)
+
+    check = doctor.check_required_files(tmp_path)
+
+    assert check["status"] == "fail"
+    assert {
+        "code": "missing_required_file",
+        "path": "docs/schema.sql",
+        "message": "docs/schema.sql is required for local setup",
+    } in check["issues"]
+
+
 def test_doctor_env_example_check_matches_required_runtime_keys(tmp_path):
     doctor = load_doctor()
     validate_env_example = load_validate_env_example()
