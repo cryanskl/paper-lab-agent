@@ -508,6 +508,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package_validation.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"
         or package_validation.get("openapi_path_count") != 28
         or not valid_sha256(package_validation.get("package_sha256"))
+        or package_validation.get("package_sha256") != package.get("package_sha256")
         or set((package_validation.get("checksums") or {})) != {"openapi.json", "demo-summary.json", "release-manifest.json"}
         or not valid_release_checksums(package_validation.get("checksums") or {})
         or package_validation.get("demo_reaction_set_verified_by") != "prepare-demo-data"
