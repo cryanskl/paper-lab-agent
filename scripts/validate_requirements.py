@@ -184,6 +184,16 @@ def unreadable_python_sources(paths: list[Path] = SOURCE_PATHS) -> list[str]:
     return issues
 
 
+def invalid_python_sources(paths: list[Path] = SOURCE_PATHS) -> list[str]:
+    issues: list[str] = []
+    for path in python_files(paths):
+        try:
+            ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError as exc:
+            issues.append(f"python source invalid: {path}: {exc}")
+    return issues
+
+
 def first_symlink_parent(path: Path) -> Path | None:
     for parent in path.parents:
         if not parent.is_symlink():
@@ -219,6 +229,11 @@ def main() -> int:
     source_read_issues = unreadable_python_sources()
     if source_read_issues:
         for issue in source_read_issues:
+            print(issue, file=sys.stderr)
+        return 1
+    source_parse_issues = invalid_python_sources()
+    if source_parse_issues:
+        for issue in source_parse_issues:
             print(issue, file=sys.stderr)
         return 1
 
