@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 from typing import Optional, Protocol
 
 import httpx
@@ -124,6 +125,12 @@ def safe_target_lang_slug(target_lang: str) -> str:
 
 
 def assert_safe_translation_output_path(path) -> None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        raise ValueError(f"translation output path parent is not a regular directory: {parent}")
     if path.is_symlink() or (path.exists() and not path.is_file()):
         raise ValueError(f"translation output path is not a regular file: {path}")
 

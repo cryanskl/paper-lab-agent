@@ -12612,6 +12612,46 @@ def test_translate_document_rejects_symlinked_output_file(tmp_path):
     assert outside_path.read_text(encoding="utf-8") == "outside original"
 
 
+def test_translate_document_rejects_symlinked_output_parent(tmp_path):
+    make_client(tmp_path)
+    from app.db import get_conn
+    from app.services import translation as translation_service
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            (
+                str(tmp_path / "symlinked-translation-parent.pdf"),
+                "symlinked-translation-parent",
+                "symlinked-translation-parent.pdf",
+            ),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Body', 'Argon plasma text', 'body')
+            """,
+            (document_id,),
+        )
+
+    outside_dir = tmp_path / "outside-translations"
+    outside_dir.mkdir()
+    translation_dir = tmp_path / "translations"
+    translation_dir.rmdir()
+    translation_dir.symlink_to(outside_dir, target_is_directory=True)
+
+    result = translation_service.translate_document(document_id, "zh")
+
+    assert result["status"] == "failed"
+    assert result["output_path"] is None
+    assert "translation output path parent is not a regular directory" in result["error"]
+    assert not (outside_dir / f"document-{document_id}-zh.md").exists()
+
+
 def test_rag_index_rejects_symlinked_vector_store(tmp_path):
     make_client(tmp_path)
     from app.db import get_conn
