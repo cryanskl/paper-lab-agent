@@ -509,7 +509,7 @@ def test_openalex_tolerates_malformed_publication_fields():
     assert work["published_year"] is None
 
 
-def test_openalex_rejects_invalid_publication_date_string():
+def test_openalex_rejects_invalid_publication_date_string_without_fallback_year():
     client = OpenAlexClient()
 
     work = client.normalize(
@@ -517,12 +517,11 @@ def test_openalex_rejects_invalid_publication_date_string():
             "id": "https://openalex.org/W-invalid-date",
             "title": "Invalid publication date",
             "publication_date": "2026-13-40",
-            "publication_year": 2026,
         }
     )
 
     assert work["published_date"] is None
-    assert work["published_year"] == 2026
+    assert work["published_year"] is None
 
 
 def test_openalex_expands_missing_publication_date_from_year():

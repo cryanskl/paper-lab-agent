@@ -3081,6 +3081,22 @@ def test_openalex_client_reconstructs_abstract_inverted_index():
     assert work["abstract"] == "Argon plasma chemistry drives oxygen reaction plasma"
 
 
+def test_openalex_client_falls_back_to_year_when_publication_date_is_invalid():
+    from app.clients.openalex import OpenAlexClient
+
+    work = OpenAlexClient().normalize(
+        {
+            "doi": "https://doi.org/10.1/date-fallback",
+            "title": "Date fallback",
+            "publication_date": "2026-00-00",
+            "publication_year": 2026,
+        }
+    )
+
+    assert work["published_date"] == "2026-01-01"
+    assert work["published_year"] == 2026
+
+
 def test_openalex_client_prefers_primary_landing_page_url():
     from app.clients.openalex import OpenAlexClient
 

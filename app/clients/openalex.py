@@ -187,6 +187,8 @@ class OpenAlexClient:
             try:
                 date.fromisoformat(text)
             except ValueError:
+                if fallback_year is not None:
+                    return f"{fallback_year:04d}-01-01"
                 return None
             return text
         if value is None and fallback_year is not None:
