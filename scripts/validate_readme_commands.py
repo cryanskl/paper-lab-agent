@@ -324,6 +324,8 @@ def local_uvicorn_target_issue(repo: Path, module_name: str, attribute_path: str
         return f"{label}: uvicorn target outside repository: {target}"
     if first_symlink_parent(module_path) is not None or module_path.is_symlink() or not module_path.is_file():
         return f"{label}: uvicorn target missing: {target}"
+    if "." in attribute_path:
+        return f"{label}: uvicorn target missing: {target}"
     attribute = attribute_path.split(".", 1)[0]
     if attribute not in top_level_names(module_path):
         return f"{label}: uvicorn target missing: {target}"
