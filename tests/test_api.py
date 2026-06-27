@@ -14672,6 +14672,24 @@ def test_extract_reactions_detects_explicit_gas_mixture(tmp_path):
     assert detail["reactions"][0]["reaction"] == "e + O2 -> O- + O"
 
 
+def test_extract_reactions_detects_multi_element_gas_mixture(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(b"The CF4/O2 plasma chemistry includes e + O2 -> O- + O .")
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("multi-element-gas-mixture.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["gas_mixture"] == "CF4/O2"
+    assert detail["reactions"][0]["reaction"] == "e + O2 -> O- + O"
+
+
 def test_translate_unparsed_document_records_failed_status(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
