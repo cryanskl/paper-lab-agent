@@ -152,6 +152,9 @@ def parse_vector_store_json(raw: str) -> dict:
         text = record.get("text")
         if not isinstance(text, str) or not text.strip():
             raise ValueError(f"vector store record text must be a non-empty string: {vector_id}")
+        embedding_model = record.get("embedding_model")
+        if not isinstance(embedding_model, str) or not embedding_model.strip():
+            raise ValueError(f"vector store record embedding_model must be a non-empty string: {vector_id}")
     return data
 
 
