@@ -7374,6 +7374,21 @@ def test_readme_commands_validator_reports_missing_script_target(tmp_path):
     ]
 
 
+def test_readme_commands_validator_reports_missing_dot_slash_script_target(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    (tmp_path / "README.md").write_text(
+        "```bash\npython ./scripts/missing.py\nbash ./scripts/missing.sh\n```\n",
+        encoding="utf-8",
+    )
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == [
+        "README.md: command target missing: scripts/missing.py",
+        "README.md: command target missing: scripts/missing.sh",
+    ]
+
+
 def test_readme_commands_validator_rejects_symlinked_script_target(tmp_path):
     validate_readme_commands = load_validate_readme_commands()
     scripts_dir = tmp_path / "scripts"

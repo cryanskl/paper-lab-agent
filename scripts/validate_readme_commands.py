@@ -182,8 +182,9 @@ def command_targets(readme_path: Path) -> list[str]:
     for line in command_lines(readme_path):
         tokens = strip_leading_env_assignments(split_command(line))
         for index, token in enumerate(tokens):
-            if token.startswith("scripts/") and token.endswith((".py", ".sh")):
-                targets.append(token)
+            script_target = token.removeprefix("./")
+            if script_target.startswith("scripts/") and script_target.endswith((".py", ".sh")):
+                targets.append(script_target)
             elif token == "streamlit_app.py":
                 targets.append(token)
             elif token == "-m" and index + 1 < len(tokens):
@@ -201,7 +202,7 @@ def python_script_option_refs(readme_path: Path) -> list[tuple[str, str]]:
             continue
         for index, token in enumerate(tokens):
             if token in {"python", "python3"} and index + 1 < len(tokens):
-                script = tokens[index + 1]
+                script = tokens[index + 1].removeprefix("./")
                 option_tokens = tokens[index + 2 :]
             elif token == "-m" and index > 0 and tokens[index - 1] in {"python", "python3"} and index + 1 < len(tokens):
                 module = tokens[index + 1]
