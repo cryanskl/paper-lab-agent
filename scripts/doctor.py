@@ -336,6 +336,12 @@ def dev_ready_timeout_default(path: Path) -> str | None:
 
 
 def dev_ready_timeout_runtime_issue(values: dict[str, str], dev_script_path: Path) -> dict[str, str] | None:
+    if dev_script_path.is_symlink() or (dev_script_path.exists() and not dev_script_path.is_file()):
+        return {
+            "code": "dev_script_not_regular",
+            "path": str(dev_script_path),
+            "message": f"scripts/dev.sh must be a regular file path: {dev_script_path}",
+        }
     try:
         expected = dev_ready_timeout_default(dev_script_path)
     except (OSError, UnicodeError) as exc:

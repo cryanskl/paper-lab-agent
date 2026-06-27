@@ -1609,6 +1609,28 @@ def test_doctor_env_example_check_reports_unreadable_dev_script(tmp_path):
     )
 
 
+def test_doctor_env_example_check_rejects_symlinked_dev_script(tmp_path):
+    doctor = load_doctor()
+    repo = Path(__file__).resolve().parent.parent
+    (tmp_path / ".env.example").write_text(
+        (repo / ".env.example").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (tmp_path / "scripts").mkdir()
+    outside_dev = tmp_path / "outside-dev.sh"
+    outside_dev.write_text('DEV_READY_TIMEOUT="${DEV_READY_TIMEOUT:-30}"\n', encoding="utf-8")
+    (tmp_path / "scripts" / "dev.sh").symlink_to(outside_dev)
+
+    check = doctor.check_env_example(tmp_path)
+
+    assert check["status"] == "fail"
+    assert {
+        "code": "dev_script_not_regular",
+        "path": str(tmp_path / "scripts" / "dev.sh"),
+        "message": f"scripts/dev.sh must be a regular file path: {tmp_path / 'scripts' / 'dev.sh'}",
+    } in check["issues"]
+
+
 def test_doctor_env_example_check_rejects_symlinked_env_example(tmp_path):
     doctor = load_doctor()
     repo = Path(__file__).resolve().parent.parent
