@@ -236,6 +236,12 @@ def main() -> int:
     except (OSError, UnicodeError) as exc:
         print(f"env example unreadable: {path}: {exc}", file=sys.stderr)
         return 1
+    if SETTINGS_CONFIG_PATH.exists():
+        try:
+            SETTINGS_CONFIG_PATH.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            print(f"settings config unreadable: {SETTINGS_CONFIG_PATH}: {exc}", file=sys.stderr)
+            return 1
 
     missing = missing_required_keys(path)
     if missing:
