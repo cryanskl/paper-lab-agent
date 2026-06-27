@@ -230,3 +230,43 @@ def test_sections_from_tei_preserves_direct_body_and_div_notes():
             "section_type": "body",
         },
     ]
+
+
+def test_sections_from_tei_preserves_direct_body_and_div_quote_blocks():
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <quote>Quoted plasma kinetics note from the source.</quote>
+          <div>
+            <head>Cross-section sources</head>
+            <p>The model cites the following source.</p>
+            <cit>
+              <quote>Electron impact cross sections are tabulated in LXCat.</quote>
+              <bibl>LXCat Argon set</bibl>
+            </cit>
+          </div>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Section 1",
+            "content": "Quoted plasma kinetics note from the source.",
+            "section_type": "body",
+        },
+        {
+            "seq": 2,
+            "title": "Cross-section sources",
+            "content": (
+                "The model cites the following source. "
+                "Electron impact cross sections are tabulated in LXCat. LXCat Argon set"
+            ),
+            "section_type": "body",
+        },
+    ]
