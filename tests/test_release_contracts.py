@@ -5085,6 +5085,15 @@ def test_api_contract_documents_reaction_verify_reviewer_requirement():
     assert "缺失或空白返回 422 `validation_error`" in contract_text
 
 
+def test_api_contract_documents_release_readiness_blocking_adapter_warnings():
+    repo = Path(__file__).resolve().parent.parent
+    contract_text = (repo / "docs" / "接口设计文档.md").read_text(encoding="utf-8")
+
+    assert "`unsupported_embedding_model`" in contract_text
+    assert "`unsupported_vector_db_backend`" in contract_text
+    assert "`release_readiness.ready=false`" in contract_text
+
+
 def test_api_contract_validator_runs_as_release_script():
     import subprocess
     import sys
