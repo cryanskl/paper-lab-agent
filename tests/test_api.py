@@ -1751,6 +1751,49 @@ def test_prepare_demo_data_script_rejects_symlinked_output_file(tmp_path):
     assert outside_path.read_text(encoding="utf-8") == "outside-original"
 
 
+def test_prepare_demo_data_script_rejects_symlinked_output_parent(tmp_path):
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(tmp_path / "data")
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+    outside_dir = tmp_path / "outside-out"
+    outside_dir.mkdir()
+    linked_parent = tmp_path / "out"
+    linked_parent.symlink_to(outside_dir, target_is_directory=True)
+    output_path = linked_parent / "demo-summary.json"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/prepare_demo_data.py",
+            "--summary-only",
+            "--compact",
+            "--output",
+            str(output_path),
+        ],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert f"prepare_demo_data failed: output path parent is not a regular directory: {linked_parent}" in result.stderr
+    assert not (outside_dir / "demo-summary.json").exists()
+
+
 def test_smoke_check_covers_translation_and_chemistry_chain():
     from scripts.smoke_check import run_smoke
 
