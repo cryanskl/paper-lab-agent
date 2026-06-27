@@ -8574,6 +8574,36 @@ def test_env_loader_rejects_symlinked_env_file(tmp_path):
     assert "env file is not a regular file: .env" in result.stderr
 
 
+def test_env_loader_rejects_symlinked_env_parent(tmp_path):
+    import subprocess
+
+    repo = Path(__file__).resolve().parent.parent
+    env_script = repo / "scripts" / "env.sh"
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    (outside_dir / ".env").write_text("API_PORT=9999\n", encoding="utf-8")
+    (tmp_path / "linked").symlink_to(outside_dir, target_is_directory=True)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                "set -euo pipefail; "
+                f"source {env_script}; "
+                "load_env_file_if_unset linked/.env"
+            ),
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "env file parent is not a regular directory: linked" in result.stderr
+
+
 def test_dev_api_base_url_tracks_runtime_port_override(tmp_path):
     import subprocess
 
