@@ -30,6 +30,14 @@ def artifact_filenames() -> list[str]:
     return sorted(EXPECTED_ARTIFACTS.values())
 
 
+def remove_stale_package_output(output_path: Path) -> str | None:
+    try:
+        output_path.unlink(missing_ok=True)
+    except OSError as exc:
+        return f"release package cleanup failed: {exc}"
+    return None
+
+
 def package_release_artifacts(
     artifact_dir: Path,
     output_path: Path,
@@ -168,7 +176,23 @@ def package_release_artifacts(
     try:
         validation = validate_release_artifacts(artifact_dir, require_clean_source=require_clean_source)
     except Exception as exc:
-        output_path.unlink(missing_ok=True)
+        cleanup_error = remove_stale_package_output(output_path)
+        if cleanup_error:
+            return {
+                "ok": False,
+                "artifact_dir": str(artifact_dir),
+                "package_path": str(output_path),
+                "artifact_count": 0,
+                "artifact_names": [],
+                "package_sha256": None,
+                "source": {},
+                "demo_ready": None,
+                "demo_export_formats": [],
+                "demo_export_audit_entry_counts": {},
+                "demo_reaction_set_verified_by": None,
+                "demo_reaction_set_verified_at": None,
+                "issues": [cleanup_error],
+            }
         return {
             "ok": False,
             "artifact_dir": str(artifact_dir),
@@ -185,7 +209,23 @@ def package_release_artifacts(
             "issues": [f"release artifact validation failed: {exc}"],
         }
     if validation.get("ok") is not True:
-        output_path.unlink(missing_ok=True)
+        cleanup_error = remove_stale_package_output(output_path)
+        if cleanup_error:
+            return {
+                "ok": False,
+                "artifact_dir": str(artifact_dir),
+                "package_path": str(output_path),
+                "artifact_count": 0,
+                "artifact_names": [],
+                "package_sha256": None,
+                "source": validation.get("source") or {},
+                "demo_ready": validation.get("demo_ready"),
+                "demo_export_formats": validation.get("demo_export_formats") or [],
+                "demo_export_audit_entry_counts": validation.get("demo_export_audit_entry_counts") or {},
+                "demo_reaction_set_verified_by": validation.get("demo_reaction_set_verified_by"),
+                "demo_reaction_set_verified_at": validation.get("demo_reaction_set_verified_at"),
+                "issues": [cleanup_error],
+            }
         return {
             "ok": False,
             "artifact_dir": str(artifact_dir),
@@ -208,7 +248,8 @@ def package_release_artifacts(
             for filename in artifact_filenames():
                 archive.write(artifact_dir / filename, arcname=filename)
     except OSError as exc:
-        output_path.unlink(missing_ok=True)
+        cleanup_error = remove_stale_package_output(output_path)
+        issues = [cleanup_error] if cleanup_error else [f"release package write failed: {exc}"]
         return {
             "ok": False,
             "artifact_dir": str(artifact_dir),
@@ -222,7 +263,7 @@ def package_release_artifacts(
             "demo_export_audit_entry_counts": validation.get("demo_export_audit_entry_counts") or {},
             "demo_reaction_set_verified_by": validation.get("demo_reaction_set_verified_by"),
             "demo_reaction_set_verified_at": validation.get("demo_reaction_set_verified_at"),
-            "issues": [f"release package write failed: {exc}"],
+            "issues": issues,
         }
 
     return {

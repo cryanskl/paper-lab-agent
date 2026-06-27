@@ -2782,6 +2782,38 @@ def test_package_release_artifacts_reports_validator_runtime_failure(monkeypatch
     assert not output_path.exists()
 
 
+def test_package_release_artifacts_reports_stale_output_cleanup_failure(monkeypatch, tmp_path):
+    package_release_artifacts = load_package_release_artifacts()
+    artifact_dir = tmp_path / "invalid-release"
+    output_path = tmp_path / "paper-lab-agent-release.zip"
+    artifact_dir.mkdir()
+    output_path.write_bytes(b"stale release package")
+    original_unlink = package_release_artifacts.Path.unlink
+
+    def fake_unlink(path, *, missing_ok=False):
+        if path == output_path:
+            raise OSError("permission denied")
+        return original_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(package_release_artifacts.Path, "unlink", fake_unlink)
+
+    try:
+        report = package_release_artifacts.package_release_artifacts(artifact_dir, output_path)
+    except OSError as exc:
+        raise AssertionError(
+            "package_release_artifacts should report stale package cleanup failures instead of raising"
+        ) from exc
+
+    assert report["ok"] is False
+    assert report["artifact_dir"] == str(artifact_dir.resolve())
+    assert report["package_path"] == str(output_path.resolve())
+    assert report["package_sha256"] is None
+    assert report["artifact_count"] == 0
+    assert report["artifact_names"] == []
+    assert report["issues"] == ["release package cleanup failed: permission denied"]
+    assert output_path.exists()
+
+
 def test_package_release_artifacts_reports_zip_write_failure(monkeypatch, tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     package_release_artifacts = load_package_release_artifacts()
