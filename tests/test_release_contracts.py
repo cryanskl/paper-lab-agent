@@ -2568,6 +2568,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'not valid_sha256(package_validation.get("package_sha256"))' in release_check
     assert 'package_validation.get("package_sha256") != package.get("package_sha256")' in release_check
     assert 'set((package_validation.get("checksums") or {})) != {"openapi.json", "demo-summary.json", "release-manifest.json"}' in release_check
+    assert 'package_validation.get("checksums") != package.get("checksums")' in release_check
     assert 'not valid_release_checksums(package_validation.get("checksums") or {})' in release_check
     assert 'package_validation.get("demo_reaction_set_verified_by") != "prepare-demo-data"' in release_check
     assert 'not package_validation.get("demo_reaction_set_verified_at")' in release_check
