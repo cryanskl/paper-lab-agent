@@ -94,7 +94,8 @@ def package_release_artifacts(
             "demo_reaction_set_verified_at": None,
             "issues": [f"release package output is not a regular file: {package_path}"],
         }
-    if requested_output_path.parent.is_symlink():
+    symlink_output_parent = first_symlink_parent(requested_output_path)
+    if symlink_output_parent is not None:
         package_path = requested_output_path.absolute()
         return {
             "ok": False,
@@ -111,7 +112,7 @@ def package_release_artifacts(
             "demo_reaction_set_verified_at": None,
             "issues": [
                 "release package output parent is not a regular directory: "
-                f"{requested_output_path.parent}"
+                f"{symlink_output_parent}"
             ],
         }
     output_path = output_path.resolve()
