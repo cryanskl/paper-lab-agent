@@ -11,7 +11,7 @@ from fastapi import UploadFile
 from app.clients.grobid import GrobidClient
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
-from app.services.rag import JsonVectorStore
+from app.services.rag import JsonVectorStore, get_vector_store
 from app.utils import now_iso
 
 
@@ -30,7 +30,7 @@ def safe_original_filename(filename: Optional[str]) -> str:
 def mark_parse_queued(document_id: int) -> None:
     settings = get_settings()
     try:
-        JsonVectorStore(settings.vector_db_path).delete_document(document_id)
+        get_vector_store(settings).delete_document(document_id)
     except Exception as exc:
         with get_conn() as conn:
             conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))

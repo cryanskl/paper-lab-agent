@@ -15280,6 +15280,79 @@ def test_document_parse_route_records_queue_failure_when_vector_store_is_corrupt
     assert counts == {"sections": 0, "chunks": 0, "translations": 0, "reaction_sets": 0}
 
 
+def test_document_parse_route_rejects_unsupported_vector_db_backend(tmp_path, monkeypatch):
+    monkeypatch.setenv("VECTOR_DB_BACKEND", "faiss")
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (
+                file_path, file_hash, original_name, parse_status,
+                index_status, index_error, chemistry_status, chemistry_error
+            )
+            VALUES (?, ?, ?, 'parsed', 'indexed', 'old index error', 'extracted', 'old chemistry error')
+            """,
+            (str(tmp_path / "queued-parse-unsupported-backend.pdf"), "queued-parse-backend", "queued-parse-backend.pdf"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Old section', 'old parsed text', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'old parsed text', 3, 'old-parse-backend-vector-id', 1)
+            """,
+            (document_id, section_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO translations (document_id, source_lang, target_lang, status, output_path)
+            VALUES (?, 'en', 'zh', 'done', ?)
+            """,
+            (document_id, str(tmp_path / "translations" / "old.md")),
+        )
+        conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, source_note, status)
+            VALUES (?, 'Old reaction set', 'old extraction', 'pending')
+            """,
+            (document_id,),
+        )
+
+    response = client.post(f"/api/v1/documents/{document_id}/parse")
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "parse_queue_failed"
+    assert payload["error"]["message"] == "unsupported vector db backend: faiss"
+    with get_conn() as conn:
+        document = conn.execute(
+            """
+            SELECT parse_status, parse_error, index_status, index_error, chemistry_status, chemistry_error
+            FROM documents WHERE id=?
+            """,
+            (document_id,),
+        ).fetchone()
+        counts = {
+            table: conn.execute(f"SELECT COUNT(*) AS n FROM {table} WHERE document_id=?", (document_id,)).fetchone()["n"]
+            for table in ["sections", "chunks", "translations", "reaction_sets"]
+        }
+    assert document["parse_status"] == "failed"
+    assert document["parse_error"] == "unsupported vector db backend: faiss"
+    assert document["index_status"] == "not_indexed"
+    assert document["index_error"] is None
+    assert document["chemistry_status"] == "not_extracted"
+    assert document["chemistry_error"] is None
+    assert counts == {"sections": 0, "chunks": 0, "translations": 0, "reaction_sets": 0}
+
+
 def test_document_extract_route_clears_stale_reaction_sets_before_background_task_runs(tmp_path):
     from fastapi import BackgroundTasks
 
