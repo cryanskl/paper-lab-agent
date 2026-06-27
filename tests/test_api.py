@@ -3165,6 +3165,22 @@ def test_crossref_client_strips_jats_tags_from_abstract():
     assert work["abstract"] == "Argon plasma chemistry & kinetics."
 
 
+def test_crossref_client_strips_jats_tags_from_title_and_journal_name():
+    from app.clients.crossref import CrossrefClient
+
+    work = CrossrefClient().normalize(
+        {
+            "DOI": "10.2/tagged-title",
+            "title": ["Ar/O<jats:sub>2</jats:sub> <jats:italic>plasma</jats:italic> chemistry &amp; kinetics"],
+            "container-title": ["<jats:italic>Plasma</jats:italic> Sources"],
+            "published-online": {"date-parts": [[2026, 4, 5]]},
+        }
+    )
+
+    assert work["title"] == "Ar/O2 plasma chemistry & kinetics"
+    assert work["journal_name"] == "Plasma Sources"
+
+
 def test_crossref_client_uses_issued_date_when_published_dates_are_missing():
     from app.clients.crossref import CrossrefClient
 

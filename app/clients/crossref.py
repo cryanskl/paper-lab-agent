@@ -10,6 +10,10 @@ import httpx
 from app.clients.retry_after import retry_after_delay
 
 
+BLOCK_TAG_RE = re.compile(r"</?(?:jats:)?(?:abstract|body|br|fig|list|p|sec|table|tbody|td|th|title|tr)[^>]*>", re.IGNORECASE)
+TAG_RE = re.compile(r"<[^>]+>")
+
+
 class CrossrefClient:
     base_url = "https://api.crossref.org"
 
@@ -99,12 +103,16 @@ class CrossrefClient:
                 return parsed_delay
         return self.retry_backoff_seconds * (attempt + 1)
 
-    def clean_abstract(self, value: Any) -> str:
+    def clean_text(self, value: Any) -> str:
         if not isinstance(value, str):
             return ""
-        without_tags = re.sub(r"<[^>]+>", " ", value)
+        with_block_spacing = BLOCK_TAG_RE.sub(" ", value)
+        without_tags = TAG_RE.sub("", with_block_spacing)
         decoded = html.unescape(without_tags)
         return re.sub(r"\s+", " ", decoded).strip()
+
+    def clean_abstract(self, value: Any) -> str:
+        return self.clean_text(value)
 
     def normalize_doi(self, value: Any) -> Optional[str]:
         if not isinstance(value, str):
@@ -122,11 +130,16 @@ class CrossrefClient:
 
     def first_text(self, value: Any, default: Optional[str] = None) -> Optional[str]:
         if isinstance(value, str) and value.strip():
-            return value.strip()
+            cleaned = self.clean_text(value)
+            return cleaned or None
         if isinstance(value, list):
             for item in value:
                 if isinstance(item, str) and item.strip():
-                    return item.strip()
+                    cleaned = self.clean_text(item)
+                    if cleaned:
+                        return cleaned
+        if isinstance(default, str) and default.strip():
+            return self.clean_text(default) or None
         return default
 
     def normalize_authors(self, value: Any) -> list[dict[str, Optional[str]]]:
