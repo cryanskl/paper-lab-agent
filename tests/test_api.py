@@ -15015,6 +15015,27 @@ def test_extract_reactions_detects_labelled_lxcat_database(tmp_path):
     assert detail["reactions"][0]["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
 
 
+def test_extract_reactions_detects_compact_lxcat_separator(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(
+        b"LXCat=Biagi cross section: https://nl.lxcat.net/data/set/biagi. "
+        b"The process is e + Ar -> e + e + Ar+ ."
+    )
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("compact-lxcat-separator.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["lxcat_db"] == "Biagi"
+    assert detail["reactions"][0]["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
+
+
 def test_extract_reactions_detects_explicit_gas_mixture(tmp_path):
     client = make_client(tmp_path)
     content = pdf_bytes(b"The Ar/O2 plasma chemistry includes e + O2 -> O- + O .")
