@@ -2441,6 +2441,13 @@ def test_release_check_compiles_application_package():
     assert " app " in release_check or " app\n" in release_check
 
 
+def test_release_check_rejects_whitespace_errors():
+    repo = Path(__file__).resolve().parent.parent
+    release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert "git diff --check" in release_check
+
+
 def test_release_check_validates_openapi_export_script():
     repo = Path(__file__).resolve().parent.parent
     release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
