@@ -4315,6 +4315,23 @@ def test_system_status_reports_corrupt_vector_store_health(tmp_path):
     assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
 
 
+def test_system_status_reports_symlinked_vector_store_health_error(tmp_path):
+    client = make_client(tmp_path)
+    outside_path = tmp_path / "outside-vector-index.json"
+    outside_path.write_text("{}", encoding="utf-8")
+    (tmp_path / "vector-index.json").symlink_to(outside_path)
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["valid_json"] is False
+    assert "vector store path is not a regular file" in vector_db["error"]
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
 def test_system_status_reports_vector_db_backend(tmp_path):
     client = make_client(tmp_path)
 

@@ -11,7 +11,7 @@ from app.clients.grobid import GrobidClient
 from app.config import get_settings
 from app.db import fetch_one, get_conn
 from app.scheduler import scheduled_crawl_jobs
-from app.services.rag import SUPPORTED_EMBEDDING_MODELS, SUPPORTED_VECTOR_DB_BACKENDS
+from app.services.rag import SUPPORTED_EMBEDDING_MODELS, SUPPORTED_VECTOR_DB_BACKENDS, assert_safe_vector_store_path
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -208,6 +208,7 @@ def vector_store_health(path: Path) -> dict:
         health["error"] = "vector store is not readable"
         return health
     try:
+        assert_safe_vector_store_path(path)
         json.loads(path.read_text(encoding="utf-8"))
         health["valid_json"] = True
     except Exception as exc:
