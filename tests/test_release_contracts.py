@@ -7398,6 +7398,15 @@ def test_docs_links_validator_rejects_symlinked_markdown_source(tmp_path):
     assert issues == ["README.md: doc source is not a regular file"]
 
 
+def test_docs_links_validator_reports_unreadable_markdown_source(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    (tmp_path / "README.md").write_bytes(b"\xff\xfe\x00bad-readme")
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["README.md: doc source unreadable"]
+
+
 def test_docs_links_validator_rejects_symlinked_markdown_source_parent(tmp_path):
     validate_docs_links = load_validate_docs_links()
     outside_docs = tmp_path / "outside-docs"
