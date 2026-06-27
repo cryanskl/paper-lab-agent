@@ -1806,6 +1806,39 @@ def test_rag_query_non_finite_vector_embedding_returns_clear_error(tmp_path):
     assert payload["error"]["message"] == "vector store record embedding must be a finite numeric array: bad-vector"
 
 
+def test_rag_query_vector_dimension_mismatch_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": 1, "embedding": [0.1], "dimensions": 64}}',
+        encoding="utf-8",
+    )
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-vector-dimension-mismatch.txt",
+                "rag-query-vector-dimension-mismatch",
+                "rag-query-vector-dimension-mismatch.txt",
+            ),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record dimensions must match embedding length: bad-vector"
+
+
 def test_fixture_loader_supports_walking_skeleton(tmp_path):
     client = make_client(tmp_path)
 
@@ -5048,6 +5081,25 @@ def test_system_status_reports_non_finite_vector_embedding(tmp_path):
     assert vector_db["readable"] is True
     assert vector_db["valid_json"] is False
     assert vector_db["error"] == "vector store record embedding must be a finite numeric array: bad-vector"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_reports_vector_dimension_mismatch(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": 1, "embedding": [0.1], "dimensions": 64}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record dimensions must match embedding length: bad-vector"
     assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
 
 

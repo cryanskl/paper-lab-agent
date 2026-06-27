@@ -139,6 +139,11 @@ def parse_vector_store_json(raw: str) -> dict:
             raise ValueError(f"vector store record embedding must be a numeric array: {vector_id}")
         if any(not is_vector_number(value) for value in embedding):
             raise ValueError(f"vector store record embedding must be a finite numeric array: {vector_id}")
+        dimensions = record.get("dimensions")
+        if dimensions is not None and (
+            not isinstance(dimensions, int) or isinstance(dimensions, bool) or dimensions != len(embedding)
+        ):
+            raise ValueError(f"vector store record dimensions must match embedding length: {vector_id}")
     return data
 
 
