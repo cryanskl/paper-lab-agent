@@ -307,10 +307,23 @@ def validate_migrations() -> list[str]:
     return issues
 
 
+def first_symlink_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
+
+
 def validate_schema(schema_path: Path = DEFAULT_SCHEMA_PATH) -> list[str]:
     issues: list[str] = []
     if not schema_path.exists():
         return [f"schema not found: {schema_path}"]
+    symlink_parent = first_symlink_parent(schema_path)
+    if symlink_parent is not None:
+        return [f"schema file parent is not a regular directory: {symlink_parent}"]
     if schema_path.is_symlink() or not schema_path.is_file():
         return [f"schema file is not a regular file: {schema_path}"]
 

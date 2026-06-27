@@ -6885,6 +6885,22 @@ def test_schema_validator_rejects_symlinked_schema_file(tmp_path):
     assert issues == [f"schema file is not a regular file: {schema_path}"]
 
 
+def test_schema_validator_rejects_symlinked_schema_parent(tmp_path):
+    validate_schema = load_validate_schema()
+    repo = Path(__file__).resolve().parent.parent
+    outside_docs = tmp_path / "outside-docs"
+    outside_docs.mkdir()
+    outside_schema = outside_docs / "schema.sql"
+    outside_schema.write_text((repo / "docs" / "schema.sql").read_text(encoding="utf-8"), encoding="utf-8")
+    docs_path = tmp_path / "docs"
+    docs_path.symlink_to(outside_docs, target_is_directory=True)
+    schema_path = docs_path / "schema.sql"
+
+    issues = validate_schema.validate_schema(schema_path)
+
+    assert issues == [f"schema file parent is not a regular directory: {docs_path}"]
+
+
 def test_schema_validator_runs_as_release_script():
     import subprocess
     import sys
