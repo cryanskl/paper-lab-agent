@@ -478,6 +478,48 @@ def test_env_example_validator_rejects_symlinked_dev_script(tmp_path):
     assert "Traceback" not in result.stderr
 
 
+def test_env_example_validator_rejects_symlinked_dev_script_parent(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_source = repo / "scripts" / "validate_env_example.py"
+    outside_scripts = tmp_path / "outside-scripts"
+    app_dir = tmp_path / "app"
+    outside_scripts.mkdir()
+    app_dir.mkdir()
+    (outside_scripts / "validate_env_example.py").write_text(
+        script_source.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (outside_scripts / "dev.sh").write_text(
+        'DEV_READY_TIMEOUT="${DEV_READY_TIMEOUT:-30}"\n',
+        encoding="utf-8",
+    )
+    linked_scripts = tmp_path / "scripts"
+    linked_scripts.symlink_to(outside_scripts, target_is_directory=True)
+    (app_dir / "config.py").write_text(
+        (repo / "app" / "config.py").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (tmp_path / ".env.example").write_text(
+        (repo / ".env.example").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(linked_scripts / "validate_env_example.py"), ".env.example"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert f"dev script parent is not a regular directory: {linked_scripts}" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_env_example_validator_reports_unreadable_dev_script(tmp_path):
     import subprocess
     import sys

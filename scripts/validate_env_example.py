@@ -254,6 +254,10 @@ def main() -> int:
         if DEV_SCRIPT_PATH.is_symlink() or not DEV_SCRIPT_PATH.is_file():
             print(f"dev script is not a regular file: {DEV_SCRIPT_PATH}", file=sys.stderr)
             return 1
+        dev_script_parent = first_symlink_parent(DEV_SCRIPT_PATH)
+        if dev_script_parent is not None:
+            print(f"dev script parent is not a regular directory: {dev_script_parent}", file=sys.stderr)
+            return 1
         try:
             DEV_SCRIPT_PATH.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
