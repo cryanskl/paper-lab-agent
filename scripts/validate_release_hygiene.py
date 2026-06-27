@@ -178,6 +178,10 @@ def main() -> int:
     args = parser.parse_args()
 
     repo = args.gitignore.parent
+    if args.gitignore.is_symlink() or not args.gitignore.is_file():
+        print(f"gitignore is not a regular file: {args.gitignore}", file=sys.stderr)
+        return 1
+
     missing = missing_required_gitignore_patterns(args.gitignore)
     missing_ci = missing_required_ci_release_gate(repo)
     forbidden = forbidden_tracked_paths(tracked_files(repo))

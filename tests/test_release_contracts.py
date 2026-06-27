@@ -349,6 +349,50 @@ def test_release_hygiene_validator_reports_missing_gitignore_pattern(tmp_path):
     assert ".next/" in missing
 
 
+def test_release_hygiene_validator_rejects_symlinked_gitignore(tmp_path):
+    import subprocess
+    import sys
+
+    validate_release_hygiene = load_validate_release_hygiene()
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_release_hygiene.py"
+    workflow_dir = tmp_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "ci.yml").write_text(
+        'name: ci\n'
+        'on: [push, pull_request, workflow_dispatch]\n'
+        'jobs:\n'
+        '  test:\n'
+        '    runs-on: ubuntu-latest\n'
+        '    timeout-minutes: 15\n'
+        '    steps:\n'
+        '      - uses: actions/checkout@v4\n'
+        '      - uses: actions/setup-python@v5\n'
+        '        with:\n'
+        '          python-version: "3.11"\n'
+        '      - run: python -m pip install -r requirements.txt\n'
+        '      - run: bash scripts/release_check.sh\n',
+        encoding="utf-8",
+    )
+    outside_gitignore = tmp_path / "outside.gitignore"
+    outside_gitignore.write_text(
+        "\n".join(validate_release_hygiene.REQUIRED_GITIGNORE_PATTERNS),
+        encoding="utf-8",
+    )
+    (tmp_path / ".gitignore").symlink_to(outside_gitignore)
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), ".gitignore"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "gitignore is not a regular file: .gitignore" in result.stderr
+
+
 def test_bug_doc_validator_reports_missing_title(tmp_path):
     import importlib.util
 
