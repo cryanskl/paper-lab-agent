@@ -193,6 +193,7 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
             "manifest": manifest_path.name,
         },
         "demo_ready": demo_summary.get("ready") is True,
+        "demo_counts": demo_summary.get("counts") or {},
         "demo_export_formats": demo_summary.get("export_formats") or [],
         "demo_export_audit_entry_counts": demo_summary.get("export_audit_entry_counts") or {},
         "demo_export_audit_summary_formats": demo_summary.get("export_audit_summary_formats") or [],

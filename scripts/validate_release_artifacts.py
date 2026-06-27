@@ -25,6 +25,10 @@ EXPECTED_ARTIFACTS = {
     "manifest": "release-manifest.json",
 }
 EXPECTED_EXPORT_FORMATS = ["json", "txt", "bolsig"]
+EXPECTED_DEMO_COUNT_MINIMUMS = {
+    "documents": 1,
+    "reaction_audits": 1,
+}
 GIT_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -87,6 +91,23 @@ def demo_audit_summary_format_issues(demo_summary: dict[str, Any]) -> list[str]:
     return []
 
 
+def demo_count_issues(demo_summary: dict[str, Any]) -> list[str]:
+    counts = demo_summary.get("counts")
+    if not isinstance(counts, dict):
+        missing = list(EXPECTED_DEMO_COUNT_MINIMUMS)
+    else:
+        missing = [
+            key
+            for key, minimum in EXPECTED_DEMO_COUNT_MINIMUMS.items()
+            if not isinstance(counts.get(key), int)
+            or isinstance(counts.get(key), bool)
+            or counts.get(key) < minimum
+        ]
+    if missing:
+        return ["demo summary counts must include positive counts for: " + ", ".join(missing)]
+    return []
+
+
 def is_iso8601_timestamp(value: Any) -> bool:
     if not isinstance(value, str) or not value.strip():
         return False
@@ -118,6 +139,7 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             "version": None,
             "source": {},
             "demo_ready": None,
+            "demo_counts": {},
             "demo_export_formats": [],
             "demo_export_audit_entry_counts": {},
             "demo_export_audit_summary_formats": [],
@@ -137,6 +159,7 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             "version": None,
             "source": {},
             "demo_ready": None,
+            "demo_counts": {},
             "demo_export_formats": [],
             "demo_export_audit_entry_counts": {},
             "demo_export_audit_summary_formats": [],
@@ -179,6 +202,7 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
         else {}
     )
     demo_export_formats = demo_summary.get("export_formats") or []
+    demo_counts = demo_summary.get("counts") if isinstance(demo_summary.get("counts"), dict) else {}
     demo_export_audit_entry_counts = (
         demo_summary.get("export_audit_entry_counts")
         if isinstance(demo_summary.get("export_audit_entry_counts"), dict)
@@ -199,6 +223,8 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             issues.append(f"release manifest artifacts mismatch: {manifest.get('artifacts')!r}")
         if manifest.get("demo_ready") is not True:
             issues.append("release manifest demo_ready must be true")
+        if manifest.get("demo_counts") != demo_counts:
+            issues.append(f"release manifest demo_counts mismatch: {manifest.get('demo_counts')!r}")
         if manifest.get("demo_export_formats") != EXPECTED_EXPORT_FORMATS:
             issues.append(
                 f"release manifest demo_export_formats mismatch: {manifest.get('demo_export_formats')!r}"
@@ -271,6 +297,7 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
     if demo_summary:
         if demo_summary.get("ready") is not True:
             issues.append("demo summary ready must be true")
+        issues.extend(demo_count_issues(demo_summary))
         if demo_export_formats != EXPECTED_EXPORT_FORMATS:
             issues.append(f"demo summary export_formats mismatch: {demo_export_formats!r}")
         issues.extend(demo_audit_entry_count_issues(demo_summary))
@@ -289,6 +316,7 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
         "version": manifest.get("version"),
         "source": manifest.get("source") if isinstance(manifest.get("source"), dict) else {},
         "demo_ready": manifest.get("demo_ready"),
+        "demo_counts": manifest.get("demo_counts") if isinstance(manifest.get("demo_counts"), dict) else demo_counts,
         "demo_export_formats": manifest.get("demo_export_formats") or [],
         "demo_export_audit_entry_counts": manifest.get("demo_export_audit_entry_counts")
         if isinstance(manifest.get("demo_export_audit_entry_counts"), dict)

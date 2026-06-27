@@ -42,6 +42,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "artifact_names": [],
             "source": {},
             "demo_ready": None,
+            "demo_counts": {},
             "demo_export_formats": [],
             "demo_export_audit_entry_counts": {},
             "demo_export_audit_summary_formats": [],
@@ -60,6 +61,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "artifact_names": [],
             "source": {},
             "demo_ready": None,
+            "demo_counts": {},
             "demo_export_formats": [],
             "demo_export_audit_entry_counts": {},
             "demo_export_audit_summary_formats": [],
@@ -75,6 +77,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
     artifact_names: list[str] = []
     source: dict[str, Any] = {}
     demo_ready = None
+    demo_counts: dict[str, Any] = {}
     demo_export_formats: list[str] = []
     demo_export_audit_entry_counts: dict[str, Any] = {}
     demo_export_audit_summary_formats: list[str] = []
@@ -92,6 +95,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "artifact_names": artifact_names,
             "source": source,
             "demo_ready": demo_ready,
+            "demo_counts": demo_counts,
             "demo_export_formats": demo_export_formats,
             "demo_export_audit_entry_counts": demo_export_audit_entry_counts,
             "demo_export_audit_summary_formats": demo_export_audit_summary_formats,
@@ -110,6 +114,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "artifact_names": artifact_names,
             "source": source,
             "demo_ready": demo_ready,
+            "demo_counts": demo_counts,
             "demo_export_formats": demo_export_formats,
             "demo_export_audit_entry_counts": demo_export_audit_entry_counts,
             "demo_export_audit_summary_formats": demo_export_audit_summary_formats,
@@ -145,6 +150,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
                     )
                     source = validation.get("source") or {}
                     demo_ready = validation.get("demo_ready")
+                    demo_counts = validation.get("demo_counts") or {}
                     demo_export_formats = validation.get("demo_export_formats") or []
                     demo_export_audit_entry_counts = validation.get("demo_export_audit_entry_counts") or {}
                     demo_export_audit_summary_formats = validation.get("demo_export_audit_summary_formats") or []
@@ -164,6 +170,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
         "artifact_names": artifact_names,
         "source": source,
         "demo_ready": demo_ready,
+        "demo_counts": demo_counts,
         "demo_export_formats": demo_export_formats,
         "demo_export_audit_entry_counts": demo_export_audit_entry_counts,
         "demo_export_audit_summary_formats": demo_export_audit_summary_formats,
