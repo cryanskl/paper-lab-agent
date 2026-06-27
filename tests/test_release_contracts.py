@@ -1991,6 +1991,38 @@ def test_export_release_artifacts_reports_demo_summary_write_failure(monkeypatch
     assert not (output_dir / "release-manifest.json").exists()
 
 
+def test_export_release_artifacts_reports_partial_artifact_cleanup_failure(monkeypatch, tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    output_dir = tmp_path / "release"
+    original_write_json = export_release_artifacts.write_json
+    original_unlink = export_release_artifacts.Path.unlink
+
+    def fake_write_json(path, payload, *, compact=False):
+        if path.name == "demo-summary.json":
+            raise OSError("disk full")
+        original_write_json(path, payload, compact=compact)
+
+    def fake_unlink(path, *, missing_ok=False):
+        if path.name == "openapi.json" and path.exists():
+            raise OSError("permission denied")
+        return original_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(export_release_artifacts, "write_json", fake_write_json)
+    monkeypatch.setattr(export_release_artifacts.Path, "unlink", fake_unlink)
+
+    try:
+        report = export_release_artifacts.export_release_artifacts(output_dir, compact=True)
+    except OSError as exc:
+        raise AssertionError(
+            "export_release_artifacts should report partial artifact cleanup failures instead of raising"
+        ) from exc
+
+    assert report["ok"] is False
+    assert report["output_dir"] == str(output_dir.resolve())
+    assert report["issues"] == ["release artifact cleanup failed: permission denied"]
+    assert (output_dir / "openapi.json").exists()
+
+
 def test_export_release_artifacts_reports_prepare_demo_failure(monkeypatch, tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     output_dir = tmp_path / "release"

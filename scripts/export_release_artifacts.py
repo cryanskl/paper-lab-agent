@@ -83,9 +83,13 @@ def write_json(path: Path, payload: dict[str, Any], *, compact: bool = False) ->
     path.write_text(f"{text}\n", encoding="utf-8")
 
 
-def remove_artifacts(paths: tuple[Path, ...]) -> None:
+def remove_artifacts(paths: tuple[Path, ...]) -> str | None:
     for path in paths:
-        path.unlink(missing_ok=True)
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            return f"release artifact cleanup failed: {exc}"
+    return None
 
 
 def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict[str, Any]:
@@ -173,11 +177,11 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
     try:
         write_json(demo_summary_path, demo_summary, compact=compact)
     except OSError as exc:
-        remove_artifacts((openapi_path, demo_summary_path, manifest_path))
+        cleanup_error = remove_artifacts((openapi_path, demo_summary_path, manifest_path))
         return {
             "ok": False,
             "output_dir": str(output_dir),
-            "issues": [f"Demo summary artifact write failed: {exc}"],
+            "issues": [cleanup_error or f"Demo summary artifact write failed: {exc}"],
         }
 
     manifest = {
@@ -205,11 +209,11 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
     try:
         write_json(manifest_path, manifest, compact=compact)
     except OSError as exc:
-        remove_artifacts((openapi_path, demo_summary_path, manifest_path))
+        cleanup_error = remove_artifacts((openapi_path, demo_summary_path, manifest_path))
         return {
             "ok": False,
             "output_dir": str(output_dir),
-            "issues": [f"Release manifest artifact write failed: {exc}"],
+            "issues": [cleanup_error or f"Release manifest artifact write failed: {exc}"],
         }
     return manifest
 
