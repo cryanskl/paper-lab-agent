@@ -342,6 +342,12 @@ def dev_ready_timeout_runtime_issue(values: dict[str, str], dev_script_path: Pat
             "path": str(dev_script_path),
             "message": f"scripts/dev.sh must be a regular file path: {dev_script_path}",
         }
+    if not dev_script_path.exists():
+        return {
+            "code": "dev_script_missing",
+            "path": str(dev_script_path),
+            "message": f"scripts/dev.sh is required to validate DEV_READY_TIMEOUT: {dev_script_path}",
+        }
     symlink_parent = first_symlink_parent(dev_script_path)
     if symlink_parent is not None:
         return {

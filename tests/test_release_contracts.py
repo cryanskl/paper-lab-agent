@@ -31,6 +31,14 @@ def load_doctor():
     return doctor
 
 
+def write_minimal_dev_script(root: Path) -> None:
+    (root / "scripts").mkdir()
+    (root / "scripts" / "dev.sh").write_text(
+        'DEV_READY_TIMEOUT="${DEV_READY_TIMEOUT:-30}"\n',
+        encoding="utf-8",
+    )
+
+
 def load_validate_release_hygiene():
     import importlib.util
 
@@ -1455,6 +1463,7 @@ def test_doctor_env_example_check_matches_required_runtime_keys(tmp_path):
     repo = Path(__file__).resolve().parent.parent
     env_text = (repo / ".env.example").read_text(encoding="utf-8")
     env_path = tmp_path / ".env.example"
+    write_minimal_dev_script(tmp_path)
 
     for key in validate_env_example.required_env_keys():
         env_path.write_text(
@@ -1488,6 +1497,7 @@ def test_doctor_env_example_check_ignores_comments_and_similar_key_names(tmp_pat
         flags=re.MULTILINE,
     )
     (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
+    write_minimal_dev_script(tmp_path)
 
     check = doctor.check_env_example(tmp_path)
     missing_keys = [issue.get("key") for issue in check["issues"]]
@@ -1501,6 +1511,7 @@ def test_doctor_env_example_check_rejects_secret_like_values(tmp_path):
     env_text = (repo / ".env.example").read_text(encoding="utf-8")
     env_text = env_text.replace("LLM_API_KEY=\n", "LLM_API_KEY=sk-test\n")
     (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
+    write_minimal_dev_script(tmp_path)
 
     check = doctor.check_env_example(tmp_path)
 
@@ -1517,6 +1528,7 @@ def test_doctor_env_example_check_rejects_settings_default_drift(tmp_path):
     env_text = (repo / ".env.example").read_text(encoding="utf-8")
     env_text = env_text.replace("LLM_MODEL=gpt-4o-mini\n", "LLM_MODEL=legacy-model\n")
     (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
+    write_minimal_dev_script(tmp_path)
 
     check = doctor.check_env_example(tmp_path)
 
@@ -1535,6 +1547,7 @@ def test_doctor_env_example_check_rejects_api_base_url_runtime_drift(tmp_path):
     env_text = (repo / ".env.example").read_text(encoding="utf-8")
     env_text = env_text.replace("API_PORT=8000\n", "API_PORT=9000\n")
     (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
+    write_minimal_dev_script(tmp_path)
 
     check = doctor.check_env_example(tmp_path)
 
@@ -1553,6 +1566,7 @@ def test_doctor_env_example_check_rejects_frontend_url_runtime_drift(tmp_path):
     env_text = (repo / ".env.example").read_text(encoding="utf-8")
     env_text = env_text.replace("STREAMLIT_PORT=8501\n", "STREAMLIT_PORT=9501\n")
     (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
+    write_minimal_dev_script(tmp_path)
 
     check = doctor.check_env_example(tmp_path)
 
@@ -1607,6 +1621,24 @@ def test_doctor_env_example_check_reports_unreadable_dev_script(tmp_path):
         and "failed to read scripts/dev.sh" in issue.get("message", "")
         for issue in check["issues"]
     )
+
+
+def test_doctor_env_example_check_reports_missing_dev_script(tmp_path):
+    doctor = load_doctor()
+    repo = Path(__file__).resolve().parent.parent
+    (tmp_path / ".env.example").write_text(
+        (repo / ".env.example").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    check = doctor.check_env_example(tmp_path)
+
+    assert check["status"] == "fail"
+    assert {
+        "code": "dev_script_missing",
+        "path": str(tmp_path / "scripts" / "dev.sh"),
+        "message": f"scripts/dev.sh is required to validate DEV_READY_TIMEOUT: {tmp_path / 'scripts' / 'dev.sh'}",
+    } in check["issues"]
 
 
 def test_doctor_env_example_check_rejects_symlinked_dev_script(tmp_path):
