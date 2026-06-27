@@ -710,6 +710,30 @@ def test_bug_doc_validator_rejects_symlinked_bug_doc(tmp_path):
     ) in issues
 
 
+def test_bug_doc_validator_reports_unreadable_bug_doc(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_bug_docs.py"
+    spec = importlib.util.spec_from_file_location("validate_bug_docs_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_bug_docs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_bug_docs)
+
+    bug_dir = tmp_path / "docs" / "bug"
+    bug_dir.mkdir(parents=True)
+    (bug_dir / "README.md").write_text("# Bug 记录约定\n", encoding="utf-8")
+    bad_doc = bug_dir / "2026-06-27-unreadable-bug.md"
+    bad_doc.write_bytes(b"\xff\xfe\x00bad-bug-doc")
+
+    issues = validate_bug_docs.bug_doc_issues(tmp_path)
+
+    assert (
+        "docs/bug/2026-06-27-unreadable-bug.md: bug doc unreadable"
+    ) in issues
+
+
 def test_bug_doc_validator_rejects_symlinked_bug_dir(tmp_path):
     import importlib.util
 

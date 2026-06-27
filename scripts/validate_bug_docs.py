@@ -98,7 +98,11 @@ def bug_doc_issues(repo: Path) -> list[str]:
             issues.append(f"{rel}: bug doc is not a regular file")
             continue
 
-        text = path.read_text(encoding="utf-8")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            issues.append(f"{rel}: bug doc unreadable")
+            continue
         if not has_title(text):
             issues.append(f"{rel}: missing title")
         missing_sections = [
