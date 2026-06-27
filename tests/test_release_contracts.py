@@ -7249,6 +7249,28 @@ def test_requirements_validator_rejects_symlinked_requirements_parent(tmp_path):
     assert f"requirements file parent is not a regular directory: {linked_root}" in result.stderr
 
 
+def test_requirements_validator_reports_unreadable_requirements_file(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_requirements.py"
+    requirements_path = tmp_path / "requirements.txt"
+    requirements_path.write_bytes(b"\xff\xfe\x00bad-requirements")
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), "requirements.txt"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "requirements file unreadable: requirements.txt:" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_requirements_validator_reports_imported_package_missing_from_requirements(tmp_path):
     validate_requirements = load_validate_requirements()
     source_dir = tmp_path / "app"

@@ -200,6 +200,11 @@ def main() -> int:
     if requirements_path.is_symlink() or not requirements_path.is_file():
         print(f"requirements file is not a regular file: {requirements_path}", file=sys.stderr)
         return 1
+    try:
+        requirements_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        print(f"requirements file unreadable: {requirements_path}: {exc}", file=sys.stderr)
+        return 1
 
     missing = missing_required_packages(requirements_path)
     missing_imports = missing_imported_packages(requirements_path)
