@@ -645,6 +645,22 @@ def test_reaction_export_download_rejects_symlinked_output_file(tmp_path):
     assert download is None
 
 
+def test_reaction_export_download_returns_none_when_read_fails_after_safety_check(tmp_path, monkeypatch):
+    from app import frontend_api
+
+    missing_path = tmp_path / "raced.txt"
+    monkeypatch.setattr(frontend_api, "is_safe_download_file", lambda path: True)
+
+    download = frontend_api.reaction_export_download(
+        {
+            "output_path": str(missing_path),
+            "mime_type": "text/plain",
+        }
+    )
+
+    assert download is None
+
+
 def test_reaction_set_review_state_blocks_empty_reaction_sets():
     from app import frontend_api
 
@@ -1300,6 +1316,41 @@ def test_document_asset_downloads_reject_symlinked_files(tmp_path):
     ]
 
 
+def test_document_asset_downloads_report_missing_when_read_fails_after_safety_check(tmp_path, monkeypatch):
+    from app import frontend_api
+
+    missing_pdf = tmp_path / "raced.pdf"
+    missing_tei = tmp_path / "raced.tei.xml"
+    monkeypatch.setattr(frontend_api, "is_safe_download_file", lambda path: True)
+
+    downloads = frontend_api.document_asset_downloads(
+        {"file_path": str(missing_pdf), "tei_path": str(missing_tei)}
+    )
+
+    assert downloads == [
+        {
+            "kind": "pdf",
+            "label": "下载原始 PDF",
+            "data": None,
+            "file_name": "raced.pdf",
+            "mime": "application/pdf",
+            "path": str(missing_pdf),
+            "exists": False,
+            "missing_message": f"PDF 文件不存在: {missing_pdf}",
+        },
+        {
+            "kind": "tei",
+            "label": "下载 TEI XML",
+            "data": None,
+            "file_name": "raced.tei.xml",
+            "mime": "application/xml",
+            "path": str(missing_tei),
+            "exists": False,
+            "missing_message": f"TEI 文件不存在: {missing_tei}",
+        },
+    ]
+
+
 def test_frontend_download_allows_system_root_symlink_parent():
     import tempfile
     from pathlib import Path
@@ -1385,6 +1436,15 @@ def test_translation_download_rejects_symlinked_output_file(tmp_path):
     output_path.symlink_to(outside_path)
 
     assert frontend_api.translation_download({"output_path": str(output_path)}) is None
+
+
+def test_translation_download_returns_none_when_read_fails_after_safety_check(tmp_path, monkeypatch):
+    from app import frontend_api
+
+    missing_path = tmp_path / "raced.md"
+    monkeypatch.setattr(frontend_api, "is_safe_download_file", lambda path: True)
+
+    assert frontend_api.translation_download({"output_path": str(missing_path)}) is None
 
 
 def test_rag_source_rows_include_citation_and_location_labels():

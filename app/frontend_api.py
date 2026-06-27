@@ -268,12 +268,12 @@ def document_asset_downloads(document: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         path = Path(raw_path)
         exists = is_safe_download_file(path)
-        if exists and data_mode == "bytes":
-            data = path.read_bytes()
-        elif exists:
-            data = path.read_text(encoding="utf-8")
-        else:
-            data = None
+        data = None
+        if exists:
+            try:
+                data = path.read_bytes() if data_mode == "bytes" else path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                exists = False
         downloads.append(
             {
                 "kind": kind,
@@ -349,9 +349,13 @@ def translation_download(translation: dict[str, Any]) -> Optional[dict[str, Any]
     path = Path(output_path)
     if not is_safe_download_file(path):
         return None
+    try:
+        data = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
     return {
         "label": "下载双语翻译",
-        "data": path.read_text(encoding="utf-8"),
+        "data": data,
         "file_name": path.name,
         "mime": "text/markdown",
         "path": str(path),
@@ -600,7 +604,14 @@ def reaction_export_download(payload: dict[str, Any]) -> Optional[dict[str, Any]
     if not is_safe_download_file(path):
         return None
     mime = payload.get("mime_type") or "application/octet-stream"
-    data = path.read_text(encoding="utf-8") if mime.startswith("text/") or mime == "application/json" else path.read_bytes()
+    try:
+        data = (
+            path.read_text(encoding="utf-8")
+            if mime.startswith("text/") or mime == "application/json"
+            else path.read_bytes()
+        )
+    except (OSError, UnicodeError):
+        return None
     return {
         "label": "下载导出文件",
         "data": data,
