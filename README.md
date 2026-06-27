@@ -130,7 +130,7 @@ bash scripts/release_check.sh
 `python scripts/health_check.py --require-frontend` 会主动探测 Streamlit，并在前端健康探针不是 200 时返回非零，适合 `scripts/dev.sh` 启动后做发布或演示前门禁。
 `python scripts/health_check.py --require-openapi` 会主动探测 live `/openapi.json`，并在 OpenAPI schema 不可访问或基础契约不完整时返回非零，适合接口交付或前端联调前门禁。
 `python scripts/health_check.py --require-storage-writable` 会在数据目录、PDF/TEI/翻译/导出目录、数据库父目录或向量索引父目录不可写，或已存在的本地向量索引 JSON 损坏时返回非零，适合发布前预检本机运行环境。
-`python scripts/health_check.py --require-no-failed-workflows` 会在抓取、解析、索引、翻译、化学抽取或反应集复核状态统计中存在 failed 项时返回非零，适合部署前确认没有已知失败积压。
+`python scripts/health_check.py --require-no-failed-workflows` 会在抓取、解析、索引、翻译、化学抽取或反应集复核状态统计中存在 `failed` 或 `rejected` 项时返回非零，适合部署前确认没有已知失败或拒绝积压。
 `python scripts/health_check.py --require-no-config-warnings` 会在 OpenAlex、Unpaywall、LLM、向量后端等配置告警存在时返回非零，适合正式演示或部署前确认外部能力已按预期配置。
 `python scripts/health_check.py --require-demo-data` 会在 live API 的 `counts` 缺少期刊、论文、文档、章节、chunk、反应集或反应样例时返回非零，适合正式演示前确认 walking skeleton 数据已准备好。
 `python scripts/health_check.py --require-release-ready` 会组合 storage writable、no failed workflows 和 demo data 三个默认离线门禁；外部能力配置用 `--require-no-config-warnings` 按需单独强制，前端和 GROBID 仍用 `--require-frontend`、`--require-grobid` 按需单独强制。

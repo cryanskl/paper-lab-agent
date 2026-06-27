@@ -612,9 +612,10 @@ def failed_workflow_errors(status: dict) -> list[str]:
     for workflow, counts in status_counts.items():
         if not isinstance(counts, dict):
             continue
-        failed = counts.get("failed")
-        if isinstance(failed, int) and not isinstance(failed, bool) and failed > 0:
-            errors.append(f"{workflow}.failed={failed}")
+        for blocking_status in ("failed", "rejected"):
+            count = counts.get(blocking_status)
+            if isinstance(count, int) and not isinstance(count, bool) and count > 0:
+                errors.append(f"{workflow}.{blocking_status}={count}")
     return errors
 
 
@@ -821,7 +822,11 @@ def main() -> int:
     parser.add_argument("--check-external", action="store_true", help="Also check configured external services")
     parser.add_argument("--require-grobid", action="store_true", help="Fail when GROBID is unavailable")
     parser.add_argument("--require-storage-writable", action="store_true", help="Fail when local storage paths are missing or not writable")
-    parser.add_argument("--require-no-failed-workflows", action="store_true", help="Fail when workflow status counts include failed items")
+    parser.add_argument(
+        "--require-no-failed-workflows",
+        action="store_true",
+        help="Fail when workflow status counts include failed or rejected items",
+    )
     parser.add_argument("--require-no-config-warnings", action="store_true", help="Fail when system status reports configuration warnings")
     parser.add_argument("--require-demo-data", action="store_true", help="Fail when walking skeleton demo data is not loaded")
     parser.add_argument(
