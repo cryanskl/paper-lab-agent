@@ -1670,6 +1670,34 @@ def test_export_release_artifacts_removes_stale_outputs_on_prepare_demo_failure(
     assert not stale_manifest.exists()
 
 
+def test_export_release_artifacts_reports_stale_artifact_cleanup_failure(monkeypatch, tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    output_dir = tmp_path / "release"
+    output_dir.mkdir()
+    (output_dir / "openapi.json").write_text('{"stale": true}\n', encoding="utf-8")
+    (output_dir / "demo-summary.json").write_text('{"ready": true}\n', encoding="utf-8")
+    (output_dir / "release-manifest.json").write_text('{"service": "paper-lab-agent"}\n', encoding="utf-8")
+    original_unlink = export_release_artifacts.Path.unlink
+
+    def fake_unlink(path, *, missing_ok=False):
+        if path.name == "demo-summary.json":
+            raise OSError("permission denied")
+        return original_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(export_release_artifacts.Path, "unlink", fake_unlink)
+
+    try:
+        report = export_release_artifacts.export_release_artifacts(output_dir, compact=True)
+    except OSError as exc:
+        raise AssertionError(
+            "export_release_artifacts should report stale artifact cleanup failures instead of raising"
+        ) from exc
+
+    assert report["ok"] is False
+    assert report["output_dir"] == str(output_dir.resolve())
+    assert report["issues"] == ["release artifact cleanup failed: permission denied"]
+
+
 def test_export_release_artifacts_reports_manifest_write_failure(monkeypatch, tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     output_dir = tmp_path / "release"

@@ -140,7 +140,14 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
     demo_summary_path = output_dir / "demo-summary.json"
     manifest_path = output_dir / "release-manifest.json"
     for artifact_path in (openapi_path, demo_summary_path, manifest_path):
-        artifact_path.unlink(missing_ok=True)
+        try:
+            artifact_path.unlink(missing_ok=True)
+        except OSError as exc:
+            return {
+                "ok": False,
+                "output_dir": str(output_dir),
+                "issues": [f"release artifact cleanup failed: {exc}"],
+            }
 
     openapi_error = write_openapi(openapi_path, compact=compact)
     if openapi_error:
