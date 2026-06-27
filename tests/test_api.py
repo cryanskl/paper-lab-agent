@@ -7371,6 +7371,40 @@ def test_rag_index_uses_local_vector_store(tmp_path):
     assert "electron impact reactions" in rag["sources"][0]["source_excerpt"]
 
 
+def test_rag_index_normalizes_vector_db_backend_metadata(tmp_path, monkeypatch):
+    monkeypatch.setenv("VECTOR_DB_BACKEND", " LOCAL-JSON ")
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/v1/documents",
+        files={
+            "file": (
+                "rag-backend-normalized.pdf",
+                pdf_bytes(b"Argon plasma chemistry and electron impact reactions."),
+                "application/pdf",
+            )
+        },
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/index").status_code == 202
+
+    vector_index = json.loads((tmp_path / "vector-index.json").read_text(encoding="utf-8"))
+    assert vector_index
+    first_record = next(iter(vector_index.values()))
+    assert first_record["vector_db_backend"] == "local-json"
+
+    status = client.get("/api/v1/system/status").json()
+    assert status["storage_health"]["vector_db"]["valid_json"] is True
+    assert "vector_db.valid_json" not in status["release_readiness"]["storage_errors"]
+
+    rag = client.post(
+        "/api/v1/rag/query",
+        json={"question": "electron impact chemistry", "document_ids": [document_id], "top_k": 2},
+    ).json()
+    assert rag["sources"]
+
+
 def test_rag_sources_include_linked_paper_identity(tmp_path):
     client = make_client(tmp_path)
 

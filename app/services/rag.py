@@ -275,6 +275,7 @@ def index_document(document_id: int) -> dict:
             conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
             vector_store.delete_document(document_id)
             embedding_adapter = get_embedding_adapter(settings.embedding_model)
+            vector_db_backend = normalize_vector_db_backend(settings.vector_db_backend)
             for section in sections:
                 for seq, chunk in enumerate(chunk_text(section["content"] or ""), start=1):
                     vector_id = f"doc-{document_id}-section-{section['id']}-chunk-{seq}"
@@ -293,7 +294,7 @@ def index_document(document_id: int) -> dict:
                         "text": chunk,
                         "embedding": embedding,
                         "embedding_model": embedding_adapter.model_name,
-                        "vector_db_backend": settings.vector_db_backend,
+                        "vector_db_backend": vector_db_backend,
                         "dimensions": len(embedding),
                     }
                     count += 1
