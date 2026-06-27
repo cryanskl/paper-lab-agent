@@ -195,6 +195,7 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
         "demo_ready": demo_summary.get("ready") is True,
         "demo_export_formats": demo_summary.get("export_formats") or [],
         "demo_export_audit_entry_counts": demo_summary.get("export_audit_entry_counts") or {},
+        "demo_export_audit_summary_formats": demo_summary.get("export_audit_summary_formats") or [],
         "demo_reaction_set_verified_by": demo_summary.get("reaction_set_verified_by"),
         "demo_reaction_set_verified_at": demo_summary.get("reaction_set_verified_at"),
         "openapi_path_count": len(json.loads(openapi_path.read_text(encoding="utf-8")).get("paths", {})),

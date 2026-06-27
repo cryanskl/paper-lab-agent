@@ -447,6 +447,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package.get("demo_ready") is not True
         or package.get("demo_export_formats") != ["json", "txt", "bolsig"]
         or package.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}
+        or package.get("demo_export_audit_summary_formats") != ["json", "txt", "bolsig"]
         or package.get("demo_reaction_set_verified_by") != "prepare-demo-data"
         or not package.get("demo_reaction_set_verified_at")
         or not package_path.exists()
@@ -473,6 +474,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package_validation.get("demo_ready") is not True
         or package_validation.get("demo_export_formats") != ["json", "txt", "bolsig"]
         or package_validation.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}
+        or package_validation.get("demo_export_audit_summary_formats") != ["json", "txt", "bolsig"]
         or package_validation.get("demo_reaction_set_verified_by") != "prepare-demo-data"
         or not package_validation.get("demo_reaction_set_verified_at")
     ):

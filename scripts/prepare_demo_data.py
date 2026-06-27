@@ -83,6 +83,39 @@ def verify_all_reactions(reaction_set: dict, verified_by: str) -> dict:
     return current
 
 
+def export_has_audit_summary(export_format: str, export_payload: dict) -> bool:
+    output_path = export_payload.get("output_path")
+    if not isinstance(output_path, str) or not output_path:
+        return False
+    path = Path(output_path)
+    if not path.exists() or not path.is_file():
+        return False
+    if export_format == "json":
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        reactions = payload.get("reactions") if isinstance(payload, dict) else None
+        return any(reaction.get("audit_log") for reaction in reactions or [] if isinstance(reaction, dict))
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    if export_format == "txt":
+        return (
+            "audit_entries:" in content
+            and "last_verified_by:" in content
+            and "last_verified_at:" in content
+        )
+    if export_format == "bolsig":
+        return (
+            "AUDIT_ENTRIES:" in content
+            and "LAST_VERIFIED_BY:" in content
+            and "LAST_VERIFIED_AT:" in content
+        )
+    return False
+
+
 def demo_summary(
     document: dict,
     translation: dict,
@@ -109,6 +142,11 @@ def demo_summary(
             fmt: int(export_payload.get("audit_entry_count") or 0)
             for fmt, export_payload in exports.items()
         },
+        "export_audit_summary_formats": [
+            fmt
+            for fmt, export_payload in exports.items()
+            if export_has_audit_summary(fmt, export_payload)
+        ],
         "counts": counts,
     }
 

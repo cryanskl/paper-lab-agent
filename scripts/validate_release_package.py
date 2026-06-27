@@ -44,6 +44,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "demo_ready": None,
             "demo_export_formats": [],
             "demo_export_audit_entry_counts": {},
+            "demo_export_audit_summary_formats": [],
             "demo_reaction_set_verified_by": None,
             "demo_reaction_set_verified_at": None,
             "issues": [f"release package is not a regular file: {package_path}"],
@@ -61,6 +62,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "demo_ready": None,
             "demo_export_formats": [],
             "demo_export_audit_entry_counts": {},
+            "demo_export_audit_summary_formats": [],
             "demo_reaction_set_verified_by": None,
             "demo_reaction_set_verified_at": None,
             "issues": [
@@ -75,6 +77,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
     demo_ready = None
     demo_export_formats: list[str] = []
     demo_export_audit_entry_counts: dict[str, Any] = {}
+    demo_export_audit_summary_formats: list[str] = []
     demo_reaction_set_verified_by = None
     demo_reaction_set_verified_at = None
     package_sha256 = None
@@ -91,6 +94,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "demo_ready": demo_ready,
             "demo_export_formats": demo_export_formats,
             "demo_export_audit_entry_counts": demo_export_audit_entry_counts,
+            "demo_export_audit_summary_formats": demo_export_audit_summary_formats,
             "demo_reaction_set_verified_by": demo_reaction_set_verified_by,
             "demo_reaction_set_verified_at": demo_reaction_set_verified_at,
             "issues": issues,
@@ -108,6 +112,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "demo_ready": demo_ready,
             "demo_export_formats": demo_export_formats,
             "demo_export_audit_entry_counts": demo_export_audit_entry_counts,
+            "demo_export_audit_summary_formats": demo_export_audit_summary_formats,
             "demo_reaction_set_verified_by": demo_reaction_set_verified_by,
             "demo_reaction_set_verified_at": demo_reaction_set_verified_at,
             "issues": issues,
@@ -142,6 +147,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
                     demo_ready = validation.get("demo_ready")
                     demo_export_formats = validation.get("demo_export_formats") or []
                     demo_export_audit_entry_counts = validation.get("demo_export_audit_entry_counts") or {}
+                    demo_export_audit_summary_formats = validation.get("demo_export_audit_summary_formats") or []
                     demo_reaction_set_verified_by = validation.get("demo_reaction_set_verified_by")
                     demo_reaction_set_verified_at = validation.get("demo_reaction_set_verified_at")
                     issues.extend(validation.get("issues") or [])
@@ -160,6 +166,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
         "demo_ready": demo_ready,
         "demo_export_formats": demo_export_formats,
         "demo_export_audit_entry_counts": demo_export_audit_entry_counts,
+        "demo_export_audit_summary_formats": demo_export_audit_summary_formats,
         "demo_reaction_set_verified_by": demo_reaction_set_verified_by,
         "demo_reaction_set_verified_at": demo_reaction_set_verified_at,
         "issues": issues,
