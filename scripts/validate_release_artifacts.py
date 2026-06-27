@@ -29,6 +29,13 @@ EXPECTED_DEMO_COUNT_MINIMUMS = {
     "documents": 1,
     "reaction_audits": 1,
 }
+EXPECTED_DEMO_WORKFLOW_STATUSES = {
+    "parse_status": "parsed",
+    "index_status": "indexed",
+    "chemistry_status": "extracted",
+    "translation_status": "done",
+    "reaction_set_status": "verified",
+}
 GIT_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -108,6 +115,17 @@ def demo_count_issues(demo_summary: dict[str, Any]) -> list[str]:
     return []
 
 
+def demo_workflow_statuses(demo_summary: dict[str, Any]) -> dict[str, Any]:
+    return {key: demo_summary.get(key) for key in EXPECTED_DEMO_WORKFLOW_STATUSES}
+
+
+def demo_workflow_status_issues(demo_summary: dict[str, Any]) -> list[str]:
+    statuses = demo_workflow_statuses(demo_summary)
+    if statuses != EXPECTED_DEMO_WORKFLOW_STATUSES:
+        return [f"demo summary workflow statuses mismatch: {statuses!r}"]
+    return []
+
+
 def is_iso8601_timestamp(value: Any) -> bool:
     if not isinstance(value, str) or not value.strip():
         return False
@@ -140,6 +158,7 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             "source": {},
             "demo_ready": None,
             "demo_counts": {},
+            "demo_workflow_statuses": {},
             "demo_export_formats": [],
             "demo_export_audit_entry_counts": {},
             "demo_export_audit_summary_formats": [],
@@ -160,6 +179,7 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             "source": {},
             "demo_ready": None,
             "demo_counts": {},
+            "demo_workflow_statuses": {},
             "demo_export_formats": [],
             "demo_export_audit_entry_counts": {},
             "demo_export_audit_summary_formats": [],
@@ -203,6 +223,7 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
     )
     demo_export_formats = demo_summary.get("export_formats") or []
     demo_counts = demo_summary.get("counts") if isinstance(demo_summary.get("counts"), dict) else {}
+    demo_statuses = demo_workflow_statuses(demo_summary)
     demo_export_audit_entry_counts = (
         demo_summary.get("export_audit_entry_counts")
         if isinstance(demo_summary.get("export_audit_entry_counts"), dict)
@@ -225,6 +246,11 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             issues.append("release manifest demo_ready must be true")
         if manifest.get("demo_counts") != demo_counts:
             issues.append(f"release manifest demo_counts mismatch: {manifest.get('demo_counts')!r}")
+        if manifest.get("demo_workflow_statuses") != demo_statuses:
+            issues.append(
+                "release manifest demo_workflow_statuses mismatch: "
+                f"{manifest.get('demo_workflow_statuses')!r}"
+            )
         if manifest.get("demo_export_formats") != EXPECTED_EXPORT_FORMATS:
             issues.append(
                 f"release manifest demo_export_formats mismatch: {manifest.get('demo_export_formats')!r}"
@@ -298,6 +324,7 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
         if demo_summary.get("ready") is not True:
             issues.append("demo summary ready must be true")
         issues.extend(demo_count_issues(demo_summary))
+        issues.extend(demo_workflow_status_issues(demo_summary))
         if demo_export_formats != EXPECTED_EXPORT_FORMATS:
             issues.append(f"demo summary export_formats mismatch: {demo_export_formats!r}")
         issues.extend(demo_audit_entry_count_issues(demo_summary))
@@ -317,6 +344,9 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
         "source": manifest.get("source") if isinstance(manifest.get("source"), dict) else {},
         "demo_ready": manifest.get("demo_ready"),
         "demo_counts": manifest.get("demo_counts") if isinstance(manifest.get("demo_counts"), dict) else demo_counts,
+        "demo_workflow_statuses": manifest.get("demo_workflow_statuses")
+        if isinstance(manifest.get("demo_workflow_statuses"), dict)
+        else demo_statuses,
         "demo_export_formats": manifest.get("demo_export_formats") or [],
         "demo_export_audit_entry_counts": manifest.get("demo_export_audit_entry_counts")
         if isinstance(manifest.get("demo_export_audit_entry_counts"), dict)

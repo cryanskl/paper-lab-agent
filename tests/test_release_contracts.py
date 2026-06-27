@@ -2540,6 +2540,8 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package.get("demo_export_audit_summary_formats") != ["json", "txt", "bolsig"]' in release_check
     assert 'package.get("demo_counts", {}).get("documents") != 1' in release_check
     assert 'package.get("demo_counts", {}).get("reaction_audits") != 1' in release_check
+    assert 'package.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"' in release_check
+    assert 'package.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"' in release_check
     assert 'package.get("demo_reaction_set_verified_by") != "prepare-demo-data"' in release_check
     assert 'not package.get("demo_reaction_set_verified_at")' in release_check
     assert 'package_validation.get("demo_ready") is not True' in release_check
@@ -2548,6 +2550,8 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package_validation.get("demo_export_audit_summary_formats") != ["json", "txt", "bolsig"]' in release_check
     assert 'package_validation.get("demo_counts", {}).get("documents") != 1' in release_check
     assert 'package_validation.get("demo_counts", {}).get("reaction_audits") != 1' in release_check
+    assert 'package_validation.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"' in release_check
+    assert 'package_validation.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"' in release_check
     assert 'package_validation.get("demo_reaction_set_verified_by") != "prepare-demo-data"' in release_check
     assert 'not package_validation.get("demo_reaction_set_verified_at")' in release_check
     assert "release manifest version does not match OpenAPI version" in release_check
@@ -2769,6 +2773,13 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     assert demo_summary["reaction_set_verified_by"] == "prepare-demo-data"
     assert demo_summary["reaction_set_verified_at"]
     assert manifest["demo_counts"] == demo_summary["counts"]
+    assert manifest["demo_workflow_statuses"] == {
+        "parse_status": demo_summary["parse_status"],
+        "index_status": demo_summary["index_status"],
+        "chemistry_status": demo_summary["chemistry_status"],
+        "translation_status": demo_summary["translation_status"],
+        "reaction_set_status": demo_summary["reaction_set_status"],
+    }
     assert manifest["demo_export_audit_entry_counts"] == demo_summary["export_audit_entry_counts"]
     assert manifest["demo_export_audit_summary_formats"] == demo_summary["export_audit_summary_formats"]
     assert manifest["demo_reaction_set_verified_by"] == demo_summary["reaction_set_verified_by"]
@@ -3145,6 +3156,13 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     assert payload["demo_export_audit_summary_formats"] == ["json", "txt", "bolsig"]
     assert payload["demo_counts"]["documents"] == 1
     assert payload["demo_counts"]["reaction_audits"] == 1
+    assert payload["demo_workflow_statuses"] == {
+        "parse_status": "parsed",
+        "index_status": "indexed",
+        "chemistry_status": "extracted",
+        "translation_status": "done",
+        "reaction_set_status": "verified",
+    }
     assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
     assert payload["demo_reaction_set_verified_at"]
     assert payload["openapi_path_count"] == 28
@@ -3534,6 +3552,41 @@ def test_validate_release_artifacts_requires_demo_counts(tmp_path):
     report = validate_release_artifacts.validate_release_artifacts(artifact_dir)
 
     assert "demo summary counts must include positive counts for: documents, reaction_audits" in report["issues"]
+
+
+def test_validate_release_artifacts_requires_demo_workflow_statuses(tmp_path):
+    validate_release_artifacts = load_validate_release_artifacts()
+    artifact_dir = tmp_path / "release"
+    artifact_dir.mkdir()
+    (artifact_dir / "openapi.json").write_text(
+        json.dumps(
+            {
+                "info": {"title": "paper-lab-agent", "version": "0.1.0"},
+                "paths": {"/api/v1/health": {}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (artifact_dir / "demo-summary.json").write_text(
+        json.dumps(
+            {
+                "ready": True,
+                "counts": {"documents": 1, "reaction_audits": 1},
+                "export_formats": ["json", "txt", "bolsig"],
+                "export_audit_entry_counts": {"json": 1, "txt": 1, "bolsig": 1},
+                "export_audit_summary_formats": ["json", "txt", "bolsig"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (artifact_dir / "release-manifest.json").write_text("{}", encoding="utf-8")
+
+    report = validate_release_artifacts.validate_release_artifacts(artifact_dir)
+
+    assert any(
+        issue.startswith("demo summary workflow statuses mismatch:")
+        for issue in report["issues"]
+    )
 
 
 def test_validate_release_artifacts_requires_demo_reviewer_timestamp(tmp_path):
@@ -3987,6 +4040,8 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert payload["demo_export_audit_summary_formats"] == ["json", "txt", "bolsig"]
     assert payload["demo_counts"]["documents"] == 1
     assert payload["demo_counts"]["reaction_audits"] == 1
+    assert payload["demo_workflow_statuses"]["parse_status"] == "parsed"
+    assert payload["demo_workflow_statuses"]["reaction_set_status"] == "verified"
     assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
     assert payload["demo_reaction_set_verified_at"]
     assert package_path.exists()
@@ -4028,6 +4083,8 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert validate_payload["demo_export_audit_summary_formats"] == ["json", "txt", "bolsig"]
     assert validate_payload["demo_counts"]["documents"] == 1
     assert validate_payload["demo_counts"]["reaction_audits"] == 1
+    assert validate_payload["demo_workflow_statuses"]["parse_status"] == "parsed"
+    assert validate_payload["demo_workflow_statuses"]["reaction_set_status"] == "verified"
     assert validate_payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
     assert validate_payload["demo_reaction_set_verified_at"]
 

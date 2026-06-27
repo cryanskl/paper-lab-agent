@@ -21,6 +21,13 @@ from scripts.validate_release_artifacts import first_symlink_parent
 
 
 EXPECTED_ARTIFACT_NAMES = {"openapi.json", "demo-summary.json", "release-manifest.json"}
+DEMO_WORKFLOW_STATUS_KEYS = [
+    "parse_status",
+    "index_status",
+    "chemistry_status",
+    "translation_status",
+    "reaction_set_status",
+]
 
 
 def sha256_file(path: Path) -> str:
@@ -70,6 +77,10 @@ def source_metadata() -> dict[str, Any]:
         "git_branch": git_value(["branch", "--show-current"]),
         "git_dirty": git_dirty(),
     }
+
+
+def demo_workflow_statuses(demo_summary: dict[str, Any]) -> dict[str, Any]:
+    return {key: demo_summary.get(key) for key in DEMO_WORKFLOW_STATUS_KEYS}
 
 
 def write_json(path: Path, payload: dict[str, Any], *, compact: bool = False) -> None:
@@ -194,6 +205,7 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
         },
         "demo_ready": demo_summary.get("ready") is True,
         "demo_counts": demo_summary.get("counts") or {},
+        "demo_workflow_statuses": demo_workflow_statuses(demo_summary),
         "demo_export_formats": demo_summary.get("export_formats") or [],
         "demo_export_audit_entry_counts": demo_summary.get("export_audit_entry_counts") or {},
         "demo_export_audit_summary_formats": demo_summary.get("export_audit_summary_formats") or [],
