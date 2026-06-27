@@ -6855,6 +6855,22 @@ def test_docs_links_validator_reports_missing_backtick_reference(tmp_path):
     assert issues == ["docs/guide.md: missing reference target missing.sql"]
 
 
+def test_docs_links_validator_rejects_symlinked_backtick_reference_target(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    docs_dir = tmp_path / "docs"
+    scripts_dir = tmp_path / "scripts"
+    docs_dir.mkdir()
+    scripts_dir.mkdir()
+    outside_script = tmp_path / "outside-tool.py"
+    outside_script.write_text("print('outside')\n", encoding="utf-8")
+    (scripts_dir / "tool.py").symlink_to(outside_script)
+    (docs_dir / "guide.md").write_text("Run `scripts/tool.py` before release.\n", encoding="utf-8")
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["docs/guide.md: reference target is not a regular file scripts/tool.py"]
+
+
 def test_docs_links_validator_reports_missing_backtick_runtime_file_reference(tmp_path):
     validate_docs_links = load_validate_docs_links()
     docs_dir = tmp_path / "docs"

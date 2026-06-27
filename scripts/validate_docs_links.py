@@ -132,8 +132,12 @@ def broken_doc_links(repo: Path) -> list[str]:
             target = clean_link_target(raw_target)
             if is_ignored_target(target):
                 continue
-            if not target_exists(repo, path, target):
+            target_path = resolve_target_path(repo, path, target)
+            if target_path is None:
                 issues.append(f"{label}: missing reference target {target}")
+                continue
+            if target_path.is_symlink() or not target_path.is_file():
+                issues.append(f"{label}: reference target is not a regular file {target}")
 
     return issues
 
