@@ -9010,6 +9010,26 @@ def test_extract_chemistry_preserves_m6_mol_rate_units(tmp_path):
     assert reaction["rate_value"] == "1.2e-42 m6 mol-2 s-1"
 
 
+def test_extract_chemistry_preserves_caret_m6_mol_rate_units(tmp_path):
+    client = make_client(tmp_path)
+    content = "Ar + Ar+ -> Ar2+ . The rate coefficient is 1.2e-42 m6 mol^-2 s^-1 in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("caret-m6-mol-rate-unit.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "Ar + Ar+ -> Ar2+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-42 m6 mol^-2 s^-1"
+
+
 def test_extract_chemistry_preserves_space_separated_rate_units(tmp_path):
     client = make_client(tmp_path)
     content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2e-13 cm3 s-1 in the source table."
