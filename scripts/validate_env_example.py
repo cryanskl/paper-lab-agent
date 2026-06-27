@@ -200,6 +200,9 @@ def script_runtime_default_mismatches(path: Path, dev_script_path: Path = DEV_SC
             mismatches.append(f"FRONTEND_URL expected {expected_frontend_url}, got {frontend_url}")
     expected_timeout = dev_ready_timeout_default(dev_script_path)
     actual_timeout = values.get("DEV_READY_TIMEOUT")
+    if actual_timeout and not expected_timeout:
+        mismatches.append(f"DEV_READY_TIMEOUT default missing from {dev_script_path}")
+        return mismatches
     if expected_timeout and actual_timeout and actual_timeout != expected_timeout:
         mismatches.append(f"DEV_READY_TIMEOUT expected {expected_timeout}, got {actual_timeout}")
     return mismatches

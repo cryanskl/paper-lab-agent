@@ -473,6 +473,47 @@ def test_env_example_validator_reports_unreadable_dev_script(tmp_path):
     assert "Traceback" not in result.stderr
 
 
+def test_env_example_validator_reports_dev_script_without_ready_timeout_default(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_source = repo / "scripts" / "validate_env_example.py"
+    scripts_dir = tmp_path / "scripts"
+    app_dir = tmp_path / "app"
+    scripts_dir.mkdir()
+    app_dir.mkdir()
+    (scripts_dir / "validate_env_example.py").write_text(
+        script_source.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (scripts_dir / "dev.sh").write_text(
+        'API_PORT="${API_PORT:-8000}"\n',
+        encoding="utf-8",
+    )
+    (app_dir / "config.py").write_text(
+        (repo / "app" / "config.py").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (tmp_path / ".env.example").write_text(
+        (repo / ".env.example").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(scripts_dir / "validate_env_example.py"), ".env.example"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "env example runtime defaults drifted:" in result.stderr
+    assert "DEV_READY_TIMEOUT default missing from" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_gitignore_contains_required_release_hygiene_patterns():
     validate_release_hygiene = load_validate_release_hygiene()
     gitignore_path = Path(__file__).resolve().parent.parent / ".gitignore"
