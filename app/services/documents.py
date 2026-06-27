@@ -11,7 +11,7 @@ from fastapi import UploadFile
 from app.clients.grobid import GrobidClient
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
-from app.services.rag import JsonVectorStore, get_vector_store
+from app.services.rag import get_vector_store
 from app.utils import now_iso
 
 
@@ -500,7 +500,7 @@ async def parse_document(document_id: int) -> dict:
         except Exception as exc:
             parse_error = f"Local text fallback failed: {exc}"
             try:
-                JsonVectorStore(settings.vector_db_path).delete_document(document_id)
+                get_vector_store(settings).delete_document(document_id)
             except Exception as cleanup_exc:
                 parse_error = f"{parse_error}; vector cleanup failed: {cleanup_exc}"
             with get_conn() as conn:

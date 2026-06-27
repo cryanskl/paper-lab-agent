@@ -6347,6 +6347,57 @@ def test_parse_document_fallback_failure_clears_stale_artifacts(tmp_path, monkey
     assert all(record["document_id"] != document_id for record in vector_index.values())
 
 
+def test_parse_document_fallback_failure_reports_unsupported_vector_db_backend(tmp_path, monkeypatch):
+    import asyncio
+
+    monkeypatch.setenv("VECTOR_DB_BACKEND", "faiss")
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("fallback-backend.pdf", pdf_bytes(b"fallback backend text"), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    from app.db import get_conn
+    from app.services import documents as document_service
+
+    async def fake_health_detail(self):
+        return {
+            "available": False,
+            "url": "http://grobid.test",
+            "status_code": None,
+            "error": "connection refused",
+        }
+
+    def failing_read_document_text(file_path):
+        raise RuntimeError("local text read failed")
+
+    monkeypatch.setattr(document_service.GrobidClient, "health_detail", fake_health_detail)
+    monkeypatch.setattr(document_service, "read_document_text", failing_read_document_text)
+
+    result = asyncio.run(document_service.parse_document(document_id))
+
+    assert result["parse_status"] == "failed"
+    assert "Local text fallback failed: local text read failed" in result["parse_error"]
+    assert "vector cleanup failed: unsupported vector db backend: faiss" in result["parse_error"]
+    with get_conn() as conn:
+        document = conn.execute(
+            """
+            SELECT parse_status, parse_error, index_status, index_error, chemistry_status, chemistry_error
+            FROM documents WHERE id=?
+            """,
+            (document_id,),
+        ).fetchone()
+        section_count = conn.execute("SELECT COUNT(*) AS n FROM sections WHERE document_id=?", (document_id,)).fetchone()["n"]
+    assert document["parse_status"] == "failed"
+    assert "vector cleanup failed: unsupported vector db backend: faiss" in document["parse_error"]
+    assert document["index_status"] == "not_indexed"
+    assert document["index_error"] is None
+    assert document["chemistry_status"] == "not_extracted"
+    assert document["chemistry_error"] is None
+    assert section_count == 0
+
+
 def test_parse_document_finalization_rejects_unsupported_vector_db_backend(tmp_path, monkeypatch):
     import asyncio
 
