@@ -388,6 +388,7 @@ def storage_file_path_config(repo: Path, env: dict[str, str] | None = None) -> d
     data_dir = Path(env.get("PAPER_LAB_DATA_DIR") or "data")
     paths = {
         "database_path": Path(env.get("DATABASE_PATH") or data_dir / "plasma.db"),
+        "vector_db_path": Path(env.get("VECTOR_DB_PATH") or data_dir / "vector-index.json"),
     }
     return {
         key: path if path.is_absolute() else repo / path

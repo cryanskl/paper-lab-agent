@@ -1337,6 +1337,39 @@ def test_doctor_script_rejects_symlinked_database_path(tmp_path):
     } in check["issues"]
 
 
+def test_doctor_script_rejects_symlinked_vector_db_path(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+
+    outside_vector = tmp_path / "outside-vector-index.json"
+    outside_vector.write_text("[]", encoding="utf-8")
+    linked_vector = tmp_path / "vector-index.json"
+    linked_vector.symlink_to(outside_vector)
+
+    check = doctor.check_local_storage(
+        repo,
+        env={
+            "PAPER_LAB_DATA_DIR": str(tmp_path / "data"),
+            "VECTOR_DB_PATH": str(linked_vector),
+        },
+    )
+
+    assert check["status"] == "fail"
+    assert {
+        "code": "storage_path_not_file",
+        "key": "vector_db_path",
+        "path": str(linked_vector),
+        "message": f"vector_db_path must be a regular file path: {linked_vector}",
+    } in check["issues"]
+
+
 def test_doctor_script_local_storage_preflight_reads_env_file(tmp_path):
     import importlib.util
 
