@@ -1565,6 +1565,30 @@ def test_fixture_loader_imports_idempotent_document_sample(tmp_path):
     assert document["paper"]["doi"] == "10.1088/1361-6595/fixture-ar-o2"
 
 
+def test_fixture_loader_rejects_symlinked_pdf_storage_dir(tmp_path):
+    make_client(tmp_path)
+
+    from app.fixture_loader import load_fixture_documents, load_fixture_papers
+
+    outside_dir = tmp_path / "outside-fixture-pdfs"
+    outside_dir.mkdir()
+    pdf_dir = tmp_path / "pdfs"
+    pdf_dir.rmdir()
+    pdf_dir.symlink_to(outside_dir, target_is_directory=True)
+
+    load_fixture_papers()
+
+    try:
+        load_fixture_documents()
+    except OSError as exc:
+        error = str(exc)
+    else:
+        error = ""
+
+    assert "document storage path parent is not a regular directory" in error
+    assert not list(outside_dir.glob("*.pdf"))
+
+
 def test_fixture_import_script_runs_from_repo_root(tmp_path):
     import json
     import sqlite3
