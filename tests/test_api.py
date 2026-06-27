@@ -4486,6 +4486,25 @@ def test_system_status_reports_missing_optional_config_without_blocking(tmp_path
     assert all(warning["capability"] for warning in warnings)
 
 
+def test_system_status_treats_blank_optional_config_as_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_MAILTO", "   ")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "   ")
+    monkeypatch.setenv("LLM_API_KEY", "   ")
+
+    client = make_client(tmp_path)
+
+    status = client.get("/api/v1/system/status").json()
+    codes = {warning["code"] for warning in status["config_warnings"]}
+
+    assert "missing_openalex_mailto" in codes
+    assert "missing_unpaywall_email" in codes
+    assert "missing_llm_api_key" in codes
+    assert status["external_capabilities"]["openalex_mailto"] is False
+    assert status["external_capabilities"]["unpaywall_email"] is False
+    assert status["external_capabilities"]["llm_api_key"] is False
+    assert status["external_capabilities"]["translation_adapter"] == "local-echo"
+
+
 def test_system_status_reports_corrupt_vector_store_health(tmp_path):
     client = make_client(tmp_path)
     (tmp_path / "vector-index.json").write_text("{not valid json", encoding="utf-8")
