@@ -8279,6 +8279,59 @@ def test_rag_index_records_failed_status_when_vector_store_json_is_corrupt(tmp_p
     assert "vector store JSON is invalid" in document["index_error"]
 
 
+def test_rag_index_records_cleanup_failure_after_vector_upsert_fails(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import rag as rag_service
+    from app.services.rag import index_document
+
+    class UpsertThenCleanupFailingVectorStore:
+        def __init__(self):
+            self.delete_calls = 0
+
+        def delete_document(self, document_id):
+            self.delete_calls += 1
+            if self.delete_calls == 3:
+                raise RuntimeError("vector cleanup failed")
+
+        def upsert_many(self, records):
+            raise RuntimeError("vector upsert failed")
+
+    vector_store = UpsertThenCleanupFailingVectorStore()
+    monkeypatch.setattr(rag_service, "get_vector_store", lambda settings: vector_store)
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            ("/tmp/upsert-cleanup-fail.txt", "upsert-cleanup-fail", "upsert-cleanup-fail.txt"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Upsert cleanup', 'argon plasma evidence', 'body')
+            """,
+            (document_id,),
+        )
+
+    failed = index_document(document_id)
+
+    assert failed["status"] == "failed"
+    assert "vector upsert failed" in failed["error"]
+    assert "vector cleanup failed: vector cleanup failed" in failed["error"]
+    with get_conn() as conn:
+        document = conn.execute("SELECT index_status, index_error FROM documents WHERE id=?", (document_id,)).fetchone()
+        chunk_count = conn.execute("SELECT COUNT(*) AS n FROM chunks WHERE document_id=?", (document_id,)).fetchone()["n"]
+    assert chunk_count == 0
+    assert document["index_status"] == "failed"
+    assert "vector upsert failed" in document["index_error"]
+    assert "vector cleanup failed: vector cleanup failed" in document["index_error"]
+
+
 def test_rag_index_rejects_unsupported_vector_db_backend(tmp_path, monkeypatch):
     monkeypatch.setenv("VECTOR_DB_BACKEND", "faiss")
     make_client(tmp_path)
