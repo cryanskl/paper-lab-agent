@@ -147,6 +147,9 @@ def broken_doc_links(repo: Path) -> list[str]:
             if target_path is None:
                 issues.append(f"{label}: missing reference target {target}")
                 continue
+            if not is_within_repo(repo, target_path):
+                issues.append(f"{label}: reference target escapes repository {target}")
+                continue
             if target_path.is_symlink() or not target_path.is_file():
                 issues.append(f"{label}: reference target is not a regular file {target}")
 

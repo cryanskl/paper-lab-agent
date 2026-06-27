@@ -6884,6 +6884,20 @@ def test_docs_links_validator_rejects_symlinked_backtick_reference_target(tmp_pa
     assert issues == ["docs/guide.md: reference target is not a regular file scripts/tool.py"]
 
 
+def test_docs_links_validator_rejects_absolute_local_backtick_reference_target(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    repo = tmp_path / "repo"
+    docs_dir = repo / "docs"
+    docs_dir.mkdir(parents=True)
+    outside_script = tmp_path / "outside-tool.py"
+    outside_script.write_text("print('outside')\n", encoding="utf-8")
+    (docs_dir / "guide.md").write_text(f"Run `{outside_script}` before release.\n", encoding="utf-8")
+
+    issues = validate_docs_links.broken_doc_links(repo)
+
+    assert issues == [f"docs/guide.md: reference target escapes repository {outside_script}"]
+
+
 def test_docs_links_validator_reports_missing_backtick_runtime_file_reference(tmp_path):
     validate_docs_links = load_validate_docs_links()
     docs_dir = tmp_path / "docs"
