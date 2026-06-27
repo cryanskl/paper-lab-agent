@@ -2455,6 +2455,15 @@ def test_release_check_py_compile_targets_cover_every_python_script():
     assert '"${PY_COMPILE_TARGETS[@]}"' in release_check
 
 
+def test_release_check_reuses_single_python_script_target_list():
+    repo = Path(__file__).resolve().parent.parent
+    release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert "RELEASE_SCRIPT_TARGETS=(" in release_check
+    assert 'PY_COMPILE_TARGETS=("${RELEASE_SCRIPT_TARGETS[@]}" streamlit_app.py)' in release_check
+    assert 'RELEASE_HELP_SCRIPTS=("${RELEASE_SCRIPT_TARGETS[@]}")' in release_check
+
+
 def test_release_check_rejects_whitespace_errors():
     repo = Path(__file__).resolve().parent.parent
     release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")

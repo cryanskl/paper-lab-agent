@@ -16,7 +16,7 @@ bash -n scripts/dev.sh
 git diff --check
 git diff --cached --check
 "${PYTHON_CMD[@]}" -m compileall -q app scripts tests streamlit_app.py
-PY_COMPILE_TARGETS=(
+RELEASE_SCRIPT_TARGETS=(
   scripts/doctor.py
   scripts/export_openapi.py
   scripts/export_release_artifacts.py
@@ -35,29 +35,10 @@ PY_COMPILE_TARGETS=(
   scripts/validate_release_package.py
   scripts/validate_requirements.py
   scripts/validate_schema.py
-  streamlit_app.py
 )
+PY_COMPILE_TARGETS=("${RELEASE_SCRIPT_TARGETS[@]}" streamlit_app.py)
 "${PYTHON_CMD[@]}" -m py_compile "${PY_COMPILE_TARGETS[@]}"
-RELEASE_HELP_SCRIPTS=(
-  scripts/doctor.py
-  scripts/export_openapi.py
-  scripts/export_release_artifacts.py
-  scripts/health_check.py
-  scripts/import_fixtures.py
-  scripts/package_release_artifacts.py
-  scripts/prepare_demo_data.py
-  scripts/smoke_check.py
-  scripts/validate_api_contract.py
-  scripts/validate_bug_docs.py
-  scripts/validate_docs_links.py
-  scripts/validate_env_example.py
-  scripts/validate_readme_commands.py
-  scripts/validate_release_artifacts.py
-  scripts/validate_release_hygiene.py
-  scripts/validate_release_package.py
-  scripts/validate_requirements.py
-  scripts/validate_schema.py
-)
+RELEASE_HELP_SCRIPTS=("${RELEASE_SCRIPT_TARGETS[@]}")
 for script in "${RELEASE_HELP_SCRIPTS[@]}"; do
   "${PYTHON_CMD[@]}" "${script}" --help >/dev/null
 done
