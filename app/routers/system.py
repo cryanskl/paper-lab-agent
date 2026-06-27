@@ -331,7 +331,7 @@ def release_readiness_status(
     config_warning_codes = warning_codes(warnings)
     storage_errors = storage_readiness_errors(health)
     return {
-        "ready": not (demo_data_missing or failed_workflows or config_warning_codes or storage_errors),
+        "ready": not (demo_data_missing or failed_workflows or storage_errors),
         "demo_data_missing": demo_data_missing,
         "failed_workflows": failed_workflows,
         "config_warning_codes": config_warning_codes,

@@ -1836,7 +1836,7 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["runtime_version"] == "0.1.0"
     assert result["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert result["config_warning_count"] == 3
-    assert result["release_readiness"]["ready"] is False
+    assert result["release_readiness"]["ready"] is True
     assert result["release_readiness"]["demo_data_missing"] == []
     assert result["release_readiness"]["failed_workflows"] == []
     assert result["release_readiness"]["config_warning_codes"] == [
@@ -1889,7 +1889,7 @@ def test_smoke_check_script_outputs_json():
     assert payload["runtime_version"] == "0.1.0"
     assert payload["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert payload["config_warning_count"] == 3
-    assert payload["release_readiness"]["ready"] is False
+    assert payload["release_readiness"]["ready"] is True
     assert payload["release_readiness"]["config_warning_codes"] == [
         "missing_openalex_mailto",
         "missing_unpaywall_email",
@@ -7866,6 +7866,29 @@ def test_system_status_reports_release_readiness(tmp_path, monkeypatch):
     assert readiness["storage_errors"] == []
 
 
+def test_release_readiness_allows_offline_config_warnings():
+    from app.routers.system import release_readiness_status
+
+    readiness = release_readiness_status(
+        {"ready": True, "missing": []},
+        [
+            {
+                "code": "missing_llm_api_key",
+                "capability": "llm_translation",
+                "message": "LLM_API_KEY is not configured.",
+            }
+        ],
+        health_check_storage_health(),
+        health_check_status_counts(),
+    )
+
+    assert readiness["ready"] is True
+    assert readiness["demo_data_missing"] == []
+    assert readiness["failed_workflows"] == []
+    assert readiness["config_warning_codes"] == ["missing_llm_api_key"]
+    assert readiness["storage_errors"] == []
+
+
 def test_system_status_counts_reaction_audits(tmp_path):
     client = make_client(tmp_path)
 
@@ -9977,7 +10000,7 @@ def test_health_check_require_release_ready_runs_combined_gates(monkeypatch, cap
                 "counts": {"papers": 2},
             },
             "release_readiness": health_check_release_readiness(
-                ready=False,
+                ready=True,
                 config_warning_codes=["missing_llm_api_key"],
             ),
             "status_counts": health_check_status_counts(),
@@ -9986,11 +10009,8 @@ def test_health_check_require_release_ready_runs_combined_gates(monkeypatch, cap
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
     monkeypatch.setattr(sys, "argv", ["health_check.py", "--base-url", "http://api.test", "--require-release-ready"])
 
-    assert health_check.main() == 1
-    captured = capsys.readouterr()
-    assert "release readiness blockers present" in captured.err
-    assert "config_warning_codes:missing_llm_api_key" in captured.err
-    assert "missing_llm_api_key" in captured.err
+    assert health_check.main() == 0
+    assert capsys.readouterr().err == ""
 
 
 def test_health_check_require_release_ready_prefers_api_release_readiness(monkeypatch, capsys):
@@ -10056,7 +10076,7 @@ def test_health_check_require_release_ready_prefers_api_release_readiness(monkey
     captured = capsys.readouterr()
     assert "release readiness blockers present" in captured.err
     assert "failed_workflows:translations.failed=2" in captured.err
-    assert "config_warning_codes:missing_llm_api_key" in captured.err
+    assert "config_warning_codes:missing_llm_api_key" not in captured.err
 
 
 def test_health_check_require_no_failed_workflows_fails_on_failed_status_counts(monkeypatch, capsys):
@@ -10534,7 +10554,7 @@ def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
         "scheduler_job_count": 3,
         "scheduler_job_ids": ["crawl-daily", "crawl-weekly", "crawl-monthly"],
         "release_ready": False,
-        "release_blockers": ["failed_workflows:document_parse.failed=1", "config_warning_codes:missing_llm_api_key"],
+        "release_blockers": ["failed_workflows:document_parse.failed=1"],
         "demo_data_ready": True,
         "demo_data_missing": [],
         "workflows_ok": False,
@@ -10628,7 +10648,6 @@ def test_health_check_summary_prefers_api_release_readiness():
     assert summary["release_blockers"] == [
         "demo_data_missing:documents>=1",
         "failed_workflows:translations.failed=2",
-        "config_warning_codes:missing_llm_api_key",
         "storage_errors:pdf_dir.writable",
     ]
     assert summary["demo_data_missing"] == ["documents>=1"]
@@ -10675,8 +10694,10 @@ def test_health_check_summary_rejects_inconsistent_api_release_readiness():
 
     summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
 
-    assert summary["release_ready"] is False
-    assert summary["release_blockers"] == ["config_warning_codes:missing_llm_api_key"]
+    assert summary["release_ready"] is True
+    assert summary["release_blockers"] == []
+    assert summary["config_warning_codes"] == ["missing_llm_api_key"]
+    assert summary["config_ready"] is False
 
 
 def test_health_check_validates_release_readiness_shape():

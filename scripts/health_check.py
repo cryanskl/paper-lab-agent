@@ -671,7 +671,7 @@ def list_values(value) -> list[str]:
 
 def release_readiness_blockers(readiness: dict) -> list[str]:
     blockers: list[str] = []
-    for key in ("demo_data_missing", "failed_workflows", "config_warning_codes", "storage_errors"):
+    for key in ("demo_data_missing", "failed_workflows", "storage_errors"):
         blockers.extend(f"{key}:{value}" for value in readiness.get(key, []))
     if blockers:
         return blockers
@@ -727,7 +727,7 @@ def health_summary(
             for warning in config_warnings
             if isinstance(warning, dict) and isinstance(warning.get("code"), str) and warning["code"].strip()
         ]
-        release_ready = not (storage_errors or failed_workflows or config_warning_codes or demo_data_missing)
+        release_ready = not (storage_errors or failed_workflows or demo_data_missing)
     readiness_blockers = release_readiness_blockers(
         {
             "ready": release_ready,

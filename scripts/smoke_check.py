@@ -660,7 +660,7 @@ def run_smoke() -> dict:
         assert_ok(status_counts["document_chemistry"]["extracted"] == 1, "expected extracted chemistry count")
         assert_ok(status_counts["translations"]["done"] == 1, "expected done translation count")
         assert_ok(status_counts["reaction_sets"]["verified"] == 1, "expected verified reaction set count")
-        assert_ok(release_readiness["ready"] is False, "expected smoke release readiness to be blocked by config warnings")
+        assert_ok(release_readiness["ready"] is True, "expected smoke release readiness to allow offline config warnings")
         assert_ok(release_readiness["demo_data_missing"] == [], "expected smoke demo data to satisfy readiness")
         assert_ok(release_readiness["failed_workflows"] == [], "expected smoke readiness to have no failed workflows")
         assert_ok(release_readiness["storage_errors"] == [], "expected smoke readiness to have writable storage")

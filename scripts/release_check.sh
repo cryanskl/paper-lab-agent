@@ -634,7 +634,7 @@ if not isinstance(release_readiness, dict):
     print("release_check failed: smoke release_readiness is missing", file=sys.stderr)
     raise SystemExit(1)
 expected_readiness = {
-    "ready": False,
+    "ready": True,
     "demo_data_missing": [],
     "failed_workflows": [],
     "config_warning_codes": ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"],
