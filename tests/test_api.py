@@ -4548,6 +4548,42 @@ def test_parse_document_rejects_symlinked_tei_storage_dir(tmp_path, monkeypatch)
     assert not list(outside_dir.glob("*.tei.xml"))
 
 
+def test_parse_document_rejects_symlinked_source_pdf(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+    outside_pdf = tmp_path / "outside-source.pdf"
+    outside_pdf.write_bytes(pdf_bytes(b"outside symlink plasma text"))
+    linked_pdf = tmp_path / "pdfs" / "linked-source.pdf"
+    linked_pdf.symlink_to(outside_pdf)
+
+    from app.db import get_conn
+    from app.services import documents as document_service
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'uploaded')
+            """,
+            (str(linked_pdf), "linked-source-hash", "linked-source.pdf"),
+        ).lastrowid
+
+    async def fake_health_detail(self):
+        return {
+            "available": False,
+            "url": "http://grobid.test",
+            "status_code": None,
+            "error": "connection refused",
+        }
+
+    monkeypatch.setattr(document_service.GrobidClient, "health_detail", fake_health_detail)
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    document = client.get(f"/api/v1/documents/{document_id}").json()
+
+    assert document["parse_status"] == "failed"
+    assert "document storage path is not a regular file" in document["parse_error"]
+
+
 def test_parse_document_falls_back_when_grobid_returns_only_references(tmp_path, monkeypatch):
     client = make_client(tmp_path)
     response = client.post(

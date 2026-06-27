@@ -354,6 +354,35 @@ async def parse_document(document_id: int) -> dict:
     grobid = GrobidClient(settings.grobid_url)
     parse_error = None
     try:
+        assert_safe_document_storage_path(Path(doc["file_path"]))
+    except Exception as exc:
+        parse_error = f"Document source validation failed: {exc}"
+        try:
+            JsonVectorStore(settings.vector_db_path).delete_document(document_id)
+        except Exception as cleanup_exc:
+            parse_error = f"{parse_error}; vector cleanup failed: {cleanup_exc}"
+        with get_conn() as conn:
+            conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM sections WHERE document_id=?", (document_id,))
+            conn.execute(
+                """
+                UPDATE documents
+                SET parse_status='failed',
+                    parse_error=?,
+                    index_status='not_indexed',
+                    index_error=NULL,
+                    chemistry_status='not_extracted',
+                    chemistry_error=NULL
+                WHERE id=?
+                """,
+                (parse_error, document_id),
+            )
+            row = conn.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
+            return dict_from_row(row)
+
+    try:
         grobid_health = await grobid.health_detail()
         if grobid_health.get("available"):
             tei_text = await grobid.process_fulltext(doc["file_path"])
