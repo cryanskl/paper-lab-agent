@@ -155,7 +155,14 @@ def check_env_example(repo: Path) -> dict[str, Any]:
     path = repo / ".env.example"
     issues = []
     if path.exists() and path.is_file():
-        values = env_example_values(path)
+        values, read_issue = env_example_values(path)
+        if read_issue is not None:
+            issues.append(read_issue)
+            return {
+                "name": "env_example",
+                "status": status_from_issues(issues),
+                "issues": issues,
+            }
         keys = set(values)
         for key in REQUIRED_ENV_EXAMPLE_KEYS:
             if key not in keys:
@@ -204,12 +211,21 @@ def check_env_example(repo: Path) -> dict[str, Any]:
 
 
 def env_example_keys(path: Path) -> set[str]:
-    return set(env_example_values(path))
+    values, _read_issue = env_example_values(path)
+    return set(values)
 
 
-def env_example_values(path: Path) -> dict[str, str]:
+def env_example_values(path: Path) -> tuple[dict[str, str], dict[str, Any] | None]:
     values: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        return values, {
+            "code": "env_example_unreadable",
+            "path": str(path),
+            "message": f"failed to read .env.example: {exc}",
+        }
+    for raw_line in lines:
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
@@ -219,7 +235,7 @@ def env_example_values(path: Path) -> dict[str, str]:
         key = key.strip()
         if separator and ENV_KEY_PATTERN.fullmatch(key):
             values[key] = _value.strip().strip('"').strip("'")
-    return values
+    return values, None
 
 
 def normalize_env_value(value: str) -> str:

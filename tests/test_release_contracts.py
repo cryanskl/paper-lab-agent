@@ -1381,6 +1381,21 @@ def test_doctor_env_example_check_rejects_dev_ready_timeout_runtime_drift(tmp_pa
     } in check["issues"]
 
 
+def test_doctor_env_example_check_reports_unreadable_env_example(tmp_path):
+    doctor = load_doctor()
+    (tmp_path / ".env.example").write_bytes(b"\xff\xfe\x00bad-env-example")
+
+    check = doctor.check_env_example(tmp_path)
+
+    assert check["status"] == "fail"
+    assert any(
+        issue.get("code") == "env_example_unreadable"
+        and issue.get("path") == str(tmp_path / ".env.example")
+        and "failed to read .env.example" in issue.get("message", "")
+        for issue in check["issues"]
+    )
+
+
 def test_doctor_script_reports_missing_python_dependencies(monkeypatch):
     import importlib.util
 
