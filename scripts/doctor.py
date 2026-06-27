@@ -386,7 +386,7 @@ def storage_path_config(repo: Path, env: dict[str, str] | None = None) -> dict[s
 def check_writable_directory(key: str, path: Path) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     try:
-        if path.exists() and not path.is_dir():
+        if path.is_symlink() or (path.exists() and not path.is_dir()):
             return [
                 {
                     "code": "storage_path_not_directory",
