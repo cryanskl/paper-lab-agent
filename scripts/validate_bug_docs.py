@@ -77,6 +77,9 @@ def bug_doc_issues(repo: Path) -> list[str]:
         rel = path.relative_to(repo).as_posix()
         if not BUG_FILENAME_RE.fullmatch(path.name):
             issues.append(f"{rel}: filename must match YYYY-MM-DD-short-slug.md")
+        if path.is_symlink() or not path.is_file():
+            issues.append(f"{rel}: bug doc is not a regular file")
+            continue
 
         text = path.read_text(encoding="utf-8")
         if not has_title(text):
