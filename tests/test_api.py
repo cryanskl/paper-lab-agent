@@ -5285,6 +5285,40 @@ def test_sections_from_tei_body_includes_direct_list_items():
     ]
 
 
+def test_sections_from_tei_body_includes_direct_formula_nodes():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <div>
+            <head>Rate model</head>
+            <p>The ionization rate is defined below.</p>
+            <formula>k_i = n_e n_Ar &lt;sigma v&gt;</formula>
+            <p>The expression is used for the argon chemistry model.</p>
+          </div>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Rate model",
+            "content": (
+                "The ionization rate is defined below. "
+                "k_i = n_e n_Ar <sigma v> "
+                "The expression is used for the argon chemistry model."
+            ),
+            "section_type": "body",
+        }
+    ]
+
+
 def test_sections_from_tei_preserves_body_table_document_order():
     from app.services.documents import sections_from_tei
 
