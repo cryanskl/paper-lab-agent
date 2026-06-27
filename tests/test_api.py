@@ -8661,6 +8661,32 @@ def test_extract_chemistry_preserves_fullwidth_rate_unit(tmp_path):
     assert reaction["rate_value"] == "１．２×１０⁻¹³ ｃｍ３／ｓ"
 
 
+def test_extract_chemistry_preserves_fullwidth_space_separated_rate_unit(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is １．２×１０⁻¹³ ｃｍ３ ｓ－１ in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={
+            "file": (
+                "fullwidth-space-separated-rate-unit.pdf",
+                pdf_bytes(content.encode("utf-8")),
+                "application/pdf",
+            )
+        },
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "１．２×１０⁻¹³ ｃｍ３ ｓ－１"
+
+
 def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
