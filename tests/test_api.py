@@ -15052,6 +15052,62 @@ def test_document_index_route_clears_stale_chunks_before_background_task_runs(tm
     assert chunks["total"] == 0
 
 
+def test_document_index_route_clears_stale_vectors_before_background_task_runs(tmp_path):
+    import json
+    from fastapi import BackgroundTasks
+
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import documents as document_router
+    from app.services.rag import JsonVectorStore, local_hash_embedding
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (str(tmp_path / "queued-index-vector.pdf"), "queued-index-vector", "queued-index-vector.pdf"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Parsed section', 'fresh parsed text', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'old indexed text', 3, 'old-index-vector-id', 1)
+            """,
+            (document_id, section_id),
+        )
+
+    JsonVectorStore(tmp_path / "vector-index.json").upsert_many(
+        {
+            "old-index-vector-id": {
+                "chunk_id": 1,
+                "document_id": document_id,
+                "section_id": section_id,
+                "text": "old indexed text",
+                "embedding": local_hash_embedding("old indexed text"),
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+                "dimensions": 64,
+            }
+        }
+    )
+
+    index_payload = document_router.index(document_id, BackgroundTasks())
+    vector_index = json.loads((tmp_path / "vector-index.json").read_text(encoding="utf-8"))
+
+    assert index_payload["document_id"] == document_id
+    assert index_payload["index_status"] == "indexing"
+    assert all(record["document_id"] != document_id for record in vector_index.values())
+
+
 def test_document_parse_route_clears_stale_vectors_before_background_task_runs(tmp_path):
     import json
     from fastapi import BackgroundTasks
