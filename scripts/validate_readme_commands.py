@@ -222,10 +222,19 @@ def safe_python_script_target(repo: Path, script: str) -> bool:
     script_path = repo / script
     return (
         script_path.exists()
+        and is_within_repo(repo, script_path)
         and first_symlink_parent(script_path) is None
         and not script_path.is_symlink()
         and script_path.is_file()
     )
+
+
+def is_within_repo(repo: Path, path: Path) -> bool:
+    try:
+        path.resolve().relative_to(repo.resolve())
+    except ValueError:
+        return False
+    return True
 
 
 def uvicorn_app_refs(readme_path: Path) -> list[str]:
@@ -344,6 +353,9 @@ def missing_command_targets_for_doc(repo: Path, doc_path: Path, label: str) -> l
         target_path = repo / target
         if not target_path.exists():
             issues.append(f"{label}: command target missing: {target}")
+            continue
+        if not is_within_repo(repo, target_path):
+            issues.append(f"{label}: command target escapes repository: {target}")
             continue
         if first_symlink_parent(target_path) is not None:
             issues.append(f"{label}: command target parent is not a regular directory: {target}")

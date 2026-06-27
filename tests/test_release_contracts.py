@@ -7408,6 +7408,46 @@ def test_readme_commands_validator_does_not_execute_symlinked_script_target_help
     assert not marker.exists()
 
 
+def test_readme_commands_validator_rejects_script_target_escaping_repo(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "scripts").mkdir()
+    outside_script = tmp_path / "outside-tool.py"
+    outside_script.write_text("print('outside')\n", encoding="utf-8")
+    (repo / "README.md").write_text(
+        "```bash\npython scripts/../../outside-tool.py\n```\n",
+        encoding="utf-8",
+    )
+
+    issues = validate_readme_commands.missing_command_targets(repo)
+
+    assert issues == ["README.md: command target escapes repository: scripts/../../outside-tool.py"]
+
+
+def test_readme_commands_validator_does_not_execute_escaping_script_target_help(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "scripts").mkdir()
+    marker = tmp_path / "executed.txt"
+    outside_script = tmp_path / "outside-tool.py"
+    outside_script.write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('executed', encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    (repo / "README.md").write_text(
+        "```bash\npython scripts/../../outside-tool.py --missing\n```\n",
+        encoding="utf-8",
+    )
+
+    issues = validate_readme_commands.missing_command_targets(repo)
+
+    assert issues == ["README.md: command target escapes repository: scripts/../../outside-tool.py"]
+    assert not marker.exists()
+
+
 def test_readme_commands_validator_rejects_symlinked_script_target_parent(tmp_path):
     validate_readme_commands = load_validate_readme_commands()
     outside_scripts = tmp_path / "outside-scripts"
