@@ -1,4 +1,3 @@
-import json
 import os
 from pathlib import Path
 from typing import Optional
@@ -11,7 +10,12 @@ from app.clients.grobid import GrobidClient
 from app.config import first_symlink_parent, get_settings, is_safe_storage_directory
 from app.db import fetch_one, get_conn
 from app.scheduler import scheduled_crawl_jobs
-from app.services.rag import SUPPORTED_EMBEDDING_MODELS, SUPPORTED_VECTOR_DB_BACKENDS, assert_safe_vector_store_path
+from app.services.rag import (
+    SUPPORTED_EMBEDDING_MODELS,
+    SUPPORTED_VECTOR_DB_BACKENDS,
+    assert_safe_vector_store_path,
+    parse_vector_store_json,
+)
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -225,7 +229,7 @@ def vector_store_health(path: Path) -> dict:
         health["error"] = "vector store is not readable"
         return health
     try:
-        json.loads(path.read_text(encoding="utf-8"))
+        parse_vector_store_json(path.read_text(encoding="utf-8"))
         health["valid_json"] = True
     except Exception as exc:
         health["valid_json"] = False

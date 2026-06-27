@@ -118,6 +118,16 @@ def assert_safe_vector_store_path(path: Path) -> None:
         raise ValueError(f"vector store path is not a regular file: {path}")
 
 
+def parse_vector_store_json(raw: str) -> dict:
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"vector store JSON is invalid: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("vector store JSON must be an object")
+    return data
+
+
 class JsonVectorStore:
     def __init__(self, path: Path):
         self.path = path
@@ -126,10 +136,7 @@ class JsonVectorStore:
         if not self.path.exists():
             return {}
         assert_safe_vector_store_path(self.path)
-        try:
-            return json.loads(self.path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"vector store JSON is invalid: {exc}") from exc
+        return parse_vector_store_json(self.path.read_text(encoding="utf-8"))
 
     def upsert_many(self, records: dict[str, dict]) -> None:
         existing = self.load()
