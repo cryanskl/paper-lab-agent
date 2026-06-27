@@ -6,6 +6,21 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def first_symlink_parent(path: Path) -> Optional[Path]:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
+
+
+def is_safe_storage_directory(path: Path) -> bool:
+    symlink_parent = first_symlink_parent(path)
+    return symlink_parent is None and not path.is_symlink()
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -72,6 +87,8 @@ class Settings(BaseSettings):
             self.export_dir,
             self.vector_db_path.parent,
         ]:
+            if not is_safe_storage_directory(path):
+                continue
             path.mkdir(parents=True, exist_ok=True)
 
 

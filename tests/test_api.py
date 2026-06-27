@@ -1607,9 +1607,8 @@ def test_fixture_loader_rejects_symlinked_pdf_storage_dir(tmp_path):
     pdf_dir.rmdir()
     pdf_dir.symlink_to(outside_dir, target_is_directory=True)
 
-    load_fixture_papers()
-
     try:
+        load_fixture_papers()
         load_fixture_documents()
     except OSError as exc:
         error = str(exc)

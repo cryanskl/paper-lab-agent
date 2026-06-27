@@ -71,3 +71,19 @@ def test_builtin_default_storage_values_follow_custom_data_dir(tmp_path, monkeyp
     assert settings.database_path == data_dir / "plasma.db"
     assert settings.pdf_dir == data_dir / "pdfs"
     assert settings.translation_dir == data_dir / "translations"
+
+
+def test_ensure_dirs_skips_symlinked_data_dir_before_creating_children(tmp_path, monkeypatch):
+    clear_storage_env(monkeypatch)
+    outside_dir = tmp_path / "outside-data"
+    outside_dir.mkdir()
+    data_dir = tmp_path / "paper-lab-data"
+    data_dir.symlink_to(outside_dir, target_is_directory=True)
+    settings = Settings(_env_file=None, PAPER_LAB_DATA_DIR=data_dir)
+
+    settings.ensure_dirs()
+
+    assert not (outside_dir / "pdfs").exists()
+    assert not (outside_dir / "tei").exists()
+    assert not (outside_dir / "translations").exists()
+    assert not (outside_dir / "exports").exists()
