@@ -23,9 +23,7 @@ HTTP_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH"}
 UVICORN_OPTIONS_WITH_VALUES = {
     "--app-dir",
     "--backlog",
-    "--date-header",
     "--env-file",
-    "--factory",
     "--fd",
     "--forwarded-allow-ips",
     "--h11-max-incomplete-event-size",
@@ -38,13 +36,11 @@ UVICORN_OPTIONS_WITH_VALUES = {
     "--log-level",
     "--loop",
     "--port",
-    "--proxy-headers",
     "--reload-delay",
     "--reload-dir",
     "--reload-exclude",
     "--reload-include",
     "--root-path",
-    "--server-header",
     "--ssl-ca-certs",
     "--ssl-cert-reqs",
     "--ssl-certfile",
@@ -53,7 +49,6 @@ UVICORN_OPTIONS_WITH_VALUES = {
     "--timeout-graceful-shutdown",
     "--timeout-keep-alive",
     "--uds",
-    "--use-colors",
     "--workers",
     "--ws",
     "--ws-max-queue",
@@ -62,6 +57,7 @@ UVICORN_OPTIONS_WITH_VALUES = {
     "--ws-ping-timeout",
     "--ws-per-message-deflate",
 }
+UVICORN_FLAG_OPTIONS = {"--date-header", "--factory", "--proxy-headers", "--server-header", "--use-colors"}
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -351,6 +347,8 @@ def uvicorn_app_refs(readme_path: Path) -> list[str]:
                 continue
             if token.startswith("-"):
                 option_name = token.split("=", 1)[0]
+                if option_name in UVICORN_FLAG_OPTIONS:
+                    continue
                 if option_name in UVICORN_OPTIONS_WITH_VALUES and "=" not in token:
                     skip_next = True
                 continue
