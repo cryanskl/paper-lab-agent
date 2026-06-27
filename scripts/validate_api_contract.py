@@ -1228,11 +1228,19 @@ def main() -> int:
     parser.add_argument("contract_path", nargs="?", default=str(DEFAULT_CONTRACT_PATH))
     args = parser.parse_args()
 
-    missing = missing_documented_routes(Path(args.contract_path))
-    duplicates = duplicate_documented_routes(Path(args.contract_path))
-    undocumented = undocumented_app_routes(Path(args.contract_path))
-    pagination_issues = pagination_contract_issues(Path(args.contract_path))
-    pagination_response_issues = pagination_response_contract_issues(Path(args.contract_path))
+    contract_path = Path(args.contract_path)
+    if not contract_path.exists():
+        print(f"api contract file not found: {contract_path}", file=sys.stderr)
+        return 1
+    if contract_path.is_symlink() or not contract_path.is_file():
+        print(f"api contract file is not a regular file: {contract_path}", file=sys.stderr)
+        return 1
+
+    missing = missing_documented_routes(contract_path)
+    duplicates = duplicate_documented_routes(contract_path)
+    undocumented = undocumented_app_routes(contract_path)
+    pagination_issues = pagination_contract_issues(contract_path)
+    pagination_response_issues = pagination_response_contract_issues(contract_path)
     error_response_issues = error_response_contract_issues()
     semantic_error_status_issues = semantic_error_status_contract_issues()
     health_response_issues = health_response_contract_issues()
@@ -1256,8 +1264,8 @@ def main() -> int:
     paper_list_response_issues = paper_list_response_contract_issues()
     crawl_job_detail_response_issues = crawl_job_detail_response_contract_issues()
     crawl_job_list_response_issues = crawl_job_list_response_contract_issues()
-    async_issues = async_response_contract_issues(Path(args.contract_path))
-    async_body_issues = async_response_body_contract_issues(Path(args.contract_path))
+    async_issues = async_response_contract_issues(contract_path)
+    async_body_issues = async_response_body_contract_issues(contract_path)
     empty_success_schema_issues = empty_success_response_schema_issues()
     bare_success_schema_issues = bare_success_response_schema_issues()
     named_success_schema_issues = named_success_response_schema_issues()
