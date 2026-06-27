@@ -6045,6 +6045,51 @@ def test_parse_document_rejects_symlinked_source_pdf(tmp_path, monkeypatch):
     assert "document storage path is not a regular file" in document["parse_error"]
 
 
+def test_parse_document_source_validation_reports_unsupported_vector_db_backend(tmp_path, monkeypatch):
+    import asyncio
+
+    monkeypatch.setenv("VECTOR_DB_BACKEND", "faiss")
+    make_client(tmp_path)
+    outside_pdf = tmp_path / "outside-source-backend.pdf"
+    outside_pdf.write_bytes(pdf_bytes(b"outside backend plasma text"))
+    linked_pdf = tmp_path / "pdfs" / "linked-source-backend.pdf"
+    linked_pdf.symlink_to(outside_pdf)
+
+    from app.db import get_conn
+    from app.services import documents as document_service
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'uploaded')
+            """,
+            (str(linked_pdf), "linked-source-backend-hash", "linked-source-backend.pdf"),
+        ).lastrowid
+
+    result = asyncio.run(document_service.parse_document(document_id))
+
+    assert result["parse_status"] == "failed"
+    assert "Document source validation failed" in result["parse_error"]
+    assert "vector cleanup failed: unsupported vector db backend: faiss" in result["parse_error"]
+    with get_conn() as conn:
+        document = conn.execute(
+            """
+            SELECT parse_status, parse_error, index_status, index_error, chemistry_status, chemistry_error
+            FROM documents WHERE id=?
+            """,
+            (document_id,),
+        ).fetchone()
+        section_count = conn.execute("SELECT COUNT(*) AS n FROM sections WHERE document_id=?", (document_id,)).fetchone()["n"]
+    assert document["parse_status"] == "failed"
+    assert "vector cleanup failed: unsupported vector db backend: faiss" in document["parse_error"]
+    assert document["index_status"] == "not_indexed"
+    assert document["index_error"] is None
+    assert document["chemistry_status"] == "not_extracted"
+    assert document["chemistry_error"] is None
+    assert section_count == 0
+
+
 def test_parse_document_falls_back_when_grobid_returns_only_references(tmp_path, monkeypatch):
     client = make_client(tmp_path)
     response = client.post(

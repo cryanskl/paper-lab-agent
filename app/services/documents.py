@@ -444,7 +444,7 @@ async def parse_document(document_id: int) -> dict:
     except Exception as exc:
         parse_error = f"Document source validation failed: {exc}"
         try:
-            JsonVectorStore(settings.vector_db_path).delete_document(document_id)
+            get_vector_store(settings).delete_document(document_id)
         except Exception as cleanup_exc:
             parse_error = f"{parse_error}; vector cleanup failed: {cleanup_exc}"
         with get_conn() as conn:
