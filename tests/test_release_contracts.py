@@ -2479,6 +2479,17 @@ def test_release_check_smokes_every_python_script_help():
     assert '"${script}" --help' in release_check
 
 
+def test_release_docs_explain_python_script_help_smoke_gate():
+    repo = Path(__file__).resolve().parent.parent
+    readme = (repo / "README.md").read_text(encoding="utf-8")
+    checklist = (repo / "docs" / "release-checklist.md").read_text(encoding="utf-8")
+
+    assert "scripts 目录下所有 Python 脚本的 `--help` 入口" in readme
+    assert "import path" in readme
+    assert "every Python script under the scripts directory with `--help`" in checklist
+    assert "import path" in checklist
+
+
 def test_release_check_validates_release_artifact_bundle():
     repo = Path(__file__).resolve().parent.parent
     release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
