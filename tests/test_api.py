@@ -10266,31 +10266,11 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "bash -n scripts/env.sh" in release_text
     assert "bash -n scripts/dev.sh" in release_text
     assert "-m py_compile" in release_text
-    for compiled_script in [
-        "scripts/health_check.py",
-        "scripts/import_fixtures.py",
-        "scripts/export_release_artifacts.py",
-        "scripts/prepare_demo_data.py",
-        "scripts/smoke_check.py",
-        "scripts/validate_api_contract.py",
-        "scripts/validate_bug_docs.py",
-        "scripts/validate_docs_links.py",
-        "scripts/validate_env_example.py",
-        "scripts/validate_readme_commands.py",
-        "scripts/validate_release_hygiene.py",
-        "scripts/validate_requirements.py",
-        "scripts/validate_schema.py",
-        "streamlit_app.py",
-    ]:
-        assert compiled_script in release_text
+    assert "find scripts -maxdepth 1 -type f -name '*.py' | sort" in release_text
+    assert 'PY_COMPILE_TARGETS=("${RELEASE_SCRIPT_TARGETS[@]}" streamlit_app.py)' in release_text
     assert "RELEASE_HELP_SCRIPTS=(" in release_text
+    assert 'RELEASE_HELP_SCRIPTS=("${RELEASE_SCRIPT_TARGETS[@]}")' in release_text
     assert '"${script}" --help' in release_text
-    for help_script in [
-        "scripts/health_check.py",
-        "scripts/export_release_artifacts.py",
-        "scripts/prepare_demo_data.py",
-    ]:
-        assert help_script in release_text
     assert "scripts/validate_api_contract.py" in release_text
     assert "scripts/validate_bug_docs.py" in release_text
     assert "scripts/validate_docs_links.py" in release_text

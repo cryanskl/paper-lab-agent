@@ -2446,12 +2446,10 @@ def test_release_check_compiles_application_package():
 def test_release_check_py_compile_targets_cover_every_python_script():
     repo = Path(__file__).resolve().parent.parent
     release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
-    scripts = sorted(path.relative_to(repo).as_posix() for path in (repo / "scripts").glob("*.py"))
 
     assert "PY_COMPILE_TARGETS=(" in release_check
-    for script in scripts:
-        assert script in release_check
-    assert "streamlit_app.py" in release_check
+    assert "find scripts -maxdepth 1 -type f -name '*.py' | sort" in release_check
+    assert 'PY_COMPILE_TARGETS=("${RELEASE_SCRIPT_TARGETS[@]}" streamlit_app.py)' in release_check
     assert '"${PY_COMPILE_TARGETS[@]}"' in release_check
 
 
@@ -2462,6 +2460,15 @@ def test_release_check_reuses_single_python_script_target_list():
     assert "RELEASE_SCRIPT_TARGETS=(" in release_check
     assert 'PY_COMPILE_TARGETS=("${RELEASE_SCRIPT_TARGETS[@]}" streamlit_app.py)' in release_check
     assert 'RELEASE_HELP_SCRIPTS=("${RELEASE_SCRIPT_TARGETS[@]}")' in release_check
+
+
+def test_release_check_discovers_release_python_scripts_from_scripts_directory():
+    repo = Path(__file__).resolve().parent.parent
+    release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert "while IFS= read -r script_path; do" in release_check
+    assert 'RELEASE_SCRIPT_TARGETS+=("${script_path}")' in release_check
+    assert "find scripts -maxdepth 1 -type f -name '*.py' | sort" in release_check
 
 
 def test_release_check_rejects_whitespace_errors():
@@ -2492,11 +2499,10 @@ def test_release_check_validates_openapi_export_script():
 def test_release_check_smokes_every_python_script_help():
     repo = Path(__file__).resolve().parent.parent
     release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
-    scripts = sorted(path.relative_to(repo).as_posix() for path in (repo / "scripts").glob("*.py"))
 
     assert "RELEASE_HELP_SCRIPTS=(" in release_check
-    for script in scripts:
-        assert script in release_check
+    assert "find scripts -maxdepth 1 -type f -name '*.py' | sort" in release_check
+    assert 'RELEASE_HELP_SCRIPTS=("${RELEASE_SCRIPT_TARGETS[@]}")' in release_check
     assert '"${script}" --help' in release_check
 
 
