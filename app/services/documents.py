@@ -48,6 +48,17 @@ def mark_parse_queued(document_id: int) -> None:
         )
 
 
+def assert_safe_document_storage_path(path: Path) -> None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        raise OSError(f"document storage path parent is not a regular directory: {parent}")
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise OSError(f"document storage path is not a regular file: {path}")
+
+
 async def save_upload(file: UploadFile, paper_id: Optional[int]) -> tuple[dict, bool]:
     settings = get_settings()
     content = await file.read()
@@ -57,6 +68,7 @@ async def save_upload(file: UploadFile, paper_id: Optional[int]) -> tuple[dict, 
         if existing:
             return dict_from_row(existing), False
         stored = settings.pdf_dir / f"{digest}.pdf"
+        assert_safe_document_storage_path(stored)
         stored.write_bytes(content)
         cursor = conn.execute(
             """

@@ -1409,6 +1409,30 @@ def test_document_upload_records_pdf_page_count(tmp_path):
     assert response.json()["num_pages"] == 2
 
 
+def test_document_upload_rejects_symlinked_pdf_storage_dir(tmp_path):
+    make_client(tmp_path)
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app, raise_server_exceptions=False)
+    outside_dir = tmp_path / "outside-pdfs"
+    outside_dir.mkdir()
+    pdf_dir = tmp_path / "pdfs"
+    pdf_dir.rmdir()
+    pdf_dir.symlink_to(outside_dir, target_is_directory=True)
+
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("symlinked-storage.pdf", pdf_bytes(b"Argon plasma chemistry"), "application/pdf")},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "document_upload_failed"
+    assert "document storage path parent is not a regular directory" in payload["error"]["message"]
+    assert not list(outside_dir.glob("*.pdf"))
+
+
 def test_document_upload_rejects_non_pdf_file(tmp_path):
     client = make_client(tmp_path)
 

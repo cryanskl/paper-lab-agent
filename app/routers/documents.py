@@ -182,6 +182,7 @@ def get_document_or_404(document_id: int) -> dict:
     responses={
         409: {"description": "Duplicate document"},
         415: {"description": "Unsupported document type"},
+        500: {"description": "Document upload failed"},
     },
 )
 async def upload_document(file: UploadFile = File(...), paper_id: Optional[int] = Form(None)) -> dict:
@@ -191,7 +192,10 @@ async def upload_document(file: UploadFile = File(...), paper_id: Optional[int] 
             paper = conn.execute("SELECT id FROM papers WHERE id=?", (paper_id,)).fetchone()
         if paper is None:
             raise AppError(404, "paper_not_found", "Paper not found")
-    doc, created = await save_upload(file, paper_id)
+    try:
+        doc, created = await save_upload(file, paper_id)
+    except OSError as exc:
+        raise AppError(500, "document_upload_failed", str(exc))
     document = get_document_or_404(doc["id"])
     if not created:
         raise AppError(
