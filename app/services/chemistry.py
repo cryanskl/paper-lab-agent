@@ -1,5 +1,6 @@
 import json
 import re
+import unicodedata
 from collections import Counter
 from pathlib import Path
 from typing import Optional
@@ -17,7 +18,7 @@ URL_RE = re.compile(r"https?://[^\s),;]+")
 LXCAT_DB_RE = re.compile(r"LXCat\s+([A-Za-z0-9_.-]+)", re.IGNORECASE)
 GAS_MIXTURE_RE = re.compile(r"\b([A-Z][a-z]?\d?(?:/[A-Z][a-z]?\d?)+)\b")
 THRESHOLD_EV_RE = re.compile(
-    r"\bthreshold(?:\s+energy)?\s*(?:is|=|:)?\s*([0-9]+(?:\.[0-9]+)?)\s*eV\b",
+    r"\bthreshold(?:\s+energy)?\s*(?:is|=|:)?\s*([0-9０-９]+(?:[.．][0-9０-９]+)?)\s*eV\b",
     re.IGNORECASE,
 )
 RATE_VALUE_RE = re.compile(
@@ -97,7 +98,8 @@ def detect_threshold_ev(text: str, start: int, end: int, window: int = 120) -> O
         else:
             direction_priority = 2
             distance = 0
-        candidates.append((direction_priority, distance, absolute_start, float(match.group(1))))
+        threshold_ev = float(unicodedata.normalize("NFKC", match.group(1)))
+        candidates.append((direction_priority, distance, absolute_start, threshold_ev))
     if candidates:
         return min(candidates)[3]
     return None
