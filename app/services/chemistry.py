@@ -1,6 +1,7 @@
 import json
 import re
 from collections import Counter
+from pathlib import Path
 from typing import Optional
 
 from app.config import get_settings
@@ -438,6 +439,12 @@ def verify_reaction(
 
 
 def assert_safe_reaction_export_path(path) -> None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        raise OSError(f"reaction export path parent is not a regular directory: {parent}")
     if path.is_symlink() or (path.exists() and not path.is_file()):
         raise OSError(f"reaction export path is not a regular file: {path}")
 

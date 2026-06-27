@@ -7186,6 +7186,38 @@ def test_reaction_export_rejects_symlinked_output_file(tmp_path):
     assert outside_path.read_text(encoding="utf-8") == '{"outside": true}'
 
 
+def test_reaction_export_rejects_symlinked_output_parent(tmp_path):
+    make_client(tmp_path)
+    import pytest
+
+    from app.db import get_conn
+    from app.services import chemistry as chemistry_service
+
+    with get_conn() as conn:
+        reaction_set_id = conn.execute(
+            "INSERT INTO reaction_sets (name, status) VALUES (?, ?)",
+            ("Symlinked export parent set", "verified"),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO reactions (reaction_set_id, reaction, verified)
+            VALUES (?, ?, 1)
+            """,
+            (reaction_set_id, "e + Ar -> e + e + Ar+"),
+        )
+
+    outside_dir = tmp_path / "outside-exports"
+    outside_dir.mkdir()
+    export_dir = tmp_path / "exports"
+    export_dir.rmdir()
+    export_dir.symlink_to(outside_dir, target_is_directory=True)
+
+    with pytest.raises(OSError, match="reaction export path parent is not a regular directory"):
+        chemistry_service.export_reaction_set(reaction_set_id, "json")
+
+    assert not (outside_dir / f"reaction-set-{reaction_set_id}.json").exists()
+
+
 def test_reaction_export_rejects_empty_reaction_set(tmp_path):
     client = make_client(tmp_path)
 
