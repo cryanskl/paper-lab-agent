@@ -312,8 +312,15 @@ def assigned_names(node: ast.AST) -> set[str]:
     return set()
 
 
-def local_uvicorn_target_issue(repo: Path, module_name: str, attribute_path: str, target: str, label: str) -> str | None:
-    module_path = local_module_path(repo, module_name)
+def local_uvicorn_target_issue(
+    repo: Path,
+    search_root: Path,
+    module_name: str,
+    attribute_path: str,
+    target: str,
+    label: str,
+) -> str | None:
+    module_path = local_module_path(search_root, module_name)
     if module_path is None:
         return None
     if not is_within_repo(repo, module_path):
@@ -328,8 +335,8 @@ def local_uvicorn_target_issue(repo: Path, module_name: str, attribute_path: str
     return ""
 
 
-def uvicorn_app_refs(readme_path: Path) -> list[str]:
-    refs: list[str] = []
+def uvicorn_app_refs(readme_path: Path) -> list[tuple[str, str | None]]:
+    refs: list[tuple[str, str | None]] = []
     for line in command_lines(readme_path):
         tokens = strip_leading_env_assignments(split_command(line))
         if not tokens:
@@ -341,33 +348,49 @@ def uvicorn_app_refs(readme_path: Path) -> list[str]:
         else:
             continue
         skip_next = False
-        for token in option_tokens:
+        app_dir: str | None = None
+        for index, token in enumerate(option_tokens):
             if skip_next:
                 skip_next = False
                 continue
             if token.startswith("-"):
                 option_name = token.split("=", 1)[0]
+                if option_name == "--app-dir":
+                    if "=" in token:
+                        app_dir = token.split("=", 1)[1]
+                    elif index + 1 < len(option_tokens):
+                        app_dir = option_tokens[index + 1]
                 if option_name in UVICORN_FLAG_OPTIONS:
                     continue
                 if option_name in UVICORN_OPTIONS_WITH_VALUES and "=" not in token:
                     skip_next = True
                 continue
             if ":" in token:
-                refs.append(token)
+                refs.append((token, app_dir))
                 break
     return refs
 
 
-def uvicorn_target_issue(repo: Path, target: str, label: str) -> str | None:
+def uvicorn_search_root(repo: Path, app_dir: str | None) -> Path:
+    if not app_dir:
+        return repo
+    app_dir_path = Path(app_dir)
+    return app_dir_path if app_dir_path.is_absolute() else repo / app_dir_path
+
+
+def uvicorn_target_issue(repo: Path, target: str, label: str, app_dir: str | None = None) -> str | None:
     if ":" not in target:
         return f"{label}: uvicorn target missing: {target}"
     module_name, attribute_path = target.rsplit(":", 1)
     if not module_name or not attribute_path:
         return f"{label}: uvicorn target missing: {target}"
-    local_issue = local_uvicorn_target_issue(repo, module_name, attribute_path, target, label)
+    search_root = uvicorn_search_root(repo, app_dir)
+    if not is_within_repo(repo, search_root) or first_symlink_parent(search_root) is not None or search_root.is_symlink():
+        return f"{label}: uvicorn target outside repository: {target}"
+    local_issue = local_uvicorn_target_issue(repo, search_root, module_name, attribute_path, target, label)
     if local_issue is not None:
         return None if local_issue == "" else local_issue
-    with repo_on_sys_path(repo), isolated_module_cache(module_name):
+    with repo_on_sys_path(search_root), isolated_module_cache(module_name):
         try:
             spec = importlib.util.find_spec(module_name)
         except ModuleNotFoundError:
@@ -392,16 +415,16 @@ def missing_uvicorn_targets(readme_path: Path) -> list[str]:
     repo = readme_path.parent
     return [
         issue
-        for target in uvicorn_app_refs(readme_path)
-        if (issue := uvicorn_target_issue(repo, target, "README.md")) is not None
+        for target, app_dir in uvicorn_app_refs(readme_path)
+        if (issue := uvicorn_target_issue(repo, target, "README.md", app_dir)) is not None
     ]
 
 
 def missing_uvicorn_targets_for_doc(repo: Path, doc_path: Path, label: str) -> list[str]:
     return [
         issue
-        for target in uvicorn_app_refs(doc_path)
-        if (issue := uvicorn_target_issue(repo, target, label)) is not None
+        for target, app_dir in uvicorn_app_refs(doc_path)
+        if (issue := uvicorn_target_issue(repo, target, label, app_dir)) is not None
     ]
 
 
