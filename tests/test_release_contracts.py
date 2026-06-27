@@ -406,6 +406,49 @@ def test_env_example_validator_rejects_symlinked_validator_script(tmp_path):
     assert "Traceback" not in result.stderr
 
 
+def test_env_example_validator_rejects_symlinked_validator_script_parent(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    outside_root = tmp_path / "outside-root"
+    outside_scripts_dir = outside_root / "scripts"
+    outside_app_dir = outside_root / "app"
+    outside_scripts_dir.mkdir(parents=True)
+    outside_app_dir.mkdir()
+    (outside_scripts_dir / "validate_env_example.py").write_text(
+        (repo / "scripts" / "validate_env_example.py").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (outside_scripts_dir / "dev.sh").write_text(
+        'DEV_READY_TIMEOUT="${DEV_READY_TIMEOUT:-30}"\n',
+        encoding="utf-8",
+    )
+    (outside_app_dir / "config.py").write_text(
+        (repo / "app" / "config.py").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    linked_scripts_dir = tmp_path / "scripts"
+    linked_scripts_dir.symlink_to(outside_scripts_dir, target_is_directory=True)
+    validator_script = linked_scripts_dir / "validate_env_example.py"
+    (tmp_path / ".env.example").write_text(
+        (repo / ".env.example").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(validator_script), ".env.example"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert f"validator script parent is not a regular directory: {linked_scripts_dir}" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_env_example_validator_reports_unreadable_settings_config(tmp_path):
     import subprocess
     import sys
@@ -644,7 +687,7 @@ def test_env_example_validator_rejects_symlinked_dev_script_parent(tmp_path):
     )
 
     assert result.returncode == 1
-    assert f"dev script parent is not a regular directory: {linked_scripts}" in result.stderr
+    assert f"validator script parent is not a regular directory: {linked_scripts}" in result.stderr
     assert "Traceback" not in result.stderr
 
 

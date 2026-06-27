@@ -227,6 +227,10 @@ def main() -> int:
     if SCRIPT_PATH.is_symlink() or not SCRIPT_PATH.is_file():
         print(f"validator script is not a regular file: {SCRIPT_PATH}", file=sys.stderr)
         return 1
+    validator_script_parent = first_symlink_parent(SCRIPT_PATH)
+    if validator_script_parent is not None:
+        print(f"validator script parent is not a regular directory: {validator_script_parent}", file=sys.stderr)
+        return 1
 
     path = Path(args.path)
     if not path.exists():
