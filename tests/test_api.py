@@ -2026,6 +2026,46 @@ def test_rag_query_unsupported_vector_embedding_model_returns_clear_error(tmp_pa
     assert payload["error"]["message"] == "vector store record embedding_model is unsupported: bad-vector"
 
 
+def test_rag_query_empty_vector_id_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import local_hash_embedding
+
+    vector_record = {
+        "": {
+            "document_id": 1,
+            "embedding": local_hash_embedding("argon plasma"),
+            "dimensions": 64,
+            "embedding_model": "local-hash",
+            "text": "argon plasma",
+        }
+    }
+    (tmp_path / "vector-index.json").write_text(json.dumps(vector_record), encoding="utf-8")
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-empty-vector-id.txt",
+                "rag-query-empty-vector-id",
+                "rag-query-empty-vector-id.txt",
+            ),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record id must be a non-empty string"
+
+
 def test_fixture_loader_supports_walking_skeleton(tmp_path):
     client = make_client(tmp_path)
 
@@ -5384,6 +5424,26 @@ def test_system_status_reports_unsupported_vector_embedding_model(tmp_path):
     assert vector_db["readable"] is True
     assert vector_db["valid_json"] is False
     assert vector_db["error"] == "vector store record embedding_model is unsupported: bad-vector"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_reports_empty_vector_id(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"": {"document_id": 1, "embedding": [0.1], "dimensions": 1, '
+        '"text": "argon plasma", "embedding_model": "local-hash"}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record id must be a non-empty string"
     assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
 
 
