@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
 from app import __version__
 from scripts.export_openapi import write_openapi
 from scripts.prepare_demo_data import prepare_demo_data
+from scripts.validate_release_artifacts import first_symlink_parent
 
 
 EXPECTED_ARTIFACT_NAMES = {"openapi.json", "demo-summary.json", "release-manifest.json"}
@@ -91,13 +92,14 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
             "output_dir": str(output_dir),
             "issues": [f"release artifact output directory is not a regular directory: {output_dir}"],
         }
-    if requested_output_dir.parent.is_symlink():
+    symlink_parent = first_symlink_parent(requested_output_dir)
+    if symlink_parent is not None:
         return {
             "ok": False,
             "output_dir": str(requested_output_dir.absolute()),
             "issues": [
                 "release artifact output directory parent is not a regular directory: "
-                f"{requested_output_dir.parent}"
+                f"{symlink_parent}"
             ],
         }
     output_dir = output_dir.resolve()
