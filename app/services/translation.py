@@ -123,6 +123,11 @@ def safe_target_lang_slug(target_lang: str) -> str:
     return (slug or "target")[:MAX_TARGET_LANG_SLUG_LENGTH]
 
 
+def assert_safe_translation_output_path(path) -> None:
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise ValueError(f"translation output path is not a regular file: {path}")
+
+
 def create_translation_job(document_id: int, target_lang: str) -> dict:
     with get_conn() as conn:
         cursor = conn.execute(
@@ -179,6 +184,7 @@ def translate_document(document_id: int, target_lang: str, translation_id: Optio
                 ]
             )
         out_path = settings.translation_dir / f"document-{document_id}-{safe_target_lang_slug(target_lang)}.md"
+        assert_safe_translation_output_path(out_path)
         out_path.write_text("\n".join(blocks), encoding="utf-8")
         with get_conn() as conn:
             conn.execute(
