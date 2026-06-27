@@ -332,6 +332,28 @@ def test_env_example_validator_rejects_symlinked_env_example_parent(tmp_path):
     assert f"env example parent is not a regular directory: {linked_root}" in result.stderr
 
 
+def test_env_example_validator_reports_unreadable_env_example(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_env_example.py"
+    env_path = tmp_path / ".env.example"
+    env_path.write_bytes(b"\xff\xfe\x00bad-env-example")
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), ".env.example"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "env example unreadable: .env.example:" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_gitignore_contains_required_release_hygiene_patterns():
     validate_release_hygiene = load_validate_release_hygiene()
     gitignore_path = Path(__file__).resolve().parent.parent / ".gitignore"

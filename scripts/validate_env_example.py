@@ -231,6 +231,11 @@ def main() -> int:
     if path.is_symlink() or not path.is_file():
         print(f"env example is not a regular file: {path}", file=sys.stderr)
         return 1
+    try:
+        path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        print(f"env example unreadable: {path}: {exc}", file=sys.stderr)
+        return 1
 
     missing = missing_required_keys(path)
     if missing:
