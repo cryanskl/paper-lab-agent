@@ -6738,6 +6738,19 @@ def test_schema_validator_reports_missing_required_search_columns(tmp_path):
     assert "missing column: crawl_jobs.papers_filtered" in issues
 
 
+def test_schema_validator_rejects_symlinked_schema_file(tmp_path):
+    validate_schema = load_validate_schema()
+    repo = Path(__file__).resolve().parent.parent
+    outside_schema = tmp_path / "outside-schema.sql"
+    outside_schema.write_text((repo / "docs" / "schema.sql").read_text(encoding="utf-8"), encoding="utf-8")
+    schema_path = tmp_path / "schema.sql"
+    schema_path.symlink_to(outside_schema)
+
+    issues = validate_schema.validate_schema(schema_path)
+
+    assert issues == [f"schema file is not a regular file: {schema_path}"]
+
+
 def test_schema_validator_runs_as_release_script():
     import subprocess
     import sys

@@ -311,6 +311,8 @@ def validate_schema(schema_path: Path = DEFAULT_SCHEMA_PATH) -> list[str]:
     issues: list[str] = []
     if not schema_path.exists():
         return [f"schema not found: {schema_path}"]
+    if schema_path.is_symlink() or not schema_path.is_file():
+        return [f"schema file is not a regular file: {schema_path}"]
 
     with tempfile.TemporaryDirectory(prefix="paper-lab-schema-") as temp_dir:
         database_path = Path(temp_dir) / "schema.db"
