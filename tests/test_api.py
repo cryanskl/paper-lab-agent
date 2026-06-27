@@ -10937,6 +10937,37 @@ def test_release_readiness_allows_offline_config_warnings():
     assert readiness["storage_errors"] == []
 
 
+def test_release_readiness_blocks_unsupported_local_adapter_warnings():
+    from app.routers.system import release_readiness_status
+
+    readiness = release_readiness_status(
+        {"ready": True, "missing": []},
+        [
+            {
+                "code": "unsupported_vector_db_backend",
+                "capability": "rag_indexing",
+                "message": "VECTOR_DB_BACKEND=faiss is not supported.",
+            },
+            {
+                "code": "unsupported_embedding_model",
+                "capability": "rag_indexing",
+                "message": "EMBEDDING_MODEL=text-embedding-3-small is not supported.",
+            },
+        ],
+        health_check_storage_health(),
+        health_check_status_counts(),
+    )
+
+    assert readiness["ready"] is False
+    assert readiness["demo_data_missing"] == []
+    assert readiness["failed_workflows"] == []
+    assert readiness["config_warning_codes"] == [
+        "unsupported_vector_db_backend",
+        "unsupported_embedding_model",
+    ]
+    assert readiness["storage_errors"] == []
+
+
 def test_system_status_counts_reaction_audits(tmp_path):
     client = make_client(tmp_path)
 

@@ -40,6 +40,7 @@ RELEASE_STORAGE_WRITABLE_KEYS = [
     "database_parent",
     "vector_db_parent",
 ]
+RELEASE_BLOCKING_CONFIG_WARNING_CODES = {"unsupported_embedding_model", "unsupported_vector_db_backend"}
 
 
 class SchedulerJobResponse(BaseModel):
@@ -352,9 +353,12 @@ def release_readiness_status(
     demo_data_missing = [str(item) for item in demo_data.get("missing", []) if str(item).strip()]
     failed_workflows = failed_workflow_errors(status_counts)
     config_warning_codes = warning_codes(warnings)
+    blocking_config_warnings = [
+        code for code in config_warning_codes if code in RELEASE_BLOCKING_CONFIG_WARNING_CODES
+    ]
     storage_errors = storage_readiness_errors(health)
     return {
-        "ready": not (demo_data_missing or failed_workflows or storage_errors),
+        "ready": not (demo_data_missing or failed_workflows or storage_errors or blocking_config_warnings),
         "demo_data_missing": demo_data_missing,
         "failed_workflows": failed_workflows,
         "config_warning_codes": config_warning_codes,
