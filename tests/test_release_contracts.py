@@ -1304,6 +1304,39 @@ def test_doctor_script_rejects_symlinked_local_storage_parent(tmp_path):
     assert not (outside_dir / "pdfs").exists()
 
 
+def test_doctor_script_rejects_symlinked_database_path(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+
+    outside_db = tmp_path / "outside.db"
+    outside_db.write_text("external database", encoding="utf-8")
+    linked_db = tmp_path / "plasma.db"
+    linked_db.symlink_to(outside_db)
+
+    check = doctor.check_local_storage(
+        repo,
+        env={
+            "PAPER_LAB_DATA_DIR": str(tmp_path / "data"),
+            "DATABASE_PATH": str(linked_db),
+        },
+    )
+
+    assert check["status"] == "fail"
+    assert {
+        "code": "storage_path_not_file",
+        "key": "database_path",
+        "path": str(linked_db),
+        "message": f"database_path must be a regular file path: {linked_db}",
+    } in check["issues"]
+
+
 def test_doctor_script_local_storage_preflight_reads_env_file(tmp_path):
     import importlib.util
 

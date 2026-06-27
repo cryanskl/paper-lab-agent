@@ -383,6 +383,18 @@ def storage_path_config(repo: Path, env: dict[str, str] | None = None) -> dict[s
     }
 
 
+def storage_file_path_config(repo: Path, env: dict[str, str] | None = None) -> dict[str, Path]:
+    env = env_with_file_values(repo, env)
+    data_dir = Path(env.get("PAPER_LAB_DATA_DIR") or "data")
+    paths = {
+        "database_path": Path(env.get("DATABASE_PATH") or data_dir / "plasma.db"),
+    }
+    return {
+        key: path if path.is_absolute() else repo / path
+        for key, path in paths.items()
+    }
+
+
 def first_symlink_parent(path: Path) -> Path | None:
     for parent in path.parents:
         if not parent.is_symlink():
@@ -425,14 +437,33 @@ def check_writable_directory(key: str, path: Path) -> list[dict[str, Any]]:
     return issues
 
 
+def check_regular_file_path(key: str, path: Path) -> list[dict[str, Any]]:
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        return [
+            {
+                "code": "storage_path_not_file",
+                "key": key,
+                "path": str(path),
+                "message": f"{key} must be a regular file path: {path}",
+            }
+        ]
+    return []
+
+
 def check_local_storage(repo: Path, env: dict[str, str] | None = None) -> dict[str, Any]:
     repo = repo.resolve()
     paths = storage_path_config(repo, env)
+    file_paths = storage_file_path_config(repo, env)
     issues = [
         issue
         for key, path in paths.items()
         for issue in check_writable_directory(key, path)
     ]
+    issues.extend(
+        issue
+        for key, path in file_paths.items()
+        for issue in check_regular_file_path(key, path)
+    )
     return {
         "name": "local_storage",
         "status": status_from_issues(issues),
