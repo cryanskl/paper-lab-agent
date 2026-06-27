@@ -194,6 +194,11 @@ def main() -> int:
     if args.gitignore.is_symlink() or not args.gitignore.is_file():
         print(f"gitignore is not a regular file: {args.gitignore}", file=sys.stderr)
         return 1
+    try:
+        args.gitignore.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        print(f"gitignore unreadable: {args.gitignore}: {exc}", file=sys.stderr)
+        return 1
 
     missing = missing_required_gitignore_patterns(args.gitignore)
     missing_ci = missing_required_ci_release_gate(repo)
