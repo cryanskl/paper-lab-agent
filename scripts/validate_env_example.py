@@ -239,6 +239,11 @@ def main() -> int:
     except (OSError, UnicodeError) as exc:
         print(f"env example unreadable: {path}: {exc}", file=sys.stderr)
         return 1
+    if SETTINGS_CONFIG_PATH.is_symlink() or (
+        SETTINGS_CONFIG_PATH.exists() and not SETTINGS_CONFIG_PATH.is_file()
+    ):
+        print(f"settings config is not a regular file: {SETTINGS_CONFIG_PATH}", file=sys.stderr)
+        return 1
     if SETTINGS_CONFIG_PATH.exists():
         try:
             settings_config_text = SETTINGS_CONFIG_PATH.read_text(encoding="utf-8")
