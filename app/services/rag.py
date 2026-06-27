@@ -149,6 +149,9 @@ def parse_vector_store_json(raw: str) -> dict:
             not isinstance(dimensions, int) or isinstance(dimensions, bool) or dimensions != len(embedding)
         ):
             raise ValueError(f"vector store record dimensions must match embedding length: {vector_id}")
+        text = record.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError(f"vector store record text must be a non-empty string: {vector_id}")
     return data
 
 
