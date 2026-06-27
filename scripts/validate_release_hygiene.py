@@ -127,6 +127,8 @@ def missing_required_ci_release_gate(repo: Path) -> list[str]:
     workflow_path = repo / REQUIRED_CI_WORKFLOW
     if not workflow_path.exists():
         return ["ci_workflow"]
+    if workflow_path.parent.is_symlink() or not workflow_path.parent.is_dir():
+        return ["ci_workflow_parent_not_regular_directory"]
     if workflow_path.is_symlink() or not workflow_path.is_file():
         return ["ci_workflow_not_regular_file"]
     workflow_text = workflow_path.read_text(encoding="utf-8")
