@@ -8296,6 +8296,31 @@ def test_extract_chemistry_handles_unicode_species_subscripts_and_charges(tmp_pa
     assert detail["reactions"][0]["products"] == ["O⁻", "O"]
 
 
+def test_extract_chemistry_classifies_superscript_positive_ion_products(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={
+            "file": (
+                "superscript-positive-ion.pdf",
+                pdf_bytes("e + Ar -> e + e + Ar⁺ .".encode("utf-8")),
+                "application/pdf",
+            )
+        },
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + e + Ar⁺"
+    assert reaction["products"] == ["e", "e", "Ar⁺"]
+    assert reaction["reaction_type"] == "ionization"
+
+
 def test_extract_chemistry_classifies_unicode_minus_negative_ions(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
