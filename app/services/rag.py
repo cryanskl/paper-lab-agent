@@ -155,6 +155,8 @@ def parse_vector_store_json(raw: str) -> dict:
         embedding_model = record.get("embedding_model")
         if not isinstance(embedding_model, str) or not embedding_model.strip():
             raise ValueError(f"vector store record embedding_model must be a non-empty string: {vector_id}")
+        if embedding_model not in SUPPORTED_EMBEDDING_MODELS:
+            raise ValueError(f"vector store record embedding_model is unsupported: {vector_id}")
     return data
 
 
