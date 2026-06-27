@@ -6799,6 +6799,28 @@ def test_requirements_validator_rejects_duplicate_packages(tmp_path):
     assert duplicates == ["requests"]
 
 
+def test_requirements_validator_rejects_symlinked_requirements_file(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_requirements.py"
+    outside_requirements = tmp_path / "outside-requirements.txt"
+    outside_requirements.write_text((repo / "requirements.txt").read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / "requirements.txt").symlink_to(outside_requirements)
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), "requirements.txt"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "requirements file is not a regular file: requirements.txt" in result.stderr
+
+
 def test_requirements_validator_reports_imported_package_missing_from_requirements(tmp_path):
     validate_requirements = load_validate_requirements()
     source_dir = tmp_path / "app"

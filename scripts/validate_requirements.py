@@ -178,10 +178,18 @@ def main() -> int:
     parser.add_argument("requirements_path", nargs="?", default=str(DEFAULT_REQUIREMENTS_PATH))
     args = parser.parse_args()
 
-    missing = missing_required_packages(Path(args.requirements_path))
-    missing_imports = missing_imported_packages(Path(args.requirements_path))
-    unpinned = unpinned_packages(Path(args.requirements_path))
-    duplicates = duplicate_packages(Path(args.requirements_path))
+    requirements_path = Path(args.requirements_path)
+    if not requirements_path.exists():
+        print(f"requirements file not found: {requirements_path}", file=sys.stderr)
+        return 1
+    if requirements_path.is_symlink() or not requirements_path.is_file():
+        print(f"requirements file is not a regular file: {requirements_path}", file=sys.stderr)
+        return 1
+
+    missing = missing_required_packages(requirements_path)
+    missing_imports = missing_imported_packages(requirements_path)
+    unpinned = unpinned_packages(requirements_path)
+    duplicates = duplicate_packages(requirements_path)
     if missing or missing_imports or unpinned or duplicates:
         if missing:
             print(f"requirements missing packages: {', '.join(missing)}", file=sys.stderr)
