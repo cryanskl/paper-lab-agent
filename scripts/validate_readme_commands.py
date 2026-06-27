@@ -476,6 +476,10 @@ def missing_command_targets_for_doc(repo: Path, doc_path: Path, label: str) -> l
         return [f"{label}: command doc parent is not a regular directory"]
     if doc_path.is_symlink() or not doc_path.is_file():
         return [f"{label}: command doc is not a regular file"]
+    try:
+        doc_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return [f"{label}: command doc unreadable"]
 
     issues: list[str] = []
     for target in command_targets(doc_path):
