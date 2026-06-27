@@ -383,10 +383,24 @@ def storage_path_config(repo: Path, env: dict[str, str] | None = None) -> dict[s
     }
 
 
+def first_symlink_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
+
+
 def check_writable_directory(key: str, path: Path) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     try:
-        if path.is_symlink() or (path.exists() and not path.is_dir()):
+        if (
+            path.is_symlink()
+            or first_symlink_parent(path) is not None
+            or (path.exists() and not path.is_dir())
+        ):
             return [
                 {
                     "code": "storage_path_not_directory",

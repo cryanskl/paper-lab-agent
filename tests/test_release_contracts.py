@@ -1269,6 +1269,41 @@ def test_doctor_script_rejects_symlinked_local_storage_dir(tmp_path):
     assert not (outside_dir / ".paper-lab-doctor-write-test").exists()
 
 
+def test_doctor_script_rejects_symlinked_local_storage_parent(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+
+    outside_dir = tmp_path / "outside-storage"
+    outside_dir.mkdir()
+    linked_root = tmp_path / "linked-root"
+    linked_root.symlink_to(outside_dir, target_is_directory=True)
+    pdf_dir = linked_root / "pdfs"
+
+    check = doctor.check_local_storage(
+        repo,
+        env={
+            "PAPER_LAB_DATA_DIR": str(tmp_path / "data"),
+            "PAPER_LAB_PDF_DIR": str(pdf_dir),
+        },
+    )
+
+    assert check["status"] == "fail"
+    assert {
+        "code": "storage_path_not_directory",
+        "key": "pdf_dir",
+        "path": str(pdf_dir),
+        "message": f"pdf_dir must be a writable directory: {pdf_dir}",
+    } in check["issues"]
+    assert not (outside_dir / "pdfs").exists()
+
+
 def test_doctor_script_local_storage_preflight_reads_env_file(tmp_path):
     import importlib.util
 
