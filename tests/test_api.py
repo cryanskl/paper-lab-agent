@@ -8547,6 +8547,36 @@ def test_health_check_fails_when_system_status_shape_is_invalid(monkeypatch, cap
     assert "system status" in captured.err
 
 
+def test_health_check_does_not_write_output_when_status_shape_is_invalid(monkeypatch, tmp_path):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_invalid_status_output", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {"database_path": "/tmp/plasma.db"}
+
+    output_path = tmp_path / "health.json"
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["health_check.py", "--base-url", "http://api.test", "--output", str(output_path)],
+    )
+
+    assert health_check.main() == 1
+    assert not output_path.exists()
+
+
 def test_health_check_fails_when_runtime_status_is_missing(monkeypatch, capsys):
     import importlib.util
     import sys

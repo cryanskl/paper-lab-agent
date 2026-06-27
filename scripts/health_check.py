@@ -865,11 +865,6 @@ def main() -> int:
         indent=None if args.compact else 2,
     )
     print(rendered)
-    if args.output:
-        output_error = write_output_file(args.output, rendered)
-        if output_error:
-            print(f"health_check failed: {output_error}", file=sys.stderr)
-            return 1
     if not isinstance(health, dict):
         print("health_check failed: health response must be an object", file=sys.stderr)
         return 1
@@ -886,6 +881,11 @@ def main() -> int:
     if status_errors:
         print(f"health_check failed: system status invalid ({'; '.join(status_errors)})", file=sys.stderr)
         return 1
+    if args.output:
+        output_error = write_output_file(args.output, rendered)
+        if output_error:
+            print(f"health_check failed: {output_error}", file=sys.stderr)
+            return 1
     api_readiness = api_release_readiness(status)
     if args.require_release_ready and api_readiness is not None:
         readiness_errors = release_readiness_blockers(api_readiness)
