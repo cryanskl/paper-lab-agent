@@ -4541,6 +4541,28 @@ def test_api_contract_validator_rejects_symlinked_contract_parent(tmp_path):
     assert f"api contract file parent is not a regular directory: {docs_path}" in result.stderr
 
 
+def test_api_contract_validator_reports_unreadable_contract_file(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_api_contract.py"
+    contract_path = tmp_path / "接口设计文档.md"
+    contract_path.write_bytes(b"\xff\xfe\x00bad-api-contract")
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), str(contract_path)],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert f"api contract file unreadable: {contract_path}:" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_api_contract_validator_reports_documented_route_missing_from_app(tmp_path):
     validate_api_contract = load_validate_api_contract()
     repo = Path(__file__).resolve().parent.parent

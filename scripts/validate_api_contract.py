@@ -1257,6 +1257,11 @@ def main() -> int:
     if contract_path.is_symlink() or not contract_path.is_file():
         print(f"api contract file is not a regular file: {contract_path}", file=sys.stderr)
         return 1
+    try:
+        contract_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        print(f"api contract file unreadable: {contract_path}: {exc}", file=sys.stderr)
+        return 1
 
     missing = missing_documented_routes(contract_path)
     duplicates = duplicate_documented_routes(contract_path)
