@@ -10081,6 +10081,38 @@ def test_reaction_export_bolsig_text_and_rejects_unknown_format(tmp_path):
     assert blank.json()["error"]["code"] == "unsupported_export_format"
 
 
+def test_reaction_export_text_formats_include_per_reaction_audit_summary(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("export-audit-summary.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+    reaction_id = detail["reactions"][0]["id"]
+
+    reviewed = client.put(
+        f"/api/v1/reactions/{reaction_id}/verify",
+        json={"verified": True, "rate_value": "reviewed source value", "verified_by": "chemist-a"},
+    ).json()
+    audit = reviewed["reactions"][0]["audit_log"][0]
+
+    exported_txt = client.post(f"/api/v1/reaction-sets/{reaction_set['id']}/export?format=txt").json()
+    txt = Path(exported_txt["output_path"]).read_text(encoding="utf-8")
+    assert "audit_entries: 1" in txt
+    assert "last_verified_by: chemist-a" in txt
+    assert f"last_verified_at: {audit['verified_at']}" in txt
+
+    exported_bolsig = client.post(f"/api/v1/reaction-sets/{reaction_set['id']}/export?format=bolsig").json()
+    bolsig = Path(exported_bolsig["output_path"]).read_text(encoding="utf-8")
+    assert "AUDIT_ENTRIES: 1" in bolsig
+    assert "LAST_VERIFIED_BY: chemist-a" in bolsig
+    assert f"LAST_VERIFIED_AT: {audit['verified_at']}" in bolsig
+
+
 def test_reaction_export_rejects_symlinked_output_file(tmp_path):
     make_client(tmp_path)
     import pytest

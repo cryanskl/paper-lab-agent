@@ -537,6 +537,14 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
                 lines.append(f"SOURCE_LABEL: {reaction['source_label']}")
             if reaction.get("source_excerpt"):
                 lines.append(f"SOURCE_EXCERPT: {reaction['source_excerpt']}")
+            audit_log = reaction.get("audit_log") or []
+            lines.append(f"AUDIT_ENTRIES: {len(audit_log)}")
+            if audit_log:
+                latest_audit = audit_log[0]
+                if latest_audit.get("verified_by"):
+                    lines.append(f"LAST_VERIFIED_BY: {latest_audit['verified_by']}")
+                if latest_audit.get("verified_at"):
+                    lines.append(f"LAST_VERIFIED_AT: {latest_audit['verified_at']}")
             lines.append("END")
         out_path.write_text("\n".join(lines), encoding="utf-8")
         mime_type = "text/plain"
@@ -562,6 +570,14 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
                 lines.append(f"source_label: {reaction['source_label']}")
             if reaction.get("source_excerpt"):
                 lines.append(f"source_excerpt: {reaction['source_excerpt']}")
+            audit_log = reaction.get("audit_log") or []
+            lines.append(f"audit_entries: {len(audit_log)}")
+            if audit_log:
+                latest_audit = audit_log[0]
+                if latest_audit.get("verified_by"):
+                    lines.append(f"last_verified_by: {latest_audit['verified_by']}")
+                if latest_audit.get("verified_at"):
+                    lines.append(f"last_verified_at: {latest_audit['verified_at']}")
         out_path.write_text("\n".join(lines), encoding="utf-8")
         mime_type = "text/plain"
     return {
