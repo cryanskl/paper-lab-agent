@@ -153,6 +153,19 @@ def normalize_base_url(url: str) -> str:
     return value
 
 
+def write_output_file(path: Path, rendered: str) -> Optional[str]:
+    if path.is_symlink():
+        return f"output path is not a regular file: {path}"
+    if path.exists() and not path.is_file():
+        return f"output path is not a regular file: {path}"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{rendered}\n", encoding="utf-8")
+    except OSError as exc:
+        return f"failed to write output file {path}: {exc}"
+    return None
+
+
 def connect_host(host: str) -> str:
     return "127.0.0.1" if host == "0.0.0.0" else host
 
@@ -835,8 +848,10 @@ def main() -> int:
     )
     print(rendered)
     if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(f"{rendered}\n", encoding="utf-8")
+        output_error = write_output_file(args.output, rendered)
+        if output_error:
+            print(f"health_check failed: {output_error}", file=sys.stderr)
+            return 1
     if not isinstance(health, dict):
         print("health_check failed: health response must be an object", file=sys.stderr)
         return 1
