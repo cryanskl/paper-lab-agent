@@ -238,7 +238,7 @@ async def run_crawl_job(job_id: int, journal_id: int, date_from: str, date_to: s
         journal = dict_from_row(journal_row)
 
     try:
-        issn = journal.get("issn_electronic") or journal.get("issn_print")
+        issn = optional_text(journal.get("issn_electronic")) or optional_text(journal.get("issn_print"))
         if not issn:
             raise RuntimeError("journal has no ISSN")
         works, source_warning = await fetch_metadata_works(settings, issn, date_from, date_to)
