@@ -108,11 +108,24 @@ def anchor_exists(path: Path, fragment: str) -> bool:
     return bool(normalized and normalized in markdown_anchors(path))
 
 
+def first_symlink_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
+
+
 def broken_doc_links(repo: Path) -> list[str]:
     repo = repo.resolve()
     issues: list[str] = []
     for path in doc_files(repo):
         label = path.relative_to(repo).as_posix()
+        if first_symlink_parent(path) is not None:
+            issues.append(f"{label}: doc source parent is not a regular directory")
+            continue
         if path.is_symlink() or not path.is_file():
             issues.append(f"{label}: doc source is not a regular file")
             continue
