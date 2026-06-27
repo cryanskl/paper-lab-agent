@@ -995,6 +995,18 @@ async def test_openalex_returns_no_works_for_blank_issn_without_request():
 
 
 @pytest.mark.asyncio
+async def test_openalex_returns_no_works_for_non_string_issn_without_request():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("OpenAlex should not be called for non-string ISSN")
+
+    client = OpenAlexClient(transport=httpx.MockTransport(handler))
+
+    works = await client.works_by_issn(None, "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert works == []
+
+
+@pytest.mark.asyncio
 async def test_openalex_does_not_retry_permanent_http_errors():
     calls = 0
     sleep_calls = []
@@ -1170,6 +1182,18 @@ async def test_crossref_returns_no_works_for_blank_issn_without_request():
     client = CrossrefClient(transport=httpx.MockTransport(handler))
 
     works = await client.works_by_issn("   ", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert works == []
+
+
+@pytest.mark.asyncio
+async def test_crossref_returns_no_works_for_non_string_issn_without_request():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("Crossref should not be called for non-string ISSN")
+
+    client = CrossrefClient(transport=httpx.MockTransport(handler))
+
+    works = await client.works_by_issn(None, "2026-01-01", "2026-01-31", max_pages=1)
 
     assert works == []
 
