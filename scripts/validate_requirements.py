@@ -174,6 +174,16 @@ def missing_required_packages(path: Path = DEFAULT_REQUIREMENTS_PATH) -> list[st
     return [package for package in REQUIRED_PACKAGES if normalize_package_name(package) not in declared]
 
 
+def unreadable_python_sources(paths: list[Path] = SOURCE_PATHS) -> list[str]:
+    issues: list[str] = []
+    for path in python_files(paths):
+        try:
+            path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            issues.append(f"python source unreadable: {path}: {exc}")
+    return issues
+
+
 def first_symlink_parent(path: Path) -> Path | None:
     for parent in path.parents:
         if not parent.is_symlink():
@@ -204,6 +214,12 @@ def main() -> int:
         requirements_path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
         print(f"requirements file unreadable: {requirements_path}: {exc}", file=sys.stderr)
+        return 1
+
+    source_read_issues = unreadable_python_sources()
+    if source_read_issues:
+        for issue in source_read_issues:
+            print(issue, file=sys.stderr)
         return 1
 
     missing = missing_required_packages(requirements_path)
