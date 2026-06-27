@@ -5884,6 +5884,21 @@ def test_system_status_reports_vector_db_backend(tmp_path):
     assert status["external_capabilities"]["vector_db_backend"] == "local-json"
 
 
+def test_system_status_reports_normalized_effective_vector_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("EMBEDDING_MODEL", " LOCAL-HASH ")
+    monkeypatch.setenv("VECTOR_DB_BACKEND", " LOCAL-JSON ")
+
+    client = make_client(tmp_path)
+
+    status = client.get("/api/v1/system/status").json()
+    codes = {warning["code"] for warning in status["config_warnings"]}
+
+    assert "unsupported_embedding_model" not in codes
+    assert "unsupported_vector_db_backend" not in codes
+    assert status["external_capabilities"]["embedding_model"] == "local-hash"
+    assert status["external_capabilities"]["vector_db_backend"] == "local-json"
+
+
 def test_system_status_reports_translation_adapter(tmp_path, monkeypatch):
     monkeypatch.setenv("LLM_API_KEY", "")
     monkeypatch.setenv("LLM_MODEL", "gpt-diagnostic")

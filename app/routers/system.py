@@ -14,6 +14,8 @@ from app.services.rag import (
     SUPPORTED_EMBEDDING_MODELS,
     SUPPORTED_VECTOR_DB_BACKENDS,
     assert_safe_vector_store_path,
+    normalize_embedding_model,
+    normalize_vector_db_backend,
     parse_vector_store_json,
 )
 
@@ -277,7 +279,7 @@ def config_warnings(settings) -> list[dict]:
                 "message": "LLM_API_KEY is not configured; translation uses the local deterministic adapter.",
             }
         )
-    if (settings.embedding_model or "").strip().lower() not in SUPPORTED_EMBEDDING_MODELS:
+    if normalize_embedding_model(settings.embedding_model) not in SUPPORTED_EMBEDDING_MODELS:
         warnings.append(
             {
                 "code": "unsupported_embedding_model",
@@ -285,7 +287,7 @@ def config_warnings(settings) -> list[dict]:
                 "message": f"EMBEDDING_MODEL={settings.embedding_model} is not supported by the local adapter registry.",
             }
         )
-    if (settings.vector_db_backend or "").strip().lower() not in SUPPORTED_VECTOR_DB_BACKENDS:
+    if normalize_vector_db_backend(settings.vector_db_backend) not in SUPPORTED_VECTOR_DB_BACKENDS:
         warnings.append(
             {
                 "code": "unsupported_vector_db_backend",
@@ -417,8 +419,8 @@ async def status(check_external: bool = False) -> dict:
             "llm_api_key": bool(settings.llm_api_key),
             "translation_adapter": "openai-compatible" if settings.llm_api_key else "local-echo",
             "llm_model": settings.llm_model,
-            "embedding_model": settings.embedding_model,
-            "vector_db_backend": settings.vector_db_backend,
+            "embedding_model": normalize_embedding_model(settings.embedding_model),
+            "vector_db_backend": normalize_vector_db_backend(settings.vector_db_backend),
         },
         "status_counts": status_counts,
         "counts": counts,
