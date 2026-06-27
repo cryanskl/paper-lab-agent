@@ -7214,6 +7214,17 @@ def test_schema_validator_rejects_symlinked_schema_parent(tmp_path):
     assert issues == [f"schema file parent is not a regular directory: {docs_path}"]
 
 
+def test_schema_validator_reports_unreadable_schema_file(tmp_path):
+    validate_schema = load_validate_schema()
+    schema_path = tmp_path / "schema.sql"
+    schema_path.write_bytes(b"\xff\xfe\x00bad-schema")
+
+    issues = validate_schema.validate_schema(schema_path)
+
+    assert len(issues) == 1
+    assert issues[0].startswith(f"schema file unreadable: {schema_path}:")
+
+
 def test_schema_validator_runs_as_release_script():
     import subprocess
     import sys

@@ -331,7 +331,12 @@ def validate_schema(schema_path: Path = DEFAULT_SCHEMA_PATH) -> list[str]:
         database_path = Path(temp_dir) / "schema.db"
         conn = sqlite3.connect(database_path)
         try:
-            conn.executescript(schema_path.read_text(encoding="utf-8"))
+            try:
+                schema_sql = schema_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                issues.append(f"schema file unreadable: {schema_path}: {exc}")
+                return issues
+            conn.executescript(schema_sql)
             issues.extend(validate_connection_schema(conn, require_seed_counts=True))
         except sqlite3.Error as exc:
             issues.append(f"schema execution failed: {exc}")
