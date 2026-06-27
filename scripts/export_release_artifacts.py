@@ -139,6 +139,8 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
     openapi_path = output_dir / "openapi.json"
     demo_summary_path = output_dir / "demo-summary.json"
     manifest_path = output_dir / "release-manifest.json"
+    for artifact_path in (openapi_path, demo_summary_path, manifest_path):
+        artifact_path.unlink(missing_ok=True)
 
     openapi_error = write_openapi(openapi_path, compact=compact)
     if openapi_error:

@@ -1647,6 +1647,29 @@ def test_export_release_artifacts_reports_prepare_demo_failure(monkeypatch, tmp_
     assert not (output_dir / "release-manifest.json").exists()
 
 
+def test_export_release_artifacts_removes_stale_outputs_on_prepare_demo_failure(monkeypatch, tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    output_dir = tmp_path / "release"
+    output_dir.mkdir()
+    stale_demo_summary = output_dir / "demo-summary.json"
+    stale_manifest = output_dir / "release-manifest.json"
+    stale_demo_summary.write_text('{"ready": true}\n', encoding="utf-8")
+    stale_manifest.write_text('{"service": "paper-lab-agent"}\n', encoding="utf-8")
+
+    def fake_prepare_demo_data():
+        raise RuntimeError("fixture setup failed")
+
+    monkeypatch.setattr(export_release_artifacts, "prepare_demo_data", fake_prepare_demo_data)
+
+    report = export_release_artifacts.export_release_artifacts(output_dir, compact=True)
+
+    assert report["ok"] is False
+    assert report["issues"] == ["Demo data preparation failed: fixture setup failed"]
+    assert (output_dir / "openapi.json").exists()
+    assert not stale_demo_summary.exists()
+    assert not stale_manifest.exists()
+
+
 def test_export_release_artifacts_reports_manifest_write_failure(monkeypatch, tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     output_dir = tmp_path / "release"
