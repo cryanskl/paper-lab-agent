@@ -8812,6 +8812,26 @@ def test_extract_chemistry_preserves_fullwidth_scientific_rate_value(tmp_path):
     assert reaction["rate_value"] == "１．２×１０⁻¹³ cm3/s"
 
 
+def test_extract_chemistry_preserves_fullwidth_x_scientific_rate_value(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is １．２ｘ１０⁻¹³ cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("fullwidth-x-scientific-rate-value.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "１．２ｘ１０⁻¹³ cm3/s"
+
+
 def test_extract_chemistry_preserves_fullwidth_rate_unit(tmp_path):
     client = make_client(tmp_path)
     content = "e + Ar -> e + Ar+ . The rate coefficient is １．２×１０⁻¹³ ｃｍ３／ｓ in the source table."
