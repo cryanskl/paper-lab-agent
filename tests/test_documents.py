@@ -270,3 +270,54 @@ def test_sections_from_tei_preserves_direct_body_and_div_quote_blocks():
             "section_type": "body",
         },
     ]
+
+
+def test_sections_from_tei_preserves_body_and_div_mixed_text_tails():
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          Lead text before the first body paragraph.
+          <head>Body heading</head>
+          Text after the body heading.
+          <p>Body paragraph.</p>
+          Text after the body paragraph.
+          <div>
+            Intro text before the div heading.
+            <head>Div heading</head>
+            Text after the div heading.
+            <p>Div paragraph.</p>
+            Text after the div paragraph.
+          </div>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Section 1",
+            "content": "Lead text before the first body paragraph.",
+            "section_type": "body",
+        },
+        {
+            "seq": 2,
+            "title": "Body heading",
+            "content": "Text after the body heading. Body paragraph. Text after the body paragraph.",
+            "section_type": "body",
+        },
+        {
+            "seq": 3,
+            "title": "Div heading",
+            "content": (
+                "Intro text before the div heading. "
+                "Text after the div heading. "
+                "Div paragraph. "
+                "Text after the div paragraph."
+            ),
+            "section_type": "body",
+        },
+    ]

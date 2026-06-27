@@ -301,7 +301,8 @@ def sections_from_tei(tei: str) -> list[dict]:
     def append_body_div(div: ET.Element) -> None:
         head = find(div, "tei:head")
         explicit_title = text_content(head, include_targets=False) if head is not None else None
-        content_parts = []
+        initial_text = clean_text(div.text or "")
+        content_parts = [initial_text] if initial_text else []
 
         def flush_body_content() -> None:
             nonlocal content_parts
@@ -312,8 +313,8 @@ def sections_from_tei(tei: str) -> list[dict]:
         for child in list(div):
             child_name = local_name(child)
             if child_name == "head":
-                continue
-            if child_name in {"p", "formula", "equation", "note", "quote", "cit"}:
+                pass
+            elif child_name in {"p", "formula", "equation", "note", "quote", "cit"}:
                 content_parts.append(text_content(child))
             elif child_name == "list":
                 content_parts.extend(text_content(item) for item in findall(child, "tei:item"))
@@ -326,6 +327,9 @@ def sections_from_tei(tei: str) -> list[dict]:
             elif child_name == "table":
                 flush_body_content()
                 append_table(child)
+            tail = clean_text(child.tail or "")
+            if tail:
+                content_parts.append(tail)
         flush_body_content()
 
     def append_figure(figure: ET.Element) -> None:
@@ -369,7 +373,8 @@ def sections_from_tei(tei: str) -> list[dict]:
 
     for body in findall(root, ".//tei:text//tei:body"):
         pending_body_head = None
-        content_parts = []
+        initial_text = clean_text(body.text or "")
+        content_parts = [initial_text] if initial_text else []
 
         def flush_body_content() -> None:
             nonlocal content_parts, pending_body_head
@@ -398,6 +403,9 @@ def sections_from_tei(tei: str) -> list[dict]:
             elif child_name == "table":
                 flush_body_content()
                 append_table(child)
+            tail = clean_text(child.tail or "")
+            if tail:
+                content_parts.append(tail)
         flush_body_content()
 
     reference_index = 1
