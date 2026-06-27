@@ -1623,6 +1623,30 @@ def test_export_release_artifacts_reports_demo_summary_write_failure(monkeypatch
     assert not (output_dir / "release-manifest.json").exists()
 
 
+def test_export_release_artifacts_reports_prepare_demo_failure(monkeypatch, tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    output_dir = tmp_path / "release"
+
+    def fake_prepare_demo_data():
+        raise RuntimeError("fixture setup failed")
+
+    monkeypatch.setattr(export_release_artifacts, "prepare_demo_data", fake_prepare_demo_data)
+
+    try:
+        report = export_release_artifacts.export_release_artifacts(output_dir, compact=True)
+    except RuntimeError as exc:
+        raise AssertionError(
+            "export_release_artifacts should report demo preparation failures instead of raising"
+        ) from exc
+
+    assert report["ok"] is False
+    assert report["output_dir"] == str(output_dir.resolve())
+    assert report["issues"] == ["Demo data preparation failed: fixture setup failed"]
+    assert (output_dir / "openapi.json").exists()
+    assert not (output_dir / "demo-summary.json").exists()
+    assert not (output_dir / "release-manifest.json").exists()
+
+
 def test_export_release_artifacts_reports_manifest_write_failure(monkeypatch, tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     output_dir = tmp_path / "release"

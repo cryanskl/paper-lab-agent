@@ -147,7 +147,14 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
             "output_dir": str(output_dir),
             "issues": [f"OpenAPI artifact write failed: {openapi_error}"],
         }
-    demo_payload = prepare_demo_data()
+    try:
+        demo_payload = prepare_demo_data()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "output_dir": str(output_dir),
+            "issues": [f"Demo data preparation failed: {exc}"],
+        }
     demo_summary = demo_payload["summary"]
     try:
         write_json(demo_summary_path, demo_summary, compact=compact)
