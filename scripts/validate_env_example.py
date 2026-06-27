@@ -10,7 +10,8 @@ from pathlib import Path
 import sys
 
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+SCRIPT_PATH = Path(__file__).absolute()
+REPO_ROOT = SCRIPT_PATH.resolve().parent.parent
 SETTINGS_CONFIG_PATH = REPO_ROOT / "app" / "config.py"
 DEV_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev.sh"
 
@@ -222,6 +223,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Validate required keys in .env.example")
     parser.add_argument("path", nargs="?", default=".env.example", help="Path to env example file")
     args = parser.parse_args()
+
+    if SCRIPT_PATH.is_symlink() or not SCRIPT_PATH.is_file():
+        print(f"validator script is not a regular file: {SCRIPT_PATH}", file=sys.stderr)
+        return 1
 
     path = Path(args.path)
     if not path.exists():

@@ -362,6 +362,50 @@ def test_env_example_validator_reports_unreadable_env_example(tmp_path):
     assert "Traceback" not in result.stderr
 
 
+def test_env_example_validator_rejects_symlinked_validator_script(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    outside_root = tmp_path / "outside-root"
+    outside_scripts_dir = outside_root / "scripts"
+    outside_app_dir = outside_root / "app"
+    scripts_dir = tmp_path / "scripts"
+    outside_scripts_dir.mkdir(parents=True)
+    outside_app_dir.mkdir()
+    scripts_dir.mkdir()
+    (outside_scripts_dir / "validate_env_example.py").write_text(
+        (repo / "scripts" / "validate_env_example.py").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (outside_scripts_dir / "dev.sh").write_text(
+        'DEV_READY_TIMEOUT="${DEV_READY_TIMEOUT:-30}"\n',
+        encoding="utf-8",
+    )
+    (outside_app_dir / "config.py").write_text(
+        (repo / "app" / "config.py").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    validator_script = scripts_dir / "validate_env_example.py"
+    validator_script.symlink_to(outside_scripts_dir / "validate_env_example.py")
+    (tmp_path / ".env.example").write_text(
+        (repo / ".env.example").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(validator_script), ".env.example"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert f"validator script is not a regular file: {validator_script}" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_env_example_validator_reports_unreadable_settings_config(tmp_path):
     import subprocess
     import sys
