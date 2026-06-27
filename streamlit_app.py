@@ -34,6 +34,7 @@ from app.frontend_api import (
     reaction_set_option_label,
     reaction_set_review_state,
     reaction_set_rows,
+    release_readiness_display_state,
     request_json,
     request_json_status,
     translation_download,
@@ -104,39 +105,18 @@ with st.sidebar:
     st.metric("文档", status["counts"]["documents"])
     release_readiness = status.get("release_readiness") or {}
     st.subheader("发布就绪")
-    RELEASE_BLOCKING_CONFIG_WARNING_CODES = {"unsupported_embedding_model", "unsupported_vector_db_backend"}
-    config_warning_codes = [
-        str(code) for code in release_readiness.get("config_warning_codes") or [] if str(code).strip()
-    ]
-    blocking_config_warnings = [
-        code for code in config_warning_codes if code in RELEASE_BLOCKING_CONFIG_WARNING_CODES
-    ]
-    blockers = []
-    blocker_groups = {
-        "demo_data_missing": "demo data missing:",
-        "failed_workflows": "failed workflows:",
-        "blocking_config_warnings": "config warnings:",
-        "storage_errors": "storage errors:",
-    }
-    for key in blocker_groups:
-        if key == "blocking_config_warnings":
-            blockers.extend(f"config_warning_codes:{code}" for code in blocking_config_warnings)
-        else:
-            blockers.extend(str(item) for item in release_readiness.get(key) or [] if str(item).strip())
-    release_ready = release_readiness.get("ready") is True and not blockers
+    release_display = release_readiness_display_state(release_readiness)
+    blockers = release_display["blockers"]
+    release_ready = release_display["ready"]
     if release_ready:
         st.success("release ready")
     else:
         blocker_label = ", ".join(blockers) if blockers else "unknown"
         st.warning(f"release blockers: {blocker_label}")
         st.caption("release blocker details")
-        for key, label in blocker_groups.items():
-            if key == "blocking_config_warnings":
-                items = [f"config_warning_codes:{code}" for code in blocking_config_warnings]
-            else:
-                items = [str(item) for item in release_readiness.get(key) or [] if str(item).strip()]
-            if items:
-                st.caption(f"{label} {', '.join(items)}")
+        for group in release_display["groups"]:
+            if group["items"]:
+                st.caption(f"{group['label']} {', '.join(group['items'])}")
     demo_data = status.get("demo_data") or {}
     st.subheader("演示数据")
     if demo_data.get("ready"):

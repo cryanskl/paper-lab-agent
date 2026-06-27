@@ -14830,45 +14830,33 @@ def test_streamlit_sidebar_surfaces_release_readiness():
         "发布就绪",
         "release ready",
         "release blockers",
-        "demo_data_missing",
-        "failed_workflows",
-        "storage_errors",
-        "blocking_config_warnings",
-        "config warnings:",
+        "release_readiness_display_state",
+        'release_display = release_readiness_display_state(release_readiness)',
+        'blockers = release_display["blockers"]',
+        'release_ready = release_display["ready"]',
         "release blocker details",
-        "demo data missing:",
-        "failed workflows:",
-        "storage errors:",
-        'release_ready = release_readiness.get("ready") is True and not blockers',
         "if release_ready:",
     ]:
         assert required in sidebar_section
     assert 'if release_readiness.get("ready"):' not in sidebar_section
     release_blocker_section = sidebar_section[
-        sidebar_section.index("blocker_groups = {") : sidebar_section.index("demo_data = status.get")
+        sidebar_section.index("release_display = release_readiness_display_state")
+        : sidebar_section.index("demo_data = status.get")
     ]
-    assert "config_warning_codes" in release_blocker_section
-    assert "config warnings:" in release_blocker_section
-    assert "missing_llm_api_key" not in release_blocker_section
+    assert "release_readiness.get(\"ready\")" not in release_blocker_section
+    assert "blocker_groups = {" not in release_blocker_section
 
 
 def test_streamlit_sidebar_surfaces_blocking_release_config_warnings():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+    frontend = (repo / "app" / "frontend_api.py").read_text(encoding="utf-8")
 
-    for required in [
-        "RELEASE_BLOCKING_CONFIG_WARNING_CODES",
-        "unsupported_embedding_model",
-        "unsupported_vector_db_backend",
-        "blocking_config_warnings",
-        "config_warning_codes",
-        "config warnings:",
-        "config_warning_codes:",
-    ]:
-        assert required in sidebar_section
-    assert "missing_llm_api_key" not in sidebar_section[
-        sidebar_section.index("RELEASE_BLOCKING_CONFIG_WARNING_CODES") : sidebar_section.index("demo_data = status.get")
+    assert "release_readiness_display_state" in streamlit
+    for required in ["RELEASE_BLOCKING_CONFIG_WARNING_CODES", "unsupported_embedding_model", "unsupported_vector_db_backend"]:
+        assert required in frontend
+    assert "missing_llm_api_key" not in frontend[
+        frontend.index("RELEASE_BLOCKING_CONFIG_WARNING_CODES") : frontend.index("def release_readiness_display_state")
     ]
 
 

@@ -5,6 +5,7 @@ import requests
 
 
 ERROR_TEXT_LIMIT = 500
+RELEASE_BLOCKING_CONFIG_WARNING_CODES = {"unsupported_embedding_model", "unsupported_vector_db_backend"}
 
 
 class FrontendApiError(RuntimeError):
@@ -133,6 +134,39 @@ def request_json(
 
 def compact_parts(parts: list[Any]) -> list[str]:
     return [str(part) for part in parts if part is not None and str(part) != ""]
+
+
+def release_readiness_display_state(release_readiness: dict[str, Any]) -> dict[str, Any]:
+    config_warning_codes = [
+        str(code) for code in release_readiness.get("config_warning_codes") or [] if str(code).strip()
+    ]
+    blocking_config_warnings = [
+        f"config_warning_codes:{code}" for code in config_warning_codes if code in RELEASE_BLOCKING_CONFIG_WARNING_CODES
+    ]
+    groups = [
+        {
+            "label": "demo data missing:",
+            "items": [str(item) for item in release_readiness.get("demo_data_missing") or [] if str(item).strip()],
+        },
+        {
+            "label": "failed workflows:",
+            "items": [str(item) for item in release_readiness.get("failed_workflows") or [] if str(item).strip()],
+        },
+        {
+            "label": "config warnings:",
+            "items": blocking_config_warnings,
+        },
+        {
+            "label": "storage errors:",
+            "items": [str(item) for item in release_readiness.get("storage_errors") or [] if str(item).strip()],
+        },
+    ]
+    blockers = [item for group in groups for item in group["items"]]
+    return {
+        "ready": release_readiness.get("ready") is True and not blockers,
+        "blockers": blockers,
+        "groups": groups,
+    }
 
 
 def crawl_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:

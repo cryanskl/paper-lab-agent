@@ -189,6 +189,49 @@ def test_frontend_api_status_request_promotes_invalid_success_payload(monkeypatc
     assert "HTTP 200" in payload["error"]["message"]
 
 
+def test_release_readiness_display_state_surfaces_only_blocking_config_warnings():
+    from app import frontend_api
+
+    state = frontend_api.release_readiness_display_state(
+        {
+            "ready": False,
+            "demo_data_missing": [],
+            "failed_workflows": [],
+            "config_warning_codes": ["missing_llm_api_key", "unsupported_vector_db_backend"],
+            "storage_errors": [],
+        }
+    )
+
+    assert state["ready"] is False
+    assert state["blockers"] == ["config_warning_codes:unsupported_vector_db_backend"]
+    assert {
+        "label": "config warnings:",
+        "items": ["config_warning_codes:unsupported_vector_db_backend"],
+    } in state["groups"]
+    assert "config_warning_codes:missing_llm_api_key" not in state["blockers"]
+
+
+def test_release_readiness_display_state_rejects_inconsistent_ready_payload():
+    from app import frontend_api
+
+    state = frontend_api.release_readiness_display_state(
+        {
+            "ready": True,
+            "demo_data_missing": ["documents>=1"],
+            "failed_workflows": [],
+            "config_warning_codes": [],
+            "storage_errors": [],
+        }
+    )
+
+    assert state["ready"] is False
+    assert state["blockers"] == ["documents>=1"]
+    assert {
+        "label": "demo data missing:",
+        "items": ["documents>=1"],
+    } in state["groups"]
+
+
 def test_crawl_job_option_label_summarizes_job_status():
     from app import frontend_api
 
