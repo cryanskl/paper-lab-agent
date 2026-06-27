@@ -97,7 +97,8 @@ def inline_command_lines(readme_path: Path) -> list[str]:
         for match in INLINE_CODE_RE.finditer(raw_line):
             candidate = match.group(1).strip()
             tokens = strip_leading_env_assignments(split_command(candidate))
-            if tokens and (tokens[0] in LOCAL_COMMANDS or tokens[0].startswith("scripts/")):
+            command = tokens[0].removeprefix("./") if tokens else ""
+            if command and (command in LOCAL_COMMANDS or command.startswith("scripts/")):
                 lines.append(candidate)
     return lines
 
