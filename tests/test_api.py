@@ -7327,6 +7327,26 @@ def test_extract_chemistry_preserves_space_separated_rate_units(tmp_path):
     assert reaction["rate_value"] == "1.2e-13 cm3 s-1"
 
 
+def test_extract_chemistry_preserves_superscript_space_separated_rate_units(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2e-13 cm³ s⁻¹ in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("superscript-space-separated-rate-unit.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-13 cm³ s⁻¹"
+
+
 def test_extract_chemistry_preserves_multiplication_scientific_rate_value(tmp_path):
     client = make_client(tmp_path)
     content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2×10^-13 cm3/s in the source table."
