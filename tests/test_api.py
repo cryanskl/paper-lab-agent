@@ -195,6 +195,18 @@ def test_crawl_keyword_matching_treats_punctuation_as_word_boundaries():
     assert matches_keywords(work, {"mode": "and", "terms": ["ar o2", "global discharge"]}) is True
 
 
+def test_crawl_keyword_matching_normalizes_unicode_subscript_digits():
+    from app.services.crawl import matches_keywords, normalize_keyword_text
+
+    work = {
+        "title": "CO₂ conversion in an Ar/O₂ plasma",
+        "abstract": "N₂ admixtures alter oxygen reaction pathways.",
+    }
+
+    assert normalize_keyword_text("CO₂/O₂") == "co2 o2"
+    assert matches_keywords(work, {"mode": "and", "terms": ["co2 conversion", "ar o2", "n2 admixtures"]}) is True
+
+
 def test_crawl_keyword_matching_does_not_match_inside_words():
     from app.services.crawl import matches_keywords
 

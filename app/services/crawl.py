@@ -11,13 +11,16 @@ from app.db import dict_from_row, get_conn
 from app.services.classification import get_classifier
 from app.utils import json_dumps, json_loads, now_iso, today_iso
 
+SUBSCRIPT_DIGIT_TRANSLATION = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")
+
 
 def normalize_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
 def normalize_keyword_text(value: Any) -> str:
-    text = re.sub(r"[^0-9a-zA-Z]+", " ", str(value or "").strip().lower())
+    normalized = str(value or "").translate(SUBSCRIPT_DIGIT_TRANSLATION)
+    text = re.sub(r"[^0-9a-zA-Z]+", " ", normalized.strip().lower())
     return re.sub(r"\s+", " ", text).strip()
 
 
