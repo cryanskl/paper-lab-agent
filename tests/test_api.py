@@ -2190,6 +2190,48 @@ def test_rag_query_invalid_vector_chunk_id_returns_clear_error(tmp_path):
     assert payload["error"]["message"] == "vector store record chunk_id must be a positive integer: bad-vector"
 
 
+def test_rag_query_invalid_vector_section_id_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import local_hash_embedding
+
+    vector_record = {
+        "bad-vector": {
+            "section_id": [],
+            "document_id": 1,
+            "embedding": local_hash_embedding("argon plasma"),
+            "dimensions": 64,
+            "embedding_model": "local-hash",
+            "vector_db_backend": "local-json",
+            "text": "argon plasma",
+        }
+    }
+    (tmp_path / "vector-index.json").write_text(json.dumps(vector_record), encoding="utf-8")
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-invalid-vector-section-id.txt",
+                "rag-query-invalid-vector-section-id",
+                "rag-query-invalid-vector-section-id.txt",
+            ),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record section_id must be a positive integer: bad-vector"
+
+
 def test_fixture_loader_supports_walking_skeleton(tmp_path):
     client = make_client(tmp_path)
 
@@ -5631,6 +5673,27 @@ def test_system_status_reports_invalid_vector_chunk_id(tmp_path):
     assert vector_db["readable"] is True
     assert vector_db["valid_json"] is False
     assert vector_db["error"] == "vector store record chunk_id must be a positive integer: bad-vector"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_reports_invalid_vector_section_id(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"section_id": [], "document_id": 1, "embedding": [0.1], "dimensions": 1, '
+        '"text": "argon plasma", "embedding_model": "local-hash", '
+        '"vector_db_backend": "local-json"}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record section_id must be a positive integer: bad-vector"
     assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
 
 
