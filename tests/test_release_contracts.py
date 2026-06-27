@@ -7529,6 +7529,18 @@ def test_readme_commands_validator_reports_missing_uvicorn_app_target(tmp_path):
     assert issues == ["README.md: uvicorn target missing: app.missing:app"]
 
 
+def test_readme_commands_validator_rejects_uvicorn_target_outside_repo(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    (tmp_path / "README.md").write_text(
+        "```bash\npython -m uvicorn os:path --host 127.0.0.1 --port 8000\n```\n",
+        encoding="utf-8",
+    )
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == ["README.md: uvicorn target outside repository: os:path"]
+
+
 def test_readme_commands_validator_reports_uvicorn_target_after_options(tmp_path):
     validate_readme_commands = load_validate_readme_commands()
     (tmp_path / "README.md").write_text(

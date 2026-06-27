@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import re
 import shlex
 import subprocess
@@ -265,37 +266,43 @@ def uvicorn_app_refs(readme_path: Path) -> list[str]:
     return refs
 
 
-def uvicorn_target_exists(target: str) -> bool:
+def uvicorn_target_issue(repo: Path, target: str, label: str) -> str | None:
     if ":" not in target:
-        return False
+        return f"{label}: uvicorn target missing: {target}"
     module_name, attribute_path = target.rsplit(":", 1)
     if not module_name or not attribute_path:
-        return False
+        return f"{label}: uvicorn target missing: {target}"
+    spec = importlib.util.find_spec(module_name)
+    if spec is None or spec.origin is None:
+        return f"{label}: uvicorn target missing: {target}"
+    if spec.origin not in {"built-in", "frozen"} and not is_within_repo(repo, Path(spec.origin)):
+        return f"{label}: uvicorn target outside repository: {target}"
     try:
         module = __import__(module_name, fromlist=["*"])
     except Exception:
-        return False
+        return f"{label}: uvicorn target missing: {target}"
     current = module
     for attribute in attribute_path.split("."):
         if not hasattr(current, attribute):
-            return False
+            return f"{label}: uvicorn target missing: {target}"
         current = getattr(current, attribute)
-    return True
+    return None
 
 
 def missing_uvicorn_targets(readme_path: Path) -> list[str]:
+    repo = readme_path.parent
     return [
-        f"README.md: uvicorn target missing: {target}"
+        issue
         for target in uvicorn_app_refs(readme_path)
-        if not uvicorn_target_exists(target)
+        if (issue := uvicorn_target_issue(repo, target, "README.md")) is not None
     ]
 
 
-def missing_uvicorn_targets_for_doc(doc_path: Path, label: str) -> list[str]:
+def missing_uvicorn_targets_for_doc(repo: Path, doc_path: Path, label: str) -> list[str]:
     return [
-        f"{label}: uvicorn target missing: {target}"
+        issue
         for target in uvicorn_app_refs(doc_path)
-        if not uvicorn_target_exists(target)
+        if (issue := uvicorn_target_issue(repo, target, label)) is not None
     ]
 
 
@@ -363,7 +370,7 @@ def missing_command_targets_for_doc(repo: Path, doc_path: Path, label: str) -> l
         if target_path.is_symlink() or not target_path.is_file():
             issues.append(f"{label}: command target is not a regular file: {target}")
     issues.extend(missing_python_script_options_for_doc(repo, doc_path, label))
-    issues.extend(missing_uvicorn_targets_for_doc(doc_path, label))
+    issues.extend(missing_uvicorn_targets_for_doc(repo, doc_path, label))
     actual_routes = app_routes()
     for method, path in documented_local_curl_routes(doc_path):
         if (method, path) not in actual_routes:
