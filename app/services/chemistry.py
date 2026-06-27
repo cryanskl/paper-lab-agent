@@ -17,7 +17,7 @@ SPECIES_SEPARATOR_RE = re.compile(r"\s*[+＋]\s*(?=[A-Za-z0-9Ａ-Ｚａ-ｚ０-�
 URL_RE = re.compile(r"https?://[^\s),;]+")
 LXCAT_DB_RE = re.compile(r"LXCat\s+([A-Za-z0-9_.-]+)", re.IGNORECASE)
 GAS_FORMULA_PATTERN = r"(?:[A-ZＡ-Ｚ][a-zａ-ｚ]?[0-9０-９₀₁₂₃₄₅₆₇₈₉]*)+"
-GAS_MIXTURE_RE = re.compile(rf"\b({GAS_FORMULA_PATTERN}(?:[/／]{GAS_FORMULA_PATTERN})+)\b")
+GAS_MIXTURE_RE = re.compile(rf"\b({GAS_FORMULA_PATTERN}(?:\s*[/／]\s*{GAS_FORMULA_PATTERN})+)\b")
 THRESHOLD_EV_RE = re.compile(
     r"\bthreshold(?:\s+energy)?\s*(?:is|=|:)?\s*([0-9０-９]+(?:[.．][0-9０-９]+)?)\s*[eｅ][VＶ]\b",
     re.IGNORECASE,
