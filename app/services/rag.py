@@ -134,6 +134,11 @@ def parse_vector_store_json(raw: str) -> dict:
             raise ValueError("vector store record id must be a non-empty string")
         if not isinstance(record, dict):
             raise ValueError(f"vector store record must be an object: {vector_id}")
+        chunk_id = record.get("chunk_id")
+        if chunk_id is not None and (
+            not isinstance(chunk_id, int) or isinstance(chunk_id, bool) or chunk_id <= 0
+        ):
+            raise ValueError(f"vector store record chunk_id must be a positive integer: {vector_id}")
         document_id = record.get("document_id")
         if not isinstance(document_id, int) or isinstance(document_id, bool) or document_id <= 0:
             raise ValueError(f"vector store record document_id must be a positive integer: {vector_id}")
