@@ -134,7 +134,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
                 with tempfile.TemporaryDirectory(prefix="paper-lab-release-package-") as extract_dir:
                     archive.extractall(extract_dir)
                     validation = validate_release_artifacts(
-                        Path(extract_dir),
+                        Path(extract_dir).resolve(),
                         require_clean_source=require_clean_source,
                     )
                     source = validation.get("source") or {}

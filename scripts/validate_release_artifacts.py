@@ -90,6 +90,16 @@ def is_iso8601_timestamp(value: Any) -> bool:
     return True
 
 
+def first_symlink_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
+
+
 def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool = False) -> dict[str, Any]:
     requested_artifact_dir = artifact_dir
     if requested_artifact_dir.is_symlink():
@@ -109,7 +119,8 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             "checksums": {},
             "issues": [f"release artifact directory is not a regular directory: {artifact_dir}"],
         }
-    if requested_artifact_dir.parent.is_symlink():
+    symlink_parent = first_symlink_parent(requested_artifact_dir)
+    if symlink_parent is not None:
         artifact_dir = requested_artifact_dir.absolute()
         return {
             "ok": False,
@@ -126,7 +137,7 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             "checksums": {},
             "issues": [
                 "release artifact directory parent is not a regular directory: "
-                f"{requested_artifact_dir.parent}"
+                f"{symlink_parent}"
             ],
         }
     artifact_dir = artifact_dir.resolve()
