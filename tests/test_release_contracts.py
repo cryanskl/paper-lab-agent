@@ -286,6 +286,28 @@ def test_env_example_validator_reports_filled_secret_like_values(tmp_path):
     assert filled == ["LLM_API_KEY"]
 
 
+def test_env_example_validator_rejects_symlinked_env_example(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_env_example.py"
+    outside_env = tmp_path / "outside.env.example"
+    outside_env.write_text((repo / ".env.example").read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / ".env.example").symlink_to(outside_env)
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), ".env.example"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "env example is not a regular file: .env.example" in result.stderr
+
+
 def test_gitignore_contains_required_release_hygiene_patterns():
     validate_release_hygiene = load_validate_release_hygiene()
     gitignore_path = Path(__file__).resolve().parent.parent / ".gitignore"

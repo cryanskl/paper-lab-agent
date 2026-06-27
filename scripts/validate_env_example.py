@@ -214,6 +214,9 @@ def main() -> int:
     if not path.exists():
         print(f"env example not found: {path}", file=sys.stderr)
         return 1
+    if path.is_symlink() or not path.is_file():
+        print(f"env example is not a regular file: {path}", file=sys.stderr)
+        return 1
 
     missing = missing_required_keys(path)
     if missing:
