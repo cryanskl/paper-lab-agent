@@ -60,7 +60,7 @@ def infer_reaction_type(reactants: list[str], products: list[str]) -> str:
     product_electrons = sum(1 for species in products if species == "e")
     consumes_positive_ion = any(species.endswith("+") for species in reactants)
     produces_positive_ion = any(species.endswith("+") for species in products)
-    produces_negative_ion = any(species.endswith("-") or species.endswith("⁻") for species in products)
+    produces_negative_ion = any(species.endswith(("-", "⁻", "−")) for species in products)
     produces_excited_species = any(species.endswith("*") for species in products)
     if reactant_electrons >= 1 and product_electrons > reactant_electrons and produces_positive_ion:
         return "ionization"
