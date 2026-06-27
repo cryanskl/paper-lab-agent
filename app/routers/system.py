@@ -193,23 +193,33 @@ def storage_path_health(path: Path) -> dict:
 
 def vector_store_health(path: Path) -> dict:
     exists = path.exists()
+    safe_path = True
+    path_error = None
+    try:
+        assert_safe_vector_store_path(path)
+    except Exception as exc:
+        safe_path = False
+        path_error = str(exc)
     readable = bool(exists and os.access(path, os.R_OK))
     health = {
         "path": str(path),
         "exists": exists,
         "readable": readable,
-        "writable": bool(exists and os.access(path, os.W_OK)),
+        "writable": bool(exists and safe_path and os.access(path, os.W_OK)),
         "valid_json": None,
         "error": None,
     }
     if not exists:
+        return health
+    if not safe_path:
+        health["valid_json"] = False
+        health["error"] = path_error
         return health
     if not readable:
         health["valid_json"] = False
         health["error"] = "vector store is not readable"
         return health
     try:
-        assert_safe_vector_store_path(path)
         json.loads(path.read_text(encoding="utf-8"))
         health["valid_json"] = True
     except Exception as exc:

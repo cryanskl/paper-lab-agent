@@ -4533,9 +4533,13 @@ def test_system_status_reports_symlinked_vector_store_health_error(tmp_path):
     vector_db = response.json()["storage_health"]["vector_db"]
     assert vector_db["path"] == str(tmp_path / "vector-index.json")
     assert vector_db["exists"] is True
+    assert vector_db["writable"] is False
     assert vector_db["valid_json"] is False
     assert "vector store path is not a regular file" in vector_db["error"]
-    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+    assert response.json()["release_readiness"]["storage_errors"] == [
+        "vector_db.writable",
+        "vector_db.valid_json",
+    ]
 
 
 def test_system_status_reports_vector_db_backend(tmp_path):
