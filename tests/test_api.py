@@ -12687,6 +12687,48 @@ def test_rag_index_rejects_symlinked_vector_store(tmp_path):
     assert outside_path.read_text(encoding="utf-8") == outside_payload
 
 
+def test_rag_index_rejects_symlinked_vector_store_parent(tmp_path):
+    make_client(tmp_path)
+    from app.db import get_conn
+    from app.services import rag as rag_service
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            (
+                str(tmp_path / "vector-parent-symlink.pdf"),
+                "vector-parent-symlink",
+                "vector-parent-symlink.pdf",
+            ),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Body', 'Argon plasma text', 'body')
+            """,
+            (document_id,),
+        )
+
+    outside_dir = tmp_path / "outside-vector-store"
+    outside_dir.mkdir()
+    vector_parent = tmp_path / "vector-parent"
+    vector_parent.symlink_to(outside_dir, target_is_directory=True)
+    os.environ["VECTOR_DB_PATH"] = str(vector_parent / "vector-index.json")
+
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    result = rag_service.index_document(document_id)
+
+    assert result["status"] == "failed"
+    assert "vector store path parent is not a regular directory" in result["error"]
+    assert not (outside_dir / "vector-index.json").exists()
+
+
 def test_index_unparsed_document_records_failed_status(tmp_path):
     client = make_client(tmp_path)
     response = client.post(

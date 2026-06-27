@@ -108,6 +108,12 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
 
 
 def assert_safe_vector_store_path(path: Path) -> None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        raise ValueError(f"vector store path parent is not a regular directory: {parent}")
     if path.is_symlink() or (path.exists() and not path.is_file()):
         raise ValueError(f"vector store path is not a regular file: {path}")
 
