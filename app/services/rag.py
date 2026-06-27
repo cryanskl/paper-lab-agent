@@ -135,6 +135,8 @@ def parse_vector_store_json(raw: str) -> dict:
         embedding = record.get("embedding")
         if not isinstance(embedding, list):
             raise ValueError(f"vector store record embedding must be a numeric array: {vector_id}")
+        if not embedding:
+            raise ValueError(f"vector store record embedding must not be empty: {vector_id}")
         if any(not isinstance(value, (int, float)) or isinstance(value, bool) for value in embedding):
             raise ValueError(f"vector store record embedding must be a numeric array: {vector_id}")
         if any(not is_vector_number(value) for value in embedding):
