@@ -174,6 +174,16 @@ def missing_required_packages(path: Path = DEFAULT_REQUIREMENTS_PATH) -> list[st
     return [package for package in REQUIRED_PACKAGES if normalize_package_name(package) not in declared]
 
 
+def non_regular_python_source_roots(paths: list[Path] = SOURCE_PATHS) -> list[str]:
+    issues: list[str] = []
+    for path in paths:
+        if not path.exists():
+            continue
+        if path.is_symlink():
+            issues.append(f"python source root is not a regular directory: {path}")
+    return issues
+
+
 def non_regular_python_sources(paths: list[Path] = SOURCE_PATHS) -> list[str]:
     issues: list[str] = []
     for path in python_files(paths):
@@ -234,6 +244,11 @@ def main() -> int:
         print(f"requirements file unreadable: {requirements_path}: {exc}", file=sys.stderr)
         return 1
 
+    source_root_issues = non_regular_python_source_roots()
+    if source_root_issues:
+        for issue in source_root_issues:
+            print(issue, file=sys.stderr)
+        return 1
     source_path_issues = non_regular_python_sources()
     if source_path_issues:
         for issue in source_path_issues:

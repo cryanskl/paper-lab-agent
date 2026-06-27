@@ -7590,6 +7590,40 @@ def test_requirements_validator_rejects_symlinked_python_source(tmp_path):
     assert "Traceback" not in result.stderr
 
 
+def test_requirements_validator_rejects_symlinked_python_source_root(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    scripts_dir = tmp_path / "scripts"
+    outside_app = tmp_path / "outside-app"
+    scripts_dir.mkdir()
+    outside_app.mkdir()
+    (scripts_dir / "validate_requirements.py").write_text(
+        (repo / "scripts" / "validate_requirements.py").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (outside_app / "outside_source.py").write_text("import json\n", encoding="utf-8")
+    (tmp_path / "app").symlink_to(outside_app, target_is_directory=True)
+    (tmp_path / "requirements.txt").write_text(
+        (repo / "requirements.txt").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(scripts_dir / "validate_requirements.py"), "requirements.txt"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "python source root is not a regular directory:" in result.stderr
+    assert "app" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_requirements_validator_reports_imported_package_missing_from_requirements(tmp_path):
     validate_requirements = load_validate_requirements()
     source_dir = tmp_path / "app"
