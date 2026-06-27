@@ -140,7 +140,13 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
     demo_summary_path = output_dir / "demo-summary.json"
     manifest_path = output_dir / "release-manifest.json"
 
-    write_openapi(openapi_path, compact=compact)
+    openapi_error = write_openapi(openapi_path, compact=compact)
+    if openapi_error:
+        return {
+            "ok": False,
+            "output_dir": str(output_dir),
+            "issues": [f"OpenAPI artifact write failed: {openapi_error}"],
+        }
     demo_payload = prepare_demo_data()
     demo_summary = demo_payload["summary"]
     write_json(demo_summary_path, demo_summary, compact=compact)

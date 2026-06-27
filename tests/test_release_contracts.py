@@ -1581,6 +1581,26 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     assert "/api/v1/health" in openapi["paths"]
 
 
+def test_export_release_artifacts_reports_openapi_write_failure(monkeypatch, tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    output_dir = tmp_path / "release"
+
+    def fake_write_openapi(path, *, compact=False):
+        return f"output path is not a regular file: {path}"
+
+    monkeypatch.setattr(export_release_artifacts, "write_openapi", fake_write_openapi)
+
+    report = export_release_artifacts.export_release_artifacts(output_dir, compact=True)
+
+    assert report["ok"] is False
+    assert report["output_dir"] == str(output_dir.resolve())
+    assert report["issues"] == [
+        f"OpenAPI artifact write failed: output path is not a regular file: {output_dir.resolve() / 'openapi.json'}"
+    ]
+    assert not (output_dir / "demo-summary.json").exists()
+    assert not (output_dir / "release-manifest.json").exists()
+
+
 def test_export_release_artifacts_reports_output_dir_not_directory(tmp_path):
     import subprocess
     import sys
