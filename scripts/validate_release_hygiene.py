@@ -140,7 +140,10 @@ def missing_required_ci_release_gate(repo: Path) -> list[str]:
         return ["ci_workflow_parent_not_regular_directory"]
     if workflow_path.is_symlink() or not workflow_path.is_file():
         return ["ci_workflow_not_regular_file"]
-    workflow_text = workflow_path.read_text(encoding="utf-8")
+    try:
+        workflow_text = workflow_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return ["ci_workflow_unreadable"]
     missing = []
     for trigger in REQUIRED_CI_TRIGGERS:
         if not workflow_declares_trigger(workflow_text, trigger):

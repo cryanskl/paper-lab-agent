@@ -901,6 +901,17 @@ def test_release_hygiene_validator_rejects_symlinked_ci_workflow(tmp_path):
     assert missing == ["ci_workflow_not_regular_file"]
 
 
+def test_release_hygiene_validator_reports_unreadable_ci_workflow(tmp_path):
+    validate_release_hygiene = load_validate_release_hygiene()
+    workflow_dir = tmp_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "ci.yml").write_bytes(b"\xff\xfe\x00bad-ci-workflow")
+
+    missing = validate_release_hygiene.missing_required_ci_release_gate(tmp_path)
+
+    assert missing == ["ci_workflow_unreadable"]
+
+
 def test_release_hygiene_validator_rejects_symlinked_ci_workflow_parent(tmp_path):
     validate_release_hygiene = load_validate_release_hygiene()
     github_dir = tmp_path / ".github"
