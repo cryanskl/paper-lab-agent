@@ -44,6 +44,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "service": None,
             "version": None,
             "openapi_path_count": 0,
+            "checksums": {},
             "demo_ready": None,
             "demo_counts": {},
             "demo_workflow_statuses": {},
@@ -67,6 +68,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "service": None,
             "version": None,
             "openapi_path_count": 0,
+            "checksums": {},
             "demo_ready": None,
             "demo_counts": {},
             "demo_workflow_statuses": {},
@@ -87,6 +89,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
     service = None
     version = None
     openapi_path_count = 0
+    checksums: dict[str, Any] = {}
     demo_ready = None
     demo_counts: dict[str, Any] = {}
     demo_workflow_statuses: dict[str, Any] = {}
@@ -109,6 +112,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "service": service,
             "version": version,
             "openapi_path_count": openapi_path_count,
+            "checksums": checksums,
             "demo_ready": demo_ready,
             "demo_counts": demo_counts,
             "demo_workflow_statuses": demo_workflow_statuses,
@@ -132,6 +136,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "service": service,
             "version": version,
             "openapi_path_count": openapi_path_count,
+            "checksums": checksums,
             "demo_ready": demo_ready,
             "demo_counts": demo_counts,
             "demo_workflow_statuses": demo_workflow_statuses,
@@ -172,6 +177,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
                     service = validation.get("service")
                     version = validation.get("version")
                     openapi_path_count = int(validation.get("openapi_path_count") or 0)
+                    checksums = validation.get("checksums") or {}
                     demo_ready = validation.get("demo_ready")
                     demo_counts = validation.get("demo_counts") or {}
                     demo_workflow_statuses = validation.get("demo_workflow_statuses") or {}
@@ -196,6 +202,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
         "service": service,
         "version": version,
         "openapi_path_count": openapi_path_count,
+        "checksums": checksums,
         "demo_ready": demo_ready,
         "demo_counts": demo_counts,
         "demo_workflow_statuses": demo_workflow_statuses,
