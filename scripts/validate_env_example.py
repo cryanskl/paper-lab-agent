@@ -238,9 +238,14 @@ def main() -> int:
         return 1
     if SETTINGS_CONFIG_PATH.exists():
         try:
-            SETTINGS_CONFIG_PATH.read_text(encoding="utf-8")
+            settings_config_text = SETTINGS_CONFIG_PATH.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
             print(f"settings config unreadable: {SETTINGS_CONFIG_PATH}: {exc}", file=sys.stderr)
+            return 1
+        try:
+            ast.parse(settings_config_text)
+        except SyntaxError as exc:
+            print(f"settings config invalid: {SETTINGS_CONFIG_PATH}: {exc}", file=sys.stderr)
             return 1
     if DEV_SCRIPT_PATH.exists():
         try:
