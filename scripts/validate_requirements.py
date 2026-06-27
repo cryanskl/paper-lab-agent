@@ -174,6 +174,14 @@ def missing_required_packages(path: Path = DEFAULT_REQUIREMENTS_PATH) -> list[st
     return [package for package in REQUIRED_PACKAGES if normalize_package_name(package) not in declared]
 
 
+def non_regular_python_sources(paths: list[Path] = SOURCE_PATHS) -> list[str]:
+    issues: list[str] = []
+    for path in python_files(paths):
+        if path.is_symlink() or not path.is_file():
+            issues.append(f"python source is not a regular file: {path}")
+    return issues
+
+
 def unreadable_python_sources(paths: list[Path] = SOURCE_PATHS) -> list[str]:
     issues: list[str] = []
     for path in python_files(paths):
@@ -226,6 +234,11 @@ def main() -> int:
         print(f"requirements file unreadable: {requirements_path}: {exc}", file=sys.stderr)
         return 1
 
+    source_path_issues = non_regular_python_sources()
+    if source_path_issues:
+        for issue in source_path_issues:
+            print(issue, file=sys.stderr)
+        return 1
     source_read_issues = unreadable_python_sources()
     if source_read_issues:
         for issue in source_read_issues:
