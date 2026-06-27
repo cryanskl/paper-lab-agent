@@ -107,6 +107,7 @@ RELEASE_READINESS_LIST_KEYS = {
     "config_warning_codes",
     "storage_errors",
 }
+RELEASE_BLOCKING_CONFIG_WARNING_CODES = {"unsupported_embedding_model", "unsupported_vector_db_backend"}
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -684,6 +685,11 @@ def release_readiness_blockers(readiness: dict) -> list[str]:
     blockers: list[str] = []
     for key in ("demo_data_missing", "failed_workflows", "storage_errors"):
         blockers.extend(f"{key}:{value}" for value in readiness.get(key, []))
+    blockers.extend(
+        f"config_warning_codes:{value}"
+        for value in readiness.get("config_warning_codes", [])
+        if value in RELEASE_BLOCKING_CONFIG_WARNING_CODES
+    )
     if blockers:
         return blockers
     if readiness.get("ready") is True:
