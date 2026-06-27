@@ -1601,6 +1601,50 @@ def test_export_release_artifacts_reports_openapi_write_failure(monkeypatch, tmp
     assert not (output_dir / "release-manifest.json").exists()
 
 
+def test_export_release_artifacts_reports_demo_summary_write_failure(monkeypatch, tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    output_dir = tmp_path / "release"
+    original_write_json = export_release_artifacts.write_json
+
+    def fake_write_json(path, payload, *, compact=False):
+        if path.name == "demo-summary.json":
+            raise OSError("disk full")
+        original_write_json(path, payload, compact=compact)
+
+    monkeypatch.setattr(export_release_artifacts, "write_json", fake_write_json)
+
+    report = export_release_artifacts.export_release_artifacts(output_dir, compact=True)
+
+    assert report["ok"] is False
+    assert report["output_dir"] == str(output_dir.resolve())
+    assert report["issues"] == ["Demo summary artifact write failed: disk full"]
+    assert (output_dir / "openapi.json").exists()
+    assert not (output_dir / "demo-summary.json").exists()
+    assert not (output_dir / "release-manifest.json").exists()
+
+
+def test_export_release_artifacts_reports_manifest_write_failure(monkeypatch, tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    output_dir = tmp_path / "release"
+    original_write_json = export_release_artifacts.write_json
+
+    def fake_write_json(path, payload, *, compact=False):
+        if path.name == "release-manifest.json":
+            raise OSError("permission denied")
+        original_write_json(path, payload, compact=compact)
+
+    monkeypatch.setattr(export_release_artifacts, "write_json", fake_write_json)
+
+    report = export_release_artifacts.export_release_artifacts(output_dir, compact=True)
+
+    assert report["ok"] is False
+    assert report["output_dir"] == str(output_dir.resolve())
+    assert report["issues"] == ["Release manifest artifact write failed: permission denied"]
+    assert (output_dir / "openapi.json").exists()
+    assert (output_dir / "demo-summary.json").exists()
+    assert not (output_dir / "release-manifest.json").exists()
+
+
 def test_export_release_artifacts_reports_output_dir_not_directory(tmp_path):
     import subprocess
     import sys

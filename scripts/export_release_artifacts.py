@@ -149,7 +149,14 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
         }
     demo_payload = prepare_demo_data()
     demo_summary = demo_payload["summary"]
-    write_json(demo_summary_path, demo_summary, compact=compact)
+    try:
+        write_json(demo_summary_path, demo_summary, compact=compact)
+    except OSError as exc:
+        return {
+            "ok": False,
+            "output_dir": str(output_dir),
+            "issues": [f"Demo summary artifact write failed: {exc}"],
+        }
 
     manifest = {
         "service": "paper-lab-agent",
@@ -173,7 +180,14 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
         },
     }
     manifest["checksums"][manifest_path.name] = manifest_checksum(manifest)
-    write_json(manifest_path, manifest, compact=compact)
+    try:
+        write_json(manifest_path, manifest, compact=compact)
+    except OSError as exc:
+        return {
+            "ok": False,
+            "output_dir": str(output_dir),
+            "issues": [f"Release manifest artifact write failed: {exc}"],
+        }
     return manifest
 
 
