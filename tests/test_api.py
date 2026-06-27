@@ -2026,6 +2026,64 @@ def test_rag_query_unsupported_vector_embedding_model_returns_clear_error(tmp_pa
     assert payload["error"]["message"] == "vector store record embedding_model is unsupported: bad-vector"
 
 
+def test_rag_query_treats_normalizable_embedding_model_as_local_hash(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import local_hash_embedding
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-normalizable-vector-embedding-model.txt",
+                "rag-query-normalizable-vector-embedding-model",
+                "rag-query-normalizable-vector-embedding-model.txt",
+            ),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Collision evidence', 'argon plasma chemistry evidence', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        chunk_id = conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'argon plasma chemistry evidence', 4, 'legacy-embedding-vector', 1)
+            """,
+            (document_id, section_id),
+        ).lastrowid
+
+    vector_record = {
+        "legacy-embedding-vector": {
+            "chunk_id": chunk_id,
+            "section_id": section_id,
+            "document_id": document_id,
+            "embedding": local_hash_embedding("argon plasma chemistry evidence"),
+            "dimensions": 64,
+            "embedding_model": " LOCAL-HASH ",
+            "vector_db_backend": "local-json",
+            "text": "argon plasma chemistry evidence",
+        }
+    }
+    (tmp_path / "vector-index.json").write_text(json.dumps(vector_record), encoding="utf-8")
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "av", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sources"] == []
+    assert "证据不足" in payload["answer"]
+
+
 def test_rag_query_empty_vector_id_returns_clear_error(tmp_path):
     client = make_client(tmp_path)
 
@@ -5649,6 +5707,27 @@ def test_system_status_reports_unsupported_vector_embedding_model(tmp_path):
     assert vector_db["valid_json"] is False
     assert vector_db["error"] == "vector store record embedding_model is unsupported: bad-vector"
     assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_accepts_normalizable_vector_embedding_model(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"legacy-vector": {"document_id": 1, "embedding": [0.1], "dimensions": 1, '
+        '"text": "argon plasma", "embedding_model": " LOCAL-HASH ", '
+        '"vector_db_backend": "local-json"}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is True
+    assert vector_db["error"] is None
+    assert "vector_db.valid_json" not in response.json()["release_readiness"]["storage_errors"]
 
 
 def test_system_status_reports_empty_vector_id(tmp_path):

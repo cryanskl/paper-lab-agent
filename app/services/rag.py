@@ -55,8 +55,12 @@ def normalize_vector_db_backend(backend: Optional[str]) -> str:
     return (backend or "local-json").strip().lower()
 
 
+def normalize_embedding_model(model_name: Optional[str]) -> str:
+    return (model_name or "local-hash").strip().lower()
+
+
 def get_embedding_adapter(model_name: str) -> EmbeddingAdapter:
-    normalized = (model_name or "local-hash").strip().lower()
+    normalized = normalize_embedding_model(model_name)
     if normalized == "local-hash":
         return LocalHashEmbeddingAdapter()
     raise ValueError(f"unsupported embedding model: {model_name}")
@@ -167,8 +171,10 @@ def parse_vector_store_json(raw: str) -> dict:
         embedding_model = record.get("embedding_model")
         if not isinstance(embedding_model, str) or not embedding_model.strip():
             raise ValueError(f"vector store record embedding_model must be a non-empty string: {vector_id}")
+        embedding_model = normalize_embedding_model(embedding_model)
         if embedding_model not in SUPPORTED_EMBEDDING_MODELS:
             raise ValueError(f"vector store record embedding_model is unsupported: {vector_id}")
+        record["embedding_model"] = embedding_model
         vector_db_backend = record.get("vector_db_backend")
         if vector_db_backend is not None:
             if not isinstance(vector_db_backend, str) or not vector_db_backend.strip():
