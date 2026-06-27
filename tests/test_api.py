@@ -10605,6 +10605,25 @@ def test_health_check_brackets_ipv6_loopback_hosts(monkeypatch):
     assert health_check.default_frontend_url() == "http://[::1]:9501"
 
 
+def test_health_check_cli_help_runs_with_app_imports():
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+
+    result = subprocess.run(
+        [sys.executable, "scripts/health_check.py", "--help"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "usage:" in result.stdout
+    assert "ModuleNotFoundError" not in result.stderr
+
+
 def test_env_loader_preserves_existing_environment_values(tmp_path):
     import subprocess
 
@@ -10966,6 +10985,29 @@ def test_release_readiness_blocks_unsupported_local_adapter_warnings():
         "unsupported_embedding_model",
     ]
     assert readiness["storage_errors"] == []
+
+
+def test_release_blocking_config_warning_codes_are_shared():
+    import importlib.util
+
+    from app import frontend_api
+    from app.release_readiness import RELEASE_BLOCKING_CONFIG_WARNING_CODES
+    from app.routers import system
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_shared_blocking_warnings", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    assert RELEASE_BLOCKING_CONFIG_WARNING_CODES == frozenset(
+        {"unsupported_embedding_model", "unsupported_vector_db_backend"}
+    )
+    assert system.RELEASE_BLOCKING_CONFIG_WARNING_CODES is RELEASE_BLOCKING_CONFIG_WARNING_CODES
+    assert frontend_api.RELEASE_BLOCKING_CONFIG_WARNING_CODES is RELEASE_BLOCKING_CONFIG_WARNING_CODES
+    assert health_check.RELEASE_BLOCKING_CONFIG_WARNING_CODES is RELEASE_BLOCKING_CONFIG_WARNING_CODES
 
 
 def test_system_status_counts_reaction_audits(tmp_path):
@@ -14851,13 +14893,31 @@ def test_streamlit_sidebar_surfaces_blocking_release_config_warnings():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     frontend = (repo / "app" / "frontend_api.py").read_text(encoding="utf-8")
+    shared_release = (repo / "app" / "release_readiness.py").read_text(encoding="utf-8")
 
     assert "release_readiness_display_state" in streamlit
+    assert "from app.release_readiness import RELEASE_BLOCKING_CONFIG_WARNING_CODES" in frontend
     for required in ["RELEASE_BLOCKING_CONFIG_WARNING_CODES", "unsupported_embedding_model", "unsupported_vector_db_backend"]:
-        assert required in frontend
-    assert "missing_llm_api_key" not in frontend[
-        frontend.index("RELEASE_BLOCKING_CONFIG_WARNING_CODES") : frontend.index("def release_readiness_display_state")
+        assert required in shared_release
+    assert "missing_llm_api_key" not in shared_release[
+        shared_release.index("RELEASE_BLOCKING_CONFIG_WARNING_CODES") :
     ]
+
+
+def test_release_blocking_config_warning_codes_are_not_redeclared():
+    repo = Path(__file__).resolve().parent.parent
+    duplicate_targets = [
+        repo / "app" / "routers" / "system.py",
+        repo / "app" / "frontend_api.py",
+        repo / "scripts" / "health_check.py",
+    ]
+
+    for target in duplicate_targets:
+        source = target.read_text(encoding="utf-8")
+        assert "from app.release_readiness import RELEASE_BLOCKING_CONFIG_WARNING_CODES" in source
+        assert "RELEASE_BLOCKING_CONFIG_WARNING_CODES = " not in source
+        assert "unsupported_embedding_model\", \"unsupported_vector_db_backend" not in source
+        assert "unsupported_embedding_model', 'unsupported_vector_db_backend" not in source
 
 
 def test_streamlit_sidebar_system_status_error_shows_payload_details():

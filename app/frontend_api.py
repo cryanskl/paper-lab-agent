@@ -3,9 +3,9 @@ from typing import Any, Optional
 
 import requests
 
+from app.release_readiness import RELEASE_BLOCKING_CONFIG_WARNING_CODES
 
 ERROR_TEXT_LIMIT = 500
-RELEASE_BLOCKING_CONFIG_WARNING_CODES = {"unsupported_embedding_model", "unsupported_vector_db_backend"}
 
 
 class FrontendApiError(RuntimeError):

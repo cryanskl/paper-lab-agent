@@ -9,6 +9,7 @@ from app import __version__
 from app.clients.grobid import GrobidClient
 from app.config import first_symlink_parent, get_settings, is_safe_storage_directory
 from app.db import fetch_one, get_conn
+from app.release_readiness import RELEASE_BLOCKING_CONFIG_WARNING_CODES
 from app.scheduler import scheduled_crawl_jobs
 from app.services.rag import (
     SUPPORTED_EMBEDDING_MODELS,
@@ -40,7 +41,6 @@ RELEASE_STORAGE_WRITABLE_KEYS = [
     "database_parent",
     "vector_db_parent",
 ]
-RELEASE_BLOCKING_CONFIG_WARNING_CODES = {"unsupported_embedding_model", "unsupported_vector_db_backend"}
 
 
 class SchedulerJobResponse(BaseModel):

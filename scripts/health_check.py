@@ -9,6 +9,11 @@ from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from app.release_readiness import RELEASE_BLOCKING_CONFIG_WARNING_CODES
 
 HEALTH_PATH = "/api/v1/health"
 STATUS_PATH = "/api/v1/system/status"
@@ -107,7 +112,6 @@ RELEASE_READINESS_LIST_KEYS = {
     "config_warning_codes",
     "storage_errors",
 }
-RELEASE_BLOCKING_CONFIG_WARNING_CODES = {"unsupported_embedding_model", "unsupported_vector_db_backend"}
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
