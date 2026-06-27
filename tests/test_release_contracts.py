@@ -1719,6 +1719,7 @@ def test_release_checklist_documents_git_safety_checks():
         "git rev-parse --show-toplevel",
         "git status --short",
         "git diff --check",
+        "git diff --cached --check",
     ]:
         assert required in checklist
 

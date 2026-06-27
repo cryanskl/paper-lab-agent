@@ -77,6 +77,7 @@ git branch --show-current
 git rev-parse --show-toplevel
 git status --short
 git diff --check
+git diff --cached --check
 ```
 
-`git status --short` should be empty. If it prints anything, review whether those changes belong to this release before publishing.
+`git status --short` should be empty. If it prints anything, review whether those changes belong to this release before publishing. The two diff checks cover both unstaged and staged whitespace or conflict-marker errors.
