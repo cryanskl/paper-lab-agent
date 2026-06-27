@@ -4947,6 +4947,17 @@ def test_release_check_requires_export_source_label_smoke_metadata():
     assert '"verified_export_bolsig_has_source_label": True' in release_text
 
 
+def test_release_check_requires_text_export_audit_summary_smoke_metadata():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+    smoke_text = (repo / "scripts" / "smoke_check.py").read_text(encoding="utf-8")
+
+    assert '"verified_export_txt_has_audit_summary": True' in release_text
+    assert '"verified_export_bolsig_has_audit_summary": True' in release_text
+    assert '"verified_export_txt_has_audit_summary"' in smoke_text
+    assert '"verified_export_bolsig_has_audit_summary"' in smoke_text
+
+
 def test_release_check_requires_json_export_reviewer_audit_metadata():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")

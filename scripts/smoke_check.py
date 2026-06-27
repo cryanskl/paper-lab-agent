@@ -600,6 +600,16 @@ def run_smoke() -> dict:
         bolsig_has_confidence = "CONFIDENCE: " in bolsig_content
         txt_has_source_label = "source_label: " in txt_content
         bolsig_has_source_label = "SOURCE_LABEL: " in bolsig_content
+        txt_has_audit_summary = (
+            "audit_entries: 1" in txt_content
+            and "last_verified_by: smoke-check" in txt_content
+            and "last_verified_at:" in txt_content
+        )
+        bolsig_has_audit_summary = (
+            "AUDIT_ENTRIES: 1" in bolsig_content
+            and "LAST_VERIFIED_BY: smoke-check" in bolsig_content
+            and "LAST_VERIFIED_AT:" in bolsig_content
+        )
         assert_ok(txt_contains_reaction, f"expected reaction and rate in txt export, got {txt_content!r}")
         assert_ok(txt_has_source_excerpt, f"expected source excerpt in txt export, got {txt_content!r}")
         assert_ok(bolsig_contains_header, f"expected BOLSIG header and reaction, got {bolsig_content!r}")
@@ -612,6 +622,8 @@ def run_smoke() -> dict:
         assert_ok(bolsig_has_confidence, f"expected confidence in BOLSIG export, got {bolsig_content!r}")
         assert_ok(txt_has_source_label, f"expected source_label in txt export, got {txt_content!r}")
         assert_ok(bolsig_has_source_label, f"expected SOURCE_LABEL in BOLSIG export, got {bolsig_content!r}")
+        assert_ok(txt_has_audit_summary, f"expected audit summary in txt export, got {txt_content!r}")
+        assert_ok(bolsig_has_audit_summary, f"expected audit summary in BOLSIG export, got {bolsig_content!r}")
 
         status = assert_status(client.get("/api/v1/system/status"), 200, "system status")
         runtime = status["runtime"]
@@ -789,6 +801,8 @@ def run_smoke() -> dict:
             "verified_export_bolsig_has_confidence": bolsig_has_confidence,
             "verified_export_txt_has_source_label": txt_has_source_label,
             "verified_export_bolsig_has_source_label": bolsig_has_source_label,
+            "verified_export_txt_has_audit_summary": txt_has_audit_summary,
+            "verified_export_bolsig_has_audit_summary": bolsig_has_audit_summary,
             "runtime_version": runtime["version"],
             "scheduler_job_ids": scheduler_job_ids,
             "config_warning_count": len(config_warnings),

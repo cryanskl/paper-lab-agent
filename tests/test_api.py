@@ -2719,6 +2719,8 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["rag_source_excerpts"] == 1
     assert result["verified_export_txt_has_verification_metadata"] is True
     assert result["verified_export_bolsig_has_verification_metadata"] is True
+    assert result["verified_export_txt_has_audit_summary"] is True
+    assert result["verified_export_bolsig_has_audit_summary"] is True
     assert result["translation_output_path"].endswith("document-1-zh.md")
     assert result["verified_export_path"].endswith("reaction-set-1.json")
     assert result["runtime_version"] == "0.1.0"
@@ -2774,6 +2776,8 @@ def test_smoke_check_script_outputs_json():
     assert payload["rag_source_excerpts"] == 1
     assert payload["verified_export_txt_has_verification_metadata"] is True
     assert payload["verified_export_bolsig_has_verification_metadata"] is True
+    assert payload["verified_export_txt_has_audit_summary"] is True
+    assert payload["verified_export_bolsig_has_audit_summary"] is True
     assert payload["runtime_version"] == "0.1.0"
     assert payload["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert payload["config_warning_count"] == 3
@@ -10359,6 +10363,8 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "rag_source_excerpts" in release_text
     assert "verified_export_txt_has_verification_metadata" in release_text
     assert "verified_export_bolsig_has_verification_metadata" in release_text
+    assert "verified_export_txt_has_audit_summary" in release_text
+    assert "verified_export_bolsig_has_audit_summary" in release_text
     assert "-m pytest -q" in release_text
     assert prepare_demo_data.exists()
     assert smoke_check.exists()
@@ -10395,6 +10401,8 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert '"rag_source_excerpts"' in smoke_text
     assert '"verified_export_txt_has_verification_metadata"' in smoke_text
     assert '"verified_export_bolsig_has_verification_metadata"' in smoke_text
+    assert '"verified_export_txt_has_audit_summary"' in smoke_text
+    assert '"verified_export_bolsig_has_audit_summary"' in smoke_text
     assert '"/api/v1/system/status"' in smoke_text
     assert "runtime_version" in smoke_text
     assert "config_warning_count" in smoke_text
