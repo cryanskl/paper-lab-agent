@@ -426,10 +426,17 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         raise SystemExit(1)
     expected_checksum_names = {"openapi.json", "demo-summary.json", "release-manifest.json"}
 
+    def valid_sha256(value):
+        return (
+            isinstance(value, str)
+            and len(value) == 64
+            and all(char in "0123456789abcdef" for char in value)
+        )
+
     def valid_release_checksums(checksums):
         return (
             set(checksums) == expected_checksum_names
-            and all(isinstance(value, str) and len(value) == 64 for value in checksums.values())
+            and all(valid_sha256(value) for value in checksums.values())
         )
 
     package_path = Path(release_dir) / "out" / "paper-lab-agent-release.zip"
