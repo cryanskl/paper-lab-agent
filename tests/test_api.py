@@ -4459,6 +4459,40 @@ def test_parse_document_fallback_writes_valid_tei_xml(tmp_path, monkeypatch):
     assert "Ar &amp; O2 &lt;plasma&gt; chemistry" in tei_text
 
 
+def test_parse_document_rejects_symlinked_tei_storage_dir(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("tei-symlink.pdf", pdf_bytes(b"local plasma tei text"), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    outside_dir = tmp_path / "outside-tei"
+    outside_dir.mkdir()
+    tei_dir = tmp_path / "tei"
+    tei_dir.rmdir()
+    tei_dir.symlink_to(outside_dir, target_is_directory=True)
+
+    from app.services import documents as document_service
+
+    async def fake_health_detail(self):
+        return {
+            "available": False,
+            "url": "http://grobid.test",
+            "status_code": None,
+            "error": "connection refused",
+        }
+
+    monkeypatch.setattr(document_service.GrobidClient, "health_detail", fake_health_detail)
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    document = client.get(f"/api/v1/documents/{document_id}").json()
+
+    assert document["parse_status"] == "failed"
+    assert "document storage path parent is not a regular directory" in document["parse_error"]
+    assert not list(outside_dir.glob("*.tei.xml"))
+
+
 def test_parse_document_falls_back_when_grobid_returns_only_references(tmp_path, monkeypatch):
     client = make_client(tmp_path)
     response = client.post(

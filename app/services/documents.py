@@ -411,6 +411,7 @@ async def parse_document(document_id: int) -> dict:
 
     try:
         tei_path = settings.tei_dir / f"document-{document_id}.tei.xml"
+        assert_safe_document_storage_path(tei_path)
         tei_path.write_text(tei_text or "", encoding="utf-8")
         JsonVectorStore(settings.vector_db_path).delete_document(document_id)
         with get_conn() as conn:
