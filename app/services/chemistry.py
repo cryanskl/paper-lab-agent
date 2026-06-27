@@ -437,6 +437,11 @@ def verify_reaction(
         return reaction_set_detail(dict_from_row(rs), conn)
 
 
+def assert_safe_reaction_export_path(path) -> None:
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise OSError(f"reaction export path is not a regular file: {path}")
+
+
 def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
     fmt = (fmt or "").strip().lower()
     if fmt not in {"json", "txt", "bolsig"}:
@@ -463,6 +468,7 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
     audit_entry_count = sum(len(reaction.get("audit_log") or []) for reaction in detail["reactions"])
     suffix_by_format = {"json": "json", "txt": "txt", "bolsig": "bolsig.txt"}
     out_path = settings.export_dir / f"reaction-set-{reaction_set_id}.{suffix_by_format[fmt]}"
+    assert_safe_reaction_export_path(out_path)
     if fmt == "json":
         out_path.write_text(json.dumps(detail, ensure_ascii=False, indent=2), encoding="utf-8")
         mime_type = "application/json"

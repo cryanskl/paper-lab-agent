@@ -7155,6 +7155,37 @@ def test_reaction_export_bolsig_text_and_rejects_unknown_format(tmp_path):
     assert blank.json()["error"]["code"] == "unsupported_export_format"
 
 
+def test_reaction_export_rejects_symlinked_output_file(tmp_path):
+    make_client(tmp_path)
+    import pytest
+
+    from app.db import get_conn
+    from app.services import chemistry as chemistry_service
+
+    with get_conn() as conn:
+        reaction_set_id = conn.execute(
+            "INSERT INTO reaction_sets (name, status) VALUES (?, ?)",
+            ("Symlinked export set", "verified"),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO reactions (reaction_set_id, reaction, verified)
+            VALUES (?, ?, 1)
+            """,
+            (reaction_set_id, "e + Ar -> e + e + Ar+"),
+        )
+
+    outside_path = tmp_path / "outside-reaction-export.json"
+    outside_path.write_text('{"outside": true}', encoding="utf-8")
+    output_path = tmp_path / "exports" / f"reaction-set-{reaction_set_id}.json"
+    output_path.symlink_to(outside_path)
+
+    with pytest.raises(OSError, match="reaction export path is not a regular file"):
+        chemistry_service.export_reaction_set(reaction_set_id, "json")
+
+    assert outside_path.read_text(encoding="utf-8") == '{"outside": true}'
+
+
 def test_reaction_export_rejects_empty_reaction_set(tmp_path):
     client = make_client(tmp_path)
 
