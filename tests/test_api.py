@@ -12549,6 +12549,41 @@ def test_translate_document_rejects_symlinked_output_file(tmp_path):
     assert outside_path.read_text(encoding="utf-8") == "outside original"
 
 
+def test_rag_index_rejects_symlinked_vector_store(tmp_path):
+    make_client(tmp_path)
+    from app.db import get_conn
+    from app.services import rag as rag_service
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            (str(tmp_path / "vector-symlink.pdf"), "vector-symlink", "vector-symlink.pdf"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Body', 'Argon plasma text', 'body')
+            """,
+            (document_id,),
+        )
+
+    outside_path = tmp_path / "outside-vector-index.json"
+    outside_payload = '{"outside": {"document_id": 999, "embedding": []}}'
+    outside_path.write_text(outside_payload, encoding="utf-8")
+    vector_path = tmp_path / "vector-index.json"
+    vector_path.symlink_to(outside_path)
+
+    result = rag_service.index_document(document_id)
+
+    assert result["status"] == "failed"
+    assert "vector store path is not a regular file" in result["error"]
+    assert outside_path.read_text(encoding="utf-8") == outside_payload
+
+
 def test_index_unparsed_document_records_failed_status(tmp_path):
     client = make_client(tmp_path)
     response = client.post(

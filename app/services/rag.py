@@ -107,6 +107,11 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
     return sum(a * b for a, b in zip(left, right))
 
 
+def assert_safe_vector_store_path(path: Path) -> None:
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise ValueError(f"vector store path is not a regular file: {path}")
+
+
 class JsonVectorStore:
     def __init__(self, path: Path):
         self.path = path
@@ -114,6 +119,7 @@ class JsonVectorStore:
     def load(self) -> dict:
         if not self.path.exists():
             return {}
+        assert_safe_vector_store_path(self.path)
         try:
             return json.loads(self.path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
@@ -123,6 +129,7 @@ class JsonVectorStore:
         existing = self.load()
         existing.update(records)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        assert_safe_vector_store_path(self.path)
         self.path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def delete_document(self, document_id: int) -> None:
@@ -133,6 +140,7 @@ class JsonVectorStore:
             if record.get("document_id") != document_id
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        assert_safe_vector_store_path(self.path)
         self.path.write_text(json.dumps(filtered, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def search(self, query_embedding: list[float], document_ids: list[int], top_k: int) -> list[dict]:
