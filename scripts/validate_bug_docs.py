@@ -61,11 +61,23 @@ def has_incomplete_release_gate_evidence(text: str) -> bool:
     return False
 
 
+def first_symlink_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
+
+
 def bug_doc_issues(repo: Path) -> list[str]:
     repo = repo.resolve()
     bug_dir = repo / "docs" / "bug"
     if not bug_dir.exists():
         return ["docs/bug: missing"]
+    if first_symlink_parent(bug_dir) is not None:
+        return ["docs/bug: bug directory parent is not a regular directory"]
     if bug_dir.is_symlink() or not bug_dir.is_dir():
         return ["docs/bug: bug directory is not a regular directory"]
 
