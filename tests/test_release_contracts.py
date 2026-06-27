@@ -1588,6 +1588,27 @@ def test_doctor_env_example_check_rejects_dev_ready_timeout_runtime_drift(tmp_pa
     } in check["issues"]
 
 
+def test_doctor_env_example_check_reports_unreadable_dev_script(tmp_path):
+    doctor = load_doctor()
+    repo = Path(__file__).resolve().parent.parent
+    (tmp_path / ".env.example").write_text(
+        (repo / ".env.example").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "dev.sh").write_bytes(b"\xff\xfe\x00bad-dev-script")
+
+    check = doctor.check_env_example(tmp_path)
+
+    assert check["status"] == "fail"
+    assert any(
+        issue.get("code") == "dev_script_unreadable"
+        and issue.get("path") == str(tmp_path / "scripts" / "dev.sh")
+        and "failed to read scripts/dev.sh" in issue.get("message", "")
+        for issue in check["issues"]
+    )
+
+
 def test_doctor_env_example_check_rejects_symlinked_env_example(tmp_path):
     doctor = load_doctor()
     repo = Path(__file__).resolve().parent.parent

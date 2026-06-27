@@ -336,7 +336,14 @@ def dev_ready_timeout_default(path: Path) -> str | None:
 
 
 def dev_ready_timeout_runtime_issue(values: dict[str, str], dev_script_path: Path) -> dict[str, str] | None:
-    expected = dev_ready_timeout_default(dev_script_path)
+    try:
+        expected = dev_ready_timeout_default(dev_script_path)
+    except (OSError, UnicodeError) as exc:
+        return {
+            "code": "dev_script_unreadable",
+            "path": str(dev_script_path),
+            "message": f"failed to read scripts/dev.sh: {exc}",
+        }
     actual = values.get("DEV_READY_TIMEOUT")
     if not expected or not actual or actual == expected:
         return None
