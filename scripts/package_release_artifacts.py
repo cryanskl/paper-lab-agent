@@ -184,10 +184,28 @@ def package_release_artifacts(
             "issues": validation.get("issues") or ["release artifact validation failed"],
         }
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(output_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for filename in artifact_filenames():
-            archive.write(artifact_dir / filename, arcname=filename)
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(output_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for filename in artifact_filenames():
+                archive.write(artifact_dir / filename, arcname=filename)
+    except OSError as exc:
+        output_path.unlink(missing_ok=True)
+        return {
+            "ok": False,
+            "artifact_dir": str(artifact_dir),
+            "package_path": str(output_path),
+            "artifact_count": 0,
+            "artifact_names": [],
+            "package_sha256": None,
+            "source": validation.get("source") or {},
+            "demo_ready": validation.get("demo_ready"),
+            "demo_export_formats": validation.get("demo_export_formats") or [],
+            "demo_export_audit_entry_counts": validation.get("demo_export_audit_entry_counts") or {},
+            "demo_reaction_set_verified_by": validation.get("demo_reaction_set_verified_by"),
+            "demo_reaction_set_verified_at": validation.get("demo_reaction_set_verified_at"),
+            "issues": [f"release package write failed: {exc}"],
+        }
 
     return {
         "ok": True,

@@ -2674,6 +2674,31 @@ def test_package_release_artifacts_removes_stale_output_on_validation_failure(tm
     assert any("missing" in issue for issue in report["issues"])
 
 
+def test_package_release_artifacts_reports_zip_write_failure(monkeypatch, tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    package_release_artifacts = load_package_release_artifacts()
+    artifact_dir = tmp_path / "release"
+    output_path = tmp_path / "paper-lab-agent-release.zip"
+    export_release_artifacts.export_release_artifacts(artifact_dir, compact=True)
+
+    class FailingZipFile:
+        def __init__(self, *args, **kwargs):
+            raise OSError("disk full")
+
+    monkeypatch.setattr(package_release_artifacts.zipfile, "ZipFile", FailingZipFile)
+
+    report = package_release_artifacts.package_release_artifacts(artifact_dir, output_path)
+
+    assert report["ok"] is False
+    assert report["artifact_dir"] == str(artifact_dir.resolve())
+    assert report["package_path"] == str(output_path.resolve())
+    assert report["package_sha256"] is None
+    assert report["artifact_count"] == 0
+    assert report["artifact_names"] == []
+    assert report["issues"] == ["release package write failed: disk full"]
+    assert not output_path.exists()
+
+
 def test_package_release_artifacts_rejects_artifact_dir_symlink(tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     package_release_artifacts = load_package_release_artifacts()
