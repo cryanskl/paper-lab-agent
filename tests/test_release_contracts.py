@@ -6810,6 +6810,20 @@ def test_docs_links_validator_rejects_symlinked_markdown_source(tmp_path):
     assert issues == ["README.md: doc source is not a regular file"]
 
 
+def test_docs_links_validator_rejects_symlinked_markdown_link_target(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    outside_schema = tmp_path / "outside-schema.sql"
+    outside_schema.write_text("select 1;\n", encoding="utf-8")
+    (docs_dir / "schema.sql").symlink_to(outside_schema)
+    (tmp_path / "README.md").write_text("[Schema](docs/schema.sql)\n", encoding="utf-8")
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["README.md: link target is not a regular file docs/schema.sql"]
+
+
 def test_docs_links_validator_reports_missing_markdown_anchor(tmp_path):
     validate_docs_links = load_validate_docs_links()
     docs_dir = tmp_path / "docs"

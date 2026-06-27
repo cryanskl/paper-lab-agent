@@ -121,6 +121,9 @@ def broken_doc_links(repo: Path) -> list[str]:
             if target_path is None:
                 issues.append(f"{label}: missing link target {target}")
                 continue
+            if target_path.is_symlink() or not target_path.is_file():
+                issues.append(f"{label}: link target is not a regular file {target}")
+                continue
             if fragment and not anchor_exists(target_path, fragment):
                 target_label = f"{target}#{fragment}" if target else f"#{fragment}"
                 issues.append(f"{label}: missing anchor target {target_label}")
