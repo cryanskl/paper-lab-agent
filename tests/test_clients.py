@@ -1212,6 +1212,25 @@ async def test_unpaywall_waits_after_successful_resolution():
 
 
 @pytest.mark.asyncio
+async def test_unpaywall_returns_unknown_for_blank_doi_without_request():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"unexpected Unpaywall request: {request.url}")
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.resolve("   ")
+
+    assert result == {
+        "oa_status": "unknown",
+        "oa_pdf_url": None,
+        "error": "DOI is required for Unpaywall lookup",
+    }
+
+
+@pytest.mark.asyncio
 async def test_unpaywall_does_not_retry_permanent_http_errors():
     calls = 0
     sleep_calls = []
