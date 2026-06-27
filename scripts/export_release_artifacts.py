@@ -83,6 +83,11 @@ def write_json(path: Path, payload: dict[str, Any], *, compact: bool = False) ->
     path.write_text(f"{text}\n", encoding="utf-8")
 
 
+def remove_artifacts(paths: tuple[Path, ...]) -> None:
+    for path in paths:
+        path.unlink(missing_ok=True)
+
+
 def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict[str, Any]:
     requested_output_dir = output_dir
     if requested_output_dir.is_symlink():
@@ -168,6 +173,7 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
     try:
         write_json(demo_summary_path, demo_summary, compact=compact)
     except OSError as exc:
+        remove_artifacts((openapi_path, demo_summary_path, manifest_path))
         return {
             "ok": False,
             "output_dir": str(output_dir),
@@ -199,6 +205,7 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
     try:
         write_json(manifest_path, manifest, compact=compact)
     except OSError as exc:
+        remove_artifacts((openapi_path, demo_summary_path, manifest_path))
         return {
             "ok": False,
             "output_dir": str(output_dir),

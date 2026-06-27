@@ -1986,7 +1986,7 @@ def test_export_release_artifacts_reports_demo_summary_write_failure(monkeypatch
     assert report["ok"] is False
     assert report["output_dir"] == str(output_dir.resolve())
     assert report["issues"] == ["Demo summary artifact write failed: disk full"]
-    assert (output_dir / "openapi.json").exists()
+    assert not (output_dir / "openapi.json").exists()
     assert not (output_dir / "demo-summary.json").exists()
     assert not (output_dir / "release-manifest.json").exists()
 
@@ -2083,8 +2083,8 @@ def test_export_release_artifacts_reports_manifest_write_failure(monkeypatch, tm
     assert report["ok"] is False
     assert report["output_dir"] == str(output_dir.resolve())
     assert report["issues"] == ["Release manifest artifact write failed: permission denied"]
-    assert (output_dir / "openapi.json").exists()
-    assert (output_dir / "demo-summary.json").exists()
+    assert not (output_dir / "openapi.json").exists()
+    assert not (output_dir / "demo-summary.json").exists()
     assert not (output_dir / "release-manifest.json").exists()
 
 
