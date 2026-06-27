@@ -15,7 +15,7 @@ BASH_FENCE_RE = re.compile(r"^```(?:bash|sh|shell)\s*$")
 FENCE_RE = re.compile(r"^```")
 ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 INLINE_CODE_RE = re.compile(r"`([^`]+)`")
-LOCAL_COMMANDS = {"bash", "curl", "python", "python3", "pip", "source"}
+LOCAL_COMMANDS = {"bash", "curl", "python", "python3", "pip", "source", "uvicorn"}
 LOCAL_CURL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 HTTP_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH"}
 UVICORN_OPTIONS_WITH_VALUES = {
