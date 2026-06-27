@@ -53,6 +53,7 @@ FALLBACK_STDLIB_MODULES = {
     "sys",
     "tempfile",
     "typing",
+    "unicodedata",
     "urllib",
     "xml",
     "zipfile",

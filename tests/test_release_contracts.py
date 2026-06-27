@@ -7158,7 +7158,7 @@ def test_requirements_validator_ignores_standard_library_imports(tmp_path):
     source_dir = tmp_path / "scripts"
     source_dir.mkdir()
     (source_dir / "uses_stdlib.py").write_text(
-        "import email.utils\nimport fnmatch\nimport importlib.util\nimport shlex\nimport subprocess\nimport zipfile\n",
+        "import email.utils\nimport fnmatch\nimport importlib.util\nimport shlex\nimport subprocess\nimport unicodedata\nimport zipfile\n",
         encoding="utf-8",
     )
     requirements_path = tmp_path / "requirements.txt"

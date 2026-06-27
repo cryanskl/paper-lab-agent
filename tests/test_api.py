@@ -207,6 +207,18 @@ def test_crawl_keyword_matching_normalizes_unicode_subscript_digits():
     assert matches_keywords(work, {"mode": "and", "terms": ["co2 conversion", "ar o2", "n2 admixtures"]}) is True
 
 
+def test_crawl_keyword_matching_normalizes_fullwidth_ascii_variants():
+    from app.services.crawl import matches_keywords, normalize_keyword_text
+
+    work = {
+        "title": "ＣＯ２ conversion in Ａｒ/Ｏ２ plasma",
+        "abstract": "Fullwidth metadata should still match ASCII keyword configuration.",
+    }
+
+    assert normalize_keyword_text("ＣＯ２/Ｏ２") == "co2 o2"
+    assert matches_keywords(work, {"mode": "and", "terms": ["co2 conversion", "ar o2"]}) is True
+
+
 def test_crawl_keyword_matching_does_not_match_inside_words():
     from app.services.crawl import matches_keywords
 

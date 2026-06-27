@@ -1,5 +1,6 @@
 import hashlib
 import re
+import unicodedata
 from datetime import date
 from typing import Any, Optional
 
@@ -19,7 +20,7 @@ def normalize_text(value: Any) -> str:
 
 
 def normalize_keyword_text(value: Any) -> str:
-    normalized = str(value or "").translate(SUBSCRIPT_DIGIT_TRANSLATION)
+    normalized = unicodedata.normalize("NFKC", str(value or "")).translate(SUBSCRIPT_DIGIT_TRANSLATION)
     text = re.sub(r"[^0-9a-zA-Z]+", " ", normalized.strip().lower())
     return re.sub(r"\s+", " ", text).strip()
 
