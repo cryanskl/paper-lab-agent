@@ -6121,9 +6121,6 @@ def test_parse_document_records_failed_status_when_artifact_cleanup_fails(tmp_pa
         }
 
     class FailingVectorStore:
-        def __init__(self, path):
-            self.path = path
-
         def delete_document(self, document_id):
             raise RuntimeError("vector cleanup failed")
 
@@ -6169,7 +6166,7 @@ def test_parse_document_records_failed_status_when_artifact_cleanup_fails(tmp_pa
         )
 
     monkeypatch.setattr(document_service.GrobidClient, "health_detail", fake_health_detail)
-    monkeypatch.setattr(document_service, "JsonVectorStore", FailingVectorStore)
+    monkeypatch.setattr(document_service, "get_vector_store", lambda settings: FailingVectorStore())
 
     result = asyncio.run(document_service.parse_document(document_id))
 
@@ -6303,6 +6300,52 @@ def test_parse_document_fallback_failure_clears_stale_artifacts(tmp_path, monkey
     assert counts == {"sections": 0, "chunks": 0, "translations": 0, "reaction_sets": 0}
     vector_index = json.loads((tmp_path / "vector-index.json").read_text(encoding="utf-8"))
     assert all(record["document_id"] != document_id for record in vector_index.values())
+
+
+def test_parse_document_finalization_rejects_unsupported_vector_db_backend(tmp_path, monkeypatch):
+    import asyncio
+
+    monkeypatch.setenv("VECTOR_DB_BACKEND", "faiss")
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("parse-backend.pdf", pdf_bytes(b"local plasma finalization text"), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    from app.db import get_conn
+    from app.services import documents as document_service
+
+    async def fake_health_detail(self):
+        return {
+            "available": False,
+            "url": "http://grobid.test",
+            "status_code": None,
+            "error": "connection refused",
+        }
+
+    monkeypatch.setattr(document_service.GrobidClient, "health_detail", fake_health_detail)
+
+    result = asyncio.run(document_service.parse_document(document_id))
+
+    assert result["parse_status"] == "failed"
+    assert result["parse_error"] == "Parse finalization failed: unsupported vector db backend: faiss"
+    with get_conn() as conn:
+        document = conn.execute(
+            """
+            SELECT parse_status, parse_error, index_status, index_error, chemistry_status, chemistry_error
+            FROM documents WHERE id=?
+            """,
+            (document_id,),
+        ).fetchone()
+        section_count = conn.execute("SELECT COUNT(*) AS n FROM sections WHERE document_id=?", (document_id,)).fetchone()["n"]
+    assert document["parse_status"] == "failed"
+    assert document["parse_error"] == "Parse finalization failed: unsupported vector db backend: faiss"
+    assert document["index_status"] == "not_indexed"
+    assert document["index_error"] is None
+    assert document["chemistry_status"] == "not_extracted"
+    assert document["chemistry_error"] is None
+    assert section_count == 0
 
 
 def test_sections_from_tei_extracts_structured_sections():
