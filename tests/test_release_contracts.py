@@ -1444,6 +1444,30 @@ def test_export_openapi_script_runs_as_file(tmp_path):
     assert payload["info"]["title"] == "paper-lab-agent"
 
 
+def test_export_openapi_script_rejects_symlinked_output_file(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    outside_path = tmp_path / "outside-openapi.json"
+    outside_path.write_text("outside-original", encoding="utf-8")
+    output_path = tmp_path / "out" / "openapi.json"
+    output_path.parent.mkdir()
+    output_path.symlink_to(outside_path)
+
+    result = subprocess.run(
+        [sys.executable, "scripts/export_openapi.py", "--output", str(output_path), "--compact"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert f"export_openapi failed: output path is not a regular file: {output_path}" in result.stderr
+    assert outside_path.read_text(encoding="utf-8") == "outside-original"
+
+
 def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     import os
     import subprocess

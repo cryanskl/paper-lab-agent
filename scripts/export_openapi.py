@@ -18,9 +18,17 @@ def openapi_payload() -> dict[str, Any]:
     return app.openapi()
 
 
-def write_openapi(output_path: Path, *, compact: bool = False) -> None:
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(format_openapi(compact=compact), encoding="utf-8")
+def write_openapi(output_path: Path, *, compact: bool = False) -> str | None:
+    if output_path.is_symlink():
+        return f"output path is not a regular file: {output_path}"
+    if output_path.exists() and not output_path.is_file():
+        return f"output path is not a regular file: {output_path}"
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(format_openapi(compact=compact), encoding="utf-8")
+    except OSError as exc:
+        return f"failed to write output file {output_path}: {exc}"
+    return None
 
 
 def print_openapi(stream: TextIO = sys.stdout, *, compact: bool = False) -> None:
@@ -43,7 +51,10 @@ def main() -> int:
     if args.output is None:
         print_openapi(compact=args.compact)
     else:
-        write_openapi(args.output, compact=args.compact)
+        output_error = write_openapi(args.output, compact=args.compact)
+        if output_error:
+            print(f"export_openapi failed: {output_error}", file=sys.stderr)
+            return 1
     return 0
 
 
