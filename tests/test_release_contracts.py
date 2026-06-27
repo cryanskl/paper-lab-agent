@@ -2443,6 +2443,18 @@ def test_release_check_compiles_application_package():
     assert " app " in release_check or " app\n" in release_check
 
 
+def test_release_check_py_compile_targets_cover_every_python_script():
+    repo = Path(__file__).resolve().parent.parent
+    release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+    scripts = sorted(path.relative_to(repo).as_posix() for path in (repo / "scripts").glob("*.py"))
+
+    assert "PY_COMPILE_TARGETS=(" in release_check
+    for script in scripts:
+        assert script in release_check
+    assert "streamlit_app.py" in release_check
+    assert '"${PY_COMPILE_TARGETS[@]}"' in release_check
+
+
 def test_release_check_rejects_whitespace_errors():
     repo = Path(__file__).resolve().parent.parent
     release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
