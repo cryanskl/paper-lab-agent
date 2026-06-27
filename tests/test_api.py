@@ -11608,18 +11608,21 @@ def test_streamlit_sidebar_surfaces_release_readiness():
         "release blockers",
         "demo_data_missing",
         "failed_workflows",
-        "config_warning_codes",
         "storage_errors",
         "release blocker details",
         "demo data missing:",
         "failed workflows:",
-        "config warnings:",
         "storage errors:",
         'release_ready = release_readiness.get("ready") is True and not blockers',
         "if release_ready:",
     ]:
         assert required in sidebar_section
     assert 'if release_readiness.get("ready"):' not in sidebar_section
+    release_blocker_section = sidebar_section[
+        sidebar_section.index("blocker_groups = {") : sidebar_section.index("demo_data = status.get")
+    ]
+    assert "config_warning_codes" not in release_blocker_section
+    assert "config warnings:" not in release_blocker_section
 
 
 def test_streamlit_sidebar_system_status_error_shows_payload_details():

@@ -108,7 +108,6 @@ with st.sidebar:
     blocker_groups = {
         "demo_data_missing": "demo data missing:",
         "failed_workflows": "failed workflows:",
-        "config_warning_codes": "config warnings:",
         "storage_errors": "storage errors:",
     }
     for key in blocker_groups:
