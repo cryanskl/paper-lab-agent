@@ -42,7 +42,11 @@ def summarize_text(text: str, limit: int = ERROR_TEXT_LIMIT) -> str:
 
 def is_safe_download_file(path: Path) -> bool:
     try:
-        if any(candidate.is_symlink() for candidate in (path, *path.parents)):
+        for candidate in (path, *path.parents):
+            if not candidate.is_symlink():
+                continue
+            if candidate.is_absolute() and candidate.parent == Path(candidate.anchor):
+                continue
             return False
         return path.exists() and path.is_file()
     except OSError:

@@ -1273,6 +1273,26 @@ def test_document_asset_downloads_reject_symlinked_files(tmp_path):
     ]
 
 
+def test_frontend_download_allows_system_root_symlink_parent():
+    import tempfile
+    from pathlib import Path
+
+    import pytest
+
+    from app import frontend_api
+
+    var_path = Path("/var")
+    if not var_path.is_symlink():
+        pytest.skip("/var is not a symlink on this platform")
+
+    with tempfile.TemporaryDirectory(dir="/var/tmp") as temp_dir:
+        download_path = Path(temp_dir) / "paper.tei.xml"
+        download_path.write_text("<TEI>plasma</TEI>", encoding="utf-8")
+
+        assert str(download_path).startswith("/var/")
+        assert frontend_api.is_safe_download_file(download_path) is True
+
+
 def test_translation_status_rows_summarize_output_file_preview():
     from app import frontend_api
 
