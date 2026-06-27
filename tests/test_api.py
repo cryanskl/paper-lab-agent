@@ -3057,6 +3057,29 @@ def test_openalex_client_sends_polite_user_agent_with_mailto():
     assert seen_user_agents == ["paper-lab-agent (mailto:lab@example.test)"]
 
 
+def test_openalex_client_strips_mailto_whitespace_for_polite_pool():
+    import asyncio
+
+    import httpx
+
+    from app.clients.openalex import OpenAlexClient
+
+    seen_user_agents = []
+    seen_mailtos = []
+
+    def handler(request):
+        seen_user_agents.append(request.headers.get("user-agent"))
+        seen_mailtos.append(request.url.params.get("mailto"))
+        return httpx.Response(200, json={"results": [], "meta": {}})
+
+    client = OpenAlexClient("  lab@example.test  ", transport=httpx.MockTransport(handler))
+    works = asyncio.run(client.works_by_issn("1234-5678", "2025-01-01", "2026-01-01"))
+
+    assert works == []
+    assert seen_mailtos == ["lab@example.test"]
+    assert seen_user_agents == ["paper-lab-agent (mailto:lab@example.test)"]
+
+
 def test_openalex_client_honors_retry_after_without_real_sleep():
     import asyncio
 
@@ -3299,6 +3322,29 @@ def test_unpaywall_client_sends_polite_user_agent_with_email():
         return httpx.Response(200, json={"oa_status": "closed"})
 
     client = UnpaywallClient("lab@example.test", transport=httpx.MockTransport(handler))
+    result = asyncio.run(client.resolve("10.1/polite"))
+
+    assert result["oa_status"] == "closed"
+    assert seen_emails == ["lab@example.test"]
+    assert seen_user_agents == ["paper-lab-agent (mailto:lab@example.test)"]
+
+
+def test_unpaywall_client_strips_email_whitespace_for_polite_pool():
+    import asyncio
+
+    import httpx
+
+    from app.clients.unpaywall import UnpaywallClient
+
+    seen_user_agents = []
+    seen_emails = []
+
+    def handler(request):
+        seen_user_agents.append(request.headers.get("user-agent"))
+        seen_emails.append(request.url.params.get("email"))
+        return httpx.Response(200, json={"oa_status": "closed"})
+
+    client = UnpaywallClient("  lab@example.test  ", transport=httpx.MockTransport(handler))
     result = asyncio.run(client.resolve("10.1/polite"))
 
     assert result["oa_status"] == "closed"

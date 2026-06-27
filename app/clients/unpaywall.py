@@ -24,7 +24,7 @@ class UnpaywallClient:
         timeout: float = 20.0,
         sleep: Any = asyncio.sleep,
     ):
-        self.email = email
+        self.email = email.strip() if isinstance(email, str) and email.strip() else None
         self.transport = transport
         self.max_retries = max(1, max_retries)
         self.retry_backoff_seconds = retry_backoff_seconds

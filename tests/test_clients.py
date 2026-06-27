@@ -1222,6 +1222,27 @@ async def test_crossref_includes_mailto_in_request_params_and_user_agent():
 
 
 @pytest.mark.asyncio
+async def test_crossref_strips_mailto_whitespace_for_polite_pool():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["mailto"] = request.url.params.get("mailto")
+        captured["user_agent"] = request.headers.get("User-Agent")
+        return json_response({"message": {"items": []}})
+
+    client = CrossrefClient(
+        mailto="  lab@example.test  ",
+        transport=httpx.MockTransport(handler),
+    )
+
+    works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert works == []
+    assert captured["mailto"] == "lab@example.test"
+    assert captured["user_agent"] == "paper-lab-agent (mailto:lab@example.test)"
+
+
+@pytest.mark.asyncio
 async def test_unpaywall_waits_after_successful_resolution():
     sleep_calls = []
 

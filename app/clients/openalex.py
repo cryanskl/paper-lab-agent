@@ -22,7 +22,7 @@ class OpenAlexClient:
         timeout: float = 20.0,
         sleep: Any = asyncio.sleep,
     ):
-        self.mailto = mailto
+        self.mailto = mailto.strip() if isinstance(mailto, str) and mailto.strip() else None
         self.transport = transport
         self.max_retries = max(1, max_retries)
         self.retry_backoff_seconds = retry_backoff_seconds
