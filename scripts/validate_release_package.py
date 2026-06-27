@@ -41,6 +41,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "artifact_count": 0,
             "artifact_names": [],
             "source": {},
+            "openapi_path_count": 0,
             "demo_ready": None,
             "demo_counts": {},
             "demo_workflow_statuses": {},
@@ -61,6 +62,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "artifact_count": 0,
             "artifact_names": [],
             "source": {},
+            "openapi_path_count": 0,
             "demo_ready": None,
             "demo_counts": {},
             "demo_workflow_statuses": {},
@@ -78,6 +80,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
     issues: list[str] = []
     artifact_names: list[str] = []
     source: dict[str, Any] = {}
+    openapi_path_count = 0
     demo_ready = None
     demo_counts: dict[str, Any] = {}
     demo_workflow_statuses: dict[str, Any] = {}
@@ -97,6 +100,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "artifact_count": 0,
             "artifact_names": artifact_names,
             "source": source,
+            "openapi_path_count": openapi_path_count,
             "demo_ready": demo_ready,
             "demo_counts": demo_counts,
             "demo_workflow_statuses": demo_workflow_statuses,
@@ -117,6 +121,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "artifact_count": 0,
             "artifact_names": artifact_names,
             "source": source,
+            "openapi_path_count": openapi_path_count,
             "demo_ready": demo_ready,
             "demo_counts": demo_counts,
             "demo_workflow_statuses": demo_workflow_statuses,
@@ -154,6 +159,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
                         require_clean_source=require_clean_source,
                     )
                     source = validation.get("source") or {}
+                    openapi_path_count = int(validation.get("openapi_path_count") or 0)
                     demo_ready = validation.get("demo_ready")
                     demo_counts = validation.get("demo_counts") or {}
                     demo_workflow_statuses = validation.get("demo_workflow_statuses") or {}
@@ -175,6 +181,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
         "artifact_count": len(artifact_names),
         "artifact_names": artifact_names,
         "source": source,
+        "openapi_path_count": openapi_path_count,
         "demo_ready": demo_ready,
         "demo_counts": demo_counts,
         "demo_workflow_statuses": demo_workflow_statuses,

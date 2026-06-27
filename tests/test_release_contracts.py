@@ -2542,6 +2542,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package.get("demo_counts", {}).get("reaction_audits") != 1' in release_check
     assert 'package.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"' in release_check
     assert 'package.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"' in release_check
+    assert 'package.get("openapi_path_count") != 28' in release_check
     assert 'package.get("demo_reaction_set_verified_by") != "prepare-demo-data"' in release_check
     assert 'not package.get("demo_reaction_set_verified_at")' in release_check
     assert 'package_validation.get("demo_ready") is not True' in release_check
@@ -2552,6 +2553,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package_validation.get("demo_counts", {}).get("reaction_audits") != 1' in release_check
     assert 'package_validation.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"' in release_check
     assert 'package_validation.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"' in release_check
+    assert 'package_validation.get("openapi_path_count") != 28' in release_check
     assert 'package_validation.get("demo_reaction_set_verified_by") != "prepare-demo-data"' in release_check
     assert 'not package_validation.get("demo_reaction_set_verified_at")' in release_check
     assert "release manifest version does not match OpenAPI version" in release_check
@@ -4042,6 +4044,7 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert payload["demo_counts"]["reaction_audits"] == 1
     assert payload["demo_workflow_statuses"]["parse_status"] == "parsed"
     assert payload["demo_workflow_statuses"]["reaction_set_status"] == "verified"
+    assert payload["openapi_path_count"] == 28
     assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
     assert payload["demo_reaction_set_verified_at"]
     assert package_path.exists()
@@ -4085,6 +4088,7 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert validate_payload["demo_counts"]["reaction_audits"] == 1
     assert validate_payload["demo_workflow_statuses"]["parse_status"] == "parsed"
     assert validate_payload["demo_workflow_statuses"]["reaction_set_status"] == "verified"
+    assert validate_payload["openapi_path_count"] == 28
     assert validate_payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
     assert validate_payload["demo_reaction_set_verified_at"]
 

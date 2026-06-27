@@ -452,6 +452,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package.get("demo_counts", {}).get("reaction_audits") != 1
         or package.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
         or package.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"
+        or package.get("openapi_path_count") != 28
         or package.get("demo_reaction_set_verified_by") != "prepare-demo-data"
         or not package.get("demo_reaction_set_verified_at")
         or not package_path.exists()
@@ -483,6 +484,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package_validation.get("demo_counts", {}).get("reaction_audits") != 1
         or package_validation.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
         or package_validation.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"
+        or package_validation.get("openapi_path_count") != 28
         or package_validation.get("demo_reaction_set_verified_by") != "prepare-demo-data"
         or not package_validation.get("demo_reaction_set_verified_at")
     ):
