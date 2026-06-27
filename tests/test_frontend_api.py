@@ -56,6 +56,33 @@ def test_frontend_api_status_request_normalizes_paths_without_leading_slash(monk
     assert payload == {"items": [], "total": 0}
 
 
+def test_frontend_api_status_request_strips_base_url_whitespace(monkeypatch):
+    from app import frontend_api
+
+    class FakeResponse:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {"ok": True}
+
+    def fake_request(method, url, **kwargs):
+        assert method == "GET"
+        assert url == "http://api.test/api/v1/system/status"
+        return FakeResponse()
+
+    monkeypatch.setattr(frontend_api.requests, "request", fake_request)
+
+    status_code, payload = frontend_api.request_json_status(
+        "GET",
+        "  http://api.test/api/v1/  ",
+        "system/status",
+    )
+
+    assert status_code == 200
+    assert payload == {"ok": True}
+
+
 def test_frontend_api_get_raises_readable_api_error_for_json_error(monkeypatch):
     from app import frontend_api
 

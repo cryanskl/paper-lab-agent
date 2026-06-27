@@ -15,7 +15,7 @@ class FrontendApiError(RuntimeError):
 
 
 def normalize_base_url(base_url: str) -> str:
-    return base_url.rstrip("/")
+    return base_url.strip().rstrip("/")
 
 
 def normalize_path(path: str) -> str:
