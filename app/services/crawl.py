@@ -39,9 +39,10 @@ def matches_keywords(work: dict[str, Any], keywords: Any) -> bool:
     if not terms:
         return True
     haystack = normalize_keyword_text(f"{work.get('title') or ''}\n{work.get('abstract') or ''}")
+    padded_haystack = f" {haystack} "
     if mode == "and":
-        return all(term in haystack for term in terms)
-    return any(term in haystack for term in terms)
+        return all(f" {term} " in padded_haystack for term in terms)
+    return any(f" {term} " in padded_haystack for term in terms)
 
 
 def optional_text(value: Any, default: Optional[str] = None) -> Optional[str]:

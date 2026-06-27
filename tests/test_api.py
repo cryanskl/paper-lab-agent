@@ -195,6 +195,19 @@ def test_crawl_keyword_matching_treats_punctuation_as_word_boundaries():
     assert matches_keywords(work, {"mode": "and", "terms": ["ar o2", "global discharge"]}) is True
 
 
+def test_crawl_keyword_matching_does_not_match_inside_words():
+    from app.services.crawl import matches_keywords
+
+    work = {
+        "title": "Plasma simulation benchmark",
+        "abstract": "A global model for neutral transport.",
+    }
+
+    assert matches_keywords(work, ["plasma simulation"]) is True
+    assert matches_keywords(work, ["ion"]) is False
+    assert matches_keywords(work, {"mode": "and", "terms": ["plasma", "ion"]}) is False
+
+
 def test_crawl_keyword_matching_strips_mode_whitespace():
     from app.services.crawl import matches_keywords, normalize_keyword_config
 
