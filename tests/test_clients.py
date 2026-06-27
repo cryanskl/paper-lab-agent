@@ -59,6 +59,14 @@ def test_crossref_strips_space_after_doi_prefix():
     assert work["doi"] == "10.5555/abc.def"
 
 
+def test_crossref_normalizes_fullwidth_doi_text():
+    client = CrossrefClient()
+
+    work = client.normalize({"DOI": "ＤＯＩ：１０.５５５５／ＡＢＣ．Ｄｅｆ", "title": ["Example"]})
+
+    assert work["doi"] == "10.5555/abc.def"
+
+
 def test_crossref_normalizes_scalar_title_fields():
     client = CrossrefClient()
 
@@ -430,6 +438,14 @@ def test_openalex_strips_space_after_doi_prefix():
     client = OpenAlexClient()
 
     work = client.normalize({"doi": "DOI: 10.5555/ABC.Def", "title": "Example"})
+
+    assert work["doi"] == "10.5555/abc.def"
+
+
+def test_openalex_normalizes_fullwidth_doi_text():
+    client = OpenAlexClient()
+
+    work = client.normalize({"doi": "ＤＯＩ：１０.５５５５／ＡＢＣ．Ｄｅｆ", "title": "Example"})
 
     assert work["doi"] == "10.5555/abc.def"
 

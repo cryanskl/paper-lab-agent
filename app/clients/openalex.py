@@ -1,4 +1,5 @@
 import asyncio
+import unicodedata
 from datetime import date
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -118,7 +119,7 @@ class OpenAlexClient:
     def normalize_doi(self, value: Any) -> Optional[str]:
         if not isinstance(value, str):
             return None
-        doi = value.strip().lower()
+        doi = unicodedata.normalize("NFKC", value).strip().lower()
         if not doi:
             return None
         return (
