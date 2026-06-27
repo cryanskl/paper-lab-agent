@@ -347,9 +347,33 @@ def clean_env_value(value: str) -> str:
     return cleaned
 
 
+def env_file_issues(repo: Path) -> list[dict[str, Any]]:
+    env_path = repo / ".env"
+    if env_path.is_symlink() or (env_path.exists() and not env_path.is_file()):
+        return [
+            {
+                "code": "env_file_not_regular",
+                "path": str(env_path),
+                "message": f".env must be a regular file path: {env_path}",
+            }
+        ]
+    symlink_parent = first_symlink_parent(env_path)
+    if symlink_parent is not None:
+        return [
+            {
+                "code": "env_file_parent_not_regular",
+                "path": str(symlink_parent),
+                "message": f".env parent must be a regular directory: {symlink_parent}",
+            }
+        ]
+    return []
+
+
 def env_with_file_values(repo: Path, env: dict[str, str] | None = None) -> dict[str, str]:
     merged = dict(os.environ if env is None else env)
     env_path = repo / ".env"
+    if env_file_issues(repo):
+        return merged
     if not env_path.exists() or not env_path.is_file():
         return merged
     for raw_line in env_path.read_text(encoding="utf-8").splitlines():
@@ -460,11 +484,12 @@ def check_local_storage(repo: Path, env: dict[str, str] | None = None) -> dict[s
     repo = repo.resolve()
     paths = storage_path_config(repo, env)
     file_paths = storage_file_path_config(repo, env)
-    issues = [
+    issues = env_file_issues(repo)
+    issues.extend(
         issue
         for key, path in paths.items()
         for issue in check_writable_directory(key, path)
-    ]
+    )
     issues.extend(
         issue
         for key, path in file_paths.items()

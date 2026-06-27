@@ -1640,6 +1640,34 @@ def test_doctor_script_local_storage_preflight_reads_env_file(tmp_path):
     )
 
 
+def test_doctor_script_rejects_symlinked_env_file(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+
+    project = tmp_path / "project"
+    project.mkdir()
+    outside_env = tmp_path / "outside.env"
+    outside_env.write_text("PAPER_LAB_DATA_DIR=outside-data\n", encoding="utf-8")
+    (project / ".env").symlink_to(outside_env)
+
+    check = doctor.check_local_storage(project, env={})
+
+    assert check["status"] == "fail"
+    assert {
+        "code": "env_file_not_regular",
+        "path": str(project / ".env"),
+        "message": f".env must be a regular file path: {project / '.env'}",
+    } in check["issues"]
+    assert check["paths"]["data_dir"] == str(project / "data")
+
+
 def test_doctor_script_local_storage_preflight_keeps_environment_override(tmp_path):
     import importlib.util
 
