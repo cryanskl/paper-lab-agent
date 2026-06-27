@@ -170,6 +170,15 @@ def test_crawl_service_strips_space_after_doi_prefix_for_dedupe():
     assert build_dedupe_key({"id": 2}, work) == "doi:10.5555/abc.def"
 
 
+def test_crawl_service_normalizes_fullwidth_doi_for_dedupe():
+    from app.services.crawl import build_dedupe_key, normalize_doi
+
+    work = {"doi": "ＤＯＩ：１０.５５５５／ＡＢＣ．Ｄｅｆ", "title": "Example"}
+
+    assert normalize_doi(work["doi"]) == "10.5555/abc.def"
+    assert build_dedupe_key({"id": 2}, work) == "doi:10.5555/abc.def"
+
+
 def test_crawl_keyword_matching_collapses_internal_whitespace():
     from app.services.crawl import matches_keywords, normalize_keyword_config
 

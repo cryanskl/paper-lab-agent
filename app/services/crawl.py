@@ -16,7 +16,8 @@ SUBSCRIPT_DIGIT_TRANSLATION = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0
 
 
 def normalize_text(value: Any) -> str:
-    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+    normalized = unicodedata.normalize("NFKC", str(value or ""))
+    return re.sub(r"\s+", " ", normalized.strip().lower())
 
 
 def normalize_keyword_text(value: Any) -> str:
