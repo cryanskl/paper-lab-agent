@@ -242,6 +242,12 @@ def main() -> int:
         except (OSError, UnicodeError) as exc:
             print(f"settings config unreadable: {SETTINGS_CONFIG_PATH}: {exc}", file=sys.stderr)
             return 1
+    if DEV_SCRIPT_PATH.exists():
+        try:
+            DEV_SCRIPT_PATH.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            print(f"dev script unreadable: {DEV_SCRIPT_PATH}: {exc}", file=sys.stderr)
+            return 1
 
     missing = missing_required_keys(path)
     if missing:
