@@ -2545,6 +2545,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"' in release_check
     assert 'package.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"' in release_check
     assert 'package.get("openapi_path_count") != 28' in release_check
+    assert 'not valid_sha256(package.get("package_sha256"))' in release_check
     assert 'set((package.get("checksums") or {})) != {"openapi.json", "demo-summary.json", "release-manifest.json"}' in release_check
     assert "def valid_sha256(value):" in release_check
     assert 'all(char in "0123456789abcdef" for char in value)' in release_check
@@ -2564,6 +2565,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package_validation.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"' in release_check
     assert 'package_validation.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"' in release_check
     assert 'package_validation.get("openapi_path_count") != 28' in release_check
+    assert 'not valid_sha256(package_validation.get("package_sha256"))' in release_check
     assert 'set((package_validation.get("checksums") or {})) != {"openapi.json", "demo-summary.json", "release-manifest.json"}' in release_check
     assert 'not valid_release_checksums(package_validation.get("checksums") or {})' in release_check
     assert 'package_validation.get("demo_reaction_set_verified_by") != "prepare-demo-data"' in release_check
