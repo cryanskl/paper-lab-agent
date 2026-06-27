@@ -87,8 +87,11 @@ def heading_slug(title: str) -> str:
     return re.sub(r"[\s]+", "-", text).strip("-")
 
 
-def markdown_anchors(path: Path) -> set[str]:
-    text = path.read_text(encoding="utf-8")
+def markdown_anchors(path: Path) -> set[str] | None:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
     anchors: set[str] = set()
     seen: dict[str, int] = {}
     for match in HEADING_RE.finditer(text):
@@ -105,7 +108,12 @@ def anchor_exists(path: Path, fragment: str) -> bool:
     if path.suffix.lower() != ".md":
         return True
     normalized = heading_slug(fragment)
-    return bool(normalized and normalized in markdown_anchors(path))
+    anchors = markdown_anchors(path)
+    return bool(normalized and anchors is not None and normalized in anchors)
+
+
+def markdown_file_readable(path: Path) -> bool:
+    return path.suffix.lower() != ".md" or markdown_anchors(path) is not None
 
 
 def first_symlink_parent(path: Path) -> Path | None:
@@ -154,6 +162,10 @@ def broken_doc_links(repo: Path) -> list[str]:
                 continue
             if target_path.is_symlink() or not target_path.is_file():
                 issues.append(f"{label}: link target is not a regular file {target}")
+                continue
+            if fragment and not markdown_file_readable(target_path):
+                target_label = f"{target}#{fragment}" if target else f"#{fragment}"
+                issues.append(f"{label}: link target unreadable {target_label}")
                 continue
             if fragment and not anchor_exists(target_path, fragment):
                 target_label = f"{target}#{fragment}" if target else f"#{fragment}"

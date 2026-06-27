@@ -7471,6 +7471,21 @@ def test_docs_links_validator_reports_missing_markdown_anchor(tmp_path):
     assert issues == ["README.md: missing anchor target docs/guide.md#missing-section"]
 
 
+def test_docs_links_validator_reports_unreadable_markdown_anchor_target(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (tmp_path / "README.md").write_text("[Guide](docs/guide.md#intro)\n", encoding="utf-8")
+    (docs_dir / "guide.md").write_bytes(b"\xff\xfe\x00bad-guide")
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == [
+        "README.md: link target unreadable docs/guide.md#intro",
+        "docs/guide.md: doc source unreadable",
+    ]
+
+
 def test_docs_links_validator_ignores_external_markdown_anchors(tmp_path):
     validate_docs_links = load_validate_docs_links()
 
