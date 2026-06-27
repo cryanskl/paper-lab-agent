@@ -35,6 +35,13 @@ ASYNC_POST_PATHS = {
     "/api/v1/documents/{}/extract-chemistry",
 }
 ASYNC_RESPONSE_FIELDS = ("job_id", "status")
+ASYNC_RESPONSE_FIELDS_BY_PATH = {
+    "/api/v1/crawl/run": ("job_id", "journal_id", "period", "date_from", "date_to", "status"),
+    "/api/v1/documents/{}/parse": ("job_id", "document_id", "parse_status", "status"),
+    "/api/v1/documents/{}/translate": ("job_id", "document_id", "target_lang", "status"),
+    "/api/v1/documents/{}/index": ("job_id", "document_id", "index_status", "status"),
+    "/api/v1/documents/{}/extract-chemistry": ("job_id", "document_id", "chemistry_status", "status"),
+}
 ASYNC_JOBS_RESPONSE_PATHS = {"/api/v1/crawl/run"}
 REQUIRED_SEMANTIC_ERROR_RESPONSES = {
     ("POST", "/api/v1/documents"): ("409", "415"),
@@ -1083,6 +1090,7 @@ def async_response_body_contract_issues(
         if spec is None:
             continue
         schema = response_schema(spec, source_openapi, "202")
+        required_fields = ASYNC_RESPONSE_FIELDS_BY_PATH.get(normalized, ASYNC_RESPONSE_FIELDS)
         if normalized in ASYNC_JOBS_RESPONSE_PATHS:
             missing = [] if schema_declares_fields(schema, ("jobs",)) else ["jobs"]
             if missing:
@@ -1090,11 +1098,11 @@ def async_response_body_contract_issues(
                 continue
             jobs_schema = resolve_openapi_ref(schema.get("properties", {}).get("jobs", {}), source_openapi)
             item_schema = resolve_openapi_ref(jobs_schema.get("items", {}), source_openapi)
-            missing_job_fields = [name for name in ASYNC_RESPONSE_FIELDS if not schema_declares_fields(item_schema, (name,))]
+            missing_job_fields = [name for name in required_fields if not schema_declares_fields(item_schema, (name,))]
             if missing_job_fields:
                 issues.append(f"{method} {display} missing 202 response job fields: {', '.join(missing_job_fields)}")
             continue
-        missing = [name for name in ASYNC_RESPONSE_FIELDS if not schema_declares_fields(schema, (name,))]
+        missing = [name for name in required_fields if not schema_declares_fields(schema, (name,))]
         if missing:
             issues.append(f"{method} {display} missing 202 response fields: {', '.join(missing)}")
     return issues

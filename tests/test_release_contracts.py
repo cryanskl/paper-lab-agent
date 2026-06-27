@@ -4672,7 +4672,43 @@ def test_api_contract_validator_reports_missing_async_response_field(tmp_path):
 
     issues = validate_api_contract.async_response_body_contract_issues(contract_path, openapi_paths=openapi_paths)
 
-    assert issues == ["POST /api/v1/documents/{id}/parse missing 202 response fields: status"]
+    assert issues == [
+        "POST /api/v1/documents/{id}/parse missing 202 response fields: document_id, parse_status, status"
+    ]
+
+
+def test_api_contract_validator_reports_missing_document_async_metadata(tmp_path):
+    validate_api_contract = load_validate_api_contract()
+    contract_path = tmp_path / "接口设计文档.md"
+    contract_path.write_text("| POST | `/documents/{id}/parse` | 触发 GROBID 解析 |\n", encoding="utf-8")
+    openapi_paths = {
+        "/api/v1/documents/{document_id}/parse": {
+            "post": {
+                "responses": {
+                    "202": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["job_id", "status"],
+                                    "properties": {
+                                        "job_id": {"type": "integer"},
+                                        "status": {"type": "string"},
+                                    },
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.async_response_body_contract_issues(contract_path, openapi_paths=openapi_paths)
+
+    assert issues == [
+        "POST /api/v1/documents/{id}/parse missing 202 response fields: document_id, parse_status"
+    ]
 
 
 def test_api_contract_error_responses_expose_unified_shape():

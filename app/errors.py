@@ -47,10 +47,24 @@ class AsyncJobResponse(BaseModel):
 
     job_id: int
     status: Literal["pending"]
+    document_id: Optional[int] = None
+    parse_status: Optional[str] = None
+    target_lang: Optional[str] = None
+    index_status: Optional[str] = None
+    chemistry_status: Optional[str] = None
+
+
+class CrawlAsyncJobResponse(BaseModel):
+    job_id: int
+    journal_id: int
+    period: str
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    status: Literal["pending"]
 
 
 class AsyncJobsResponse(BaseModel):
-    jobs: list[AsyncJobResponse]
+    jobs: list[CrawlAsyncJobResponse]
 
 
 def install_openapi_error_schema(app: FastAPI) -> None:

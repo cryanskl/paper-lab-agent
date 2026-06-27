@@ -225,7 +225,7 @@ def get_document(document_id: int) -> dict:
     return get_document_or_404(document_id)
 
 
-@router.post("/{document_id}/parse", status_code=202, response_model=AsyncJobResponse)
+@router.post("/{document_id}/parse", status_code=202, response_model=AsyncJobResponse, response_model_exclude_none=True)
 def parse(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
     mark_parse_queued(document_id)
@@ -284,7 +284,7 @@ def list_chunks(
     }
 
 
-@router.post("/{document_id}/translate", status_code=202, response_model=AsyncJobResponse)
+@router.post("/{document_id}/translate", status_code=202, response_model=AsyncJobResponse, response_model_exclude_none=True)
 def translate(document_id: int, body: TranslateIn, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
     translation = create_translation_job(document_id, body.target_lang)
@@ -310,7 +310,7 @@ def get_translation(document_id: int) -> dict:
     return dict_from_row(row)
 
 
-@router.post("/{document_id}/index", status_code=202, response_model=AsyncJobResponse)
+@router.post("/{document_id}/index", status_code=202, response_model=AsyncJobResponse, response_model_exclude_none=True)
 def index(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
     mark_index_queued(document_id)
@@ -318,7 +318,12 @@ def index(document_id: int, background_tasks: BackgroundTasks) -> dict:
     return {"job_id": document_id, "document_id": document_id, "index_status": "indexing", "status": "pending"}
 
 
-@router.post("/{document_id}/extract-chemistry", status_code=202, response_model=AsyncJobResponse)
+@router.post(
+    "/{document_id}/extract-chemistry",
+    status_code=202,
+    response_model=AsyncJobResponse,
+    response_model_exclude_none=True,
+)
 def extract_chemistry(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
     mark_chemistry_queued(document_id)
