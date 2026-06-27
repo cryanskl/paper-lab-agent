@@ -314,7 +314,19 @@ def command_doc_paths(repo: Path) -> list[tuple[Path, str]]:
     return docs
 
 
+def first_symlink_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
+
+
 def missing_command_targets_for_doc(repo: Path, doc_path: Path, label: str) -> list[str]:
+    if first_symlink_parent(doc_path) is not None:
+        return [f"{label}: command doc parent is not a regular directory"]
     if doc_path.is_symlink() or not doc_path.is_file():
         return [f"{label}: command doc is not a regular file"]
 

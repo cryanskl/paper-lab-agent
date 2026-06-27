@@ -7266,6 +7266,19 @@ def test_readme_commands_validator_rejects_symlinked_readme(tmp_path):
     assert issues == ["README.md: command doc is not a regular file"]
 
 
+def test_readme_commands_validator_rejects_symlinked_readme_parent(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    outside_repo = tmp_path / "outside-repo"
+    outside_repo.mkdir()
+    (outside_repo / "README.md").write_text("# Outside README\n", encoding="utf-8")
+    linked_repo = tmp_path / "linked-repo"
+    linked_repo.symlink_to(outside_repo, target_is_directory=True)
+
+    issues = validate_readme_commands.missing_command_targets(linked_repo)
+
+    assert issues == ["README.md: command doc parent is not a regular directory"]
+
+
 def test_readme_commands_validator_reports_missing_script_target(tmp_path):
     validate_readme_commands = load_validate_readme_commands()
     (tmp_path / "README.md").write_text(
