@@ -805,6 +805,7 @@ def main() -> int:
     )
     parser.add_argument("--compact", action="store_true", help="Print health JSON on one line")
     parser.add_argument("--summary-only", action="store_true", help="Print only release/demo readiness summary JSON")
+    parser.add_argument("--output", type=Path, help="Also write the emitted health JSON to this file")
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args()
 
@@ -826,13 +827,16 @@ def main() -> int:
         output["frontend"] = frontend
     if openapi is not None:
         output["openapi"] = openapi
-    print(
-        json.dumps(
-            health_summary(health, status, frontend, openapi) if args.summary_only else output,
-            ensure_ascii=False,
-            indent=None if args.compact else 2,
-        )
+    emitted = health_summary(health, status, frontend, openapi) if args.summary_only else output
+    rendered = json.dumps(
+        emitted,
+        ensure_ascii=False,
+        indent=None if args.compact else 2,
     )
+    print(rendered)
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(f"{rendered}\n", encoding="utf-8")
     if not isinstance(health, dict):
         print("health_check failed: health response must be an object", file=sys.stderr)
         return 1

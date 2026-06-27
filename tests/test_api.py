@@ -7314,6 +7314,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "python scripts/health_check.py",
         "python scripts/health_check.py --compact",
         "python scripts/health_check.py --summary-only --compact",
+        "python scripts/health_check.py --summary-only --compact --output out/health-summary.json",
         "API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py",
         "curl http://127.0.0.1:8000/api/v1/system/status",
         "`config_warnings`",
@@ -10154,6 +10155,75 @@ def test_health_check_compact_outputs_single_line_json(monkeypatch, capsys):
     assert payload["status"]["runtime"]["api_prefix"] == "/api/v1"
     assert captured.out.count("\n") == 1
     assert "\n  " not in captured.out
+
+
+def test_health_check_can_write_summary_output_file(monkeypatch, capsys, tmp_path):
+    import importlib.util
+    import json
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_output_file", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
+            "status_counts": health_check_status_counts(),
+        }
+
+    output_path = tmp_path / "out" / "health-summary.json"
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "health_check.py",
+            "--base-url",
+            "http://api.test",
+            "--summary-only",
+            "--compact",
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    assert health_check.main() == 0
+    stdout_payload = json.loads(capsys.readouterr().out)
+    file_payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert file_payload == stdout_payload
+    assert file_payload["release_ready"] is True
 
 
 def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):

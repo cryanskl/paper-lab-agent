@@ -30,6 +30,7 @@ curl 'http://127.0.0.1:8000/api/v1/journals?active=true'
 python scripts/health_check.py
 python scripts/health_check.py --compact
 python scripts/health_check.py --summary-only --compact
+python scripts/health_check.py --summary-only --compact --output out/health-summary.json
 python scripts/health_check.py --require-storage-writable
 python scripts/health_check.py --require-no-failed-workflows
 python scripts/health_check.py --require-no-config-warnings
