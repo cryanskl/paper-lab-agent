@@ -6824,6 +6824,19 @@ def test_docs_links_validator_rejects_symlinked_markdown_link_target(tmp_path):
     assert issues == ["README.md: link target is not a regular file docs/schema.sql"]
 
 
+def test_docs_links_validator_rejects_absolute_local_markdown_link_target(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    outside_doc = tmp_path / "outside.md"
+    outside_doc.write_text("# Outside\n", encoding="utf-8")
+    (repo / "README.md").write_text(f"[Outside]({outside_doc})\n", encoding="utf-8")
+
+    issues = validate_docs_links.broken_doc_links(repo)
+
+    assert issues == [f"README.md: link target escapes repository {outside_doc}"]
+
+
 def test_docs_links_validator_reports_missing_markdown_anchor(tmp_path):
     validate_docs_links = load_validate_docs_links()
     docs_dir = tmp_path / "docs"

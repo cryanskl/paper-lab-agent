@@ -73,6 +73,14 @@ def target_exists(repo: Path, source: Path, target: str) -> bool:
     return resolve_target_path(repo, source, target) is not None
 
 
+def is_within_repo(repo: Path, path: Path) -> bool:
+    try:
+        path.resolve().relative_to(repo)
+    except ValueError:
+        return False
+    return True
+
+
 def heading_slug(title: str) -> str:
     text = re.sub(r"`([^`]*)`", r"\1", title.strip().lower())
     text = re.sub(r"[^\w\u4e00-\u9fff\s-]", "", text, flags=re.UNICODE)
@@ -120,6 +128,9 @@ def broken_doc_links(repo: Path) -> list[str]:
             target_path = path if not target and fragment else resolve_target_path(repo, path, target)
             if target_path is None:
                 issues.append(f"{label}: missing link target {target}")
+                continue
+            if not is_within_repo(repo, target_path):
+                issues.append(f"{label}: link target escapes repository {target}")
                 continue
             if target_path.is_symlink() or not target_path.is_file():
                 issues.append(f"{label}: link target is not a regular file {target}")
