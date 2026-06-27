@@ -294,6 +294,25 @@ def test_health_seed_and_search(tmp_path):
     ]
 
 
+def test_system_status_reports_symlinked_storage_dir_not_writable(tmp_path):
+    client = make_client(tmp_path)
+    outside_dir = tmp_path / "outside-pdfs"
+    outside_dir.mkdir()
+    pdf_dir = tmp_path / "pdfs"
+    pdf_dir.rmdir()
+    pdf_dir.symlink_to(outside_dir, target_is_directory=True)
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    pdf_health = payload["storage_health"]["pdf_dir"]
+    assert pdf_health["path"] == str(pdf_dir)
+    assert pdf_health["exists"] is True
+    assert pdf_health["writable"] is False
+    assert "pdf_dir.writable" in payload["release_readiness"]["storage_errors"]
+
+
 def test_paper_category_override_deduplicates_category_ids(tmp_path):
     client = make_client(tmp_path)
 

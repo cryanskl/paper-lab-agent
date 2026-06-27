@@ -186,7 +186,7 @@ def storage_path_health(path: Path) -> dict:
     return {
         "path": str(path),
         "exists": exists,
-        "writable": bool(exists and os.access(path, os.W_OK)),
+        "writable": bool(exists and not path.is_symlink() and os.access(path, os.W_OK)),
     }
 
 
