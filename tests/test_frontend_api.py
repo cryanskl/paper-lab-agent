@@ -600,6 +600,24 @@ def test_reaction_export_download_returns_none_for_missing_output_file(tmp_path)
     assert frontend_api.reaction_export_download({"output_path": str(missing_path)}) is None
 
 
+def test_reaction_export_download_rejects_symlinked_output_file(tmp_path):
+    from app import frontend_api
+
+    outside_path = tmp_path / "outside-secret.txt"
+    outside_path.write_text("secret export\n", encoding="utf-8")
+    export_path = tmp_path / "reaction-set-3.txt"
+    export_path.symlink_to(outside_path)
+
+    download = frontend_api.reaction_export_download(
+        {
+            "output_path": str(export_path),
+            "mime_type": "text/plain",
+        }
+    )
+
+    assert download is None
+
+
 def test_reaction_set_review_state_blocks_empty_reaction_sets():
     from app import frontend_api
 
@@ -1215,6 +1233,46 @@ def test_document_asset_downloads_report_missing_files(tmp_path):
     ]
 
 
+def test_document_asset_downloads_reject_symlinked_files(tmp_path):
+    from app import frontend_api
+
+    outside_pdf = tmp_path / "outside.pdf"
+    outside_pdf.write_bytes(b"%PDF secret")
+    pdf_path = tmp_path / "paper.pdf"
+    pdf_path.symlink_to(outside_pdf)
+    outside_tei = tmp_path / "outside.tei.xml"
+    outside_tei.write_text("<TEI>secret</TEI>", encoding="utf-8")
+    tei_path = tmp_path / "paper.tei.xml"
+    tei_path.symlink_to(outside_tei)
+
+    downloads = frontend_api.document_asset_downloads(
+        {"file_path": str(pdf_path), "tei_path": str(tei_path)}
+    )
+
+    assert downloads == [
+        {
+            "kind": "pdf",
+            "label": "下载原始 PDF",
+            "data": None,
+            "file_name": "paper.pdf",
+            "mime": "application/pdf",
+            "path": str(pdf_path),
+            "exists": False,
+            "missing_message": f"PDF 文件不存在: {pdf_path}",
+        },
+        {
+            "kind": "tei",
+            "label": "下载 TEI XML",
+            "data": None,
+            "file_name": "paper.tei.xml",
+            "mime": "application/xml",
+            "path": str(tei_path),
+            "exists": False,
+            "missing_message": f"TEI 文件不存在: {tei_path}",
+        },
+    ]
+
+
 def test_translation_status_rows_summarize_output_file_preview():
     from app import frontend_api
 
@@ -1269,6 +1327,17 @@ def test_translation_download_returns_none_for_missing_output_file(tmp_path):
     missing_path = tmp_path / "missing.md"
 
     assert frontend_api.translation_download({"output_path": str(missing_path)}) is None
+
+
+def test_translation_download_rejects_symlinked_output_file(tmp_path):
+    from app import frontend_api
+
+    outside_path = tmp_path / "outside.md"
+    outside_path.write_text("# Secret\n", encoding="utf-8")
+    output_path = tmp_path / "document-5-zh.md"
+    output_path.symlink_to(outside_path)
+
+    assert frontend_api.translation_download({"output_path": str(output_path)}) is None
 
 
 def test_rag_source_rows_include_citation_and_location_labels():

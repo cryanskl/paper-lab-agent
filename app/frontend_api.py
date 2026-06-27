@@ -40,6 +40,15 @@ def summarize_text(text: str, limit: int = ERROR_TEXT_LIMIT) -> str:
     return f"{value[:limit].rstrip()}..."
 
 
+def is_safe_download_file(path: Path) -> bool:
+    try:
+        if any(candidate.is_symlink() for candidate in (path, *path.parents)):
+            return False
+        return path.exists() and path.is_file()
+    except OSError:
+        return False
+
+
 def response_payload(response) -> dict[str, Any]:
     try:
         payload = response.json()
@@ -254,7 +263,7 @@ def document_asset_downloads(document: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(raw_path, str) or not raw_path:
             continue
         path = Path(raw_path)
-        exists = path.exists() and path.is_file()
+        exists = is_safe_download_file(path)
         if exists and data_mode == "bytes":
             data = path.read_bytes()
         elif exists:
@@ -334,7 +343,7 @@ def translation_download(translation: dict[str, Any]) -> Optional[dict[str, Any]
     if not isinstance(output_path, str) or not output_path:
         return None
     path = Path(output_path)
-    if not path.exists() or not path.is_file():
+    if not is_safe_download_file(path):
         return None
     return {
         "label": "下载双语翻译",
@@ -584,7 +593,7 @@ def reaction_export_download(payload: dict[str, Any]) -> Optional[dict[str, Any]
     if not isinstance(output_path, str) or not output_path:
         return None
     path = Path(output_path)
-    if not path.exists() or not path.is_file():
+    if not is_safe_download_file(path):
         return None
     mime = payload.get("mime_type") or "application/octet-stream"
     data = path.read_text(encoding="utf-8") if mime.startswith("text/") or mime == "application/json" else path.read_bytes()
