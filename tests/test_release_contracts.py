@@ -1009,6 +1009,24 @@ def test_doctor_script_reports_missing_required_project_files(tmp_path):
     assert "streamlit_app.py" in missing
 
 
+def test_doctor_script_rejects_symlinked_required_project_file(tmp_path):
+    doctor = load_doctor()
+
+    outside_readme = tmp_path / "outside-readme.md"
+    outside_readme.write_text("# External README\n", encoding="utf-8")
+    linked_readme = tmp_path / "README.md"
+    linked_readme.symlink_to(outside_readme)
+
+    check = doctor.check_required_files(tmp_path)
+
+    assert check["status"] == "fail"
+    assert {
+        "code": "missing_required_file",
+        "path": "README.md",
+        "message": "README.md is required for local setup",
+    } in check["issues"]
+
+
 def test_doctor_env_example_check_matches_required_runtime_keys(tmp_path):
     doctor = load_doctor()
     validate_env_example = load_validate_env_example()

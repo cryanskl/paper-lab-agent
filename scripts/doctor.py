@@ -130,7 +130,7 @@ def check_required_files(repo: Path) -> dict[str, Any]:
     issues = []
     for rel_path in REQUIRED_FILES:
         path = repo / rel_path
-        if not path.exists() or not path.is_file():
+        if path.is_symlink() or not path.exists() or not path.is_file():
             issues.append(
                 {
                     "code": "missing_required_file",
