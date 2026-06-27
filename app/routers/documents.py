@@ -228,7 +228,10 @@ def get_document(document_id: int) -> dict:
 @router.post("/{document_id}/parse", status_code=202, response_model=AsyncJobResponse, response_model_exclude_none=True)
 def parse(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
-    mark_parse_queued(document_id)
+    try:
+        mark_parse_queued(document_id)
+    except Exception as exc:
+        raise AppError(500, "parse_queue_failed", str(exc))
     background_tasks.add_task(parse_document, document_id)
     return {"job_id": document_id, "document_id": document_id, "parse_status": "parsing", "status": "pending"}
 
