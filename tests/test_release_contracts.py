@@ -559,6 +559,41 @@ def test_bug_doc_validator_rejects_symlinked_bug_doc(tmp_path):
     ) in issues
 
 
+def test_bug_doc_validator_rejects_symlinked_bug_dir(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_bug_docs.py"
+    spec = importlib.util.spec_from_file_location("validate_bug_docs_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_bug_docs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_bug_docs)
+
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    outside_bug_dir = tmp_path / "outside-bug"
+    outside_bug_dir.mkdir()
+    (outside_bug_dir / "README.md").write_text("# Outside bug docs\n", encoding="utf-8")
+    (outside_bug_dir / "2026-06-27-outside-bug.md").write_text(
+        "# Outside bug\n\n"
+        "## 现象\n\n"
+        "- observed\n\n"
+        "## 原因\n\n"
+        "- reason\n\n"
+        "## 修复\n\n"
+        "- fix\n\n"
+        "## 验证\n\n"
+        "- 完整 gate：`bash scripts/release_check.sh` 通过，`777 passed`。\n",
+        encoding="utf-8",
+    )
+    (docs_dir / "bug").symlink_to(outside_bug_dir, target_is_directory=True)
+
+    issues = validate_bug_docs.bug_doc_issues(tmp_path)
+
+    assert issues == ["docs/bug: bug directory is not a regular directory"]
+
+
 def test_release_hygiene_validator_reports_tracked_generated_artifacts():
     validate_release_hygiene = load_validate_release_hygiene()
 

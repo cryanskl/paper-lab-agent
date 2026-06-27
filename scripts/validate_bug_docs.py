@@ -66,6 +66,8 @@ def bug_doc_issues(repo: Path) -> list[str]:
     bug_dir = repo / "docs" / "bug"
     if not bug_dir.exists():
         return ["docs/bug: missing"]
+    if bug_dir.is_symlink() or not bug_dir.is_dir():
+        return ["docs/bug: bug directory is not a regular directory"]
 
     issues: list[str] = []
     if not (bug_dir / "README.md").exists():
