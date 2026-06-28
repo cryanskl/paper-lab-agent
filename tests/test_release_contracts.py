@@ -2217,6 +2217,20 @@ def test_doctor_script_reports_unsupported_local_adapter_config_warnings(tmp_pat
     ]
 
 
+def test_doctor_adapter_registry_matches_rag_service():
+    from app.services import rag
+
+    doctor = load_doctor()
+    repo = Path(__file__).resolve().parent.parent
+    doctor_text = (repo / "scripts" / "doctor.py").read_text(encoding="utf-8")
+
+    assert doctor.SUPPORTED_EMBEDDING_MODELS == rag.SUPPORTED_EMBEDDING_MODELS
+    assert doctor.SUPPORTED_VECTOR_DB_BACKENDS == rag.SUPPORTED_VECTOR_DB_BACKENDS
+    assert "from app.services.rag import" in doctor_text
+    assert 'SUPPORTED_EMBEDDING_MODELS = {"local-hash"}' not in doctor_text
+    assert 'SUPPORTED_VECTOR_DB_BACKENDS = {"local-json"}' not in doctor_text
+
+
 def test_doctor_summary_counts_external_config_warnings():
     doctor = load_doctor()
     payload = {

@@ -10,6 +10,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from app.services.rag import SUPPORTED_EMBEDDING_MODELS, SUPPORTED_VECTOR_DB_BACKENDS
+
 
 MIN_PYTHON = (3, 9)
 REQUIRED_FILES = (
@@ -95,8 +101,6 @@ OPTIONAL_EXTERNAL_CONFIG = (
         "LLM_API_KEY is not configured; translation uses the local deterministic adapter.",
     ),
 )
-SUPPORTED_EMBEDDING_MODELS = {"local-hash"}
-SUPPORTED_VECTOR_DB_BACKENDS = {"local-json"}
 ENV_EXAMPLE_DEFAULTS = {
     "PAPER_LAB_DATA_DIR": "data",
     "DATABASE_PATH": "data/plasma.db",
