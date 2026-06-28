@@ -1339,6 +1339,26 @@ def test_bug_doc_validator_rejects_symlinked_readme(tmp_path):
     assert "docs/bug/README.md: bug docs README is not a regular file" in issues
 
 
+def test_bug_doc_validator_rejects_broken_symlinked_readme(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_bug_docs.py"
+    spec = importlib.util.spec_from_file_location("validate_bug_docs_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_bug_docs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_bug_docs)
+
+    bug_dir = tmp_path / "docs" / "bug"
+    bug_dir.mkdir(parents=True)
+    (bug_dir / "README.md").symlink_to(tmp_path / "missing-readme.md")
+
+    issues = validate_bug_docs.bug_doc_issues(tmp_path)
+
+    assert "docs/bug/README.md: bug docs README is not a regular file" in issues
+
+
 def test_release_hygiene_validator_reports_tracked_generated_artifacts():
     validate_release_hygiene = load_validate_release_hygiene()
 

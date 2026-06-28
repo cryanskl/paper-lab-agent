@@ -85,7 +85,7 @@ def bug_doc_issues(repo: Path) -> list[str]:
 
     issues: list[str] = []
     readme_path = bug_dir / "README.md"
-    if not readme_path.exists():
+    if not readme_path.exists() and not readme_path.is_symlink():
         issues.append("docs/bug/README.md: missing")
     elif readme_path.is_symlink() or not readme_path.is_file():
         issues.append("docs/bug/README.md: bug docs README is not a regular file")
