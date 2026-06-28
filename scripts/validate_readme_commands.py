@@ -471,6 +471,13 @@ def first_symlink_parent(path: Path) -> Path | None:
     return None
 
 
+def first_non_directory_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if parent.exists() and not parent.is_dir():
+            return parent
+    return None
+
+
 def missing_command_targets_for_doc(repo: Path, doc_path: Path, label: str) -> list[str]:
     if first_symlink_parent(doc_path) is not None:
         return [f"{label}: command doc parent is not a regular directory"]
@@ -485,6 +492,9 @@ def missing_command_targets_for_doc(repo: Path, doc_path: Path, label: str) -> l
     for target in command_targets(doc_path):
         target_path = repo / target
         if not target_path.exists():
+            if first_non_directory_parent(target_path) is not None:
+                issues.append(f"{label}: command target parent is not a regular directory: {target}")
+                continue
             issues.append(f"{label}: command target missing: {target}")
             continue
         if not is_within_repo(repo, target_path):

@@ -9782,6 +9782,16 @@ def test_readme_commands_validator_rejects_symlinked_script_target_parent(tmp_pa
     assert issues == ["README.md: command target parent is not a regular directory: scripts/tool.py"]
 
 
+def test_readme_commands_validator_rejects_file_script_target_parent(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    (tmp_path / "scripts").write_text("not a directory", encoding="utf-8")
+    (tmp_path / "README.md").write_text("```bash\npython scripts/tool.py\n```\n", encoding="utf-8")
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == ["README.md: command target parent is not a regular directory: scripts/tool.py"]
+
+
 def test_readme_commands_validator_reports_missing_scripts_module(tmp_path):
     validate_readme_commands = load_validate_readme_commands()
     (tmp_path / "README.md").write_text("```bash\npython -m scripts.missing_check\n```\n", encoding="utf-8")
