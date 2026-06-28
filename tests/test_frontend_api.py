@@ -274,6 +274,27 @@ def test_release_readiness_display_state_rejects_inconsistent_ready_payload():
     } in state["groups"]
 
 
+def test_release_readiness_display_state_surfaces_ready_false_without_details():
+    from app import frontend_api
+
+    state = frontend_api.release_readiness_display_state(
+        {
+            "ready": False,
+            "demo_data_missing": [],
+            "failed_workflows": [],
+            "config_warning_codes": [],
+            "storage_errors": [],
+        }
+    )
+
+    assert state["ready"] is False
+    assert state["blockers"] == ["ready=false"]
+    assert {
+        "label": "release state:",
+        "items": ["ready=false"],
+    } in state["groups"]
+
+
 def test_storage_health_caption_rows_include_parent_dirs_and_vector_json_state():
     from app import frontend_api
 

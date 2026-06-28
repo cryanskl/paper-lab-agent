@@ -175,6 +175,9 @@ def release_readiness_display_state(release_readiness: dict[str, Any]) -> dict[s
         },
     ]
     blockers = [item for group in groups for item in group["items"]]
+    if not blockers and release_readiness.get("ready") is not True:
+        groups.append({"label": "release state:", "items": ["ready=false"]})
+        blockers = ["ready=false"]
     return {
         "ready": release_readiness.get("ready") is True and not blockers,
         "blockers": blockers,
