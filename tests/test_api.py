@@ -18634,11 +18634,15 @@ def test_streamlit_config_tab_can_update_journal_year_range():
         "edit_year_to",
         'selected_journal.get("year_from")',
         'selected_journal.get("year_to")',
+        'value=int_or_default(selected_journal.get("year_from"), 1990)',
+        'value=int_or_default(selected_journal.get("year_to"), 0)',
         '"year_from": int(edit_year_from)',
         '"year_to": int(edit_year_to) if edit_year_to else None',
         "year_from must be less than or equal to year_to",
     ]:
         assert required in journals_section
+    assert 'value=int(selected_journal.get("year_from") or 1990)' not in journals_section
+    assert 'value=int(selected_journal.get("year_to") or 0)' not in journals_section
 
 
 def test_streamlit_config_tab_can_create_journal_with_year_to():

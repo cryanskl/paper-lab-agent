@@ -32,6 +32,7 @@ from app.frontend_api import (
     external_capabilities_display_state,
     filter_documents_by_status,
     format_error_payload,
+    int_or_default,
     journal_option_label,
     paper_category_option_label,
     paper_upload_options,
@@ -514,14 +515,14 @@ with config_tab:
             "year_from",
             min_value=1900,
             max_value=2100,
-            value=int(selected_journal.get("year_from") or 1990),
+            value=int_or_default(selected_journal.get("year_from"), 1990),
             key=f"journal-year-from-{selected_journal['id']}",
         )
         edit_year_to = jy2.number_input(
             "year_to",
             min_value=0,
             max_value=2100,
-            value=int(selected_journal.get("year_to") or 0),
+            value=int_or_default(selected_journal.get("year_to"), 0),
             key=f"journal-year-to-{selected_journal['id']}",
         )
         edit_keywords_mode = st.selectbox(
