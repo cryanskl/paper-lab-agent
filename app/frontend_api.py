@@ -384,9 +384,16 @@ def config_warning_rows(config_warnings: Any) -> list[dict[str, str]]:
         if not isinstance(warning, dict):
             rows.append({"capability": "config_warnings", "message": "invalid"})
             continue
-        capability = warning.get("capability") or "unknown"
-        message = warning.get("message") or warning.get("code") or "configuration warning"
-        rows.append({"capability": str(capability), "message": str(message)})
+        raw_capability = warning.get("capability")
+        raw_message = warning.get("message") or warning.get("code") or "configuration warning"
+        if raw_capability is not None and (not isinstance(raw_capability, str) or not raw_capability.strip()):
+            rows.append({"capability": "config_warnings", "message": "invalid"})
+            continue
+        if not isinstance(raw_message, str) or not raw_message.strip():
+            rows.append({"capability": "config_warnings", "message": "invalid"})
+            continue
+        capability = raw_capability.strip() if isinstance(raw_capability, str) and raw_capability.strip() else "unknown"
+        rows.append({"capability": capability, "message": raw_message})
     return rows
 
 

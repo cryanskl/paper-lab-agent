@@ -552,6 +552,16 @@ def test_config_warning_rows_blocks_malformed_config_warning_objects():
     assert nested_rows == [{"capability": "config_warnings", "message": "invalid"}]
 
 
+def test_config_warning_rows_blocks_malformed_config_warning_fields():
+    from app import frontend_api
+
+    rows = frontend_api.config_warning_rows(
+        [{"capability": ["llm_translation"], "message": True}]
+    )
+
+    assert rows == [{"capability": "config_warnings", "message": "invalid"}]
+
+
 def test_crawl_job_option_label_summarizes_job_status():
     from app import frontend_api
 
