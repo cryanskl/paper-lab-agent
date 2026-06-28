@@ -6143,6 +6143,27 @@ def test_api_contract_validator_rejects_symlinked_contract_file(tmp_path):
     assert f"api contract file is not a regular file: {contract_path}" in result.stderr
 
 
+def test_api_contract_validator_rejects_broken_symlinked_contract_file(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_api_contract.py"
+    contract_path = tmp_path / "接口设计文档.md"
+    contract_path.symlink_to(tmp_path / "missing-api-contract.md")
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), str(contract_path)],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert f"api contract file is not a regular file: {contract_path}" in result.stderr
+
+
 def test_api_contract_validator_rejects_symlinked_contract_parent(tmp_path):
     import subprocess
     import sys

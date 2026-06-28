@@ -1271,7 +1271,7 @@ def main() -> int:
     if non_directory_parent is not None:
         print(f"api contract file parent is not a regular directory: {non_directory_parent}", file=sys.stderr)
         return 1
-    if not contract_path.exists():
+    if not contract_path.exists() and not contract_path.is_symlink():
         print(f"api contract file not found: {contract_path}", file=sys.stderr)
         return 1
     if contract_path.is_symlink() or not contract_path.is_file():
