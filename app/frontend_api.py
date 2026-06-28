@@ -1008,7 +1008,13 @@ def reaction_display_state(reaction: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def reaction_set_option_label(item: dict[str, Any]) -> str:
+def reaction_set_options(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [item for item in items if isinstance(item, dict)]
+
+
+def reaction_set_option_label(item: Any) -> str:
+    if not isinstance(item, dict):
+        return "#- · unknown · export_ready False · 未复核 0 · Reaction set"
     item_id = item.get("id")
     id_label = item_id if isinstance(item_id, int) and not isinstance(item_id, bool) else "-"
     document_id = item.get("document_id")

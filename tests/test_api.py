@@ -16036,11 +16036,13 @@ def test_streamlit_chemistry_tab_exposes_reaction_set_pagination_controls():
         "document_reaction_sets['page_size']",
         "document_reaction_sets['total']",
         "reaction_set_rows",
+        "reaction_set_options(reaction_set_items)",
         "reaction_set_option_label",
         "format_func=reaction_set_option_label",
         "st.dataframe(reaction_set_rows",
     ]:
         assert required in chemistry_section
+    assert 'st.selectbox(\n                "document_reaction_sets",\n                reaction_set_items,' not in chemistry_section
 
 
 def test_streamlit_chemistry_audit_log_surfaces_field_changes():

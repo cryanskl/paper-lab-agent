@@ -48,6 +48,7 @@ from app.frontend_api import (
     reaction_review_payload,
     reaction_review_rows,
     reaction_set_option_label,
+    reaction_set_options,
     reaction_set_review_state,
     reaction_set_rows,
     release_readiness_display_state,
@@ -1001,12 +1002,13 @@ with chemistry_tab:
             f"total {document_reaction_sets['total']}"
         )
         st.dataframe(reaction_set_rows(reaction_set_items), use_container_width=True)
-        if not reaction_set_items:
+        reaction_set_choices = reaction_set_options(reaction_set_items)
+        if not reaction_set_choices:
             st.info("该文档暂无反应集。")
         else:
             selected_reaction_set = st.selectbox(
                 "document_reaction_sets",
-                reaction_set_items,
+                reaction_set_choices,
                 format_func=reaction_set_option_label,
             )
             selected_reaction_set_id = selected_reaction_set["id"]
