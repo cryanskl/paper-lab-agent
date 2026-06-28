@@ -34,6 +34,7 @@ from app.frontend_api import (
     filter_documents_by_status,
     format_error_payload,
     int_or_default,
+    journal_items,
     journal_option_label,
     journal_table_rows,
     paper_category_option_label,
@@ -449,7 +450,7 @@ with config_tab:
         st.error(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
         st.stop()
-    journals_all = journals_response["items"]
+    journals_all = journal_items(journals_response["items"])
     categories_all = categories_response["items"]
 
     st.subheader("期刊白名单")

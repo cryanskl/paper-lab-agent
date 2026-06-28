@@ -498,6 +498,18 @@ def paper_search_journal_options(journals: list[dict[str, Any]]) -> list[dict[st
     ]
 
 
+def journal_items(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        journal
+        for journal in journals
+        if isinstance(journal, dict)
+        and isinstance(journal.get("id"), int)
+        and not isinstance(journal.get("id"), bool)
+        and isinstance(journal.get("name"), str)
+        and journal.get("name", "").strip()
+    ]
+
+
 def paper_search_result_items(papers: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         paper

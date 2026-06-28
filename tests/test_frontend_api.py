@@ -2027,6 +2027,22 @@ def test_paper_search_journal_options_skip_malformed_items():
     ) == [valid_journal]
 
 
+def test_journal_items_skip_malformed_items():
+    from app import frontend_api
+
+    valid_journal = {"id": 2, "name": "Plasma Sources Science and Technology"}
+
+    assert frontend_api.journal_items(
+        [
+            "bad-journal",
+            {"id": 3, "name": ""},
+            {"id": "4", "name": "Journal of Physics D"},
+            {"id": False, "name": "Bool Journal"},
+            valid_journal,
+        ]
+    ) == [valid_journal]
+
+
 def test_paper_search_result_items_skip_malformed_items():
     from app import frontend_api
 
