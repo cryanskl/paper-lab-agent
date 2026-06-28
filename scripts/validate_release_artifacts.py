@@ -242,6 +242,8 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             issues.append("release manifest version does not match OpenAPI version")
         if manifest.get("artifacts") != EXPECTED_ARTIFACTS:
             issues.append(f"release manifest artifacts mismatch: {manifest.get('artifacts')!r}")
+        if "artifact_count" in manifest and manifest.get("artifact_count") != len(EXPECTED_ARTIFACTS):
+            issues.append(f"release manifest artifact_count mismatch: {manifest.get('artifact_count')!r}")
         if manifest.get("demo_ready") is not True:
             issues.append("release manifest demo_ready must be true")
         if manifest.get("demo_counts") != demo_counts:

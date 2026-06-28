@@ -203,6 +203,7 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
             "demo_summary": demo_summary_path.name,
             "manifest": manifest_path.name,
         },
+        "artifact_count": len(EXPECTED_ARTIFACT_NAMES),
         "demo_ready": demo_summary.get("ready") is True,
         "demo_counts": demo_summary.get("counts") or {},
         "demo_workflow_statuses": demo_workflow_statuses(demo_summary),

@@ -382,6 +382,9 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     }:
         print(f"release_check failed: release manifest artifacts={manifest.get('artifacts')!r}", file=sys.stderr)
         raise SystemExit(1)
+    if manifest.get("artifact_count") != 3:
+        print(f"release_check failed: release manifest artifact_count={manifest.get('artifact_count')!r}", file=sys.stderr)
+        raise SystemExit(1)
     if manifest.get("demo_ready") is not True or demo_summary.get("ready") is not True:
         print("release_check failed: release handoff demo summary is not ready", file=sys.stderr)
         raise SystemExit(1)
