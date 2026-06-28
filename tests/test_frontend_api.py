@@ -2388,6 +2388,31 @@ def test_translation_status_rows_summarize_output_file_preview():
     ]
 
 
+def test_translation_status_rows_handle_malformed_preview_text():
+    from app import frontend_api
+
+    rows = frontend_api.translation_status_rows(
+        {
+            "document_id": 5,
+            "status": "failed",
+            "target_lang": "zh",
+            "output_path": "/tmp/translations/doc-5.zh.md",
+            "error": "preview read returned non-text",
+        },
+        preview_text=["not", "text"],
+    )
+
+    assert rows == [
+        {"field": "document_id", "value": 5},
+        {"field": "status", "value": "failed"},
+        {"field": "target_lang", "value": "zh"},
+        {"field": "output_path", "value": "/tmp/translations/doc-5.zh.md"},
+        {"field": "error", "value": "preview read returned non-text"},
+        {"field": "preview_chars", "value": 0},
+        {"field": "preview", "value": "invalid"},
+    ]
+
+
 def test_translation_download_reads_markdown_for_streamlit_button(tmp_path):
     from app import frontend_api
 

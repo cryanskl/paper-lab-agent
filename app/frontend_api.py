@@ -747,15 +747,16 @@ def document_section_option_label(section: dict[str, Any]) -> str:
 def translation_status_rows(
     translation: dict[str, Any], *, preview_text: Optional[str] = None
 ) -> list[dict[str, Any]]:
-    preview = preview_text or ""
+    preview_is_valid = preview_text is None or isinstance(preview_text, str)
+    preview = preview_text if isinstance(preview_text, str) else ""
     rows = [
         ("document_id", translation.get("document_id")),
         ("status", translation.get("status") or "unknown"),
         ("target_lang", translation.get("target_lang")),
         ("output_path", translation.get("output_path")),
         ("error", translation.get("error")),
-        ("preview_chars", len(preview)),
-        ("preview", summarize_text(preview, limit=160)),
+        ("preview_chars", len(preview) if preview_is_valid else 0),
+        ("preview", summarize_text(preview, limit=160) if preview_is_valid else "invalid"),
     ]
     return [{"field": field, "value": value} for field, value in rows]
 
