@@ -195,6 +195,19 @@ def load_validate_release_package():
     return validate_release_package
 
 
+def load_build_release_handoff():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "build_release_handoff.py"
+    spec = importlib.util.spec_from_file_location("build_release_handoff_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    build_release_handoff = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build_release_handoff)
+    return build_release_handoff
+
+
 def test_env_example_contains_required_external_dependency_keys():
     validate_env_example = load_validate_env_example()
     env_path = Path(__file__).resolve().parent.parent / ".env.example"
@@ -4208,6 +4221,59 @@ def test_build_release_handoff_script_exports_validates_packages_and_revalidates
     assert (artifact_dir / "demo-summary.json").exists()
     assert (artifact_dir / "release-manifest.json").exists()
     assert package_path.exists()
+
+
+def test_build_release_handoff_removes_stale_package_on_export_failure(monkeypatch, tmp_path):
+    build_release_handoff = load_build_release_handoff()
+    artifact_dir = tmp_path / "release"
+    package_path = tmp_path / "paper-lab-agent-release.zip"
+    package_path.write_bytes(b"stale release package")
+
+    def fake_export_release_artifacts(output_dir, *, compact=False):
+        return {
+            "ok": False,
+            "output_dir": str(output_dir),
+            "issues": ["release artifact output directory contains unexpected files: ['old.json']"],
+        }
+
+    monkeypatch.setattr(build_release_handoff, "export_release_artifacts", fake_export_release_artifacts)
+
+    report = build_release_handoff.build_release_handoff(artifact_dir, package_path)
+
+    assert report["ok"] is False
+    assert report["stage"] == "export"
+    assert not package_path.exists()
+    assert report["package_sha256"] is None
+    assert "release artifact output directory contains unexpected files: ['old.json']" in report["issues"]
+
+
+def test_build_release_handoff_removes_stale_package_on_artifact_validation_failure(monkeypatch, tmp_path):
+    build_release_handoff = load_build_release_handoff()
+    artifact_dir = tmp_path / "release"
+    package_path = tmp_path / "paper-lab-agent-release.zip"
+    package_path.write_bytes(b"stale release package")
+
+    def fake_export_release_artifacts(output_dir, *, compact=False):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return {"service": "paper-lab-agent", "version": "0.1.0"}
+
+    def fake_validate_release_artifacts(output_dir, *, require_clean_source=False):
+        return {
+            "ok": False,
+            "artifact_dir": str(output_dir),
+            "issues": ["checksum mismatch: demo-summary.json"],
+        }
+
+    monkeypatch.setattr(build_release_handoff, "export_release_artifacts", fake_export_release_artifacts)
+    monkeypatch.setattr(build_release_handoff, "validate_release_artifacts", fake_validate_release_artifacts)
+
+    report = build_release_handoff.build_release_handoff(artifact_dir, package_path)
+
+    assert report["ok"] is False
+    assert report["stage"] == "validate_artifacts"
+    assert not package_path.exists()
+    assert report["package_sha256"] is None
+    assert "checksum mismatch: demo-summary.json" in report["issues"]
 
 
 def test_release_docs_explain_single_command_handoff_builder():

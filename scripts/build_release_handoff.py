@@ -13,7 +13,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.export_release_artifacts import export_release_artifacts
-from scripts.package_release_artifacts import package_release_artifacts
+from scripts.package_release_artifacts import package_release_artifacts, remove_stale_package_output
 from scripts.validate_release_artifacts import validate_release_artifacts
 from scripts.validate_release_package import validate_release_package
 
@@ -60,6 +60,27 @@ def failed_report(
     }
 
 
+def failed_report_after_stale_package_cleanup(
+    stage: str,
+    report: dict[str, Any],
+    *,
+    artifact_dir: Path,
+    package_path: Path,
+    completed: tuple[str, ...],
+) -> dict[str, Any]:
+    cleanup_error = remove_stale_package_output(package_path)
+    failure = failed_report(
+        stage,
+        report,
+        artifact_dir=artifact_dir,
+        package_path=package_path,
+        completed=completed,
+    )
+    if cleanup_error:
+        failure["issues"] = [cleanup_error]
+    return failure
+
+
 def build_release_handoff(
     artifact_dir: Path,
     package_path: Path,
@@ -72,7 +93,7 @@ def build_release_handoff(
 
     export_report = export_release_artifacts(artifact_dir, compact=compact_artifacts)
     if export_report.get("ok") is False:
-        return failed_report(
+        return failed_report_after_stale_package_cleanup(
             "export",
             export_report,
             artifact_dir=artifact_dir,
@@ -85,7 +106,7 @@ def build_release_handoff(
         require_clean_source=require_clean_source,
     )
     if artifact_validation.get("ok") is not True:
-        return failed_report(
+        return failed_report_after_stale_package_cleanup(
             "validate_artifacts",
             artifact_validation,
             artifact_dir=artifact_dir,
