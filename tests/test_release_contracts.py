@@ -3466,6 +3466,73 @@ def test_validate_release_artifacts_rejects_preflight_warning_count_drift(tmp_pa
     ) in payload["issues"]
 
 
+def test_validate_release_artifacts_rejects_duplicate_preflight_warning_codes(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    validate_release_artifacts = load_validate_release_artifacts()
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    export_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert export_result.returncode == 0, export_result.stderr
+    manifest_path = output_dir / "release-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    duplicate_code = manifest["preflight_warning_codes"][0]
+    duplicate_detail = manifest["preflight_warning_details"][0]
+    manifest["preflight_warning_codes"] = [duplicate_code, duplicate_code]
+    manifest["preflight_warning_details"] = [duplicate_detail, duplicate_detail]
+    manifest["preflight_warning_count"] = 2
+    manifest["checksums"]["release-manifest.json"] = validate_release_artifacts.manifest_checksum(manifest)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
+
+    validate_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_artifacts.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert validate_result.returncode == 1
+    payload = json.loads(validate_result.stdout)
+    assert payload["ok"] is False
+    assert f"release manifest preflight_warning_codes duplicate: {duplicate_code!r}" in payload["issues"]
+
+
 def test_validate_release_artifacts_rejects_artifact_dir_symlink(tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     validate_release_artifacts = load_validate_release_artifacts()

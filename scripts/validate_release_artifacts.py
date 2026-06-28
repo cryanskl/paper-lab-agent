@@ -131,6 +131,15 @@ def list_of_strings(value: Any) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) and item.strip() for item in value)
 
 
+def first_duplicate_string(values: list[str]) -> str | None:
+    seen = set()
+    for value in values:
+        if value in seen:
+            return value
+        seen.add(value)
+    return None
+
+
 def warning_details_codes(value: Any) -> list[str] | None:
     if not isinstance(value, list):
         return None
@@ -321,6 +330,10 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             issues.append(
                 f"release manifest preflight_warning_codes invalid: {preflight_warning_codes!r}"
             )
+        else:
+            duplicate_code = first_duplicate_string(preflight_warning_codes)
+            if duplicate_code is not None:
+                issues.append(f"release manifest preflight_warning_codes duplicate: {duplicate_code!r}")
         detail_codes = warning_details_codes(preflight_warning_details)
         if detail_codes is None:
             issues.append("release manifest preflight_warning_details invalid")
