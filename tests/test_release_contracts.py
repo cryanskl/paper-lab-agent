@@ -2589,6 +2589,17 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert 'doctor.get("warning_codes") != expected_doctor_warning_codes' in release_check
     assert 'doctor_warning_details = doctor.get("warning_details")' in release_check
     assert "doctor_warning_detail_codes != expected_doctor_warning_codes" in release_check
+    assert "OFFLINE_PREFLIGHT_ENV=(" in release_check
+    assert '"-u" "OPENALEX_MAILTO"' in release_check
+    assert '"-u" "UNPAYWALL_EMAIL"' in release_check
+    assert '"-u" "LLM_API_KEY"' in release_check
+    assert 'DOCTOR_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact)"' in release_check
+    assert 'PREPARE_DEMO_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<\'PY\'' in release_check
+    assert 'RELEASE_ARTIFACTS_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<\'PY\'' in release_check
+    assert 'SMOKE_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" -m scripts.smoke_check)"' in release_check
+    assert 'env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" -m pytest -q' in release_check
+    assert "release gate runs default offline preflight with optional external env cleared" in readme
+    assert "default offline preflight with optional external env cleared" in checklist
     assert "release_check failed: doctor preflight summary" in release_check
     assert "ConfigWarningResponse" in release_check
     assert "release_check failed: OpenAPI ConfigWarningResponse missing fields" in release_check

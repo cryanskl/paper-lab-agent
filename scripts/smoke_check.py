@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import json
 import os
 import sys
@@ -8,6 +10,29 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+RUNTIME_ENV_KEYS = [
+    "DATABASE_PATH",
+    "PAPER_LAB_DATA_DIR",
+    "PAPER_LAB_PDF_DIR",
+    "PAPER_LAB_TEI_DIR",
+    "PAPER_LAB_TRANSLATION_DIR",
+    "PAPER_LAB_EXPORT_DIR",
+    "VECTOR_DB_PATH",
+    "VECTOR_DB_BACKEND",
+    "PAPER_LAB_SCHEDULER_ENABLED",
+    "OPENALEX_MAILTO",
+    "UNPAYWALL_EMAIL",
+    "LLM_API_KEY",
+]
+
+
+def restore_runtime_env(previous: dict[str, str | None]) -> None:
+    for key, value in previous.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 
 def configure_runtime(base_dir: Path) -> None:
@@ -20,6 +45,9 @@ def configure_runtime(base_dir: Path) -> None:
     os.environ["VECTOR_DB_PATH"] = str(base_dir / "vector-index.json")
     os.environ["VECTOR_DB_BACKEND"] = "local-json"
     os.environ["PAPER_LAB_SCHEDULER_ENABLED"] = "false"
+    os.environ["OPENALEX_MAILTO"] = ""
+    os.environ["UNPAYWALL_EMAIL"] = ""
+    os.environ["LLM_API_KEY"] = ""
 
 
 def assert_ok(condition: bool, message: str) -> None:
@@ -73,8 +101,10 @@ def config_warning_details(config_warnings: list) -> list[dict]:
 
 
 def run_smoke() -> dict:
-    with tempfile.TemporaryDirectory(prefix="paper-lab-smoke-") as temp:
-        base_dir = Path(temp)
+    previous_env = {key: os.environ.get(key) for key in RUNTIME_ENV_KEYS}
+    temp_dir = tempfile.TemporaryDirectory(prefix="paper-lab-smoke-")
+    try:
+        base_dir = Path(temp_dir.name)
         configure_runtime(base_dir)
 
         from app.config import get_settings
@@ -851,6 +881,9 @@ def run_smoke() -> dict:
             "config_warning_codes": warning_codes,
             "config_warning_details": warning_details,
         }
+    finally:
+        temp_dir.cleanup()
+        restore_runtime_env(previous_env)
 
 
 def main() -> int:

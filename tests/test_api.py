@@ -2762,6 +2762,35 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["release_readiness"]["storage_errors"] == []
 
 
+def test_smoke_check_configure_runtime_clears_optional_external_env(tmp_path, monkeypatch):
+    from scripts.smoke_check import configure_runtime
+
+    monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
+    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+
+    configure_runtime(tmp_path)
+
+    assert os.environ["OPENALEX_MAILTO"] == ""
+    assert os.environ["UNPAYWALL_EMAIL"] == ""
+    assert os.environ["LLM_API_KEY"] == ""
+
+
+def test_smoke_check_restores_external_env_after_run(monkeypatch):
+    from scripts.smoke_check import run_smoke
+
+    monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
+    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+
+    result = run_smoke()
+
+    assert result["config_warning_count"] == 3
+    assert os.environ["OPENALEX_MAILTO"] == "lab@example.test"
+    assert os.environ["UNPAYWALL_EMAIL"] == "lab@example.test"
+    assert os.environ["LLM_API_KEY"] == "sk-test"
+
+
 def test_smoke_check_script_outputs_json():
     import json
     import subprocess

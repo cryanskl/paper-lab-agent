@@ -10,6 +10,11 @@ elif command -v uv >/dev/null 2>&1; then
 else
   PYTHON_CMD=("python")
 fi
+OFFLINE_PREFLIGHT_ENV=(
+  "-u" "OPENALEX_MAILTO"
+  "-u" "UNPAYWALL_EMAIL"
+  "-u" "LLM_API_KEY"
+)
 
 bash -n scripts/env.sh
 bash -n scripts/dev.sh
@@ -26,7 +31,7 @@ RELEASE_HELP_SCRIPTS=("${RELEASE_SCRIPT_TARGETS[@]}")
 for script in "${RELEASE_HELP_SCRIPTS[@]}"; do
   "${PYTHON_CMD[@]}" "${script}" --help >/dev/null
 done
-DOCTOR_JSON="$("${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact)"
+DOCTOR_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact)"
 printf '%s\n' "${DOCTOR_JSON}"
 DOCTOR_JSON="${DOCTOR_JSON}" "${PYTHON_CMD[@]}" - <<'PY'
 import json
@@ -195,7 +200,7 @@ print(json.dumps(payload, ensure_ascii=False))
 PY
 )"
 printf '%s\n' "${FIXTURE_JSON}"
-PREPARE_DEMO_JSON="$("${PYTHON_CMD[@]}" - <<'PY'
+PREPARE_DEMO_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<'PY'
 import json
 import os
 import subprocess
@@ -359,7 +364,7 @@ print(json.dumps(payload, ensure_ascii=False))
 PY
 )"
 printf '%s\n' "${PREPARE_DEMO_JSON}"
-RELEASE_ARTIFACTS_JSON="$("${PYTHON_CMD[@]}" - <<'PY'
+RELEASE_ARTIFACTS_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<'PY'
 import json
 import os
 import subprocess
@@ -638,7 +643,7 @@ print(json.dumps(handoff, ensure_ascii=False))
 PY
 )"
 printf '%s\n' "${RELEASE_ARTIFACTS_JSON}"
-SMOKE_JSON="$("${PYTHON_CMD[@]}" -m scripts.smoke_check)"
+SMOKE_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" -m scripts.smoke_check)"
 printf '%s\n' "${SMOKE_JSON}"
 SMOKE_JSON="${SMOKE_JSON}" "${PYTHON_CMD[@]}" - <<'PY'
 import json
@@ -870,4 +875,4 @@ if payload.get("reaction_audits", 0) < 1:
     )
     raise SystemExit(1)
 PY
-"${PYTHON_CMD[@]}" -m pytest -q
+env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" -m pytest -q
