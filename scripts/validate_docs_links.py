@@ -21,7 +21,7 @@ def doc_files(repo: Path) -> list[Path]:
     docs_dir = repo / "docs"
     if docs_dir.exists():
         candidates.extend(sorted(docs_dir.rglob("*.md")))
-    return [path for path in candidates if path.exists()]
+    return [path for path in candidates if path.exists() or path.is_symlink()]
 
 
 def clean_link_target(target: str) -> str:
