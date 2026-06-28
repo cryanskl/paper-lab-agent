@@ -621,6 +621,7 @@ import sys
 from app import __version__
 
 payload = json.loads(os.environ["SMOKE_JSON"])
+expected_config_warning_codes = ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]
 expected = {
     "crawl_job_status": "success",
     "translation_status": "done",
@@ -631,6 +632,7 @@ expected = {
     "runtime_version": __version__,
     "scheduler_job_ids": ["crawl-daily", "crawl-weekly", "crawl-monthly"],
     "config_warning_count": 3,
+    "config_warning_codes": expected_config_warning_codes,
     "system_translation_adapter": "local-echo",
     "system_embedding_model": "local-hash",
     "system_vector_db_backend": "local-json",
@@ -734,6 +736,20 @@ for key, value in expected.items():
     if payload.get(key) != value:
         print(f"release_check failed: smoke {key}={payload.get(key)!r}, expected {value!r}", file=sys.stderr)
         raise SystemExit(1)
+config_warning_details = payload.get("config_warning_details")
+if not isinstance(config_warning_details, list):
+    print("release_check failed: smoke config_warning_details is missing", file=sys.stderr)
+    raise SystemExit(1)
+actual_config_warning_detail_codes = [
+    warning.get("code") for warning in config_warning_details if isinstance(warning, dict)
+]
+if actual_config_warning_detail_codes != expected_config_warning_codes:
+    print(
+        "release_check failed: smoke config_warning_details codes="
+        f"{actual_config_warning_detail_codes!r}, expected {expected_config_warning_codes!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 expected_error_codes = {
     "document_duplicate",
     "reaction_set_unverified",
@@ -772,7 +788,7 @@ expected_readiness = {
     "ready": True,
     "demo_data_missing": [],
     "failed_workflows": [],
-    "config_warning_codes": ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"],
+    "config_warning_codes": expected_config_warning_codes,
     "storage_errors": [],
 }
 for key, value in expected_readiness.items():

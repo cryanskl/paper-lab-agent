@@ -41,6 +41,37 @@ def assert_error_response(response, expected: int, label: str) -> dict:
     return payload
 
 
+def config_warning_codes(config_warnings: list) -> list[str]:
+    codes = []
+    for warning in config_warnings:
+        if not isinstance(warning, dict):
+            continue
+        code = warning.get("code")
+        if isinstance(code, str) and code.strip():
+            codes.append(code)
+    return codes
+
+
+def config_warning_details(config_warnings: list) -> list[dict]:
+    details = []
+    for warning in config_warnings:
+        if not isinstance(warning, dict):
+            continue
+        detail = {}
+        for key in ("code", "capability", "message", "actual"):
+            value = warning.get(key)
+            if isinstance(value, str) and value.strip():
+                detail[key] = value
+        supported = warning.get("supported")
+        if isinstance(supported, list):
+            values = [value for value in supported if isinstance(value, str) and value.strip()]
+            if values:
+                detail["supported"] = values
+        if {"code", "capability", "message"} <= set(detail):
+            details.append(detail)
+    return details
+
+
 def run_smoke() -> dict:
     with tempfile.TemporaryDirectory(prefix="paper-lab-smoke-") as temp:
         base_dir = Path(temp)
@@ -628,6 +659,8 @@ def run_smoke() -> dict:
         status = assert_status(client.get("/api/v1/system/status"), 200, "system status")
         runtime = status["runtime"]
         config_warnings = status["config_warnings"]
+        warning_codes = config_warning_codes(config_warnings)
+        warning_details = config_warning_details(config_warnings)
         external_capabilities = status["external_capabilities"]
         storage_health = status["storage_health"]
         assert_ok(runtime["version"], "expected runtime version")
@@ -680,6 +713,10 @@ def run_smoke() -> dict:
         assert_ok(release_readiness["demo_data_missing"] == [], "expected smoke demo data to satisfy readiness")
         assert_ok(release_readiness["failed_workflows"] == [], "expected smoke readiness to have no failed workflows")
         assert_ok(release_readiness["storage_errors"] == [], "expected smoke readiness to have writable storage")
+        assert_ok(
+            release_readiness["config_warning_codes"] == warning_codes,
+            f"expected readiness warning codes to match config warnings, got {release_readiness} and {config_warnings}",
+        )
         assert_ok(counts["papers"] >= 2, "expected system status to include fixture papers")
         assert_ok("paper_categories" in counts, "expected paper category count")
         assert_ok(counts["documents"] == 1, "expected one smoke document")
@@ -811,6 +848,8 @@ def run_smoke() -> dict:
             "runtime_version": runtime["version"],
             "scheduler_job_ids": scheduler_job_ids,
             "config_warning_count": len(config_warnings),
+            "config_warning_codes": warning_codes,
+            "config_warning_details": warning_details,
         }
 
 

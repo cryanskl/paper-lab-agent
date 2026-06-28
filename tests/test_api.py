@@ -2729,6 +2729,28 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["runtime_version"] == "0.1.0"
     assert result["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert result["config_warning_count"] == 3
+    assert result["config_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
+    assert result["config_warning_details"] == [
+        {
+            "code": "missing_openalex_mailto",
+            "capability": "openalex_crawl",
+            "message": "OPENALEX_MAILTO is not configured; local offline mode still works, but production crawl diagnostics are weaker.",
+        },
+        {
+            "code": "missing_unpaywall_email",
+            "capability": "oa_lookup",
+            "message": "UNPAYWALL_EMAIL is not configured; OA link enrichment may fail against the public API.",
+        },
+        {
+            "code": "missing_llm_api_key",
+            "capability": "llm_translation",
+            "message": "LLM_API_KEY is not configured; translation uses the local deterministic adapter.",
+        },
+    ]
     assert result["release_readiness"]["ready"] is True
     assert result["release_readiness"]["demo_data_missing"] == []
     assert result["release_readiness"]["failed_workflows"] == []
@@ -2784,6 +2806,12 @@ def test_smoke_check_script_outputs_json():
     assert payload["runtime_version"] == "0.1.0"
     assert payload["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert payload["config_warning_count"] == 3
+    assert payload["config_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
+    assert [warning["code"] for warning in payload["config_warning_details"]] == payload["config_warning_codes"]
     assert payload["release_readiness"]["ready"] is True
     assert payload["release_readiness"]["config_warning_codes"] == [
         "missing_openalex_mailto",
@@ -10365,6 +10393,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "config_warning_count" in release_text
     assert "release_readiness" in release_text
     assert "config_warning_codes" in release_text
+    assert "config_warning_details" in release_text
     assert "missing_openalex_mailto" in release_text
     assert "crawl_job_status" in release_text
     assert "crawled_papers" in release_text
@@ -10432,6 +10461,8 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert '"/api/v1/system/status"' in smoke_text
     assert "runtime_version" in smoke_text
     assert "config_warning_count" in smoke_text
+    assert "config_warning_codes" in smoke_text
+    assert "config_warning_details" in smoke_text
     assert ci_workflow.exists()
     ci_text = ci_workflow.read_text(encoding="utf-8")
     assert "bash scripts/release_check.sh" in ci_text
