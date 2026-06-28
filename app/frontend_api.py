@@ -299,6 +299,20 @@ def status_count_rows(status_counts: Any) -> list[dict[str, Any]]:
     return rows
 
 
+def config_warning_rows(config_warnings: Any) -> list[dict[str, str]]:
+    if not isinstance(config_warnings, list):
+        return [{"capability": "config_warnings", "message": "invalid"}]
+    rows: list[dict[str, str]] = []
+    for warning in config_warnings:
+        if not isinstance(warning, dict):
+            rows.append({"capability": "config_warnings", "message": "invalid"})
+            continue
+        capability = warning.get("capability") or "unknown"
+        message = warning.get("message") or warning.get("code") or "configuration warning"
+        rows.append({"capability": str(capability), "message": str(message)})
+    return rows
+
+
 def crawl_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     options = [{"label": "全部 active 期刊", "journal_id": None}]
     for journal in journals:

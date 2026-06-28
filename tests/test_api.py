@@ -18046,8 +18046,10 @@ def test_streamlit_sidebar_surfaces_config_warnings():
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
 
-    for required in ["config_warnings", "capability", "message"]:
+    for required in ["config_warnings", "config_warning_rows", "warning_rows = config_warning_rows(config_warnings)", "capability", "message"]:
         assert required in sidebar_section
+    config_section = sidebar_section[sidebar_section.index("config_warnings = status.get") :]
+    assert "for warning in config_warnings:" not in config_section
 
 
 def test_streamlit_sidebar_surfaces_storage_health():

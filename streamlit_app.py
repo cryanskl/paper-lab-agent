@@ -7,6 +7,7 @@ from app.frontend_api import (
     FrontendApiError,
     api_docs_links,
     category_parent_option_label,
+    config_warning_rows,
     crawl_job_diagnostic_rows,
     crawl_job_option_label,
     crawl_job_rows,
@@ -201,10 +202,9 @@ with st.sidebar:
     config_warnings = status.get("config_warnings") or []
     if config_warnings:
         st.subheader("配置提示")
-        for warning in config_warnings:
-            capability = warning.get("capability") or "unknown"
-            message = warning.get("message") or warning.get("code") or "configuration warning"
-            st.warning(f"{capability}: {message}")
+        warning_rows = config_warning_rows(config_warnings)
+        for warning in warning_rows:
+            st.warning(f"{warning['capability']}: {warning['message']}")
 
 with search_tab:
     st.caption("可先运行 `python scripts/import_fixtures.py` 导入离线样例。")

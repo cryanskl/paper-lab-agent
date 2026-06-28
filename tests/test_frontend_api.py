@@ -391,6 +391,18 @@ def test_status_count_rows_blocks_malformed_status_counts_objects():
     assert nested_rows == [{"workflow": "document_parse", "status": "invalid", "count": 1}]
 
 
+def test_config_warning_rows_blocks_malformed_config_warning_objects():
+    from app import frontend_api
+
+    rows = frontend_api.config_warning_rows("missing_llm_api_key")
+
+    assert rows == [{"capability": "config_warnings", "message": "invalid"}]
+
+    nested_rows = frontend_api.config_warning_rows([False])
+
+    assert nested_rows == [{"capability": "config_warnings", "message": "invalid"}]
+
+
 def test_crawl_job_option_label_summarizes_job_status():
     from app import frontend_api
 
