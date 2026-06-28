@@ -2222,6 +2222,7 @@ def test_doctor_script_reports_unsupported_local_adapter_config_warnings(tmp_pat
 
 
 def test_doctor_adapter_registry_matches_rag_service():
+    from app import rag_registry
     from app.services import rag
 
     doctor = load_doctor()
@@ -2230,7 +2231,10 @@ def test_doctor_adapter_registry_matches_rag_service():
 
     assert doctor.SUPPORTED_EMBEDDING_MODELS == rag.SUPPORTED_EMBEDDING_MODELS
     assert doctor.SUPPORTED_VECTOR_DB_BACKENDS == rag.SUPPORTED_VECTOR_DB_BACKENDS
-    assert "from app.services.rag import" in doctor_text
+    assert doctor.SUPPORTED_EMBEDDING_MODELS == rag_registry.SUPPORTED_EMBEDDING_MODELS
+    assert doctor.SUPPORTED_VECTOR_DB_BACKENDS == rag_registry.SUPPORTED_VECTOR_DB_BACKENDS
+    assert "from app.rag_registry import" in doctor_text
+    assert "from app.services.rag import" not in doctor_text
     assert 'SUPPORTED_EMBEDDING_MODELS = {"local-hash"}' not in doctor_text
     assert 'SUPPORTED_VECTOR_DB_BACKENDS = {"local-json"}' not in doctor_text
 

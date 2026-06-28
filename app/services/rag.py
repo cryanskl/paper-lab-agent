@@ -5,6 +5,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Iterable, Optional, Protocol
 
+from app.rag_registry import SUPPORTED_EMBEDDING_MODELS, SUPPORTED_VECTOR_DB_BACKENDS
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
 
@@ -46,8 +47,6 @@ class LocalHashEmbeddingAdapter:
         return local_hash_embedding(text)
 
 
-SUPPORTED_EMBEDDING_MODELS = {"local-hash"}
-SUPPORTED_VECTOR_DB_BACKENDS = {"local-json"}
 SOURCE_EXCERPT_MAX_CHARS = 360
 
 
