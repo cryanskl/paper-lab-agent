@@ -705,16 +705,16 @@ def api_release_readiness(status: dict) -> Optional[dict]:
         return None
     return {
         "ready": readiness.get("ready") is True,
-        "demo_data_missing": list_values(readiness.get("demo_data_missing")),
-        "failed_workflows": list_values(readiness.get("failed_workflows")),
+        "demo_data_missing": list_values(readiness.get("demo_data_missing"), invalid_label="invalid"),
+        "failed_workflows": list_values(readiness.get("failed_workflows"), invalid_label="invalid"),
         "config_warning_codes": list_values(readiness.get("config_warning_codes")),
-        "storage_errors": list_values(readiness.get("storage_errors")),
+        "storage_errors": list_values(readiness.get("storage_errors"), invalid_label="invalid"),
     }
 
 
-def list_values(value) -> list[str]:
+def list_values(value, invalid_label: Optional[str] = None) -> list[str]:
     if not isinstance(value, list):
-        return []
+        return [invalid_label] if invalid_label is not None else []
     return [str(item) for item in value if str(item).strip()]
 
 
