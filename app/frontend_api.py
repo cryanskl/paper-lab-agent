@@ -895,11 +895,24 @@ def reaction_display_state(reaction: dict[str, Any]) -> dict[str, Any]:
 
 
 def reaction_set_option_label(item: dict[str, Any]) -> str:
-    document_part = f"doc {item.get('document_id')} · " if item.get("document_id") is not None else ""
+    item_id = item.get("id")
+    id_label = item_id if isinstance(item_id, int) and not isinstance(item_id, bool) else "-"
+    document_id = item.get("document_id")
+    document_part = f"doc {document_id} · " if isinstance(document_id, int) and not isinstance(document_id, bool) else ""
+    status = item.get("status")
+    status_label = status if isinstance(status, str) and status.strip() else "unknown"
+    export_ready = item.get("export_ready")
+    export_ready_label = export_ready if isinstance(export_ready, bool) else False
+    unverified_count = item.get("unverified_count")
+    unverified_count_label = (
+        unverified_count if isinstance(unverified_count, int) and not isinstance(unverified_count, bool) else 0
+    )
+    name = item.get("name")
+    name_label = name if isinstance(name, str) and name.strip() else "Reaction set"
     return (
-        f"#{item['id']} · {document_part}{item.get('status') or 'unknown'} · "
-        f"export_ready {bool(item.get('export_ready'))} · "
-        f"未复核 {item.get('unverified_count', 0)} · {item.get('name') or 'Reaction set'}"
+        f"#{id_label} · {document_part}{status_label} · "
+        f"export_ready {export_ready_label} · "
+        f"未复核 {unverified_count_label} · {name_label}"
     )
 
 

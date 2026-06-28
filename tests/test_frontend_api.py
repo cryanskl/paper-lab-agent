@@ -874,6 +874,22 @@ def test_reaction_set_option_label_uses_fallbacks_for_sparse_items():
     assert label == "#8 · unknown · export_ready False · 未复核 0 · Reaction set"
 
 
+def test_reaction_set_option_label_handles_malformed_items():
+    from app import frontend_api
+
+    label = frontend_api.reaction_set_option_label(
+        {
+            "document_id": ["7"],
+            "status": ["pending"],
+            "export_ready": "yes",
+            "unverified_count": ["2"],
+            "name": ["Ar chemistry"],
+        }
+    )
+
+    assert label == "#- · unknown · export_ready False · 未复核 0 · Reaction set"
+
+
 def test_reaction_review_payload_normalizes_edit_form_values():
     from app import frontend_api
 
