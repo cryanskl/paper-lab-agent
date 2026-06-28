@@ -2919,6 +2919,28 @@ def test_export_openapi_script_rejects_symlinked_output_parent(tmp_path):
     assert not (outside_dir / "openapi.json").exists()
 
 
+def test_export_openapi_script_rejects_file_output_parent(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    file_parent = tmp_path / "out"
+    file_parent.write_text("not a directory", encoding="utf-8")
+    output_path = file_parent / "openapi.json"
+
+    result = subprocess.run(
+        [sys.executable, "scripts/export_openapi.py", "--output", str(output_path), "--compact"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert f"export_openapi failed: output path parent is not a regular directory: {file_parent}" in result.stderr
+    assert file_parent.read_text(encoding="utf-8") == "not a directory"
+
+
 def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     import os
     import subprocess
