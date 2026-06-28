@@ -351,6 +351,14 @@ def test_storage_health_caption_rows_include_parent_dirs_and_vector_json_state()
     ]
 
 
+def test_storage_health_caption_rows_blocks_malformed_storage_health_object():
+    from app import frontend_api
+
+    rows = frontend_api.storage_health_caption_rows(["storage"])
+
+    assert rows == [{"kind": "warning", "text": "storage_health: invalid"}]
+
+
 def test_crawl_job_option_label_summarizes_job_status():
     from app import frontend_api
 

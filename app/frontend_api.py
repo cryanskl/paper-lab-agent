@@ -231,7 +231,9 @@ STORAGE_HEALTH_DISPLAY_KEYS = [
 ]
 
 
-def storage_health_caption_rows(storage_health: dict[str, Any]) -> list[dict[str, str]]:
+def storage_health_caption_rows(storage_health: Any) -> list[dict[str, str]]:
+    if not isinstance(storage_health, dict):
+        return [{"kind": "warning", "text": "storage_health: invalid"}]
     rows = []
     for key in STORAGE_HEALTH_DISPLAY_KEYS:
         health_entry = storage_health.get(key) or {}
