@@ -218,6 +218,14 @@ def paper_upload_option_label(paper: Optional[dict[str, Any]]) -> str:
     )
 
 
+def paper_upload_query_params(query: Optional[str]) -> dict[str, Any]:
+    params: dict[str, Any] = {"page": 1, "page_size": 100}
+    normalized = (query or "").strip()
+    if normalized:
+        params["q"] = normalized
+    return params
+
+
 def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for job in jobs:

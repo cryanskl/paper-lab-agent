@@ -1136,6 +1136,22 @@ def test_paper_upload_option_label_uses_sparse_fallbacks():
     assert label == "#7 · Untitled · DOI: - · - · -"
 
 
+def test_paper_upload_query_params_include_trimmed_search_text():
+    from app import frontend_api
+
+    params = frontend_api.paper_upload_query_params("  Ar/O2 ICP  ")
+
+    assert params == {"page": 1, "page_size": 100, "q": "Ar/O2 ICP"}
+
+
+def test_paper_upload_query_params_omit_blank_search_text():
+    from app import frontend_api
+
+    params = frontend_api.paper_upload_query_params("   ")
+
+    assert params == {"page": 1, "page_size": 100}
+
+
 def test_document_option_label_surfaces_processing_states():
     from app import frontend_api
 

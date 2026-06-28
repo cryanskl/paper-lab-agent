@@ -16910,7 +16910,9 @@ def test_streamlit_document_upload_can_select_linked_paper():
     documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
 
     for required in [
-        'paper_upload_papers = api_get("/papers", page=1, page_size=100)',
+        'paper_upload_query = st.text_input("关联论文搜索"',
+        "paper_upload_query_params(paper_upload_query)",
+        'paper_upload_papers = api_get("/papers", **paper_upload_query_params(paper_upload_query))',
         'paper_upload_options = [None] + paper_upload_papers.get("items", [])',
         'selected_upload_paper = st.selectbox(',
         "format_func=paper_upload_option_label",

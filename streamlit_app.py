@@ -23,6 +23,7 @@ from app.frontend_api import (
     format_error_payload,
     journal_option_label,
     paper_category_option_label,
+    paper_upload_query_params,
     paper_upload_option_label,
     rag_source_option_label,
     rag_source_rows,
@@ -584,8 +585,9 @@ with config_tab:
 
 with documents_tab:
     uploaded = st.file_uploader("PDF", type=["pdf"])
+    paper_upload_query = st.text_input("关联论文搜索", value="", key="document-upload-paper-query")
     try:
-        paper_upload_papers = api_get("/papers", page=1, page_size=100)
+        paper_upload_papers = api_get("/papers", **paper_upload_query_params(paper_upload_query))
     except FrontendApiError as exc:
         st.warning(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
