@@ -1,3 +1,4 @@
+import json
 import math
 from pathlib import Path
 from typing import Any, Optional
@@ -483,6 +484,21 @@ def journal_option_label(journal: dict[str, Any]) -> str:
     active = journal.get("active")
     active_label = active if isinstance(active, bool) else False
     return f"#{id_label} {name_label} · active={active_label}"
+
+
+def journal_table_rows(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for journal in journals:
+        if not isinstance(journal, dict):
+            continue
+        keywords = journal.get("keywords")
+        rows.append(
+            {
+                **journal,
+                "keywords": json.dumps(keywords, ensure_ascii=False) if isinstance(keywords, (dict, list)) else keywords,
+            }
+        )
+    return rows
 
 
 def category_parent_option_label(category: Optional[dict[str, Any]]) -> str:

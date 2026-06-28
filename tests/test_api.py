@@ -18583,11 +18583,13 @@ def test_streamlit_config_tab_normalizes_journal_keywords_for_dataframe():
     config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
 
     for required in [
+        "journal_table_rows",
         "journals_table",
-        'json.dumps(journal.get("keywords"), ensure_ascii=False)',
+        "journals_table = journal_table_rows(journals_all)",
         "st.dataframe(journals_table, use_container_width=True)",
     ]:
         assert required in config_section
+    assert "**journal" not in config_section
 
 
 def test_streamlit_config_metadata_errors_show_payload_details():

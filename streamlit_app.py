@@ -1,4 +1,3 @@
-import json
 import os
 
 import streamlit as st
@@ -34,6 +33,7 @@ from app.frontend_api import (
     format_error_payload,
     int_or_default,
     journal_option_label,
+    journal_table_rows,
     paper_category_option_label,
     paper_upload_options,
     paper_upload_query_params,
@@ -452,15 +452,7 @@ with config_tab:
         f"page_size {journals_response['page_size']} · "
         f"total {journals_response['total']}"
     )
-    journals_table = [
-        {
-            **journal,
-            "keywords": json.dumps(journal.get("keywords"), ensure_ascii=False)
-            if isinstance(journal.get("keywords"), (dict, list))
-            else journal.get("keywords"),
-        }
-        for journal in journals_all
-    ]
+    journals_table = journal_table_rows(journals_all)
     st.dataframe(journals_table, use_container_width=True)
 
     with st.form("create-journal-form"):

@@ -1905,6 +1905,49 @@ def test_journal_option_label_handles_malformed_journal_items():
     assert label == "#- Journal · active=False"
 
 
+def test_journal_table_rows_skip_malformed_items_and_format_keywords():
+    from app import frontend_api
+
+    rows = frontend_api.journal_table_rows(
+        [
+            "bad-journal",
+            {
+                "id": 2,
+                "name": "Plasma Sources Science and Technology",
+                "keywords": {"mode": "or", "terms": ["plasma", "etching"]},
+            },
+            {
+                "id": 3,
+                "name": "Journal of Physics D",
+                "keywords": ["argon", "oxygen"],
+            },
+            {
+                "id": 4,
+                "name": "Sparse Journal",
+                "keywords": None,
+            },
+        ]
+    )
+
+    assert rows == [
+        {
+            "id": 2,
+            "name": "Plasma Sources Science and Technology",
+            "keywords": '{"mode": "or", "terms": ["plasma", "etching"]}',
+        },
+        {
+            "id": 3,
+            "name": "Journal of Physics D",
+            "keywords": '["argon", "oxygen"]',
+        },
+        {
+            "id": 4,
+            "name": "Sparse Journal",
+            "keywords": None,
+        },
+    ]
+
+
 def test_category_parent_option_label_returns_none_label():
     from app import frontend_api
 
