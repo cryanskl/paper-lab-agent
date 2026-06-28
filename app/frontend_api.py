@@ -352,12 +352,27 @@ def external_capabilities_display_state(external_capabilities: Any) -> dict[str,
             "warnings": ["external_capabilities:invalid"],
         }
     warnings: list[str] = []
+    capabilities = dict(external_capabilities)
+    for key in ("openalex_mailto", "unpaywall_email", "llm_api_key"):
+        value = external_capabilities.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, bool):
+            capabilities[key] = False
+            warnings.append("external_capabilities:invalid")
+    for key in ("grobid_url", "translation_adapter", "llm_model", "embedding_model", "vector_db_backend"):
+        value = external_capabilities.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            capabilities[key] = ""
+            warnings.append("external_capabilities:invalid")
     grobid = external_capabilities.get("grobid") or {}
     if not isinstance(grobid, dict):
         grobid = {}
         warnings.append("grobid:invalid")
     return {
-        "capabilities": external_capabilities,
+        "capabilities": capabilities,
         "grobid": grobid,
         "warnings": warnings,
     }

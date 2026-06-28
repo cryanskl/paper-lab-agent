@@ -531,6 +531,24 @@ def test_external_capabilities_display_state_blocks_malformed_objects():
     }
 
 
+def test_external_capabilities_display_state_blocks_malformed_capability_fields():
+    from app import frontend_api
+
+    state = frontend_api.external_capabilities_display_state(
+        {
+            "openalex_mailto": "yes",
+            "unpaywall_email": False,
+            "translation_adapter": ["local-echo"],
+            "grobid": {"available": None},
+        }
+    )
+
+    assert "external_capabilities:invalid" in state["warnings"]
+    assert state["capabilities"]["openalex_mailto"] is False
+    assert state["capabilities"]["unpaywall_email"] is False
+    assert state["capabilities"]["translation_adapter"] == ""
+
+
 def test_status_count_rows_blocks_malformed_status_counts_objects():
     from app import frontend_api
 
