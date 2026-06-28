@@ -715,7 +715,16 @@ def api_release_readiness(status: dict) -> Optional[dict]:
 def list_values(value, invalid_label: Optional[str] = None) -> list[str]:
     if not isinstance(value, list):
         return [invalid_label] if invalid_label is not None else []
-    return [str(item) for item in value if str(item).strip()]
+    values: list[str] = []
+    invalid = False
+    for item in value:
+        if isinstance(item, str) and item.strip():
+            values.append(item)
+        else:
+            invalid = True
+    if invalid and invalid_label is not None:
+        values.append(invalid_label)
+    return values
 
 
 def release_readiness_blockers(readiness: dict) -> list[str]:
