@@ -477,7 +477,11 @@ def journal_option_label(journal: dict[str, Any]) -> str:
 def category_parent_option_label(category: Optional[dict[str, Any]]) -> str:
     if category is None:
         return "无"
-    return f"#{category['id']} {category.get('slug') or 'category'}"
+    category_id = category.get("id")
+    id_label = category_id if isinstance(category_id, int) and not isinstance(category_id, bool) else "-"
+    slug = category.get("slug")
+    slug_label = slug if isinstance(slug, str) and slug.strip() else "category"
+    return f"#{id_label} {slug_label}"
 
 
 def paper_category_option_label(category: dict[str, Any]) -> str:

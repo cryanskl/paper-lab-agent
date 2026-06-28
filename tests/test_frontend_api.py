@@ -1507,6 +1507,14 @@ def test_category_parent_option_label_summarizes_category_identity():
     assert label == "#3 chemistry"
 
 
+def test_category_parent_option_label_handles_malformed_category_items():
+    from app import frontend_api
+
+    label = frontend_api.category_parent_option_label({"slug": ["chemistry"]})
+
+    assert label == "#- category"
+
+
 def test_paper_category_option_label_summarizes_slug_and_name():
     from app import frontend_api
 
