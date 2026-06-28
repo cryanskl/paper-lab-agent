@@ -18408,6 +18408,7 @@ def test_streamlit_search_results_can_trigger_classification():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    helper_section = streamlit[: streamlit.index("st.set_page_config")]
 
     for required in [
         "分类结果",
@@ -18417,6 +18418,8 @@ def test_streamlit_search_results_can_trigger_classification():
         'key=f"classify-paper-{paper[\'id\']}"',
     ]:
         assert required in search_section
+    assert "format_category_summary" in helper_section
+    assert "def format_category_summary" not in streamlit
 
 
 def test_streamlit_search_classification_errors_show_payload_details():

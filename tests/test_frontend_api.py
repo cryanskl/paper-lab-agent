@@ -2197,6 +2197,29 @@ def test_paper_category_option_label_handles_non_object_item():
     assert label == "category · category"
 
 
+def test_format_category_summary_handles_malformed_details():
+    from app import frontend_api
+
+    assert frontend_api.format_category_summary(
+        {
+            "category_details": [
+                "bad-category",
+                {"slug": "chemistry", "method": "auto", "confidence": 0.875},
+                {"slug": "methods", "method": "", "confidence": "high"},
+                {"method": "manual", "confidence": None},
+            ],
+            "categories": ["fallback"],
+        }
+    ) == "chemistry · auto · 0.88, methods · - · -, category · manual · -"
+
+
+def test_format_category_summary_falls_back_to_category_slugs():
+    from app import frontend_api
+
+    assert frontend_api.format_category_summary({"category_details": ["bad"], "categories": ["chemistry"]}) == "chemistry"
+    assert frontend_api.format_category_summary({"category_details": [], "categories": []}) == "-"
+
+
 def test_paper_upload_option_label_returns_unlinked_choice():
     from app import frontend_api
 

@@ -580,6 +580,30 @@ def paper_category_option_label(category: Any) -> str:
     return f"{category.get('slug') or 'category'} · {category.get('name') or 'category'}"
 
 
+def format_category_summary(paper: dict[str, Any]) -> str:
+    details = paper.get("category_details") or []
+    if isinstance(details, list):
+        labels = []
+        for category in details:
+            if not isinstance(category, dict):
+                continue
+            confidence = category.get("confidence")
+            confidence_label = f"{confidence:.2f}" if isinstance(confidence, (int, float)) and not isinstance(confidence, bool) else "-"
+            slug = category.get("slug")
+            slug_label = slug if isinstance(slug, str) and slug.strip() else "category"
+            method = category.get("method")
+            method_label = method if isinstance(method, str) and method.strip() else "-"
+            labels.append(f"{slug_label} · {method_label} · {confidence_label}")
+        if labels:
+            return ", ".join(labels)
+    categories = paper.get("categories") or []
+    if isinstance(categories, list):
+        labels = [category for category in categories if isinstance(category, str) and category.strip()]
+        if labels:
+            return ", ".join(labels)
+    return "-"
+
+
 def paper_upload_option_label(paper: Optional[dict[str, Any]]) -> str:
     if paper is None:
         return "不关联论文"

@@ -32,6 +32,7 @@ from app.frontend_api import (
     dict_or_empty,
     external_capabilities_display_state,
     filter_documents_by_status,
+    format_category_summary,
     format_error_payload,
     int_or_default,
     journal_items,
@@ -88,18 +89,6 @@ def api_put(path: str, json=None):
 
 def api_delete(path: str):
     return request_json_status("DELETE", API_BASE, path, timeout=20)
-
-
-def format_category_summary(paper: dict) -> str:
-    details = paper.get("category_details") or []
-    if details:
-        labels = []
-        for category in details:
-            confidence = category.get("confidence")
-            confidence_label = "-" if confidence is None else f"{confidence:.2f}"
-            labels.append(f"{category.get('slug')} · {category.get('method') or '-'} · {confidence_label}")
-        return ", ".join(labels)
-    return ", ".join(paper.get("categories") or []) or "-"
 
 
 st.set_page_config(page_title="paper-lab-agent", layout="wide")
