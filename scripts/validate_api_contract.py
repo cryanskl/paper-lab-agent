@@ -354,6 +354,13 @@ def first_symlink_parent(path: Path) -> Path | None:
     return None
 
 
+def first_non_directory_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if parent.exists() and not parent.is_dir():
+            return parent
+    return None
+
+
 def documented_routes(path: Path = DEFAULT_CONTRACT_PATH) -> list[tuple[str, str, str]]:
     return [(method, display, normalized) for method, display, normalized, _description in documented_route_rows(path)]
 
@@ -1256,12 +1263,16 @@ def main() -> int:
     args = parser.parse_args()
 
     contract_path = Path(args.contract_path)
-    if not contract_path.exists():
-        print(f"api contract file not found: {contract_path}", file=sys.stderr)
-        return 1
     symlink_parent = first_symlink_parent(contract_path)
     if symlink_parent is not None:
         print(f"api contract file parent is not a regular directory: {symlink_parent}", file=sys.stderr)
+        return 1
+    non_directory_parent = first_non_directory_parent(contract_path)
+    if non_directory_parent is not None:
+        print(f"api contract file parent is not a regular directory: {non_directory_parent}", file=sys.stderr)
+        return 1
+    if not contract_path.exists():
+        print(f"api contract file not found: {contract_path}", file=sys.stderr)
         return 1
     if contract_path.is_symlink() or not contract_path.is_file():
         print(f"api contract file is not a regular file: {contract_path}", file=sys.stderr)
