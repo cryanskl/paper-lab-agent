@@ -6121,12 +6121,13 @@ def test_release_check_requires_rate_type_smoke_metadata():
     assert '"verified_export_rate_type": "cross_section"' in release_text
 
 
-def test_release_check_rejects_failed_smoke_status_counts():
+def test_release_check_rejects_non_releasable_smoke_status_counts():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
 
-    assert "failed_statuses" in release_text
-    assert "smoke failed statuses present" in release_text
+    assert "blocking_statuses" in release_text
+    assert 'for blocking_status in ("failed", "rejected", "unknown"):' in release_text
+    assert "smoke workflow statuses not releasable" in release_text
 
 
 def test_smoke_check_requires_error_response_shape_for_negative_paths():

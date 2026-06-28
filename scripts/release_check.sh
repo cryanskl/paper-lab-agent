@@ -953,14 +953,15 @@ status_counts = payload.get("status_counts")
 if not isinstance(status_counts, dict):
     print("release_check failed: smoke status_counts is missing", file=sys.stderr)
     raise SystemExit(1)
-failed_statuses = []
+blocking_statuses = []
 for section, counts in status_counts.items():
     if isinstance(counts, dict):
-        failed = counts.get("failed")
-        if isinstance(failed, int) and not isinstance(failed, bool) and failed > 0:
-            failed_statuses.append(f"{section}.failed={failed}")
-if failed_statuses:
-    print(f"release_check failed: smoke failed statuses present ({'; '.join(failed_statuses)})", file=sys.stderr)
+        for blocking_status in ("failed", "rejected", "unknown"):
+            count = counts.get(blocking_status)
+            if isinstance(count, int) and not isinstance(count, bool) and count > 0:
+                blocking_statuses.append(f"{section}.{blocking_status}={count}")
+if blocking_statuses:
+    print(f"release_check failed: smoke workflow statuses not releasable ({'; '.join(blocking_statuses)})", file=sys.stderr)
     raise SystemExit(1)
 expected_status_counts = {
     ("crawl_jobs", "success"): 1,

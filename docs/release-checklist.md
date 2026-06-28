@@ -56,7 +56,7 @@ python scripts/health_check.py --require-openapi
 
 Use the compact summary first to inspect `release_ready` and `release_blockers`, then run the required gates to fail fast. Also inspect `storage_health` before handoff: `database_parent` confirms SQLite can be created or updated, and `vector_db_parent` confirms first-run vector index creation can write to the configured parent directory even when the vector index file does not exist yet.
 Inspect `config_warnings` when release readiness is blocked by configuration: unsupported RAG adapter warnings include `actual` and `supported`, so the current configured adapter and the supported values can be compared without reading source code.
-`--require-release-ready` checks storage writability, no failed workflow backlog, and demo data readiness for the default offline release path. Use `--require-no-config-warnings` separately when the handoff requires OpenAlex, Unpaywall, LLM, or non-default vector backend configuration. `--require-frontend` verifies the Streamlit health endpoint. `--require-openapi` verifies the live `/openapi.json` schema used by frontend handoff.
+`--require-release-ready` checks storage writability, no failed, rejected, or unknown workflow backlog, and demo data readiness for the default offline release path. Use `--require-no-config-warnings` separately when the handoff requires OpenAlex, Unpaywall, LLM, or non-default vector backend configuration. `--require-frontend` verifies the Streamlit health endpoint. `--require-openapi` verifies the live `/openapi.json` schema used by frontend handoff.
 
 ## 5. Optional External Gate
 
