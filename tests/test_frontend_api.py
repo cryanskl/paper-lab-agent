@@ -1061,6 +1061,22 @@ def test_reaction_review_form_state_preserves_known_type_indexes_and_blank_text(
     assert state["verified_by"] == "streamlit"
 
 
+def test_reaction_review_form_state_ignores_malformed_threshold():
+    from app import frontend_api
+
+    state = frontend_api.reaction_review_form_state(
+        {
+            "reaction_type": "ionization",
+            "rate_type": "cross_section",
+            "threshold_ev": "not-a-number",
+            "verified": False,
+        }
+    )
+
+    assert state["include_threshold_ev"] is False
+    assert state["threshold_ev_value"] == 0.0
+
+
 def test_reaction_export_rows_summarize_download_and_audit_metadata():
     from app import frontend_api
 

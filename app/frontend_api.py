@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 from typing import Any, Optional
 
@@ -1060,11 +1061,22 @@ def normalized_option_value(value: Any) -> str:
     return "" if normalized == "unknown" else normalized
 
 
+def finite_float_or_none(value: Any) -> Optional[float]:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
 def reaction_review_form_state(reaction: dict[str, Any]) -> dict[str, Any]:
     reaction_type_value = normalized_option_value(reaction.get("reaction_type"))
     rate_type_value = normalized_option_value(reaction.get("rate_type"))
-    include_threshold_ev = reaction.get("threshold_ev") is not None
-    threshold_ev_value = float(reaction["threshold_ev"]) if include_threshold_ev else 0.0
+    threshold_ev = finite_float_or_none(reaction.get("threshold_ev"))
+    include_threshold_ev = threshold_ev is not None
+    threshold_ev_value = threshold_ev if include_threshold_ev else 0.0
     return {
         "reaction_type_options": REACTION_TYPE_OPTIONS,
         "rate_type_options": RATE_TYPE_OPTIONS,
