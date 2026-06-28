@@ -14989,6 +14989,7 @@ def test_streamlit_chemistry_tab_can_select_document_for_reaction_sets():
 
     for required in [
         'chemistry_documents = chemistry_documents_response["items"]',
+        "filtered_chemistry_documents = filter_documents_by_status(chemistry_documents, chemistry_document_status_filter)",
         'selected_chemistry_document = st.selectbox(',
         "chemistry_document_options",
         "format_func=document_option_label",
@@ -14998,6 +14999,23 @@ def test_streamlit_chemistry_tab_can_select_document_for_reaction_sets():
     ]:
         assert required in chemistry_section
     assert "format_func=lambda document" not in chemistry_section
+
+
+def test_streamlit_chemistry_tab_filters_current_page_by_document_status():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    for required in [
+        'chemistry_document_status_filter = st.selectbox("化学库文档状态筛选", document_status_filter_options(), key="chemistry-documents-status-filter")',
+        "filtered_chemistry_documents = filter_documents_by_status(chemistry_documents, chemistry_document_status_filter)",
+        "if not chemistry_documents:",
+        "elif not filtered_chemistry_documents:",
+        "当前页没有匹配筛选状态的化学库文档。",
+        "chemistry_document_options = filtered_chemistry_documents",
+    ]:
+        assert required in chemistry_section
+    assert "chemistry_document_options = chemistry_documents" not in chemistry_section
 
 
 def test_streamlit_chemistry_tab_exposes_document_pagination_controls():

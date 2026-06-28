@@ -933,8 +933,16 @@ with chemistry_tab:
         f"page_size {chemistry_documents_response['page_size']} · "
         f"total {chemistry_documents_response['total']}"
     )
-    if chemistry_documents:
-        chemistry_document_options = chemistry_documents
+    chemistry_document_status_filter = st.selectbox("化学库文档状态筛选", document_status_filter_options(), key="chemistry-documents-status-filter")
+    filtered_chemistry_documents = filter_documents_by_status(chemistry_documents, chemistry_document_status_filter)
+    if not chemistry_documents:
+        st.info("暂无可选文档，请先上传并抽取化学库。")
+        chemistry_document_id = st.number_input("手动 document_id", min_value=1, value=1)
+    elif not filtered_chemistry_documents:
+        st.info("当前页没有匹配筛选状态的化学库文档。")
+        chemistry_document_id = st.number_input("手动 document_id", min_value=1, value=1)
+    else:
+        chemistry_document_options = filtered_chemistry_documents
         selected_chemistry_document = st.selectbox(
             "化学库文档",
             chemistry_document_options,
@@ -943,9 +951,6 @@ with chemistry_tab:
         )
         chemistry_document_id = int(selected_chemistry_document["id"])
         st.caption(f"chemistry_document_id: {chemistry_document_id}")
-    else:
-        st.info("暂无可选文档，请先上传并抽取化学库。")
-        chemistry_document_id = st.number_input("手动 document_id", min_value=1, value=1)
     reaction_sets_page_col, reaction_sets_page_size_col = st.columns(2)
     reaction_sets_page = reaction_sets_page_col.number_input(
         "reaction_sets_page",
