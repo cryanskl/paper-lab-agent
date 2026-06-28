@@ -714,6 +714,21 @@ def test_reaction_review_rows_mark_export_blockers():
     assert rows[1]["export_blocker"] is None
 
 
+def test_reaction_review_rows_skip_malformed_reactions():
+    from app import frontend_api
+
+    rows = frontend_api.reaction_review_rows(
+        [
+            "bad-reaction",
+            {"id": 1, "reaction": "e + Ar -> e + e + Ar+", "verified": 0},
+        ]
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["id"] == 1
+    assert rows[0]["review_state"] == "unverified"
+
+
 def test_reaction_display_state_summarizes_review_card_metadata():
     from app import frontend_api
 
@@ -1255,6 +1270,28 @@ def test_reaction_set_review_state_derives_unverified_counts_and_export_gate():
     )
 
 
+def test_reaction_set_review_state_skips_malformed_reactions():
+    from app import frontend_api
+
+    valid_verified = {"id": 1, "reaction": "e + Ar -> e + Ar", "verified": True}
+    valid_unverified = {"id": 2, "reaction": "e + Ar -> 2e + Ar+", "verified": False}
+
+    state = frontend_api.reaction_set_review_state(
+        {
+            "status": "pending",
+            "reactions": ["bad-reaction", valid_verified, valid_unverified],
+        }
+    )
+
+    assert state["reactions"] == [valid_verified, valid_unverified]
+    assert state["unverified_reactions"] == [valid_unverified]
+    assert state["reaction_count"] == 2
+    assert state["verified_count"] == 1
+    assert state["unverified_count"] == 1
+    assert state["export_ready"] is False
+    assert state["export_blocked"] is True
+
+
 def test_reaction_set_review_state_handles_malformed_counts_and_export_ready():
     from app import frontend_api
 
@@ -1452,6 +1489,27 @@ def test_reaction_review_list_state_summarizes_full_review_scope():
         "unverified_count": 1,
         "mode": "all",
         "summary": "当前显示全部反应: 2 · 未复核: 1",
+    }
+
+
+def test_reaction_review_list_state_skips_malformed_reactions():
+    from app import frontend_api
+
+    valid_verified = {"id": 1, "reaction": "e + Ar -> e + Ar", "verified": True}
+    valid_unverified = {"id": 2, "reaction": "e + Ar -> 2e + Ar+", "verified": False}
+
+    state = frontend_api.reaction_review_list_state(
+        ["bad-reaction", valid_verified, valid_unverified],
+        only_unverified=True,
+    )
+
+    assert state == {
+        "display_reactions": [valid_unverified],
+        "total_count": 2,
+        "display_count": 1,
+        "unverified_count": 1,
+        "mode": "unverified",
+        "summary": "当前显示未复核: 1/2 · 已隐藏已复核: 1",
     }
 
 

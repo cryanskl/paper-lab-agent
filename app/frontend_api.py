@@ -1150,8 +1150,14 @@ def int_or_default(value: Any, default: int) -> int:
     return parsed if parsed >= 0 else default
 
 
+def reaction_items(reactions: Any) -> list[dict[str, Any]]:
+    if not isinstance(reactions, list):
+        return []
+    return [reaction for reaction in reactions if isinstance(reaction, dict)]
+
+
 def reaction_set_review_state(detail: dict[str, Any]) -> dict[str, Any]:
-    reactions = detail.get("reactions") or []
+    reactions = reaction_items(detail.get("reactions"))
     unverified_reactions = [reaction for reaction in reactions if not reaction.get("verified")]
     reaction_count = int_or_default(detail.get("reaction_count"), len(reactions))
     verified_count = int_or_default(detail.get("verified_count"), reaction_count - len(unverified_reactions))
@@ -1272,6 +1278,7 @@ def audit_cell_text(value: Any) -> str:
 
 
 def reaction_review_list_state(reactions: list[dict[str, Any]], *, only_unverified: bool = False) -> dict[str, Any]:
+    reactions = reaction_items(reactions)
     unverified_reactions = [reaction for reaction in reactions if not reaction.get("verified")]
     if only_unverified:
         display_reactions = unverified_reactions
@@ -1294,7 +1301,7 @@ def reaction_review_list_state(reactions: list[dict[str, Any]], *, only_unverifi
 
 def reaction_review_rows(reactions: list[dict[str, Any]], *, only_unverified: bool = False) -> list[dict[str, Any]]:
     rows = []
-    for reaction in reactions:
+    for reaction in reaction_items(reactions):
         verified = bool(reaction.get("verified"))
         if only_unverified and verified:
             continue
