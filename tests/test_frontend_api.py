@@ -2210,7 +2210,16 @@ def test_paper_upload_options_skip_malformed_papers():
 
     valid_paper = {"id": 42, "title": "Ar/O2 ICP chemistry"}
 
-    assert frontend_api.paper_upload_options(["bad-paper", valid_paper, None]) == [None, valid_paper]
+    assert frontend_api.paper_upload_options(
+        [
+            "bad-paper",
+            {"title": "missing id"},
+            {"id": "42", "title": "string id"},
+            {"id": False, "title": "bool id"},
+            valid_paper,
+            None,
+        ]
+    ) == [None, valid_paper]
 
 
 def test_paper_upload_option_label_summarizes_paper_identity():

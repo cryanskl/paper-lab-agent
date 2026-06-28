@@ -594,7 +594,16 @@ def paper_upload_option_label(paper: Optional[dict[str, Any]]) -> str:
 
 
 def paper_upload_options(papers: list[dict[str, Any]]) -> list[Optional[dict[str, Any]]]:
-    return [None, *[paper for paper in papers if isinstance(paper, dict)]]
+    return [
+        None,
+        *[
+            paper
+            for paper in papers
+            if isinstance(paper, dict)
+            and isinstance(paper.get("id"), int)
+            and not isinstance(paper.get("id"), bool)
+        ],
+    ]
 
 
 def paper_upload_query_params(query: Optional[str]) -> dict[str, Any]:
