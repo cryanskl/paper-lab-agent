@@ -993,8 +993,8 @@ def reaction_review_payload(
 
 def reaction_export_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     export_format = payload.get("format") or "unknown"
-    reaction_count = int(payload.get("reaction_count") or 0)
-    audit_entry_count = int(payload.get("audit_entry_count") or 0)
+    reaction_count = non_negative_int_or_zero(payload.get("reaction_count"))
+    audit_entry_count = non_negative_int_or_zero(payload.get("audit_entry_count"))
     rows = [
         ("reaction_set_id", payload.get("reaction_set_id")),
         ("format", export_format),

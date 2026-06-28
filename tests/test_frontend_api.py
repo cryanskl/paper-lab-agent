@@ -1055,6 +1055,31 @@ def test_reaction_export_rows_summarize_download_and_audit_metadata():
     ]
 
 
+def test_reaction_export_rows_handle_malformed_counts():
+    from app import frontend_api
+
+    rows = frontend_api.reaction_export_rows(
+        {
+            "reaction_set_id": 3,
+            "format": "json",
+            "output_path": "/tmp/exports/reaction-set-3.json",
+            "mime_type": "application/json",
+            "reaction_count": ["4"],
+            "audit_entry_count": "4",
+        }
+    )
+
+    assert rows == [
+        {"field": "reaction_set_id", "value": 3},
+        {"field": "format", "value": "json"},
+        {"field": "output_path", "value": "/tmp/exports/reaction-set-3.json"},
+        {"field": "mime_type", "value": "application/json"},
+        {"field": "reaction_count", "value": 0},
+        {"field": "audit_entry_count", "value": 0},
+        {"field": "download_label", "value": "json · 0 reactions · 0 audit entries"},
+    ]
+
+
 def test_reaction_export_download_reads_text_file_for_streamlit_button(tmp_path):
     from app import frontend_api
 
