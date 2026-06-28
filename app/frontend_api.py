@@ -738,10 +738,26 @@ def document_section_rows(sections: list[dict[str, Any]]) -> list[dict[str, Any]
     return rows
 
 
-def document_section_option_label(section: dict[str, Any]) -> str:
+def document_section_option_label(section: Any) -> str:
+    if not isinstance(section, dict):
+        return "invalid. Section"
     section_ref = section.get("seq") if section.get("seq") is not None else section.get("id")
     label = section.get("title") or section.get("section_type") or "section"
     return f"{section_ref}. {label}"
+
+
+def document_section_preview_title(section: Any) -> str:
+    if not isinstance(section, dict):
+        return "Section"
+    title = section.get("title")
+    return title if isinstance(title, str) and title.strip() else "Section"
+
+
+def document_section_preview_content(section: Any) -> str:
+    if not isinstance(section, dict):
+        return ""
+    content = section.get("content")
+    return content if isinstance(content, str) else ""
 
 
 def translation_status_rows(

@@ -23,6 +23,8 @@ from app.frontend_api import (
     document_filter_summary,
     document_option_label,
     document_section_option_label,
+    document_section_preview_content,
+    document_section_preview_title,
     document_section_rows,
     document_status_filter_options,
     document_status_rows,
@@ -772,8 +774,8 @@ with documents_tab:
                     sections,
                     format_func=document_section_option_label,
                 )
-                st.markdown(f"### {section_preview.get('title') or 'Section'}")
-                st.write(section_preview.get("content") or "")
+                st.markdown(f"### {document_section_preview_title(section_preview)}")
+                st.write(document_section_preview_content(section_preview))
             st.caption(
                 f"sections page {sections_response['page']} · "
                 f"page_size {sections_response['page_size']} · "

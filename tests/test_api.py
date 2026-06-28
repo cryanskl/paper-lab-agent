@@ -17454,6 +17454,8 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
         "dataframe_display_rows(document_status_rows(document_detail, chunks))",
         "section_preview",
         "format_func=document_section_option_label",
+        "document_section_preview_title(section_preview)",
+        "document_section_preview_content(section_preview)",
         "format_func=document_chunk_option_label",
         "document_chunk_preview_text(chunk_preview)",
         "parse_error",

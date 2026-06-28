@@ -2126,6 +2126,25 @@ def test_document_section_option_label_falls_back_to_type_and_id():
     assert label == "22. table"
 
 
+def test_document_section_option_label_handles_malformed_section():
+    from app import frontend_api
+
+    assert frontend_api.document_section_option_label("bad-section") == "invalid. Section"
+
+
+def test_document_section_preview_fields_handle_malformed_section_and_content():
+    from app import frontend_api
+
+    assert frontend_api.document_section_preview_title("bad-section") == "Section"
+    assert frontend_api.document_section_preview_content("bad-section") == ""
+    assert frontend_api.document_section_preview_title({"title": ["not", "text"]}) == "Section"
+    assert frontend_api.document_section_preview_content({"content": ["not", "text"]}) == ""
+    assert frontend_api.document_section_preview_title({"title": "Reaction kinetics"}) == "Reaction kinetics"
+    assert frontend_api.document_section_preview_content({"content": "Electron density remains stable."}) == (
+        "Electron density remains stable."
+    )
+
+
 def test_document_chunk_rows_surface_vector_backlinks_and_preview():
     from app import frontend_api
 
