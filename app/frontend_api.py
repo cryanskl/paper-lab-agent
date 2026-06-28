@@ -153,6 +153,10 @@ def non_negative_int_or_zero(value: Any) -> int:
     return value
 
 
+def dict_or_empty(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def release_readiness_display_state(release_readiness: Any) -> dict[str, Any]:
     if not isinstance(release_readiness, dict):
         invalid_group = {"label": "release state:", "items": ["release_readiness:invalid"]}
@@ -554,8 +558,8 @@ def document_filter_summary(total_count: int, filtered_count: int, filter_value:
 def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for job in jobs:
-        diagnostics = job.get("diagnostics") or {}
-        journal = job.get("journal") or {}
+        diagnostics = dict_or_empty(job.get("diagnostics"))
+        journal = dict_or_empty(job.get("journal"))
         status = diagnostics.get("status") or job.get("status")
         error = diagnostics.get("error") or job.get("error")
         found = non_negative_int_or_zero(diagnostics.get("papers_found"))
@@ -598,8 +602,8 @@ def crawl_job_option_label(job: dict[str, Any]) -> str:
 
 
 def crawl_job_diagnostic_rows(job: dict[str, Any]) -> list[dict[str, Any]]:
-    diagnostics = job.get("diagnostics") or {}
-    journal = job.get("journal") or {}
+    diagnostics = dict_or_empty(job.get("diagnostics"))
+    journal = dict_or_empty(job.get("journal"))
     keyword_terms = diagnostics.get("keyword_terms")
     keyword_terms_label = ", ".join(keyword_terms) if isinstance(keyword_terms, list) else ""
     fields = [

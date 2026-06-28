@@ -1638,6 +1638,46 @@ def test_crawl_job_rows_handle_malformed_diagnostics_counts():
     ]
 
 
+def test_crawl_job_rows_handle_malformed_nested_objects():
+    from app import frontend_api
+
+    rows = frontend_api.crawl_job_rows(
+        [
+            {
+                "id": 14,
+                "journal_id": 5,
+                "status": "failed",
+                "period": "manual",
+                "error": "metadata source failed",
+                "diagnostics": "bad-diagnostics",
+                "journal": "bad-journal",
+            }
+        ]
+    )
+
+    assert rows == [
+        {
+            "id": 14,
+            "journal": 5,
+            "status": "failed",
+            "workflow_state": "failed: metadata source failed",
+            "period": "manual",
+            "date_from": None,
+            "date_to": None,
+            "found": 0,
+            "filtered": 0,
+            "accepted": 0,
+            "existing": 0,
+            "new": 0,
+            "progress_summary": "0 found / 0 accepted / 0 new",
+            "outcome": None,
+            "keyword_mode": None,
+            "keyword_terms": "",
+            "error": "metadata source failed",
+        }
+    ]
+
+
 def test_crawl_job_diagnostic_rows_flatten_job_detail_for_review():
     from app import frontend_api
 
@@ -1721,6 +1761,40 @@ def test_crawl_job_diagnostic_rows_handle_malformed_counts():
         {"field": "keyword_mode", "value": None},
         {"field": "keyword_terms", "value": ""},
         {"field": "error", "value": None},
+    ]
+
+
+def test_crawl_job_diagnostic_rows_handle_malformed_nested_objects():
+    from app import frontend_api
+
+    rows = frontend_api.crawl_job_diagnostic_rows(
+        {
+            "id": 44,
+            "journal_id": 8,
+            "status": "failed",
+            "period": "manual",
+            "error": "Crossref returned malformed data",
+            "diagnostics": "bad-diagnostics",
+            "journal": "bad-journal",
+        }
+    )
+
+    assert rows == [
+        {"field": "job_id", "value": 44},
+        {"field": "status", "value": "failed"},
+        {"field": "journal", "value": 8},
+        {"field": "period", "value": "manual"},
+        {"field": "date_from", "value": None},
+        {"field": "date_to", "value": None},
+        {"field": "papers_found", "value": 0},
+        {"field": "papers_filtered", "value": 0},
+        {"field": "papers_accepted", "value": 0},
+        {"field": "papers_existing", "value": 0},
+        {"field": "papers_new", "value": 0},
+        {"field": "outcome", "value": None},
+        {"field": "keyword_mode", "value": None},
+        {"field": "keyword_terms", "value": ""},
+        {"field": "error", "value": "Crossref returned malformed data"},
     ]
 
 
