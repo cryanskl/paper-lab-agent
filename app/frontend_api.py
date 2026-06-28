@@ -688,10 +688,32 @@ def document_asset_downloads(document: dict[str, Any]) -> list[dict[str, Any]]:
 def document_section_rows(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for section in sections:
+        if not isinstance(section, dict):
+            rows.append(
+                {
+                    "id": None,
+                    "document_id": None,
+                    "seq": None,
+                    "section_type": "invalid",
+                    "title": None,
+                    "section_location": "invalid",
+                    "content_preview": "invalid",
+                    "content_chars": 0,
+                }
+            )
+            continue
         section_id = section.get("id")
         section_seq = section.get("seq")
         section_ref = section_seq if section_seq is not None else section_id
-        content = section.get("content") or ""
+        raw_content = section.get("content")
+        content = raw_content if isinstance(raw_content, str) else ""
+        content_is_valid = raw_content is None or isinstance(raw_content, str)
+        content_preview = (
+            summarize_text(content, limit=160)
+            if content_is_valid
+            else "invalid"
+        )
+        content_chars = len(content) if content_is_valid else 0
         section_location = " · ".join(
             compact_parts(
                 [
@@ -709,8 +731,8 @@ def document_section_rows(sections: list[dict[str, Any]]) -> list[dict[str, Any]
                 "section_type": section.get("section_type"),
                 "title": section.get("title"),
                 "section_location": section_location or "-",
-                "content_preview": summarize_text(content, limit=160),
-                "content_chars": len(content),
+                "content_preview": content_preview,
+                "content_chars": content_chars,
             }
         )
     return rows

@@ -2049,6 +2049,65 @@ def test_document_section_rows_surface_location_and_preview():
     ]
 
 
+def test_document_section_rows_handle_malformed_entries_and_content():
+    from app import frontend_api
+
+    rows = frontend_api.document_section_rows(
+        [
+            "bad-section",
+            {
+                "id": 23,
+                "document_id": 5,
+                "seq": 3,
+                "section_type": "body",
+                "title": "Malformed content",
+                "content": ["not", "text"],
+            },
+            {
+                "id": 24,
+                "document_id": 5,
+                "seq": 4,
+                "section_type": "body",
+                "title": "Valid content",
+                "content": "Electron density remains stable.",
+            },
+        ]
+    )
+
+    assert rows == [
+        {
+            "id": None,
+            "document_id": None,
+            "seq": None,
+            "section_type": "invalid",
+            "title": None,
+            "section_location": "invalid",
+            "content_preview": "invalid",
+            "content_chars": 0,
+        },
+        {
+            "id": 23,
+            "document_id": 5,
+            "seq": 3,
+            "section_type": "body",
+            "title": "Malformed content",
+            "section_location": "section 3 · body · Malformed content",
+            "content_preview": "invalid",
+            "content_chars": 0,
+        },
+        {
+            "id": 24,
+            "document_id": 5,
+            "seq": 4,
+            "section_type": "body",
+            "title": "Valid content",
+            "section_location": "section 4 · body · Valid content",
+            "content_preview": "Electron density remains stable.",
+            "content_chars": 32,
+        },
+    ]
+
+
 def test_document_section_option_label_uses_sequence_and_title():
     from app import frontend_api
 
