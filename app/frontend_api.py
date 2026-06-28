@@ -486,6 +486,18 @@ def journal_option_label(journal: dict[str, Any]) -> str:
     return f"#{id_label} {name_label} · active={active_label}"
 
 
+def paper_search_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        journal
+        for journal in journals
+        if isinstance(journal, dict)
+        and isinstance(journal.get("id"), int)
+        and not isinstance(journal.get("id"), bool)
+        and isinstance(journal.get("name"), str)
+        and journal.get("name", "").strip()
+    ]
+
+
 def journal_table_rows(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for journal in journals:

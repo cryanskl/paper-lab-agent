@@ -37,6 +37,7 @@ from app.frontend_api import (
     journal_table_rows,
     paper_category_option_label,
     paper_category_options,
+    paper_search_journal_options,
     paper_upload_options,
     paper_upload_query_params,
     paper_upload_option_label,
@@ -224,7 +225,7 @@ with st.sidebar:
 with search_tab:
     st.caption("可先运行 `python scripts/import_fixtures.py` 导入离线样例。")
     try:
-        journals = api_get("/journals", active=True, page_size=100)["items"]
+        journals = paper_search_journal_options(api_get("/journals", active=True, page_size=100)["items"])
         categories = paper_category_options(api_get("/categories")["items"])
     except FrontendApiError as exc:
         st.error(format_error_payload(exc.payload, exc.status_code))

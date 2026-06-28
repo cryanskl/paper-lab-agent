@@ -1995,6 +1995,22 @@ def test_journal_option_label_handles_malformed_journal_items():
     assert label == "#- Journal · active=False"
 
 
+def test_paper_search_journal_options_skip_malformed_items():
+    from app import frontend_api
+
+    valid_journal = {"id": 2, "name": "Plasma Sources Science and Technology"}
+
+    assert frontend_api.paper_search_journal_options(
+        [
+            "bad-journal",
+            {"id": 3, "name": ""},
+            {"id": "4", "name": "Journal of Physics D"},
+            {"id": False, "name": "Bool Journal"},
+            valid_journal,
+        ]
+    ) == [valid_journal]
+
+
 def test_journal_table_rows_skip_malformed_items_and_format_keywords():
     from app import frontend_api
 

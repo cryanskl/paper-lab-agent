@@ -18333,7 +18333,7 @@ def test_streamlit_search_filter_metadata_errors_show_payload_details():
     search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
 
     for required in [
-        'journals = api_get("/journals", active=True, page_size=100)["items"]',
+        'journals = paper_search_journal_options(api_get("/journals", active=True, page_size=100)["items"])',
         'categories = paper_category_options(api_get("/categories")["items"])',
         "except FrontendApiError as exc:",
         "st.error(format_error_payload(exc.payload, exc.status_code))",
@@ -18341,6 +18341,18 @@ def test_streamlit_search_filter_metadata_errors_show_payload_details():
         "st.stop()",
     ]:
         assert required in search_section
+
+
+def test_streamlit_search_journals_use_filtered_options():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    assert "paper_search_journal_options" in streamlit
+    assert 'journals = paper_search_journal_options(api_get("/journals", active=True, page_size=100)["items"])' in search_section
+    assert 'journals = api_get("/journals", active=True, page_size=100)["items"]' not in search_section
+    assert 'journal_names = ["全部"] + [j["name"] for j in journals]' in search_section
+    assert 'params["journal_id"] = next(j["id"] for j in journals if j["name"] == journal_choice)' in search_section
 
 
 def test_streamlit_search_categories_use_filtered_options():
