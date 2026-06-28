@@ -150,7 +150,10 @@ def get_reaction_set(reaction_set_id: int) -> dict:
         row = conn.execute("SELECT * FROM reaction_sets WHERE id=?", (reaction_set_id,)).fetchone()
         if not row:
             raise AppError(404, "reaction_set_not_found", "Reaction set not found")
-        return reaction_set_detail(dict_from_row(row), conn)
+        try:
+            return reaction_set_detail(dict_from_row(row), conn)
+        except Exception as exc:
+            raise AppError(500, "reaction_set_detail_failed", str(exc))
 
 
 @router.put("/reactions/{reaction_id}/verify", response_model=ReactionSetDetailResponse)
