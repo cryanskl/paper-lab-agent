@@ -502,6 +502,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package_validation.get("demo_export_formats") != ["json", "txt", "bolsig"]
         or package_validation.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}
         or package_validation.get("demo_export_audit_summary_formats") != ["json", "txt", "bolsig"]
+        or package_validation.get("source") != package.get("source")
         or package_validation.get("demo_counts", {}).get("documents") != 1
         or package_validation.get("demo_counts", {}).get("reaction_audits") != 1
         or package_validation.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
