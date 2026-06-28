@@ -329,6 +329,26 @@ def test_env_example_validator_rejects_symlinked_env_example(tmp_path):
     assert "env example is not a regular file: .env.example" in result.stderr
 
 
+def test_env_example_validator_rejects_broken_symlinked_env_example(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_env_example.py"
+    (tmp_path / ".env.example").symlink_to(tmp_path / "missing.env.example")
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), ".env.example"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "env example is not a regular file: .env.example" in result.stderr
+
+
 def test_env_example_validator_rejects_symlinked_env_example_parent(tmp_path):
     import subprocess
     import sys

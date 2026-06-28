@@ -248,7 +248,7 @@ def main() -> int:
     if non_directory_parent is not None:
         print(f"env example parent is not a regular directory: {non_directory_parent}", file=sys.stderr)
         return 1
-    if not path.exists():
+    if not path.exists() and not path.is_symlink():
         print(f"env example not found: {path}", file=sys.stderr)
         return 1
     if path.is_symlink() or not path.is_file():
