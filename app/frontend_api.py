@@ -538,7 +538,16 @@ def journal_table_rows(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def category_parent_options(categories: list[dict[str, Any]]) -> list[Optional[dict[str, Any]]]:
-    return [None, *[category for category in categories if isinstance(category, dict)]]
+    return [
+        None,
+        *[
+            category
+            for category in categories
+            if isinstance(category, dict)
+            and isinstance(category.get("id"), int)
+            and not isinstance(category.get("id"), bool)
+        ],
+    ]
 
 
 def category_parent_option_label(category: Any) -> str:

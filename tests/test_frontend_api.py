@@ -2117,6 +2117,9 @@ def test_category_parent_options_skip_malformed_items():
     options = frontend_api.category_parent_options(
         [
             "bad-category",
+            {"slug": "missing-id"},
+            {"id": "1", "slug": "string-id"},
+            {"id": False, "slug": "bool-id"},
             {"id": 1, "slug": "chemistry"},
             ["also-bad"],
             {"id": 2, "slug": "etching"},
