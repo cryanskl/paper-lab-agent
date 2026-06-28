@@ -18711,3 +18711,16 @@ def test_streamlit_config_tab_uses_category_parent_option_label_helper():
     assert "category_parent_option_label" in streamlit
     assert "format_func=category_parent_option_label" in config_section
     assert "format_func=lambda category" not in config_section
+
+
+def test_streamlit_config_category_parent_options_skip_malformed_items():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    create_category_section = streamlit[
+        streamlit.index('with st.form("create-category-form")') :
+        streamlit.index("create_category = st.form_submit_button")
+    ]
+
+    assert "category_parent_options" in streamlit
+    assert "parent_options = category_parent_options(categories_all)" in create_category_section
+    assert "parent_options = [None] + categories_all" not in create_category_section

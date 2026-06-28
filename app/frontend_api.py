@@ -501,9 +501,15 @@ def journal_table_rows(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
-def category_parent_option_label(category: Optional[dict[str, Any]]) -> str:
+def category_parent_options(categories: list[dict[str, Any]]) -> list[Optional[dict[str, Any]]]:
+    return [None, *[category for category in categories if isinstance(category, dict)]]
+
+
+def category_parent_option_label(category: Any) -> str:
     if category is None:
         return "无"
+    if not isinstance(category, dict):
+        return "#- category"
     category_id = category.get("id")
     id_label = category_id if isinstance(category_id, int) and not isinstance(category_id, bool) else "-"
     slug = category.get("slug")

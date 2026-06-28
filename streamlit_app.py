@@ -6,6 +6,7 @@ from app.frontend_api import (
     FrontendApiError,
     api_docs_links,
     category_parent_option_label,
+    category_parent_options,
     config_warning_rows,
     crawl_job_diagnostic_rows,
     crawl_job_option_label,
@@ -567,7 +568,7 @@ with config_tab:
         category_name = c1.text_input("name", key="new-category-name")
         category_slug = c2.text_input("slug", key="new-category-slug")
         description = st.text_area("description", key="new-category-description")
-        parent_options = [None] + categories_all
+        parent_options = category_parent_options(categories_all)
         parent_choice = st.selectbox(
             "parent_id",
             parent_options,

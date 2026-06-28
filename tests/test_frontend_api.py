@@ -1956,6 +1956,21 @@ def test_category_parent_option_label_returns_none_label():
     assert label == "无"
 
 
+def test_category_parent_options_skip_malformed_items():
+    from app import frontend_api
+
+    options = frontend_api.category_parent_options(
+        [
+            "bad-category",
+            {"id": 1, "slug": "chemistry"},
+            ["also-bad"],
+            {"id": 2, "slug": "etching"},
+        ]
+    )
+
+    assert options == [None, {"id": 1, "slug": "chemistry"}, {"id": 2, "slug": "etching"}]
+
+
 def test_category_parent_option_label_summarizes_category_identity():
     from app import frontend_api
 
@@ -1970,6 +1985,14 @@ def test_category_parent_option_label_handles_malformed_category_items():
     from app import frontend_api
 
     label = frontend_api.category_parent_option_label({"slug": ["chemistry"]})
+
+    assert label == "#- category"
+
+
+def test_category_parent_option_label_handles_non_object_item():
+    from app import frontend_api
+
+    label = frontend_api.category_parent_option_label("bad-category")
 
     assert label == "#- category"
 
