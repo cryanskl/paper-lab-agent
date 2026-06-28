@@ -2174,6 +2174,69 @@ def test_document_chunk_rows_surface_vector_backlinks_and_preview():
     ]
 
 
+def test_document_chunk_rows_handle_malformed_entries_and_text():
+    from app import frontend_api
+
+    rows = frontend_api.document_chunk_rows(
+        [
+            "bad-chunk",
+            {
+                "id": 33,
+                "document_id": 5,
+                "section_id": 23,
+                "section_seq": 3,
+                "section_title": "Malformed chunk",
+                "vector_id": "doc-5-section-23-chunk-33",
+                "text": ["not", "text"],
+            },
+            {
+                "id": 34,
+                "document_id": 5,
+                "section_id": 24,
+                "section_seq": 4,
+                "section_title": "Valid chunk",
+                "text": "Electron kinetics evidence.",
+            },
+        ]
+    )
+
+    assert rows == [
+        {
+            "id": None,
+            "document_id": None,
+            "section_id": None,
+            "section_seq": None,
+            "section_title": None,
+            "vector_id": None,
+            "chunk_location": "invalid",
+            "text_preview": "invalid",
+            "text_chars": 0,
+        },
+        {
+            "id": 33,
+            "document_id": 5,
+            "section_id": 23,
+            "section_seq": 3,
+            "section_title": "Malformed chunk",
+            "vector_id": "doc-5-section-23-chunk-33",
+            "chunk_location": "section 3 · Malformed chunk · vector doc-5-section-23-chunk-33",
+            "text_preview": "invalid",
+            "text_chars": 0,
+        },
+        {
+            "id": 34,
+            "document_id": 5,
+            "section_id": 24,
+            "section_seq": 4,
+            "section_title": "Valid chunk",
+            "vector_id": None,
+            "chunk_location": "section 4 · Valid chunk",
+            "text_preview": "Electron kinetics evidence.",
+            "text_chars": 27,
+        },
+    ]
+
+
 def test_document_chunk_option_label_uses_vector_and_section_title():
     from app import frontend_api
 

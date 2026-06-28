@@ -784,10 +784,27 @@ def translation_download(translation: dict[str, Any]) -> Optional[dict[str, Any]
 def document_chunk_rows(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for chunk in chunks:
+        if not isinstance(chunk, dict):
+            rows.append(
+                {
+                    "id": None,
+                    "document_id": None,
+                    "section_id": None,
+                    "section_seq": None,
+                    "section_title": None,
+                    "vector_id": None,
+                    "chunk_location": "invalid",
+                    "text_preview": "invalid",
+                    "text_chars": 0,
+                }
+            )
+            continue
         section_id = chunk.get("section_id")
         section_seq = chunk.get("section_seq")
         section_ref = section_seq if section_seq is not None else section_id
-        text = chunk.get("text") or ""
+        raw_text = chunk.get("text")
+        text = raw_text if isinstance(raw_text, str) else ""
+        text_is_valid = raw_text is None or isinstance(raw_text, str)
         chunk_location = " · ".join(
             compact_parts(
                 [
@@ -806,8 +823,8 @@ def document_chunk_rows(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "section_title": chunk.get("section_title"),
                 "vector_id": chunk.get("vector_id"),
                 "chunk_location": chunk_location or "-",
-                "text_preview": summarize_text(text, limit=160),
-                "text_chars": len(text),
+                "text_preview": summarize_text(text, limit=160) if text_is_valid else "invalid",
+                "text_chars": len(text) if text_is_valid else 0,
             }
         )
     return rows
