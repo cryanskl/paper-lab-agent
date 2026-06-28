@@ -232,6 +232,40 @@ def test_release_readiness_display_state_rejects_inconsistent_ready_payload():
     } in state["groups"]
 
 
+def test_storage_health_caption_rows_include_parent_dirs_and_vector_json_state():
+    from app import frontend_api
+
+    rows = frontend_api.storage_health_caption_rows(
+        {
+            "data_dir": {"path": "data", "exists": True, "writable": True},
+            "database": {"path": "data/plasma.db", "exists": True, "writable": True},
+            "database_parent": {"path": "data", "exists": True, "writable": True},
+            "vector_db_parent": {"path": "data", "exists": True, "writable": True},
+            "vector_db": {
+                "path": "data/vector-index.json",
+                "exists": True,
+                "writable": True,
+                "valid_json": False,
+                "error": "invalid json",
+            },
+        }
+    )
+
+    assert rows == [
+        {"kind": "caption", "text": "data_dir: exists · writable · data"},
+        {"kind": "caption", "text": "pdf_dir: missing · not writable · -"},
+        {"kind": "caption", "text": "tei_dir: missing · not writable · -"},
+        {"kind": "caption", "text": "translation_dir: missing · not writable · -"},
+        {"kind": "caption", "text": "export_dir: missing · not writable · -"},
+        {"kind": "caption", "text": "database: exists · writable · data/plasma.db"},
+        {"kind": "caption", "text": "database_parent: exists · writable · data"},
+        {"kind": "caption", "text": "vector_db_parent: exists · writable · data"},
+        {"kind": "caption", "text": "vector_db: exists · writable · data/vector-index.json"},
+        {"kind": "caption", "text": "vector_db valid_json: invalid_json"},
+        {"kind": "warning", "text": "vector_db error: invalid json"},
+    ]
+
+
 def test_crawl_job_option_label_summarizes_job_status():
     from app import frontend_api
 

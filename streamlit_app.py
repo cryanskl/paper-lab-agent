@@ -44,6 +44,7 @@ from app.frontend_api import (
     release_readiness_display_state,
     request_json,
     request_json_status,
+    storage_health_caption_rows,
     translation_download,
     translation_status_rows,
 )
@@ -172,17 +173,11 @@ with st.sidebar:
     storage_health = status.get("storage_health", {})
     if storage_health:
         st.subheader("存储健康")
-        for key in ["data_dir", "pdf_dir", "tei_dir", "translation_dir", "export_dir", "database", "vector_db"]:
-            health_entry = storage_health.get(key) or {}
-            exists_label = "exists" if health_entry.get("exists") else "missing"
-            writable_label = "writable" if health_entry.get("writable") else "not writable"
-            st.caption(f"{key}: {exists_label} · {writable_label} · {health_entry.get('path') or '-'}")
-            if key == "vector_db":
-                valid_json = health_entry.get("valid_json")
-                valid_json_label = "unchecked" if valid_json is None else ("valid_json" if valid_json else "invalid_json")
-                st.caption(f"vector_db valid_json: {valid_json_label}")
-            if health_entry.get("error"):
-                st.warning(f"{key} error: {health_entry['error']}")
+        for row in storage_health_caption_rows(storage_health):
+            if row["kind"] == "warning":
+                st.warning(row["text"])
+            else:
+                st.caption(row["text"])
     status_counts = status.get("status_counts", {})
     if status_counts:
         st.subheader("状态分布")

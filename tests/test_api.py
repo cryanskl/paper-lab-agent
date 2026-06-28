@@ -17094,15 +17094,7 @@ def test_streamlit_sidebar_surfaces_storage_health():
     for required in [
         "存储健康",
         "storage_health",
-        "data_dir",
-        "pdf_dir",
-        "tei_dir",
-        "translation_dir",
-        "export_dir",
-        "database",
-        "vector_db",
-        "writable",
-        "valid_json",
+        "storage_health_caption_rows",
     ]:
         assert required in sidebar_section
 

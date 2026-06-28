@@ -180,6 +180,40 @@ def release_readiness_display_state(release_readiness: dict[str, Any]) -> dict[s
     }
 
 
+STORAGE_HEALTH_DISPLAY_KEYS = [
+    "data_dir",
+    "pdf_dir",
+    "tei_dir",
+    "translation_dir",
+    "export_dir",
+    "database",
+    "database_parent",
+    "vector_db_parent",
+    "vector_db",
+]
+
+
+def storage_health_caption_rows(storage_health: dict[str, Any]) -> list[dict[str, str]]:
+    rows = []
+    for key in STORAGE_HEALTH_DISPLAY_KEYS:
+        health_entry = storage_health.get(key) or {}
+        exists_label = "exists" if health_entry.get("exists") else "missing"
+        writable_label = "writable" if health_entry.get("writable") else "not writable"
+        rows.append(
+            {
+                "kind": "caption",
+                "text": f"{key}: {exists_label} · {writable_label} · {health_entry.get('path') or '-'}",
+            }
+        )
+        if key == "vector_db":
+            valid_json = health_entry.get("valid_json")
+            valid_json_label = "unchecked" if valid_json is None else ("valid_json" if valid_json else "invalid_json")
+            rows.append({"kind": "caption", "text": f"vector_db valid_json: {valid_json_label}"})
+        if health_entry.get("error"):
+            rows.append({"kind": "warning", "text": f"{key} error: {health_entry['error']}"})
+    return rows
+
+
 def crawl_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     options = [{"label": "全部 active 期刊", "journal_id": None}]
     for journal in journals:
