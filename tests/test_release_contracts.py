@@ -1477,6 +1477,17 @@ def test_release_hygiene_validator_rejects_symlinked_ci_workflow_ancestor(tmp_pa
     assert missing == ["ci_workflow_parent_not_regular_directory"]
 
 
+def test_release_hygiene_validator_rejects_file_ci_workflow_ancestor(tmp_path):
+    validate_release_hygiene = load_validate_release_hygiene()
+    github_path = tmp_path / ".github"
+    github_path.write_text("not a directory", encoding="utf-8")
+
+    missing = validate_release_hygiene.missing_required_ci_release_gate(tmp_path)
+
+    assert missing == ["ci_workflow_parent_not_regular_directory"]
+    assert github_path.read_text(encoding="utf-8") == "not a directory"
+
+
 def test_release_hygiene_validator_reports_missing_ci_release_gate(tmp_path):
     validate_release_hygiene = load_validate_release_hygiene()
     workflow_dir = tmp_path / ".github" / "workflows"
