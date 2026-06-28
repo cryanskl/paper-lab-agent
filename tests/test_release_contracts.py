@@ -1725,6 +1725,7 @@ def test_release_checklist_documents_publish_gates():
 
 def test_release_checklist_documents_health_storage_details():
     repo = Path(__file__).resolve().parent.parent
+    readme = (repo / "README.md").read_text(encoding="utf-8")
     checklist = (repo / "docs" / "release-checklist.md").read_text(encoding="utf-8")
 
     for required in [
@@ -1733,6 +1734,14 @@ def test_release_checklist_documents_health_storage_details():
         "`vector_db_parent`",
         "first-run vector index creation",
     ]:
+        assert required in checklist
+    for required in [
+        "`config_warnings`",
+        "`actual`",
+        "`supported`",
+        "unsupported RAG adapter",
+    ]:
+        assert required in readme
         assert required in checklist
 
 
