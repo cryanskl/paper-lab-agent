@@ -13,6 +13,7 @@ from app.frontend_api import (
     crawl_journal_option_label,
     crawl_journal_options,
     dataframe_display_rows,
+    demo_data_display_state,
     document_asset_downloads,
     document_chunk_rows,
     document_chunk_option_label,
@@ -127,10 +128,11 @@ with st.sidebar:
                 st.caption(f"{group['label']} {', '.join(group['items'])}")
     demo_data = status.get("demo_data") or {}
     st.subheader("演示数据")
-    if demo_data.get("ready"):
+    demo_display = demo_data_display_state(demo_data)
+    if demo_display["ready"]:
         st.success("walking skeleton ready")
     else:
-        missing_demo_data = demo_data.get("missing") or []
+        missing_demo_data = demo_display["missing"]
         missing_label = ", ".join(missing_demo_data) if missing_demo_data else "unknown"
         st.warning(f"walking skeleton missing: {missing_label}")
         st.caption("run: python scripts/prepare_demo_data.py")

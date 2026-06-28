@@ -207,6 +207,17 @@ def release_readiness_list_values(value: Any, invalid_label: Optional[str] = Non
     return values
 
 
+def demo_data_display_state(demo_data: Any) -> dict[str, Any]:
+    if not isinstance(demo_data, dict):
+        return {"ready": False, "missing": ["demo_data:invalid"]}
+    missing = release_readiness_list_values(demo_data.get("missing"), invalid_label="invalid")
+    if missing:
+        return {"ready": False, "missing": missing}
+    if demo_data.get("ready") is True:
+        return {"ready": True, "missing": []}
+    return {"ready": False, "missing": ["ready=false"]}
+
+
 STORAGE_HEALTH_DISPLAY_KEYS = [
     "data_dir",
     "pdf_dir",

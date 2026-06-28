@@ -18088,11 +18088,16 @@ def test_streamlit_sidebar_surfaces_demo_data_readiness():
     for required in [
         "演示数据",
         "demo_data",
-        'demo_data.get("ready")',
-        'demo_data.get("missing")',
+        "demo_data_display_state",
+        'demo_display = demo_data_display_state(demo_data)',
+        'demo_display["ready"]',
+        'demo_display["missing"]',
         "prepare_demo_data.py",
     ]:
         assert required in sidebar_section
+    demo_section = sidebar_section[sidebar_section.index("demo_data = status.get") : sidebar_section.index("runtime = status.get")]
+    assert 'demo_data.get("ready")' not in demo_section
+    assert 'demo_data.get("missing")' not in demo_section
 
 
 def test_streamlit_sidebar_can_check_grobid_live_status():

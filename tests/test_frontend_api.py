@@ -308,6 +308,15 @@ def test_release_readiness_display_state_blocks_malformed_readiness_object():
     } in state["groups"]
 
 
+def test_demo_data_display_state_blocks_malformed_demo_data_object():
+    from app import frontend_api
+
+    state = frontend_api.demo_data_display_state(["ready"])
+
+    assert state["ready"] is False
+    assert state["missing"] == ["demo_data:invalid"]
+
+
 def test_storage_health_caption_rows_include_parent_dirs_and_vector_json_state():
     from app import frontend_api
 
