@@ -148,11 +148,13 @@ def dataframe_display_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def release_readiness_display_state(release_readiness: dict[str, Any]) -> dict[str, Any]:
-    config_warning_codes = [
-        str(code) for code in release_readiness.get("config_warning_codes") or [] if str(code).strip()
-    ]
+    config_warning_codes = release_readiness_list_values(
+        release_readiness.get("config_warning_codes"), invalid_label="invalid"
+    )
     blocking_config_warnings = [
-        f"config_warning_codes:{code}" for code in config_warning_codes if code in RELEASE_BLOCKING_CONFIG_WARNING_CODES
+        f"config_warning_codes:{code}"
+        for code in config_warning_codes
+        if code == "invalid" or code in RELEASE_BLOCKING_CONFIG_WARNING_CODES
     ]
     groups = [
         {
@@ -178,6 +180,21 @@ def release_readiness_display_state(release_readiness: dict[str, Any]) -> dict[s
         "blockers": blockers,
         "groups": groups,
     }
+
+
+def release_readiness_list_values(value: Any, invalid_label: Optional[str] = None) -> list[str]:
+    if not isinstance(value, list):
+        return [invalid_label] if invalid_label is not None else []
+    values: list[str] = []
+    invalid = False
+    for item in value:
+        if isinstance(item, str) and item.strip():
+            values.append(item)
+        else:
+            invalid = True
+    if invalid and invalid_label is not None:
+        values.append(invalid_label)
+    return values
 
 
 STORAGE_HEALTH_DISPLAY_KEYS = [
