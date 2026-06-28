@@ -1002,6 +1002,24 @@ def rag_source_preview_excerpt(source: Any) -> str:
 def reaction_set_rows(reaction_sets: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for item in reaction_sets:
+        if not isinstance(item, dict):
+            rows.append(
+                {
+                    "id": None,
+                    "document_id": None,
+                    "name": "Reaction set",
+                    "status": "invalid",
+                    "reaction_count": 0,
+                    "verified_count": 0,
+                    "unverified_count": 0,
+                    "export_ready": False,
+                    "export_state": "empty",
+                    "review_progress": "0/0 verified",
+                    "verified_by": None,
+                    "verified_at": None,
+                }
+            )
+            continue
         reaction_count = non_negative_int_or_zero(item.get("reaction_count"))
         verified_count = non_negative_int_or_zero(item.get("verified_count"))
         unverified_count = non_negative_int_or_zero(item.get("unverified_count"))
@@ -1056,7 +1074,13 @@ def reaction_display_state(reaction: dict[str, Any]) -> dict[str, Any]:
 
 
 def reaction_set_options(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [item for item in items if isinstance(item, dict)]
+    return [
+        item
+        for item in items
+        if isinstance(item, dict)
+        and isinstance(item.get("id"), int)
+        and not isinstance(item.get("id"), bool)
+    ]
 
 
 def reaction_set_option_label(item: Any) -> str:

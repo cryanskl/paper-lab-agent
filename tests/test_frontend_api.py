@@ -900,6 +900,29 @@ def test_reaction_set_rows_handle_malformed_counts_and_export_state():
     ]
 
 
+def test_reaction_set_rows_handle_non_object_items():
+    from app import frontend_api
+
+    rows = frontend_api.reaction_set_rows(["bad-reaction-set"])
+
+    assert rows == [
+        {
+            "id": None,
+            "document_id": None,
+            "name": "Reaction set",
+            "status": "invalid",
+            "reaction_count": 0,
+            "verified_count": 0,
+            "unverified_count": 0,
+            "export_ready": False,
+            "export_state": "empty",
+            "review_progress": "0/0 verified",
+            "verified_by": None,
+            "verified_at": None,
+        }
+    ]
+
+
 def test_reaction_set_option_label_summarizes_review_and_export_state():
     from app import frontend_api
 
@@ -931,6 +954,21 @@ def test_reaction_set_options_skip_malformed_items():
     valid_reaction_set = {"id": 3, "status": "pending"}
 
     assert frontend_api.reaction_set_options(["bad-reaction-set", valid_reaction_set, None]) == [valid_reaction_set]
+
+
+def test_reaction_set_options_skip_items_without_valid_id():
+    from app import frontend_api
+
+    valid_reaction_set = {"id": 3, "status": "pending"}
+
+    assert frontend_api.reaction_set_options(
+        [
+            {"status": "missing-id"},
+            {"id": "3", "status": "string-id"},
+            {"id": True, "status": "bool-id"},
+            valid_reaction_set,
+        ]
+    ) == [valid_reaction_set]
 
 
 def test_reaction_set_option_label_handles_malformed_items():
