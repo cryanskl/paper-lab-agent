@@ -95,6 +95,8 @@ OPTIONAL_EXTERNAL_CONFIG = (
         "LLM_API_KEY is not configured; translation uses the local deterministic adapter.",
     ),
 )
+SUPPORTED_EMBEDDING_MODELS = {"local-hash"}
+SUPPORTED_VECTOR_DB_BACKENDS = {"local-json"}
 ENV_EXAMPLE_DEFAULTS = {
     "PAPER_LAB_DATA_DIR": "data",
     "DATABASE_PATH": "data/plasma.db",
@@ -622,13 +624,15 @@ def check_local_storage(repo: Path, env: dict[str, str] | None = None) -> dict[s
 
 def check_external_config(repo: Path, env: dict[str, str] | None = None) -> dict[str, Any]:
     env = env_with_file_values(repo, env)
+    embedding_model = normalize_adapter_name(env.get("EMBEDDING_MODEL")) or "local-hash"
+    vector_db_backend = normalize_adapter_name(env.get("VECTOR_DB_BACKEND")) or "local-json"
     capabilities = {
         "openalex_mailto": configured_env_value(env.get("OPENALEX_MAILTO")),
         "unpaywall_email": configured_env_value(env.get("UNPAYWALL_EMAIL")),
         "grobid_url": configured_text(env.get("GROBID_URL")) or "http://127.0.0.1:8070",
         "llm_api_key": configured_env_value(env.get("LLM_API_KEY")),
-        "embedding_model": configured_text(env.get("EMBEDDING_MODEL")) or "local-hash",
-        "vector_db_backend": configured_text(env.get("VECTOR_DB_BACKEND")) or "local-json",
+        "embedding_model": embedding_model,
+        "vector_db_backend": vector_db_backend,
     }
     warnings = [
         {
@@ -639,6 +643,22 @@ def check_external_config(repo: Path, env: dict[str, str] | None = None) -> dict
         for key, capability, code, message in OPTIONAL_EXTERNAL_CONFIG
         if not configured_env_value(env.get(key))
     ]
+    if embedding_model not in SUPPORTED_EMBEDDING_MODELS:
+        warnings.append(
+            {
+                "code": "unsupported_embedding_model",
+                "capability": "rag_indexing",
+                "message": f"EMBEDDING_MODEL={embedding_model} is not supported by the local adapter registry.",
+            }
+        )
+    if vector_db_backend not in SUPPORTED_VECTOR_DB_BACKENDS:
+        warnings.append(
+            {
+                "code": "unsupported_vector_db_backend",
+                "capability": "rag_indexing",
+                "message": f"VECTOR_DB_BACKEND={vector_db_backend} is not supported by the current vector store registry.",
+            }
+        )
     return {
         "name": "external_config",
         "status": "pass",
@@ -652,6 +672,11 @@ def configured_text(value: Any) -> str | None:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
+
+
+def normalize_adapter_name(value: Any) -> str | None:
+    text = configured_text(value)
+    return text.lower() if text is not None else None
 
 
 def configured_env_value(value: Any) -> bool:

@@ -2193,6 +2193,30 @@ def test_doctor_script_reports_optional_external_config_warnings(tmp_path):
     ]
 
 
+def test_doctor_script_reports_unsupported_local_adapter_config_warnings(tmp_path):
+    doctor = load_doctor()
+
+    check = doctor.check_external_config(
+        tmp_path,
+        env={
+            "OPENALEX_MAILTO": "lab@example.test",
+            "UNPAYWALL_EMAIL": "lab@example.test",
+            "LLM_API_KEY": "sk-test",
+            "GROBID_URL": "http://127.0.0.1:8070",
+            "EMBEDDING_MODEL": "  experimental-vectors  ",
+            "VECTOR_DB_BACKEND": "  faiss  ",
+        },
+    )
+
+    assert check["status"] == "pass"
+    assert check["capabilities"]["embedding_model"] == "experimental-vectors"
+    assert check["capabilities"]["vector_db_backend"] == "faiss"
+    assert [warning["code"] for warning in check["warnings"]] == [
+        "unsupported_embedding_model",
+        "unsupported_vector_db_backend",
+    ]
+
+
 def test_doctor_summary_counts_external_config_warnings():
     doctor = load_doctor()
     payload = {
@@ -2513,11 +2537,15 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert "读取 `.env`" in readme
     assert "外部能力配置 warning" in readme
     assert "`warning_count`" in readme
+    assert "`unsupported_embedding_model`" in readme
+    assert "`unsupported_vector_db_backend`" in readme
     assert "python scripts/doctor.py --strict --compact" in checklist
     assert "local storage paths are creatable and writable" in checklist
     assert "reads `.env`" in checklist
     assert "external capability configuration warnings" in checklist
     assert "`warning_count`" in checklist
+    assert "`unsupported_embedding_model`" in checklist
+    assert "`unsupported_vector_db_backend`" in checklist
     assert "scripts/doctor.py" in release_check
     assert "RELEASE_HELP_SCRIPTS=(" in release_check
     assert '"${script}" --help' in release_check
