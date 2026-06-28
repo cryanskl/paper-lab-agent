@@ -2150,6 +2150,27 @@ def test_filter_documents_by_status_skips_malformed_documents():
     assert [document["id"] for document in frontend_api.filter_documents_by_status(documents, "解析失败")] == [2]
 
 
+def test_filter_documents_by_status_skips_documents_without_valid_id():
+    from app import frontend_api
+
+    valid_document = {
+        "id": 3,
+        "parse_status": "parsed",
+        "index_status": "indexed",
+        "chemistry_status": "extracted",
+    }
+
+    documents = [
+        {"parse_status": "parsed", "index_status": "indexed", "chemistry_status": "extracted"},
+        {"id": "3", "parse_status": "parsed", "index_status": "indexed", "chemistry_status": "extracted"},
+        {"id": True, "parse_status": "parsed", "index_status": "indexed", "chemistry_status": "extracted"},
+        valid_document,
+    ]
+
+    assert frontend_api.filter_documents_by_status(documents, "全部") == [valid_document]
+    assert frontend_api.filter_documents_by_status(documents, "待索引") == []
+
+
 def test_document_filter_summary_reports_current_page_match_count():
     from app import frontend_api
 

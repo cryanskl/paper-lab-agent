@@ -580,7 +580,13 @@ def document_status_filter_options() -> list[str]:
 
 
 def filter_documents_by_status(documents: list[dict[str, Any]], filter_value: str) -> list[dict[str, Any]]:
-    valid_documents = [document for document in documents if isinstance(document, dict)]
+    valid_documents = [
+        document
+        for document in documents
+        if isinstance(document, dict)
+        and isinstance(document.get("id"), int)
+        and not isinstance(document.get("id"), bool)
+    ]
     condition = DOCUMENT_STATUS_FILTERS.get(filter_value)
     if condition is None:
         return valid_documents
