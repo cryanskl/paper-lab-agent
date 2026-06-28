@@ -11612,6 +11612,65 @@ def test_system_release_readiness_blocks_unknown_workflow_statuses(tmp_path, mon
     assert payload["release_readiness"]["ready"] is False
 
 
+def test_system_release_readiness_blocks_blank_workflow_statuses(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
+    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+    monkeypatch.setenv("EMBEDDING_MODEL", "local-hash")
+    monkeypatch.setenv("VECTOR_DB_BACKEND", "local-json")
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    vector_path = tmp_path / "vector-index.json"
+    vector_path.write_text("{}", encoding="utf-8")
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (
+                file_path, file_hash, original_name,
+                parse_status, index_status, chemistry_status
+            ) VALUES (?, ?, ?, '   ', 'indexed', 'extracted')
+            """,
+            (str(tmp_path / "blank-status.pdf"), "blank-status", "blank-status.pdf"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Body', 'e + Ar -> e + e + Ar+', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, vector_id, embedded)
+            VALUES (?, ?, 1, 'e + Ar -> e + e + Ar+', 'blank-status-vector', 1)
+            """,
+            (document_id, section_id),
+        )
+        reaction_set_id = conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, status)
+            VALUES (?, 'Verified set', 'verified')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO reactions (reaction_set_id, reaction, verified)
+            VALUES (?, 'e + Ar -> e + e + Ar+', 1)
+            """,
+            (reaction_set_id,),
+        )
+
+    payload = client.get("/api/v1/system/status").json()
+
+    assert payload["status_counts"]["document_parse"]["unknown"] == 1
+    assert payload["release_readiness"]["failed_workflows"] == ["document_parse.unknown=1"]
+    assert payload["release_readiness"]["ready"] is False
+
+
 def test_reaction_verify_contract_documents_clearable_review_fields():
     repo = Path(__file__).resolve().parent.parent
     api_doc = (repo / "docs" / "接口设计文档.md").read_text(encoding="utf-8")

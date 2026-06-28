@@ -167,9 +167,9 @@ def status_count(table: str, column: str) -> dict:
     with get_conn() as conn:
         rows = conn.execute(
             f"""
-            SELECT COALESCE({column}, 'unknown') AS status, COUNT(*) AS n
+            SELECT COALESCE(NULLIF(TRIM({column}), ''), 'unknown') AS status, COUNT(*) AS n
             FROM {table}
-            GROUP BY COALESCE({column}, 'unknown')
+            GROUP BY COALESCE(NULLIF(TRIM({column}), ''), 'unknown')
             ORDER BY status
             """
         ).fetchall()
