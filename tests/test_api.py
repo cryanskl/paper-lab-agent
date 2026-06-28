@@ -12724,6 +12724,72 @@ def test_health_check_rejects_invalid_config_warning_shape():
     assert "1" in joined
 
 
+def test_health_check_rejects_invalid_config_warning_detail_shape():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_config_warning_detail_shape", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [
+                {
+                    "code": "unsupported_embedding_model",
+                    "capability": "rag_indexing",
+                    "message": "Unsupported embedding model.",
+                    "actual": "",
+                    "supported": ["local-hash", ""],
+                },
+                {
+                    "code": "unsupported_vector_db_backend",
+                    "capability": "rag_indexing",
+                    "message": "Unsupported vector backend.",
+                    "actual": 123,
+                    "supported": "local-json",
+                },
+            ],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
+            "status_counts": health_check_status_counts(),
+        }
+    )
+
+    joined = "; ".join(errors)
+    assert "config_warnings invalid values" in joined
+    assert "0.actual" in joined
+    assert "0.supported.1" in joined
+    assert "1.actual" in joined
+    assert "1.supported" in joined
+
+
 def test_health_check_fails_when_grobid_status_keys_are_missing(monkeypatch, capsys):
     import importlib.util
     import sys

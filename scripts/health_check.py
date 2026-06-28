@@ -347,6 +347,18 @@ def validate_system_status(status: dict) -> list[str]:
                 for key in sorted(CONFIG_WARNING_REQUIRED_KEYS & set(warning))
                 if not isinstance(warning[key], str) or not warning[key].strip()
             )
+            if "actual" in warning and (not isinstance(warning["actual"], str) or not warning["actual"].strip()):
+                invalid_warnings.append(f"{index}.actual")
+            if "supported" in warning:
+                supported = warning["supported"]
+                if not isinstance(supported, list):
+                    invalid_warnings.append(f"{index}.supported")
+                else:
+                    invalid_warnings.extend(
+                        f"{index}.supported.{item_index}"
+                        for item_index, value in enumerate(supported)
+                        if not isinstance(value, str) or not value.strip()
+                    )
         if invalid_warnings:
             errors.append(f"config_warnings invalid values: {', '.join(invalid_warnings)}")
     runtime = status.get("runtime")
