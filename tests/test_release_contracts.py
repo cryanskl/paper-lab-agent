@@ -9421,6 +9421,18 @@ def test_docs_links_validator_rejects_symlinked_markdown_source_parent(tmp_path)
     assert issues == ["docs/guide.md: doc source parent is not a regular directory"]
 
 
+def test_docs_links_validator_rejects_symlinked_empty_docs_dir(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    outside_docs = tmp_path / "outside-docs"
+    outside_docs.mkdir()
+    (tmp_path / "README.md").write_text("# Test\n", encoding="utf-8")
+    (tmp_path / "docs").symlink_to(outside_docs, target_is_directory=True)
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["docs: doc source directory is not a regular directory"]
+
+
 def test_docs_links_validator_rejects_symlinked_markdown_link_target(tmp_path):
     validate_docs_links = load_validate_docs_links()
     docs_dir = tmp_path / "docs"

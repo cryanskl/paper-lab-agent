@@ -154,7 +154,14 @@ def first_irregular_target_parent(repo: Path, source: Path, target: str) -> Path
 def broken_doc_links(repo: Path) -> list[str]:
     repo = repo.resolve()
     issues: list[str] = []
-    for path in doc_files(repo):
+    paths = doc_files(repo)
+    docs_dir = repo / "docs"
+    docs_dir_issue = (
+        docs_dir.exists()
+        and (docs_dir.is_symlink() or not docs_dir.is_dir())
+        and not any(path.is_relative_to(docs_dir) for path in paths)
+    )
+    for path in paths:
         label = path.relative_to(repo).as_posix()
         if first_symlink_parent(path) is not None:
             issues.append(f"{label}: doc source parent is not a regular directory")
@@ -218,6 +225,14 @@ def broken_doc_links(repo: Path) -> list[str]:
                 continue
             if target_path.is_symlink() or not target_path.is_file():
                 issues.append(f"{label}: reference target is not a regular file {target}")
+
+    if docs_dir_issue and not any(
+        issue.startswith("docs:")
+        or issue.startswith("docs/")
+        or " docs/" in issue
+        for issue in issues
+    ):
+        issues.append("docs: doc source directory is not a regular directory")
 
     return issues
 
