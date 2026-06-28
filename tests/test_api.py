@@ -18380,6 +18380,17 @@ def test_streamlit_search_results_show_dedupe_strategy():
     assert "dedupe_strategy=" in search_section
 
 
+def test_streamlit_search_results_use_filtered_paper_items():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    assert "paper_search_result_items" in streamlit
+    assert 'display_papers = paper_search_result_items(papers["items"])' in search_section
+    assert 'for paper in display_papers:' in search_section
+    assert 'for paper in papers["items"]:' not in search_section
+
+
 def test_streamlit_search_tab_exposes_sort_control():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

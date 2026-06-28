@@ -38,6 +38,7 @@ from app.frontend_api import (
     paper_category_option_label,
     paper_category_options,
     paper_search_journal_options,
+    paper_search_result_items,
     paper_upload_options,
     paper_upload_query_params,
     paper_upload_option_label,
@@ -281,7 +282,8 @@ with search_tab:
     st.caption(f"page {papers['page']} · page_size {papers['page_size']}")
     if not search_error and papers["total"] == 0:
         st.info("没有检索结果。")
-    for paper in papers["items"]:
+    display_papers = paper_search_result_items(papers["items"])
+    for paper in display_papers:
         with st.container(border=True):
             st.subheader(paper["title"])
             st.caption(f"{paper.get('journal_name') or '-'} · {paper.get('published_date') or '-'} · {paper.get('oa_status') or 'unknown'}")

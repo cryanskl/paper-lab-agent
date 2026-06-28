@@ -2011,6 +2011,23 @@ def test_paper_search_journal_options_skip_malformed_items():
     ) == [valid_journal]
 
 
+def test_paper_search_result_items_skip_malformed_items():
+    from app import frontend_api
+
+    valid_paper = {"id": 7, "title": "Ar/O2 plasma chemistry"}
+
+    assert frontend_api.paper_search_result_items(
+        [
+            "bad-paper",
+            {"title": "missing id"},
+            {"id": "7", "title": "string id"},
+            {"id": False, "title": "bool id"},
+            {"id": 8, "title": ""},
+            valid_paper,
+        ]
+    ) == [valid_paper]
+
+
 def test_journal_table_rows_skip_malformed_items_and_format_keywords():
     from app import frontend_api
 
