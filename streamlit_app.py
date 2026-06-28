@@ -845,16 +845,21 @@ with rag_tab:
         f"page_size {rag_documents_response['page_size']} · "
         f"total {rag_documents_response['total']}"
     )
-    if rag_documents:
+    rag_document_status_filter = st.selectbox("RAG 文档状态筛选", document_status_filter_options(), key="rag-documents-status-filter")
+    filtered_rag_documents = filter_documents_by_status(rag_documents, rag_document_status_filter)
+    if not rag_documents:
+        selected_rag_documents = []
+        st.info("暂无可选文档，请先上传并索引文档。")
+    elif not filtered_rag_documents:
+        selected_rag_documents = []
+        st.info("当前页没有匹配筛选状态的 RAG 文档。")
+    else:
         selected_rag_documents = st.multiselect(
             "限定文档",
-            rag_documents,
+            filtered_rag_documents,
             format_func=document_option_label,
             key="rag-document-select",
         )
-    else:
-        selected_rag_documents = []
-        st.info("暂无可选文档，请先上传并索引文档。")
     doc_ids = st.text_input("document_ids", value="")
     question = st.text_input("问题", value="plasma chemistry")
     top_k = st.number_input("top_k", min_value=1, max_value=20, value=6)

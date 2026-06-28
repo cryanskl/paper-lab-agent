@@ -16846,6 +16846,7 @@ def test_streamlit_rag_tab_can_select_documents_for_query_scope():
 
     for required in [
         'rag_documents = rag_documents_response["items"]',
+        "filtered_rag_documents = filter_documents_by_status(rag_documents, rag_document_status_filter)",
         "selected_rag_documents = st.multiselect(",
         "限定文档",
         "format_func=document_option_label",
@@ -16855,6 +16856,23 @@ def test_streamlit_rag_tab_can_select_documents_for_query_scope():
     ]:
         assert required in rag_section
     assert "format_func=lambda document" not in rag_section
+
+
+def test_streamlit_rag_tab_filters_current_page_by_document_status():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+
+    for required in [
+        'rag_document_status_filter = st.selectbox("RAG 文档状态筛选", document_status_filter_options(), key="rag-documents-status-filter")',
+        "filtered_rag_documents = filter_documents_by_status(rag_documents, rag_document_status_filter)",
+        "if not rag_documents:",
+        "elif not filtered_rag_documents:",
+        "当前页没有匹配筛选状态的 RAG 文档。",
+        "filtered_rag_documents,",
+    ]:
+        assert required in rag_section
+    assert "            rag_documents,\n            format_func=document_option_label" not in rag_section
 
 
 def test_streamlit_rag_tab_exposes_document_pagination_controls():
