@@ -244,8 +244,12 @@ def runtime_status_rows(runtime: Any) -> list[dict[str, str]]:
     rows = [
         {"kind": "caption", "text": f"API: {runtime.get('api_prefix') or '/api/v1'}"},
         {"kind": "caption", "text": f"version: {runtime.get('version') or '-'}"},
-        {"kind": "caption", "text": f"scheduler_enabled: {bool(runtime.get('scheduler_enabled'))}"},
     ]
+    scheduler_enabled = runtime.get("scheduler_enabled")
+    if isinstance(scheduler_enabled, bool):
+        rows.append({"kind": "caption", "text": f"scheduler_enabled: {scheduler_enabled}"})
+    else:
+        rows.append({"kind": "warning", "text": "scheduler_enabled: invalid"})
     scheduler_jobs = runtime.get("scheduler_jobs") or []
     if not isinstance(scheduler_jobs, list):
         return [*rows, {"kind": "warning", "text": "scheduler_jobs: invalid"}]
