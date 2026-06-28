@@ -8969,6 +8969,18 @@ def test_schema_validator_rejects_symlinked_schema_parent(tmp_path):
     assert issues == [f"schema file parent is not a regular directory: {docs_path}"]
 
 
+def test_schema_validator_rejects_file_schema_parent(tmp_path):
+    validate_schema = load_validate_schema()
+    docs_path = tmp_path / "docs"
+    docs_path.write_text("not a directory", encoding="utf-8")
+    schema_path = docs_path / "schema.sql"
+
+    issues = validate_schema.validate_schema(schema_path)
+
+    assert issues == [f"schema file parent is not a regular directory: {docs_path}"]
+    assert docs_path.read_text(encoding="utf-8") == "not a directory"
+
+
 def test_schema_validator_reports_unreadable_schema_file(tmp_path):
     validate_schema = load_validate_schema()
     schema_path = tmp_path / "schema.sql"
