@@ -9019,6 +9019,16 @@ def test_schema_validator_rejects_symlinked_schema_file(tmp_path):
     assert issues == [f"schema file is not a regular file: {schema_path}"]
 
 
+def test_schema_validator_rejects_broken_symlinked_schema_file(tmp_path):
+    validate_schema = load_validate_schema()
+    schema_path = tmp_path / "schema.sql"
+    schema_path.symlink_to(tmp_path / "missing-schema.sql")
+
+    issues = validate_schema.validate_schema(schema_path)
+
+    assert issues == [f"schema file is not a regular file: {schema_path}"]
+
+
 def test_schema_validator_rejects_symlinked_schema_parent(tmp_path):
     validate_schema = load_validate_schema()
     repo = Path(__file__).resolve().parent.parent

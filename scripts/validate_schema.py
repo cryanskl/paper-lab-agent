@@ -332,7 +332,7 @@ def validate_schema(schema_path: Path = DEFAULT_SCHEMA_PATH) -> list[str]:
     non_directory_parent = first_non_directory_parent(schema_path)
     if non_directory_parent is not None:
         return [f"schema file parent is not a regular directory: {non_directory_parent}"]
-    if not schema_path.exists():
+    if not schema_path.exists() and not schema_path.is_symlink():
         return [f"schema not found: {schema_path}"]
     if schema_path.is_symlink() or not schema_path.is_file():
         return [f"schema file is not a regular file: {schema_path}"]
