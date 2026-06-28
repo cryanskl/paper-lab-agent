@@ -54,11 +54,11 @@ def manifest_checksum(payload: dict[str, Any]) -> str:
 
 
 def read_json(path: Path, label: str, issues: list[str]) -> dict[str, Any]:
-    if not path.exists():
-        issues.append(f"{label} missing: {path}")
-        return {}
     if path.is_symlink():
         issues.append(f"{label} is not a regular file: {path}")
+        return {}
+    if not path.exists():
+        issues.append(f"{label} missing: {path}")
         return {}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
