@@ -4122,6 +4122,90 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert validate_payload["demo_reaction_set_verified_at"]
 
 
+def test_build_release_handoff_script_exports_validates_packages_and_revalidates(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    artifact_dir = tmp_path / "release"
+    package_path = tmp_path / "paper-lab-agent-release.zip"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_release_handoff.py",
+            "--artifact-dir",
+            str(artifact_dir),
+            "--package",
+            str(package_path),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["stage"] == "complete"
+    assert payload["artifact_dir"] == str(artifact_dir.resolve())
+    assert payload["package_path"] == str(package_path.resolve())
+    assert payload["package_sha256"]
+    assert payload["artifact_names"] == [
+        "demo-summary.json",
+        "openapi.json",
+        "release-manifest.json",
+    ]
+    assert payload["source"]["git_commit"]
+    assert payload["demo_ready"] is True
+    assert payload["demo_export_formats"] == ["json", "txt", "bolsig"]
+    assert payload["demo_export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
+    assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
+    assert payload["demo_reaction_set_verified_at"]
+    assert payload["stages"] == {
+        "export": True,
+        "validate_artifacts": True,
+        "package": True,
+        "validate_package": True,
+    }
+    assert payload["issues"] == []
+    assert (artifact_dir / "openapi.json").exists()
+    assert (artifact_dir / "demo-summary.json").exists()
+    assert (artifact_dir / "release-manifest.json").exists()
+    assert package_path.exists()
+
+
+def test_release_docs_explain_single_command_handoff_builder():
+    repo = Path(__file__).resolve().parent.parent
+    readme = (repo / "README.md").read_text(encoding="utf-8")
+    checklist = (repo / "docs" / "release-checklist.md").read_text(encoding="utf-8")
+
+    command = (
+        "python scripts/build_release_handoff.py --artifact-dir out/release "
+        "--package out/paper-lab-agent-release.zip --compact"
+    )
+    assert command in readme
+    assert command in checklist
+    assert "export, validate, package, validate package" in checklist
+
+
 def test_package_release_artifacts_removes_stale_output_on_validation_failure(tmp_path):
     package_release_artifacts = load_package_release_artifacts()
     artifact_dir = tmp_path / "invalid-release"

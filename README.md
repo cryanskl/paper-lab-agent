@@ -53,13 +53,14 @@ API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
 
 ```bash
 python scripts/export_openapi.py --output out/openapi.json
+python scripts/build_release_handoff.py --artifact-dir out/release --package out/paper-lab-agent-release.zip --compact
 python scripts/export_release_artifacts.py --output-dir out/release --compact
 python scripts/validate_release_artifacts.py --artifact-dir out/release --compact
 python scripts/package_release_artifacts.py --artifact-dir out/release --output out/paper-lab-agent-release.zip --compact
 python scripts/validate_release_package.py --package out/paper-lab-agent-release.zip --compact
 ```
 
-`scripts/export_release_artifacts.py` 会一次性生成 `openapi.json`、`demo-summary.json` 和 `release-manifest.json`，用于前后端、评审或发布交接。manifest 会记录来源 git commit/branch、导出时 worktree 是否 dirty，以及三个文件的 SHA256 校验和；`scripts/validate_release_artifacts.py` 会校验 artifact 路径本身是否为目录、交接包文件是否齐全、是否可读取、是否包含额外文件、校验和是否匹配、版本是否一致、演示摘要是否 ready，以及 OpenAPI 是否包含基础路径、`system` tag metadata 和 `ErrorResponse` schema。`scripts/package_release_artifacts.py` 会先校验目录，再打包为单个 zip，并输出 `artifact_names`、包的 SHA256、demo readiness、导出格式、`demo_export_audit_entry_counts`、`reaction_set_verified_by` 和 `reaction_set_verified_at`；zip 输出路径必须放在 artifact 目录外，避免覆盖或污染 handoff 文件。`scripts/validate_release_package.py` 会解压并复验 zip 内 artifacts，防止交接文件被篡改或缺项，并在报告中透传同一组 demo 证据。正式交接前可追加 `--require-clean-source`，要求 manifest 里的 `source.git_dirty=false`。服务启动后也可以直接访问 live schema 与交互文档：`http://127.0.0.1:8000/openapi.json`、`http://127.0.0.1:8000/docs` 和 `http://127.0.0.1:8000/redoc`。`python scripts/health_check.py --check-openapi` 会探测 live `/openapi.json` 并校验基础 schema 契约；`--require-openapi` 会在 schema 不可访问或缺少必需路径、tag、错误响应模型时返回非零。
+`scripts/build_release_handoff.py` 是正式交接的单命令入口，会依次导出 artifact、校验 artifact、打包 zip、复验 zip，并输出最终交接报告；如果需要定位某一步问题，可继续使用下面四条分步命令。`scripts/export_release_artifacts.py` 会一次性生成 `openapi.json`、`demo-summary.json` 和 `release-manifest.json`，用于前后端、评审或发布交接。manifest 会记录来源 git commit/branch、导出时 worktree 是否 dirty，以及三个文件的 SHA256 校验和；`scripts/validate_release_artifacts.py` 会校验 artifact 路径本身是否为目录、交接包文件是否齐全、是否可读取、是否包含额外文件、校验和是否匹配、版本是否一致、演示摘要是否 ready，以及 OpenAPI 是否包含基础路径、`system` tag metadata 和 `ErrorResponse` schema。`scripts/package_release_artifacts.py` 会先校验目录，再打包为单个 zip，并输出 `artifact_names`、包的 SHA256、demo readiness、导出格式、`demo_export_audit_entry_counts`、`reaction_set_verified_by` 和 `reaction_set_verified_at`；zip 输出路径必须放在 artifact 目录外，避免覆盖或污染 handoff 文件。`scripts/validate_release_package.py` 会解压并复验 zip 内 artifacts，防止交接文件被篡改或缺项，并在报告中透传同一组 demo 证据。正式交接前可追加 `--require-clean-source`，要求 manifest 里的 `source.git_dirty=false`。服务启动后也可以直接访问 live schema 与交互文档：`http://127.0.0.1:8000/openapi.json`、`http://127.0.0.1:8000/docs` 和 `http://127.0.0.1:8000/redoc`。`python scripts/health_check.py --check-openapi` 会探测 live `/openapi.json` 并校验基础 schema 契约；`--require-openapi` 会在 schema 不可访问或缺少必需路径、tag、错误响应模型时返回非零。
 
 导入离线样例论文和 PDF 文档：
 
