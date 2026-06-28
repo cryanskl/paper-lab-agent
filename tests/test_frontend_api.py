@@ -1346,6 +1346,31 @@ def test_reaction_set_review_state_skips_malformed_reactions():
     assert state["export_blocked"] is True
 
 
+def test_reaction_set_review_state_skips_reactions_without_valid_id():
+    from app import frontend_api
+
+    valid_unverified = {"id": 2, "reaction": "e + Ar -> 2e + Ar+", "verified": False}
+
+    state = frontend_api.reaction_set_review_state(
+        {
+            "status": "pending",
+            "reactions": [
+                {"reaction": "missing id", "verified": False},
+                {"id": "2", "reaction": "string id", "verified": False},
+                {"id": True, "reaction": "bool id", "verified": False},
+                valid_unverified,
+            ],
+        }
+    )
+
+    assert state["reactions"] == [valid_unverified]
+    assert state["unverified_reactions"] == [valid_unverified]
+    assert state["reaction_count"] == 1
+    assert state["verified_count"] == 0
+    assert state["unverified_count"] == 1
+    assert state["export_blocked"] is True
+
+
 def test_reaction_set_review_state_handles_malformed_counts_and_export_ready():
     from app import frontend_api
 
@@ -1554,6 +1579,33 @@ def test_reaction_review_list_state_skips_malformed_reactions():
 
     state = frontend_api.reaction_review_list_state(
         ["bad-reaction", valid_verified, valid_unverified],
+        only_unverified=True,
+    )
+
+    assert state == {
+        "display_reactions": [valid_unverified],
+        "total_count": 2,
+        "display_count": 1,
+        "unverified_count": 1,
+        "mode": "unverified",
+        "summary": "当前显示未复核: 1/2 · 已隐藏已复核: 1",
+    }
+
+
+def test_reaction_review_list_state_skips_reactions_without_valid_id():
+    from app import frontend_api
+
+    valid_verified = {"id": 1, "reaction": "e + Ar -> e + Ar", "verified": True}
+    valid_unverified = {"id": 2, "reaction": "e + Ar -> 2e + Ar+", "verified": False}
+
+    state = frontend_api.reaction_review_list_state(
+        [
+            {"reaction": "missing id", "verified": False},
+            {"id": "2", "reaction": "string id", "verified": False},
+            {"id": False, "reaction": "bool id", "verified": False},
+            valid_verified,
+            valid_unverified,
+        ],
         only_unverified=True,
     )
 

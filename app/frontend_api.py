@@ -1235,7 +1235,13 @@ def int_or_default(value: Any, default: int) -> int:
 def reaction_items(reactions: Any) -> list[dict[str, Any]]:
     if not isinstance(reactions, list):
         return []
-    return [reaction for reaction in reactions if isinstance(reaction, dict)]
+    return [
+        reaction
+        for reaction in reactions
+        if isinstance(reaction, dict)
+        and isinstance(reaction.get("id"), int)
+        and not isinstance(reaction.get("id"), bool)
+    ]
 
 
 def reaction_set_review_state(detail: dict[str, Any]) -> dict[str, Any]:
