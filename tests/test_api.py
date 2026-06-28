@@ -13797,6 +13797,22 @@ def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
         "config_warning_codes": ["missing_llm_api_key"],
         "storage_writable": True,
         "storage_errors": [],
+        "storage_health": {
+            "data_dir": {"path": "/tmp/data", "exists": True, "writable": True},
+            "pdf_dir": {"path": "/tmp/data/pdfs", "exists": True, "writable": True},
+            "tei_dir": {"path": "/tmp/data/tei", "exists": True, "writable": True},
+            "translation_dir": {"path": "/tmp/data/translations", "exists": True, "writable": True},
+            "export_dir": {"path": "/tmp/data/exports", "exists": True, "writable": True},
+            "database": {"path": "/tmp/plasma.db", "exists": True, "writable": True},
+            "database_parent": {"path": "/tmp", "exists": True, "writable": True},
+            "vector_db_parent": {"path": "/tmp/data", "exists": True, "writable": True},
+            "vector_db": {
+                "path": "/tmp/data/vector-index.json",
+                "exists": False,
+                "readable": False,
+                "writable": False,
+            },
+        },
     }
     assert "health" not in summary
     assert "status" not in summary
@@ -14084,6 +14100,59 @@ def test_health_check_summary_only_includes_storage_errors():
         "database_parent.writable",
         "vector_db.valid_json",
     ]
+
+
+def test_health_check_summary_only_includes_storage_health_details():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_summary_storage_health", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [],
+        "storage_health": health_check_storage_health(
+            database_parent={"path": "/tmp", "exists": True, "writable": True},
+            vector_db_parent={"path": "/tmp/data", "exists": True, "writable": True},
+            vector_db={
+                "path": "/tmp/data/vector-index.json",
+                "exists": True,
+                "readable": True,
+                "writable": True,
+                "valid_json": True,
+                "error": None,
+            },
+        ),
+        "counts": health_check_counts(),
+        "demo_data": health_check_demo_data(),
+        "release_readiness": health_check_release_readiness(),
+        "status_counts": health_check_status_counts(),
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
+    assert summary["storage_health"]["database_parent"] == {
+        "path": "/tmp",
+        "exists": True,
+        "writable": True,
+    }
+    assert summary["storage_health"]["vector_db_parent"] == {
+        "path": "/tmp/data",
+        "exists": True,
+        "writable": True,
+    }
+    assert summary["storage_health"]["vector_db"] == {
+        "path": "/tmp/data/vector-index.json",
+        "exists": True,
+        "readable": True,
+        "writable": True,
+        "valid_json": True,
+    }
 
 
 def test_health_check_summary_only_includes_frontend_probe(monkeypatch, capsys):

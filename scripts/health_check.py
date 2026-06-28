@@ -52,6 +52,17 @@ STORAGE_HEALTH_REQUIRED_KEYS = {
     "vector_db_parent",
     "vector_db",
 }
+STORAGE_HEALTH_SUMMARY_KEYS = (
+    "data_dir",
+    "pdf_dir",
+    "tei_dir",
+    "translation_dir",
+    "export_dir",
+    "database",
+    "database_parent",
+    "vector_db_parent",
+    "vector_db",
+)
 STORAGE_HEALTH_ENTRY_REQUIRED_KEYS = {"path", "exists", "writable"}
 STORAGE_HEALTH_PATH_KEYS = {"data_dir", "pdf_dir", "tei_dir", "translation_dir", "export_dir"}
 VECTOR_DB_HEALTH_REQUIRED_KEYS = {"path", "exists", "readable", "writable", "valid_json", "error"}
@@ -701,6 +712,32 @@ def release_readiness_blockers(readiness: dict) -> list[str]:
     return ["ready=false"]
 
 
+def storage_health_summary(status: dict) -> dict:
+    storage_health = status.get("storage_health")
+    if not isinstance(storage_health, dict):
+        return {}
+
+    summary: dict[str, dict] = {}
+    for key in STORAGE_HEALTH_SUMMARY_KEYS:
+        entry = storage_health.get(key)
+        if not isinstance(entry, dict):
+            continue
+        compact_entry = {}
+        path = entry.get("path")
+        if isinstance(path, str):
+            compact_entry["path"] = path
+        for field in ("exists", "readable", "writable", "valid_json"):
+            value = entry.get(field)
+            if isinstance(value, bool):
+                compact_entry[field] = value
+        error = entry.get("error")
+        if isinstance(error, str) and error.strip():
+            compact_entry["error"] = error
+        if compact_entry:
+            summary[key] = compact_entry
+    return summary
+
+
 def probe_blocker(prefix: str, detail: Optional[dict]) -> Optional[str]:
     if not isinstance(detail, dict):
         return None
@@ -798,6 +835,7 @@ def health_summary(
         "config_warning_codes": config_warning_codes,
         "storage_writable": storage_errors == [],
         "storage_errors": storage_errors,
+        "storage_health": storage_health_summary(safe_status),
     }
     if frontend is not None:
         summary.update(
