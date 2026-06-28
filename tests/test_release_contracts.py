@@ -4276,6 +4276,52 @@ def test_build_release_handoff_removes_stale_package_on_artifact_validation_fail
     assert "checksum mismatch: demo-summary.json" in report["issues"]
 
 
+def test_build_release_handoff_removes_package_on_package_validation_failure(monkeypatch, tmp_path):
+    build_release_handoff = load_build_release_handoff()
+    artifact_dir = tmp_path / "release"
+    package_path = tmp_path / "paper-lab-agent-release.zip"
+
+    def fake_export_release_artifacts(output_dir, *, compact=False):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return {"service": "paper-lab-agent", "version": "0.1.0"}
+
+    def fake_validate_release_artifacts(output_dir, *, require_clean_source=False):
+        return {"ok": True, "artifact_dir": str(output_dir), "issues": []}
+
+    def fake_package_release_artifacts(output_dir, output_path, *, require_clean_source=False):
+        output_path.write_bytes(b"invalid release package")
+        return {
+            "ok": True,
+            "artifact_dir": str(output_dir),
+            "package_path": str(output_path),
+            "package_sha256": "a" * 64,
+            "artifact_names": ["demo-summary.json", "openapi.json", "release-manifest.json"],
+            "issues": [],
+        }
+
+    def fake_validate_release_package(output_path, *, require_clean_source=False):
+        return {
+            "ok": False,
+            "package_path": str(output_path),
+            "package_sha256": "a" * 64,
+            "artifact_names": ["demo-summary.json", "openapi.json", "release-manifest.json"],
+            "issues": ["release package invalid zip: bad central directory"],
+        }
+
+    monkeypatch.setattr(build_release_handoff, "export_release_artifacts", fake_export_release_artifacts)
+    monkeypatch.setattr(build_release_handoff, "validate_release_artifacts", fake_validate_release_artifacts)
+    monkeypatch.setattr(build_release_handoff, "package_release_artifacts", fake_package_release_artifacts)
+    monkeypatch.setattr(build_release_handoff, "validate_release_package", fake_validate_release_package)
+
+    report = build_release_handoff.build_release_handoff(artifact_dir, package_path)
+
+    assert report["ok"] is False
+    assert report["stage"] == "validate_package"
+    assert not package_path.exists()
+    assert report["package_sha256"] == "a" * 64
+    assert "release package invalid zip: bad central directory" in report["issues"]
+
+
 def test_release_docs_explain_single_command_handoff_builder():
     repo = Path(__file__).resolve().parent.parent
     readme = (repo / "README.md").read_text(encoding="utf-8")

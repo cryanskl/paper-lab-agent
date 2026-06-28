@@ -133,7 +133,7 @@ def build_release_handoff(
         require_clean_source=require_clean_source,
     )
     if package_validation.get("ok") is not True:
-        return failed_report(
+        return failed_report_after_stale_package_cleanup(
             "validate_package",
             package_validation,
             artifact_dir=artifact_dir,
