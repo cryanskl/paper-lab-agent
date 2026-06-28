@@ -48,6 +48,7 @@ from app.frontend_api import (
     request_json,
     request_json_status,
     storage_health_caption_rows,
+    system_count_metric_rows,
     status_count_rows,
     translation_download,
     translation_status_rows,
@@ -112,9 +113,10 @@ with st.sidebar:
         st.error(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
         st.stop()
-    st.metric("期刊", status["counts"]["journals"])
-    st.metric("论文", status["counts"]["papers"])
-    st.metric("文档", status["counts"]["documents"])
+    for row in system_count_metric_rows(status.get("counts")):
+        st.metric(row["label"], row["value"])
+        if row.get("warning"):
+            st.warning(row["warning"])
     release_readiness = status.get("release_readiness") or {}
     st.subheader("发布就绪")
     release_display = release_readiness_display_state(release_readiness)

@@ -317,6 +317,22 @@ def test_demo_data_display_state_blocks_malformed_demo_data_object():
     assert state["missing"] == ["demo_data:invalid"]
 
 
+def test_system_count_metric_rows_blocks_malformed_counts_objects():
+    from app import frontend_api
+
+    rows = frontend_api.system_count_metric_rows(["counts"])
+
+    assert rows == [{"label": "系统计数", "value": "invalid", "warning": "counts: invalid"}]
+
+    nested_rows = frontend_api.system_count_metric_rows({"journals": False, "papers": 2, "documents": 1})
+
+    assert nested_rows == [
+        {"label": "期刊", "value": "invalid", "warning": "counts.journals: invalid"},
+        {"label": "论文", "value": 2, "warning": None},
+        {"label": "文档", "value": 1, "warning": None},
+    ]
+
+
 def test_storage_health_caption_rows_include_parent_dirs_and_vector_json_state():
     from app import frontend_api
 

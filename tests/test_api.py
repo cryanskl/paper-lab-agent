@@ -18018,6 +18018,23 @@ def test_streamlit_sidebar_exposes_runtime_status():
         assert required in sidebar_section
 
 
+def test_streamlit_sidebar_uses_safe_system_count_metrics():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+
+    for required in [
+        "system_count_metric_rows",
+        'system_count_metric_rows(status.get("counts"))',
+        'st.metric(row["label"], row["value"])',
+        'row.get("warning")',
+    ]:
+        assert required in sidebar_section
+    assert 'status["counts"]["journals"]' not in sidebar_section
+    assert 'status["counts"]["papers"]' not in sidebar_section
+    assert 'status["counts"]["documents"]' not in sidebar_section
+
+
 def test_streamlit_sidebar_exposes_external_capability_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

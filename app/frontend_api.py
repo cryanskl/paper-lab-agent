@@ -218,6 +218,26 @@ def demo_data_display_state(demo_data: Any) -> dict[str, Any]:
     return {"ready": False, "missing": ["ready=false"]}
 
 
+SYSTEM_COUNT_METRICS = [
+    ("期刊", "journals"),
+    ("论文", "papers"),
+    ("文档", "documents"),
+]
+
+
+def system_count_metric_rows(counts: Any) -> list[dict[str, Any]]:
+    if not isinstance(counts, dict):
+        return [{"label": "系统计数", "value": "invalid", "warning": "counts: invalid"}]
+    rows: list[dict[str, Any]] = []
+    for label, key in SYSTEM_COUNT_METRICS:
+        value = counts.get(key)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            rows.append({"label": label, "value": "invalid", "warning": f"counts.{key}: invalid"})
+            continue
+        rows.append({"label": label, "value": value, "warning": None})
+    return rows
+
+
 STORAGE_HEALTH_DISPLAY_KEYS = [
     "data_dir",
     "pdf_dir",
