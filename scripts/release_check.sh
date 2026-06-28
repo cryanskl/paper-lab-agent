@@ -69,6 +69,18 @@ if "system" not in tag_names:
     raise SystemExit("release_check failed: OpenAPI missing system tag metadata")
 if "ErrorResponse" not in payload.get("components", {}).get("schemas", {}):
     raise SystemExit("release_check failed: OpenAPI missing ErrorResponse schema")
+config_warning = payload.get("components", {}).get("schemas", {}).get("ConfigWarningResponse", {})
+config_warning_fields = set((config_warning.get("properties") or {})) | set(config_warning.get("required") or [])
+missing_config_warning_fields = [
+    field
+    for field in ["code", "capability", "message", "actual", "supported"]
+    if field not in config_warning_fields
+]
+if missing_config_warning_fields:
+    raise SystemExit(
+        "release_check failed: OpenAPI ConfigWarningResponse missing fields: "
+        + ", ".join(missing_config_warning_fields)
+    )
 PY
 rm -f "${OPENAPI_JSON}"
 DEV_CHECK_JSON="$("${PYTHON_CMD[@]}" - <<'PY'

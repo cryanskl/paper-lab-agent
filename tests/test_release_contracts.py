@@ -2578,6 +2578,8 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert 'doctor.get("warning_count") != 3' in release_check
     assert 'doctor.get("warning_codes") != ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]' in release_check
     assert "release_check failed: doctor preflight summary" in release_check
+    assert "ConfigWarningResponse" in release_check
+    assert "release_check failed: OpenAPI ConfigWarningResponse missing fields" in release_check
 
 
 def test_release_check_compiles_application_package():
@@ -8226,6 +8228,155 @@ def test_api_contract_validator_reports_missing_system_status_nested_field():
     issues = validate_api_contract.system_status_response_contract_issues(openapi=openapi)
 
     assert issues == ["GET /api/v1/system/status runtime missing fields: version"]
+
+
+def test_api_contract_validator_reports_missing_config_warning_detail_fields():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/system/status": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": [
+                                            "database_path",
+                                            "runtime",
+                                            "config_warnings",
+                                            "storage",
+                                            "storage_health",
+                                            "external_capabilities",
+                                            "status_counts",
+                                            "counts",
+                                            "demo_data",
+                                            "release_readiness",
+                                        ],
+                                        "properties": {
+                                            "database_path": {"type": "string"},
+                                            "runtime": {
+                                                "type": "object",
+                                                "required": [
+                                                    "api_prefix",
+                                                    "scheduler_enabled",
+                                                    "scheduler_jobs",
+                                                    "version",
+                                                ],
+                                                "properties": {
+                                                    "api_prefix": {"type": "string"},
+                                                    "scheduler_enabled": {"type": "boolean"},
+                                                    "scheduler_jobs": {"type": "array"},
+                                                    "version": {"type": "string"},
+                                                },
+                                            },
+                                            "config_warnings": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": ["code", "capability", "message"],
+                                                    "properties": {
+                                                        "code": {"type": "string"},
+                                                        "capability": {"type": "string"},
+                                                        "message": {"type": "string"},
+                                                    },
+                                                },
+                                            },
+                                            "storage": {"type": "object"},
+                                            "storage_health": {
+                                                "type": "object",
+                                                "required": [
+                                                    "data_dir",
+                                                    "pdf_dir",
+                                                    "tei_dir",
+                                                    "translation_dir",
+                                                    "export_dir",
+                                                    "database",
+                                                    "database_parent",
+                                                    "vector_db_parent",
+                                                    "vector_db",
+                                                ],
+                                                "properties": {
+                                                    "data_dir": {"type": "object"},
+                                                    "pdf_dir": {"type": "object"},
+                                                    "tei_dir": {"type": "object"},
+                                                    "translation_dir": {"type": "object"},
+                                                    "export_dir": {"type": "object"},
+                                                    "database": {"type": "object"},
+                                                    "database_parent": {"type": "object"},
+                                                    "vector_db_parent": {"type": "object"},
+                                                    "vector_db": {"type": "object"},
+                                                },
+                                            },
+                                            "external_capabilities": {
+                                                "type": "object",
+                                                "required": [
+                                                    "openalex_mailto",
+                                                    "unpaywall_email",
+                                                    "grobid_url",
+                                                    "grobid",
+                                                    "llm_api_key",
+                                                    "translation_adapter",
+                                                    "llm_model",
+                                                    "embedding_model",
+                                                    "vector_db_backend",
+                                                ],
+                                                "properties": {
+                                                    "openalex_mailto": {"type": "boolean"},
+                                                    "unpaywall_email": {"type": "boolean"},
+                                                    "grobid_url": {"type": "string"},
+                                                    "grobid": {"type": "object"},
+                                                    "llm_api_key": {"type": "boolean"},
+                                                    "translation_adapter": {"type": "string"},
+                                                    "llm_model": {"type": "string"},
+                                                    "embedding_model": {"type": "string"},
+                                                    "vector_db_backend": {"type": "string"},
+                                                },
+                                            },
+                                            "status_counts": {"type": "object"},
+                                            "counts": {"type": "object"},
+                                            "demo_data": {
+                                                "type": "object",
+                                                "required": ["ready", "requirements", "missing", "counts"],
+                                                "properties": {
+                                                    "ready": {"type": "boolean"},
+                                                    "requirements": {"type": "object"},
+                                                    "missing": {"type": "array"},
+                                                    "counts": {"type": "object"},
+                                                },
+                                            },
+                                            "release_readiness": {
+                                                "type": "object",
+                                                "required": [
+                                                    "ready",
+                                                    "demo_data_missing",
+                                                    "failed_workflows",
+                                                    "config_warning_codes",
+                                                    "storage_errors",
+                                                ],
+                                                "properties": {
+                                                    "ready": {"type": "boolean"},
+                                                    "demo_data_missing": {"type": "array"},
+                                                    "failed_workflows": {"type": "array"},
+                                                    "config_warning_codes": {"type": "array"},
+                                                    "storage_errors": {"type": "array"},
+                                                },
+                                            },
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.system_status_response_contract_issues(openapi=openapi)
+
+    assert issues == ["GET /api/v1/system/status config_warnings item fields missing: actual, supported"]
 
 
 def test_api_contract_validator_reports_missing_rag_response_field():

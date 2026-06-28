@@ -113,6 +113,7 @@ SYSTEM_STATUS_RESPONSE_FIELDS = (
     "demo_data",
     "release_readiness",
 )
+CONFIG_WARNING_RESPONSE_FIELDS = ("code", "capability", "message", "actual", "supported")
 SYSTEM_STATUS_NESTED_FIELDS = {
     "runtime": ("api_prefix", "scheduler_enabled", "scheduler_jobs", "version"),
     "demo_data": ("ready", "requirements", "missing", "counts"),
@@ -712,6 +713,14 @@ def system_status_response_contract_issues(openapi: dict | None = None) -> list[
         ]
         if missing_nested:
             return [f"{method} {path} {field} missing fields: {', '.join(missing_nested)}"]
+
+    config_warnings_schema = schema_property(schema, "config_warnings", source_openapi)
+    config_warning_item_schema = effective_schema(config_warnings_schema.get("items", {}), source_openapi)
+    missing_config_warning = [
+        field for field in CONFIG_WARNING_RESPONSE_FIELDS if not schema_declares_fields(config_warning_item_schema, (field,))
+    ]
+    if missing_config_warning:
+        return [f"{method} {path} config_warnings item fields missing: {', '.join(missing_config_warning)}"]
     return []
 
 
