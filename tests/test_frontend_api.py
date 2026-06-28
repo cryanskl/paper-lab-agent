@@ -627,6 +627,22 @@ def test_crawl_job_option_label_uses_fallbacks_for_sparse_jobs():
     assert label == "#9 · journal - · unknown"
 
 
+def test_crawl_job_items_skip_malformed_items():
+    from app import frontend_api
+
+    valid_job = {"id": 9, "status": "success"}
+
+    assert frontend_api.crawl_job_items(
+        [
+            "bad-job",
+            {"status": "missing id"},
+            {"id": "9", "status": "string id"},
+            {"id": False, "status": "bool id"},
+            valid_job,
+        ]
+    ) == [valid_job]
+
+
 def test_reaction_review_rows_can_focus_unverified_source_metadata():
     from app import frontend_api
 

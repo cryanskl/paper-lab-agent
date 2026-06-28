@@ -9,6 +9,7 @@ from app.frontend_api import (
     category_parent_options,
     config_warning_rows,
     crawl_job_diagnostic_rows,
+    crawl_job_items,
     crawl_job_option_label,
     crawl_job_rows,
     crawl_journal_option_label,
@@ -392,7 +393,7 @@ with search_tab:
         st.error(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
         st.stop()
-    jobs = crawl_jobs_response["items"]
+    jobs = crawl_job_items(crawl_jobs_response["items"])
     st.caption(
         f"crawl jobs page {crawl_jobs_response['page']} · "
         f"page_size {crawl_jobs_response['page_size']} · "

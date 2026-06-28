@@ -622,6 +622,16 @@ def document_filter_summary(total_count: int, filtered_count: int, filter_value:
     return f"当前页匹配 {filtered_count}/{total_count} · 筛选: {filter_value}"
 
 
+def crawl_job_items(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        job
+        for job in jobs
+        if isinstance(job, dict)
+        and isinstance(job.get("id"), int)
+        and not isinstance(job.get("id"), bool)
+    ]
+
+
 def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for job in jobs:

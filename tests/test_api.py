@@ -18253,12 +18253,13 @@ def test_streamlit_crawl_jobs_exposes_pagination_controls():
         "crawl_jobs_page_size = crawl_jobs_page_size_col.number_input(",
         '"crawl_jobs_page_size"',
         'crawl_jobs_response = api_get("/crawl/jobs", page=int(crawl_jobs_page), page_size=int(crawl_jobs_page_size))',
-        'jobs = crawl_jobs_response["items"]',
+        'jobs = crawl_job_items(crawl_jobs_response["items"])',
         "crawl_jobs_response['page']",
         "crawl_jobs_response['page_size']",
         "crawl_jobs_response['total']",
     ]:
         assert required in search_section
+    assert 'jobs = crawl_jobs_response["items"]' not in search_section
 
 
 def test_streamlit_crawl_jobs_list_errors_show_payload_details():
