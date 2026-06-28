@@ -337,7 +337,7 @@ def failed_workflow_errors(status_counts: dict) -> list[str]:
     for workflow, counts in status_counts.items():
         if not isinstance(counts, dict):
             continue
-        for blocking_status in ("failed", "rejected"):
+        for blocking_status in ("failed", "rejected", "unknown"):
             count = counts.get(blocking_status)
             if isinstance(count, int) and not isinstance(count, bool) and count > 0:
                 errors.append(f"{workflow}.{blocking_status}={count}")
