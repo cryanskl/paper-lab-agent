@@ -707,7 +707,7 @@ def api_release_readiness(status: dict) -> Optional[dict]:
         "ready": readiness.get("ready") is True,
         "demo_data_missing": list_values(readiness.get("demo_data_missing"), invalid_label="invalid"),
         "failed_workflows": list_values(readiness.get("failed_workflows"), invalid_label="invalid"),
-        "config_warning_codes": list_values(readiness.get("config_warning_codes")),
+        "config_warning_codes": list_values(readiness.get("config_warning_codes"), invalid_label="invalid"),
         "storage_errors": list_values(readiness.get("storage_errors"), invalid_label="invalid"),
     }
 
@@ -725,7 +725,7 @@ def release_readiness_blockers(readiness: dict) -> list[str]:
     blockers.extend(
         f"config_warning_codes:{value}"
         for value in readiness.get("config_warning_codes", [])
-        if value in RELEASE_BLOCKING_CONFIG_WARNING_CODES
+        if value == "invalid" or value in RELEASE_BLOCKING_CONFIG_WARNING_CODES
     )
     if blockers:
         return blockers
