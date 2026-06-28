@@ -219,6 +219,13 @@ def first_symlink_parent(path: Path) -> Path | None:
     return None
 
 
+def first_non_directory_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if parent.exists() and not parent.is_dir():
+            return parent
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate required keys in .env.example")
     parser.add_argument("path", nargs="?", default=".env.example", help="Path to env example file")
@@ -233,12 +240,16 @@ def main() -> int:
         return 1
 
     path = Path(args.path)
-    if not path.exists():
-        print(f"env example not found: {path}", file=sys.stderr)
-        return 1
     symlink_parent = first_symlink_parent(path)
     if symlink_parent is not None:
         print(f"env example parent is not a regular directory: {symlink_parent}", file=sys.stderr)
+        return 1
+    non_directory_parent = first_non_directory_parent(path)
+    if non_directory_parent is not None:
+        print(f"env example parent is not a regular directory: {non_directory_parent}", file=sys.stderr)
+        return 1
+    if not path.exists():
+        print(f"env example not found: {path}", file=sys.stderr)
         return 1
     if path.is_symlink() or not path.is_file():
         print(f"env example is not a regular file: {path}", file=sys.stderr)
