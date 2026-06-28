@@ -364,6 +364,125 @@ print(json.dumps(payload, ensure_ascii=False))
 PY
 )"
 printf '%s\n' "${PREPARE_DEMO_JSON}"
+LIVE_HEALTH_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<'PY'
+import json
+import os
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+
+
+def free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def wait_for_health(url: str, timeout_seconds: float) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    last_error = None
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=1) as response:
+                if response.status == 200:
+                    return
+        except (OSError, urllib.error.URLError) as exc:
+            last_error = exc
+        time.sleep(0.25)
+    raise RuntimeError(f"timed out waiting for {url}: {last_error}")
+
+
+with tempfile.TemporaryDirectory(prefix="paper-lab-live-health-") as data_dir:
+    api_port = free_port()
+    api_base_url = f"http://127.0.0.1:{api_port}/api/v1"
+    env = os.environ.copy()
+    env.update(
+        {
+            "PAPER_LAB_DATA_DIR": data_dir,
+            "PAPER_LAB_SCHEDULER_ENABLED": "false",
+        }
+    )
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+    prepare_result = subprocess.run(
+        [sys.executable, "scripts/prepare_demo_data.py", "--summary-only", "--compact"],
+        text=True,
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+    prepare_summary = json.loads(prepare_result.stdout)
+    if prepare_summary.get("ready") is not True:
+        print(
+            f"release_check failed: live health demo summary={prepare_summary!r}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    server = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "app.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(api_port),
+            "--log-level",
+            "warning",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
+    try:
+        wait_for_health(f"{api_base_url}/health", timeout_seconds=30)
+        health_result = subprocess.run(
+            [
+                sys.executable,
+                "scripts/health_check.py",
+                "--base-url",
+                api_base_url,
+                "--require-release-ready",
+                "--summary-only",
+                "--compact",
+            ],
+            text=True,
+            capture_output=True,
+            check=True,
+            env=env,
+        )
+        health_summary = json.loads(health_result.stdout)
+        if health_summary.get("release_ready") is not True:
+            print(
+                f"release_check failed: live health_check summary={health_summary!r}",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+    finally:
+        server.terminate()
+        try:
+            server.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.communicate(timeout=5)
+print(json.dumps(health_summary, ensure_ascii=False))
+PY
+)"
+printf '%s\n' "${LIVE_HEALTH_JSON}"
 RELEASE_ARTIFACTS_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<'PY'
 import json
 import os

@@ -123,7 +123,7 @@ python scripts/doctor.py --strict --compact
 bash scripts/release_check.sh
 ```
 
-这两条命令会执行与 CI 相同的离线发布检查：先用 strict doctor 阻断缺失依赖或关键文件，再校验启动脚本语法、`git diff --check`、`git diff --cached --check`、编译关键脚本、检查 scripts 目录下所有 Python 脚本的 `--help` 入口以提前发现 CLI 参数或 import path 问题，并运行全量测试。
+这两条命令会执行与 CI 相同的离线发布检查：先用 strict doctor 阻断缺失依赖或关键文件，再校验启动脚本语法、`git diff --check`、`git diff --cached --check`、编译关键脚本、检查 scripts 目录下所有 Python 脚本的 `--help` 入口以提前发现 CLI 参数或 import path 问题。release gate also starts a live API with prepared demo data and runs `scripts/health_check.py --require-release-ready` before running the full test suite.
 发布或演示前的完整检查顺序见 [docs/release-checklist.md](docs/release-checklist.md)。
 
 `python scripts/health_check.py --check-frontend` 会额外探测 Streamlit `/_stcore/health`，用于确认 `scripts/dev.sh` 启动后的后端和前端都可访问。

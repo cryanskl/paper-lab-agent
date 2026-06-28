@@ -2583,6 +2583,10 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert "RELEASE_HELP_SCRIPTS=(" in release_check
     assert '"${script}" --help' in release_check
     assert "scripts/doctor.py --strict --compact" in release_check
+    assert "scripts/health_check.py" in release_check
+    assert "--require-release-ready" in release_check
+    assert "release_check failed: live health_check summary" in release_check
+    assert "uvicorn" in release_check
     assert "DOCTOR_JSON=" in release_check
     assert 'doctor.get("warning_count") != 3' in release_check
     assert 'expected_doctor_warning_codes = ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]' in release_check
@@ -2600,6 +2604,8 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert 'env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" -m pytest -q' in release_check
     assert "release gate runs default offline preflight with optional external env cleared" in readme
     assert "default offline preflight with optional external env cleared" in checklist
+    assert "release gate also starts a live API with prepared demo data" in readme
+    assert "live API with prepared demo data" in checklist
     assert "release_check failed: doctor preflight summary" in release_check
     assert "ConfigWarningResponse" in release_check
     assert "release_check failed: OpenAPI ConfigWarningResponse missing fields" in release_check
