@@ -456,7 +456,7 @@ def missing_python_script_options(repo: Path, readme_path: Path) -> list[str]:
 def command_doc_paths(repo: Path) -> list[tuple[Path, str]]:
     docs = [(repo / "README.md", "README.md")]
     release_checklist = repo / "docs" / "release-checklist.md"
-    if release_checklist.exists():
+    if release_checklist.exists() or first_non_directory_parent(release_checklist) is not None:
         docs.append((release_checklist, "docs/release-checklist.md"))
     return docs
 
@@ -480,6 +480,8 @@ def first_non_directory_parent(path: Path) -> Path | None:
 
 def missing_command_targets_for_doc(repo: Path, doc_path: Path, label: str) -> list[str]:
     if first_symlink_parent(doc_path) is not None:
+        return [f"{label}: command doc parent is not a regular directory"]
+    if first_non_directory_parent(doc_path) is not None:
         return [f"{label}: command doc parent is not a regular directory"]
     if doc_path.is_symlink() or not doc_path.is_file():
         return [f"{label}: command doc is not a regular file"]
