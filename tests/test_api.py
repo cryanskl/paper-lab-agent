@@ -14527,6 +14527,39 @@ def test_health_check_summary_only_reports_release_ready_when_gates_are_clean():
     assert summary["storage_errors"] == []
 
 
+def test_health_check_summary_blocks_malformed_fallback_workflow_counts():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_summary_malformed_workflows", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [],
+        "storage_health": health_check_storage_health(),
+        "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+        "demo_data": {
+            "ready": True,
+            "requirements": {"papers": 1},
+            "missing": [],
+            "counts": {"papers": 1},
+        },
+        "status_counts": health_check_status_counts(document_parse=[]),
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
+    assert summary["release_ready"] is False
+    assert summary["release_blockers"] == ["failed_workflows:document_parse"]
+    assert summary["workflows_ok"] is False
+    assert summary["failed_workflows"] == ["document_parse"]
+
+
 def test_health_check_summary_prefers_api_release_readiness():
     import importlib.util
 
