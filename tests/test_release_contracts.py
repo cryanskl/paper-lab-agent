@@ -2540,6 +2540,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package.get("demo_export_formats") != ["json", "txt", "bolsig"]' in release_check
     assert 'package.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}' in release_check
     assert 'package.get("demo_export_audit_summary_formats") != ["json", "txt", "bolsig"]' in release_check
+    assert 'package.get("source") != source' in release_check
     assert 'package.get("demo_counts", {}).get("documents") != 1' in release_check
     assert 'package.get("demo_counts", {}).get("reaction_audits") != 1' in release_check
     assert 'package.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"' in release_check
