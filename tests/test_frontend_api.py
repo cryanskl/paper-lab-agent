@@ -1428,6 +1428,23 @@ def test_crawl_journal_options_label_whitelist_choices_for_manual_runs():
     ]
 
 
+def test_crawl_journal_options_skips_malformed_journal_items():
+    from app import frontend_api
+
+    options = frontend_api.crawl_journal_options(
+        [
+            "bad",
+            {"id": 8},
+            {"id": 9, "name": "Valid Journal", "issn_print": None, "issn_electronic": None},
+        ]
+    )
+
+    assert options == [
+        {"label": "全部 active 期刊", "journal_id": None},
+        {"label": "#9 · Valid Journal", "journal_id": 9},
+    ]
+
+
 def test_crawl_journal_option_label_returns_prebuilt_label():
     from app import frontend_api
 

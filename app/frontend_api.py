@@ -446,9 +446,17 @@ def config_warning_rows(config_warnings: Any) -> list[dict[str, str]]:
 def crawl_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     options = [{"label": "全部 active 期刊", "journal_id": None}]
     for journal in journals:
+        if not isinstance(journal, dict):
+            continue
+        journal_id = journal.get("id")
+        name = journal.get("name")
+        if isinstance(journal_id, bool) or not isinstance(journal_id, int):
+            continue
+        if not isinstance(name, str) or not name.strip():
+            continue
         issn_label = " / ".join(compact_parts([journal.get("issn_print"), journal.get("issn_electronic")]))
         suffix = f" · {issn_label}" if issn_label else ""
-        options.append({"label": f"#{journal['id']} · {journal['name']}{suffix}", "journal_id": journal["id"]})
+        options.append({"label": f"#{journal_id} · {name}{suffix}", "journal_id": journal_id})
     return options
 
 
