@@ -359,6 +359,26 @@ def test_storage_health_caption_rows_blocks_malformed_storage_health_object():
     assert rows == [{"kind": "warning", "text": "storage_health: invalid"}]
 
 
+def test_external_capabilities_display_state_blocks_malformed_objects():
+    from app import frontend_api
+
+    state = frontend_api.external_capabilities_display_state(["external"])
+
+    assert state == {
+        "capabilities": {},
+        "grobid": {},
+        "warnings": ["external_capabilities:invalid"],
+    }
+
+    nested_state = frontend_api.external_capabilities_display_state({"grobid": ["bad"]})
+
+    assert nested_state == {
+        "capabilities": {"grobid": ["bad"]},
+        "grobid": {},
+        "warnings": ["grobid:invalid"],
+    }
+
+
 def test_crawl_job_option_label_summarizes_job_status():
     from app import frontend_api
 

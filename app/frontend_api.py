@@ -254,6 +254,25 @@ def storage_health_caption_rows(storage_health: Any) -> list[dict[str, str]]:
     return rows
 
 
+def external_capabilities_display_state(external_capabilities: Any) -> dict[str, Any]:
+    if not isinstance(external_capabilities, dict):
+        return {
+            "capabilities": {},
+            "grobid": {},
+            "warnings": ["external_capabilities:invalid"],
+        }
+    warnings: list[str] = []
+    grobid = external_capabilities.get("grobid") or {}
+    if not isinstance(grobid, dict):
+        grobid = {}
+        warnings.append("grobid:invalid")
+    return {
+        "capabilities": external_capabilities,
+        "grobid": grobid,
+        "warnings": warnings,
+    }
+
+
 def crawl_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     options = [{"label": "全部 active 期刊", "journal_id": None}]
     for journal in journals:

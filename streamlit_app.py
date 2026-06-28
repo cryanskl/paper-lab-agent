@@ -23,6 +23,7 @@ from app.frontend_api import (
     document_section_rows,
     document_status_filter_options,
     document_status_rows,
+    external_capabilities_display_state,
     filter_documents_by_status,
     format_error_payload,
     journal_option_label,
@@ -150,7 +151,11 @@ with st.sidebar:
             st.caption(f"- {job.get('period')} · {job.get('id')} · {job.get('schedule')} {job.get('timezone')}")
     st.caption(f"DB: {status['database_path']}")
     external_capabilities = status.get("external_capabilities", {})
+    external_display = external_capabilities_display_state(external_capabilities)
+    external_capabilities = external_display["capabilities"]
     st.subheader("外部能力")
+    for warning in external_display["warnings"]:
+        st.warning(warning)
     st.caption(f"OpenAlex mailto: {'已配置' if external_capabilities.get('openalex_mailto') else '未配置'}")
     st.caption(f"Unpaywall email: {'已配置' if external_capabilities.get('unpaywall_email') else '未配置'}")
     st.caption(f"GROBID URL: {external_capabilities.get('grobid_url') or '-'}")
@@ -159,7 +164,7 @@ with st.sidebar:
     st.caption(f"LLM model: {external_capabilities.get('llm_model') or '-'}")
     st.caption(f"Embedding: {external_capabilities.get('embedding_model') or '-'}")
     st.caption(f"Vector DB: {external_capabilities.get('vector_db_backend') or '-'}")
-    grobid = external_capabilities.get("grobid") or {}
+    grobid = external_display["grobid"]
     grobid_available = grobid.get("available")
     if grobid_available is True:
         grobid_live = "可用"

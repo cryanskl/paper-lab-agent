@@ -18026,6 +18026,9 @@ def test_streamlit_sidebar_exposes_external_capability_status():
     for required in [
         "外部能力",
         "external_capabilities",
+        "external_capabilities_display_state",
+        "external_display",
+        'external_display["warnings"]',
         "openalex_mailto",
         "unpaywall_email",
         "grobid_url",
@@ -18108,7 +18111,7 @@ def test_streamlit_sidebar_can_check_grobid_live_status():
     for required in [
         "检查 GROBID",
         'api_get("/system/status", check_external=True)',
-        "grobid = external_capabilities.get(\"grobid\") or {}",
+        'grobid = external_display["grobid"]',
         "GROBID live",
         "status_code",
         "error",
