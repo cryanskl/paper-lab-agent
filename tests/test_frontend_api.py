@@ -359,6 +359,20 @@ def test_storage_health_caption_rows_blocks_malformed_storage_health_object():
     assert rows == [{"kind": "warning", "text": "storage_health: invalid"}]
 
 
+def test_storage_health_caption_rows_blocks_malformed_storage_health_entries():
+    from app import frontend_api
+
+    rows = frontend_api.storage_health_caption_rows(
+        {
+            "data_dir": {"path": "data", "exists": True, "writable": True},
+            "database": "bad",
+        }
+    )
+
+    assert {"kind": "warning", "text": "database: invalid"} in rows
+    assert {"kind": "caption", "text": "data_dir: exists · writable · data"} in rows
+
+
 def test_external_capabilities_display_state_blocks_malformed_objects():
     from app import frontend_api
 

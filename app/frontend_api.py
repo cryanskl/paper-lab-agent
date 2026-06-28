@@ -237,6 +237,9 @@ def storage_health_caption_rows(storage_health: Any) -> list[dict[str, str]]:
     rows = []
     for key in STORAGE_HEALTH_DISPLAY_KEYS:
         health_entry = storage_health.get(key) or {}
+        if not isinstance(health_entry, dict):
+            rows.append({"kind": "warning", "text": f"{key}: invalid"})
+            health_entry = {}
         exists_label = "exists" if health_entry.get("exists") else "missing"
         writable_label = "writable" if health_entry.get("writable") else "not writable"
         rows.append(
