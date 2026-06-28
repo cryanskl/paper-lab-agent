@@ -5480,6 +5480,7 @@ def test_release_check_requires_system_storage_health_smoke_metadata():
 
     assert '"system_storage_data_dir_writable": True' in release_text
     assert '"system_storage_database_parent_writable": True' in release_text
+    assert '"system_storage_vector_db_parent_writable": True' in release_text
     assert '"system_storage_vector_db_exists": True' in release_text
     assert '"system_storage_vector_db_valid_json": True' in release_text
 

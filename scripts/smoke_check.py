@@ -658,6 +658,10 @@ def run_smoke() -> dict:
             storage_health["database_parent"]["writable"] is True,
             f"expected writable database parent, got {storage_health}",
         )
+        assert_ok(
+            storage_health["vector_db_parent"]["writable"] is True,
+            f"expected writable vector DB parent, got {storage_health}",
+        )
         assert_ok(storage_health["vector_db"]["exists"] is True, f"expected vector DB file, got {storage_health}")
         assert_ok(
             storage_health["vector_db"]["valid_json"] is True,
@@ -698,6 +702,7 @@ def run_smoke() -> dict:
             "system_grobid_url": external_capabilities["grobid_url"],
             "system_storage_data_dir_writable": storage_health["data_dir"]["writable"],
             "system_storage_database_parent_writable": storage_health["database_parent"]["writable"],
+            "system_storage_vector_db_parent_writable": storage_health["vector_db_parent"]["writable"],
             "system_storage_vector_db_exists": storage_health["vector_db"]["exists"],
             "system_storage_vector_db_valid_json": storage_health["vector_db"]["valid_json"],
             "crawl_jobs": counts["crawl_jobs"],

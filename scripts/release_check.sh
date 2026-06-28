@@ -601,6 +601,7 @@ expected = {
     "system_grobid_url": "http://127.0.0.1:8070",
     "system_storage_data_dir_writable": True,
     "system_storage_database_parent_writable": True,
+    "system_storage_vector_db_parent_writable": True,
     "system_storage_vector_db_exists": True,
     "system_storage_vector_db_valid_json": True,
     "document_detail_has_paper": True,
