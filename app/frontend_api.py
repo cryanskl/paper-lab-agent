@@ -266,10 +266,17 @@ def runtime_status_rows(runtime: Any) -> list[dict[str, str]]:
         if not isinstance(job, dict):
             rows.append({"kind": "warning", "text": "scheduler_jobs: invalid"})
             continue
+        period = job.get("period")
+        job_id = job.get("id")
+        schedule = job.get("schedule")
+        timezone = job.get("timezone")
+        if not all(isinstance(value, str) and value.strip() for value in (period, job_id, schedule, timezone)):
+            rows.append({"kind": "warning", "text": "scheduler_jobs: invalid"})
+            continue
         rows.append(
             {
                 "kind": "caption",
-                "text": f"- {job.get('period')} · {job.get('id')} · {job.get('schedule')} {job.get('timezone')}",
+                "text": f"- {period} · {job_id} · {schedule} {timezone}",
             }
         )
     return rows

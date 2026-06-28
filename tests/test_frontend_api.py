@@ -401,6 +401,29 @@ def test_runtime_status_rows_blocks_malformed_version():
     assert {"kind": "caption", "text": "version: ['0.1.0']"} not in rows
 
 
+def test_runtime_status_rows_blocks_malformed_scheduler_job_fields():
+    from app import frontend_api
+
+    rows = frontend_api.runtime_status_rows(
+        {
+            "api_prefix": "/api/v1",
+            "version": "0.1.0",
+            "scheduler_enabled": False,
+            "scheduler_jobs": [
+                {
+                    "period": ["daily"],
+                    "id": "crawl-daily",
+                    "schedule": "",
+                    "timezone": "UTC",
+                }
+            ],
+        }
+    )
+
+    assert {"kind": "warning", "text": "scheduler_jobs: invalid"} in rows
+    assert {"kind": "caption", "text": "- ['daily'] · crawl-daily ·  UTC"} not in rows
+
+
 def test_database_path_status_row_blocks_malformed_database_path():
     from app import frontend_api
 
