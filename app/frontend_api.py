@@ -226,6 +226,33 @@ def paper_upload_query_params(query: Optional[str]) -> dict[str, Any]:
     return params
 
 
+DOCUMENT_STATUS_FILTERS: dict[str, Optional[tuple[str, str]]] = {
+    "全部": None,
+    "待解析": ("parse_status", "uploaded"),
+    "解析中": ("parse_status", "parsing"),
+    "解析失败": ("parse_status", "failed"),
+    "待索引": ("index_status", "not_indexed"),
+    "索引中": ("index_status", "indexing"),
+    "索引失败": ("index_status", "failed"),
+    "待抽取": ("chemistry_status", "not_extracted"),
+    "抽取中": ("chemistry_status", "extracting"),
+    "抽取失败": ("chemistry_status", "failed"),
+    "抽取被拒绝": ("chemistry_status", "rejected"),
+}
+
+
+def document_status_filter_options() -> list[str]:
+    return list(DOCUMENT_STATUS_FILTERS)
+
+
+def filter_documents_by_status(documents: list[dict[str, Any]], filter_value: str) -> list[dict[str, Any]]:
+    condition = DOCUMENT_STATUS_FILTERS.get(filter_value)
+    if condition is None:
+        return list(documents)
+    field, expected = condition
+    return [document for document in documents if document.get(field) == expected]
+
+
 def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for job in jobs:

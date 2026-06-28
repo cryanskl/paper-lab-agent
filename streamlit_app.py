@@ -19,7 +19,9 @@ from app.frontend_api import (
     document_option_label,
     document_section_option_label,
     document_section_rows,
+    document_status_filter_options,
     document_status_rows,
+    filter_documents_by_status,
     format_error_payload,
     journal_option_label,
     paper_category_option_label,
@@ -636,10 +638,14 @@ with documents_tab:
         f"page_size {documents_response['page_size']} · "
         f"total {documents_response['total']}"
     )
+    document_status_filter = st.selectbox("文档状态筛选", document_status_filter_options(), key="documents-status-filter")
+    display_docs = filter_documents_by_status(docs, document_status_filter)
     if not docs:
         st.info("暂无文档，请先上传 PDF。")
+    elif not display_docs:
+        st.info("暂无匹配文档，请调整文档状态筛选。")
     else:
-        selected = st.selectbox("文档", docs, format_func=document_option_label)
+        selected = st.selectbox("文档", display_docs, format_func=document_option_label)
         try:
             document_detail = api_get(f"/documents/{selected['id']}")
         except FrontendApiError as exc:

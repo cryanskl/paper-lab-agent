@@ -1152,6 +1152,42 @@ def test_paper_upload_query_params_omit_blank_search_text():
     assert params == {"page": 1, "page_size": 100}
 
 
+def test_document_status_filter_options_cover_actionable_workflows():
+    from app import frontend_api
+
+    assert frontend_api.document_status_filter_options() == [
+        "全部",
+        "待解析",
+        "解析中",
+        "解析失败",
+        "待索引",
+        "索引中",
+        "索引失败",
+        "待抽取",
+        "抽取中",
+        "抽取失败",
+        "抽取被拒绝",
+    ]
+
+
+def test_filter_documents_by_status_matches_selected_workflow_state():
+    from app import frontend_api
+
+    documents = [
+        {"id": 1, "parse_status": "uploaded", "index_status": "not_indexed", "chemistry_status": "not_extracted"},
+        {"id": 2, "parse_status": "failed", "index_status": "failed", "chemistry_status": "failed"},
+        {"id": 3, "parse_status": "parsed", "index_status": "indexed", "chemistry_status": "extracted"},
+        {"id": 4, "parse_status": "parsing", "index_status": "indexing", "chemistry_status": "extracting"},
+        {"id": 5, "parse_status": "parsed", "index_status": "indexed", "chemistry_status": "rejected"},
+    ]
+
+    assert [document["id"] for document in frontend_api.filter_documents_by_status(documents, "全部")] == [1, 2, 3, 4, 5]
+    assert [document["id"] for document in frontend_api.filter_documents_by_status(documents, "解析失败")] == [2]
+    assert [document["id"] for document in frontend_api.filter_documents_by_status(documents, "待索引")] == [1]
+    assert [document["id"] for document in frontend_api.filter_documents_by_status(documents, "抽取中")] == [4]
+    assert [document["id"] for document in frontend_api.filter_documents_by_status(documents, "抽取被拒绝")] == [5]
+
+
 def test_document_option_label_surfaces_processing_states():
     from app import frontend_api
 

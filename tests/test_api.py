@@ -16941,6 +16941,22 @@ def test_streamlit_documents_tab_shows_empty_state():
     assert "暂无文档，请先上传 PDF。" in documents_section
 
 
+def test_streamlit_documents_tab_filters_current_page_by_status():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    for required in [
+        'document_status_filter = st.selectbox("文档状态筛选", document_status_filter_options(), key="documents-status-filter")',
+        "display_docs = filter_documents_by_status(docs, document_status_filter)",
+        "elif not display_docs:",
+        "暂无匹配文档，请调整文档状态筛选。",
+        'selected = st.selectbox("文档", display_docs, format_func=document_option_label)',
+    ]:
+        assert required in documents_section
+    assert 'selected = st.selectbox("文档", docs, format_func=document_option_label)' not in documents_section
+
+
 def test_streamlit_documents_list_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
@@ -16961,7 +16977,7 @@ def test_streamlit_document_detail_errors_show_payload_details():
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
     detail_section = documents_section[
-        documents_section.index('selected = st.selectbox("文档", docs, format_func=document_option_label)') :
+        documents_section.index('selected = st.selectbox("文档", display_docs, format_func=document_option_label)') :
         documents_section.index('if document_detail.get("parse_error"):')
     ]
 
