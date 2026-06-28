@@ -306,10 +306,27 @@ def storage_health_caption_rows(storage_health: Any) -> list[dict[str, str]]:
         return [{"kind": "warning", "text": "storage_health: invalid"}]
     rows = []
     for key in STORAGE_HEALTH_DISPLAY_KEYS:
-        health_entry = storage_health.get(key) or {}
+        raw_health_entry = storage_health.get(key)
+        health_entry = raw_health_entry or {}
         if not isinstance(health_entry, dict):
             rows.append({"kind": "warning", "text": f"{key}: invalid"})
             health_entry = {}
+        elif raw_health_entry is not None:
+            path = health_entry.get("path")
+            exists = health_entry.get("exists")
+            writable = health_entry.get("writable")
+            error = health_entry.get("error")
+            valid_json = health_entry.get("valid_json")
+            invalid_fields = (
+                (path is not None and not isinstance(path, str))
+                or (exists is not None and not isinstance(exists, bool))
+                or (writable is not None and not isinstance(writable, bool))
+                or (error is not None and not isinstance(error, str))
+                or (valid_json is not None and not isinstance(valid_json, bool))
+            )
+            if invalid_fields:
+                rows.append({"kind": "warning", "text": f"{key}: invalid"})
+                health_entry = {}
         exists_label = "exists" if health_entry.get("exists") else "missing"
         writable_label = "writable" if health_entry.get("writable") else "not writable"
         rows.append(
