@@ -75,6 +75,26 @@ SECRET_LIKE_ENV_EXAMPLE_KEYS = (
     "UNPAYWALL_EMAIL",
     "LLM_API_KEY",
 )
+OPTIONAL_EXTERNAL_CONFIG = (
+    (
+        "OPENALEX_MAILTO",
+        "openalex_mailto",
+        "missing_openalex_mailto",
+        "OPENALEX_MAILTO is not configured; local offline mode still works.",
+    ),
+    (
+        "UNPAYWALL_EMAIL",
+        "unpaywall_email",
+        "missing_unpaywall_email",
+        "UNPAYWALL_EMAIL is not configured; OA lookup may fail against the public API.",
+    ),
+    (
+        "LLM_API_KEY",
+        "llm_api_key",
+        "missing_llm_api_key",
+        "LLM_API_KEY is not configured; translation uses the local deterministic adapter.",
+    ),
+)
 ENV_EXAMPLE_DEFAULTS = {
     "PAPER_LAB_DATA_DIR": "data",
     "DATABASE_PATH": "data/plasma.db",
@@ -600,6 +620,44 @@ def check_local_storage(repo: Path, env: dict[str, str] | None = None) -> dict[s
     }
 
 
+def check_external_config(repo: Path, env: dict[str, str] | None = None) -> dict[str, Any]:
+    env = env_with_file_values(repo, env)
+    capabilities = {
+        "openalex_mailto": configured_env_value(env.get("OPENALEX_MAILTO")),
+        "unpaywall_email": configured_env_value(env.get("UNPAYWALL_EMAIL")),
+        "grobid_url": configured_text(env.get("GROBID_URL")) or "http://127.0.0.1:8070",
+        "llm_api_key": configured_env_value(env.get("LLM_API_KEY")),
+        "embedding_model": configured_text(env.get("EMBEDDING_MODEL")) or "local-hash",
+        "vector_db_backend": configured_text(env.get("VECTOR_DB_BACKEND")) or "local-json",
+    }
+    warnings = [
+        {
+            "code": code,
+            "capability": capability,
+            "message": message,
+        }
+        for key, capability, code, message in OPTIONAL_EXTERNAL_CONFIG
+        if not configured_env_value(env.get(key))
+    ]
+    return {
+        "name": "external_config",
+        "status": "pass",
+        "capabilities": capabilities,
+        "warnings": warnings,
+        "issues": [],
+    }
+
+
+def configured_text(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def configured_env_value(value: Any) -> bool:
+    return configured_text(value) is not None
+
+
 def run_checks(repo: Path = Path(".")) -> dict[str, Any]:
     repo = repo.resolve()
     checks = [
@@ -608,6 +666,7 @@ def run_checks(repo: Path = Path(".")) -> dict[str, Any]:
         check_env_example(repo),
         check_python_dependencies(),
         check_local_storage(repo),
+        check_external_config(repo),
     ]
     return {
         "ok": all(check["status"] == "pass" for check in checks),
@@ -622,12 +681,19 @@ def summary(payload: dict[str, Any]) -> dict[str, Any]:
         for check in payload["checks"]
         for issue in check.get("issues", [])
     ]
+    warnings = [
+        warning
+        for check in payload["checks"]
+        for warning in check.get("warnings", [])
+    ]
     return {
         "ok": payload["ok"],
         "repo": payload["repo"],
         "check_count": len(payload["checks"]),
         "issue_count": len(issues),
         "issue_codes": [issue.get("code") for issue in issues],
+        "warning_count": len(warnings),
+        "warning_codes": [warning.get("code") for warning in warnings],
     }
 
 

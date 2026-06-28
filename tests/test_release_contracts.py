@@ -2161,6 +2161,65 @@ def test_doctor_script_reports_local_storage_preflight_paths(tmp_path):
     assert data_dir.exists()
 
 
+def test_doctor_script_reports_optional_external_config_warnings(tmp_path):
+    doctor = load_doctor()
+
+    check = doctor.check_external_config(
+        tmp_path,
+        env={
+            "OPENALEX_MAILTO": "",
+            "UNPAYWALL_EMAIL": "",
+            "LLM_API_KEY": "",
+            "GROBID_URL": "http://127.0.0.1:8070",
+            "EMBEDDING_MODEL": "local-hash",
+            "VECTOR_DB_BACKEND": "local-json",
+        },
+    )
+
+    assert check["name"] == "external_config"
+    assert check["status"] == "pass"
+    assert check["capabilities"] == {
+        "openalex_mailto": False,
+        "unpaywall_email": False,
+        "grobid_url": "http://127.0.0.1:8070",
+        "llm_api_key": False,
+        "embedding_model": "local-hash",
+        "vector_db_backend": "local-json",
+    }
+    assert [warning["code"] for warning in check["warnings"]] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
+
+
+def test_doctor_summary_counts_external_config_warnings():
+    doctor = load_doctor()
+    payload = {
+        "ok": True,
+        "repo": "/tmp/project",
+        "checks": [
+            {"name": "python_version", "status": "pass", "issues": []},
+            {
+                "name": "external_config",
+                "status": "pass",
+                "issues": [],
+                "warnings": [
+                    {"code": "missing_openalex_mailto"},
+                    {"code": "missing_unpaywall_email"},
+                ],
+            },
+        ],
+    }
+
+    compact = doctor.summary(payload)
+
+    assert compact["ok"] is True
+    assert compact["issue_count"] == 0
+    assert compact["warning_count"] == 2
+    assert compact["warning_codes"] == ["missing_openalex_mailto", "missing_unpaywall_email"]
+
+
 def test_doctor_script_reports_storage_parent_that_is_not_directory(tmp_path):
     import importlib.util
 
@@ -2452,9 +2511,13 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert "python scripts/doctor.py --strict --compact" in readme
     assert "本地存储目录可创建和可写" in readme
     assert "读取 `.env`" in readme
+    assert "外部能力配置 warning" in readme
+    assert "`warning_count`" in readme
     assert "python scripts/doctor.py --strict --compact" in checklist
     assert "local storage paths are creatable and writable" in checklist
     assert "reads `.env`" in checklist
+    assert "external capability configuration warnings" in checklist
+    assert "`warning_count`" in checklist
     assert "scripts/doctor.py" in release_check
     assert "RELEASE_HELP_SCRIPTS=(" in release_check
     assert '"${script}" --help' in release_check
