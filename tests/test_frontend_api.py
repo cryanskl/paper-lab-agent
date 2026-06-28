@@ -530,6 +530,16 @@ def test_status_count_rows_blocks_malformed_status_counts_objects():
     assert nested_rows == [{"workflow": "document_parse", "status": "invalid", "count": 1}]
 
 
+def test_status_count_rows_blocks_malformed_status_count_values():
+    from app import frontend_api
+
+    rows = frontend_api.status_count_rows({"crawl_jobs": {"success": 2, "failed": True}})
+
+    assert {"workflow": "crawl_jobs", "status": "success", "count": 2} in rows
+    assert {"workflow": "crawl_jobs", "status": "invalid", "count": 1} in rows
+    assert {"workflow": "crawl_jobs", "status": "failed", "count": True} not in rows
+
+
 def test_config_warning_rows_blocks_malformed_config_warning_objects():
     from app import frontend_api
 

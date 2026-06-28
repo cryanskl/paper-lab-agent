@@ -365,10 +365,14 @@ def status_count_rows(status_counts: Any) -> list[dict[str, Any]]:
         if not isinstance(workflow_counts, dict):
             rows.append({"workflow": workflow, "status": "invalid", "count": 1})
             continue
-        rows.extend(
-            {"workflow": workflow, "status": state, "count": count}
-            for state, count in workflow_counts.items()
-        )
+        for state, count in workflow_counts.items():
+            if not isinstance(state, str) or not state.strip():
+                rows.append({"workflow": workflow, "status": "invalid", "count": 1})
+                continue
+            if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+                rows.append({"workflow": workflow, "status": "invalid", "count": 1})
+                continue
+            rows.append({"workflow": workflow, "status": state, "count": count})
     return rows
 
 
