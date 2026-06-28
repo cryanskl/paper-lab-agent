@@ -152,6 +152,9 @@ def load_env_file(path: Path = Path(".env")) -> Optional[str]:
     symlink_parent = first_symlink_parent(path)
     if symlink_parent is not None:
         return f"env file parent is not a regular directory: {symlink_parent}"
+    for parent in path.parents:
+        if parent.exists() and not parent.is_dir():
+            return f"env file parent is not a regular directory: {parent}"
     if not path.exists():
         return None
     try:

@@ -53,7 +53,7 @@ load_env_file_if_unset() {
       else
         env_parent_cursor="${env_parent_cursor}/${env_parent_part}"
       fi
-      if [[ -L "${env_parent_cursor}" ]]; then
+      if [[ -L "${env_parent_cursor}" || ( -e "${env_parent_cursor}" && ! -d "${env_parent_cursor}" ) ]]; then
         printf "env file parent is not a regular directory: %s\n" "${env_parent_cursor}" >&2
         return 1
       fi

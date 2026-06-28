@@ -10892,6 +10892,35 @@ def test_env_loader_rejects_symlinked_env_parent(tmp_path):
     assert "env file parent is not a regular directory: linked" in result.stderr
 
 
+def test_env_loader_rejects_file_env_parent(tmp_path):
+    import subprocess
+
+    repo = Path(__file__).resolve().parent.parent
+    env_script = repo / "scripts" / "env.sh"
+    file_parent = tmp_path / "not-dir"
+    file_parent.write_text("not a directory", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                "set -euo pipefail; "
+                f"source {env_script}; "
+                "load_env_file_if_unset not-dir/.env"
+            ),
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "env file parent is not a regular directory: not-dir" in result.stderr
+    assert file_parent.read_text(encoding="utf-8") == "not a directory"
+
+
 def test_dev_api_base_url_tracks_runtime_port_override(tmp_path):
     import subprocess
 
@@ -15262,6 +15291,27 @@ def test_health_check_env_loader_rejects_symlinked_env_file(monkeypatch, tmp_pat
 
     assert health_check.load_env_file(env_file) == f"env file is not a regular file: {env_file}"
     assert "API_BASE_URL" not in os.environ
+
+
+def test_health_check_env_loader_rejects_file_env_parent(monkeypatch, tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_env_file_parent", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    file_parent = tmp_path / "not-dir"
+    file_parent.write_text("not a directory", encoding="utf-8")
+    env_file = file_parent / ".env"
+    monkeypatch.delenv("API_BASE_URL", raising=False)
+
+    assert health_check.load_env_file(env_file) == f"env file parent is not a regular directory: {file_parent}"
+    assert "API_BASE_URL" not in os.environ
+    assert file_parent.read_text(encoding="utf-8") == "not a directory"
 
 
 def test_health_check_rejects_unexpected_api_prefix():
