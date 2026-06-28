@@ -497,12 +497,18 @@ def paper_category_option_label(category: dict[str, Any]) -> str:
 def paper_upload_option_label(paper: Optional[dict[str, Any]]) -> str:
     if paper is None:
         return "不关联论文"
+    if not isinstance(paper, dict):
+        return "#- · Untitled · DOI: - · - · -"
     return (
         f"#{paper.get('id')} · {paper.get('title') or 'Untitled'} · "
         f"DOI: {paper.get('doi') or '-'} · "
         f"{paper.get('journal_name') or '-'} · "
         f"{paper.get('published_date') or '-'}"
     )
+
+
+def paper_upload_options(papers: list[dict[str, Any]]) -> list[Optional[dict[str, Any]]]:
+    return [None, *[paper for paper in papers if isinstance(paper, dict)]]
 
 
 def paper_upload_query_params(query: Optional[str]) -> dict[str, Any]:

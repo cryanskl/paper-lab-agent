@@ -33,6 +33,7 @@ from app.frontend_api import (
     format_error_payload,
     journal_option_label,
     paper_category_option_label,
+    paper_upload_options,
     paper_upload_query_params,
     paper_upload_option_label,
     rag_source_option_label,
@@ -603,10 +604,10 @@ with documents_tab:
         st.warning(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
         paper_upload_papers = {"items": []}
-    paper_upload_options = [None] + paper_upload_papers.get("items", [])
+    paper_upload_choices = paper_upload_options(paper_upload_papers.get("items", []))
     selected_upload_paper = st.selectbox(
         "关联论文",
-        paper_upload_options,
+        paper_upload_choices,
         format_func=paper_upload_option_label,
         key="document-upload-paper",
     )

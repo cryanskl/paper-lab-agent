@@ -1793,6 +1793,14 @@ def test_paper_upload_option_label_returns_unlinked_choice():
     assert label == "不关联论文"
 
 
+def test_paper_upload_options_skip_malformed_papers():
+    from app import frontend_api
+
+    valid_paper = {"id": 42, "title": "Ar/O2 ICP chemistry"}
+
+    assert frontend_api.paper_upload_options(["bad-paper", valid_paper, None]) == [None, valid_paper]
+
+
 def test_paper_upload_option_label_summarizes_paper_identity():
     from app import frontend_api
 
@@ -1815,6 +1823,12 @@ def test_paper_upload_option_label_uses_sparse_fallbacks():
     label = frontend_api.paper_upload_option_label({"id": 7})
 
     assert label == "#7 · Untitled · DOI: - · - · -"
+
+
+def test_paper_upload_option_label_handles_malformed_paper():
+    from app import frontend_api
+
+    assert frontend_api.paper_upload_option_label("bad-paper") == "#- · Untitled · DOI: - · - · -"
 
 
 def test_paper_upload_query_params_include_trimmed_search_text():

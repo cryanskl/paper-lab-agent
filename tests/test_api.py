@@ -17916,12 +17916,13 @@ def test_streamlit_document_upload_can_select_linked_paper():
         'paper_upload_query = st.text_input("关联论文搜索"',
         "paper_upload_query_params(paper_upload_query)",
         'paper_upload_papers = api_get("/papers", **paper_upload_query_params(paper_upload_query))',
-        'paper_upload_options = [None] + paper_upload_papers.get("items", [])',
+        'paper_upload_options(paper_upload_papers.get("items", []))',
         'selected_upload_paper = st.selectbox(',
         "format_func=paper_upload_option_label",
         'data = {"paper_id": str(selected_upload_paper["id"])} if selected_upload_paper else {}',
     ]:
         assert required in documents_section
+    assert 'paper_upload_options = [None] + paper_upload_papers.get("items", [])' not in documents_section
     assert 'paper_id = st.number_input("paper_id"' not in documents_section
 
 
