@@ -9099,6 +9099,28 @@ def test_requirements_validator_rejects_symlinked_requirements_parent(tmp_path):
     assert f"requirements file parent is not a regular directory: {linked_root}" in result.stderr
 
 
+def test_requirements_validator_rejects_file_requirements_parent(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_requirements.py"
+    file_parent = tmp_path / "not-dir"
+    file_parent.write_text("not a directory", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), str(file_parent / "requirements.txt")],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert f"requirements file parent is not a regular directory: {file_parent}" in result.stderr
+    assert file_parent.read_text(encoding="utf-8") == "not a directory"
+
+
 def test_requirements_validator_reports_unreadable_requirements_file(tmp_path):
     import subprocess
     import sys
