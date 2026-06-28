@@ -465,7 +465,13 @@ def crawl_journal_option_label(option: dict[str, Any]) -> str:
 
 
 def journal_option_label(journal: dict[str, Any]) -> str:
-    return f"#{journal['id']} {journal.get('name') or 'Journal'} · active={bool(journal.get('active'))}"
+    journal_id = journal.get("id")
+    id_label = journal_id if isinstance(journal_id, int) and not isinstance(journal_id, bool) else "-"
+    name = journal.get("name")
+    name_label = name if isinstance(name, str) and name.strip() else "Journal"
+    active = journal.get("active")
+    active_label = active if isinstance(active, bool) else False
+    return f"#{id_label} {name_label} · active={active_label}"
 
 
 def category_parent_option_label(category: Optional[dict[str, Any]]) -> str:

@@ -1481,6 +1481,14 @@ def test_journal_option_label_uses_unknown_name_and_false_active_fallback():
     assert label == "#8 Journal · active=False"
 
 
+def test_journal_option_label_handles_malformed_journal_items():
+    from app import frontend_api
+
+    label = frontend_api.journal_option_label({"name": ["Journal"], "active": "yes"})
+
+    assert label == "#- Journal · active=False"
+
+
 def test_category_parent_option_label_returns_none_label():
     from app import frontend_api
 
