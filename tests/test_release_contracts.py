@@ -9448,6 +9448,16 @@ def test_docs_links_validator_rejects_symlinked_markdown_link_target_parent(tmp_
     assert issues == ["README.md: link target parent is not a regular directory docs/schema.sql"]
 
 
+def test_docs_links_validator_rejects_file_markdown_link_target_parent(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    (tmp_path / "docs").write_text("not a directory", encoding="utf-8")
+    (tmp_path / "README.md").write_text("[Schema](docs/schema.sql)\n", encoding="utf-8")
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["README.md: link target parent is not a regular directory docs/schema.sql"]
+
+
 def test_docs_links_validator_rejects_absolute_local_markdown_link_target(tmp_path):
     validate_docs_links = load_validate_docs_links()
     repo = tmp_path / "repo"
