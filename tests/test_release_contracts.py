@@ -1723,6 +1723,19 @@ def test_release_checklist_documents_publish_gates():
         assert required in checklist
 
 
+def test_release_checklist_documents_health_storage_details():
+    repo = Path(__file__).resolve().parent.parent
+    checklist = (repo / "docs" / "release-checklist.md").read_text(encoding="utf-8")
+
+    for required in [
+        "`storage_health`",
+        "`database_parent`",
+        "`vector_db_parent`",
+        "first-run vector index creation",
+    ]:
+        assert required in checklist
+
+
 def test_release_checklist_documents_git_safety_checks():
     repo = Path(__file__).resolve().parent.parent
     checklist = (repo / "docs" / "release-checklist.md").read_text(encoding="utf-8")
