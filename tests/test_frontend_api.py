@@ -549,6 +549,24 @@ def test_external_capabilities_display_state_blocks_malformed_capability_fields(
     assert state["capabilities"]["translation_adapter"] == ""
 
 
+def test_external_capabilities_display_state_blocks_malformed_grobid_fields():
+    from app import frontend_api
+
+    state = frontend_api.external_capabilities_display_state(
+        {
+            "grobid": {
+                "url": ["http://127.0.0.1:8070"],
+                "available": "yes",
+                "status_code": "200",
+                "error": ["bad"],
+            }
+        }
+    )
+
+    assert "grobid:invalid" in state["warnings"]
+    assert state["grobid"] == {}
+
+
 def test_status_count_rows_blocks_malformed_status_counts_objects():
     from app import frontend_api
 

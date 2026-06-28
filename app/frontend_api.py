@@ -371,6 +371,20 @@ def external_capabilities_display_state(external_capabilities: Any) -> dict[str,
     if not isinstance(grobid, dict):
         grobid = {}
         warnings.append("grobid:invalid")
+    else:
+        url = grobid.get("url")
+        available = grobid.get("available")
+        status_code = grobid.get("status_code")
+        error = grobid.get("error")
+        invalid_grobid = (
+            (url is not None and not isinstance(url, str))
+            or (available is not None and not isinstance(available, bool))
+            or (status_code is not None and (isinstance(status_code, bool) or not isinstance(status_code, int)))
+            or (error is not None and not isinstance(error, str))
+        )
+        if invalid_grobid:
+            grobid = {}
+            warnings.append("grobid:invalid")
     return {
         "capabilities": capabilities,
         "grobid": grobid,
