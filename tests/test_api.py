@@ -13970,6 +13970,75 @@ def test_health_check_rejects_symlinked_output_parent(monkeypatch, capsys, tmp_p
     assert not (outside_dir / "health-summary.json").exists()
 
 
+def test_health_check_rejects_file_output_parent(monkeypatch, capsys, tmp_path):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_file_output_parent", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
+            "status_counts": health_check_status_counts(),
+        }
+
+    file_parent = tmp_path / "out"
+    file_parent.write_text("not a directory", encoding="utf-8")
+    output_path = file_parent / "health-summary.json"
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "health_check.py",
+            "--base-url",
+            "http://api.test",
+            "--summary-only",
+            "--compact",
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    assert health_check.main() == 1
+    captured = capsys.readouterr()
+    assert f"health_check failed: output path parent is not a regular directory: {file_parent}" in captured.err
+    assert file_parent.read_text(encoding="utf-8") == "not a directory"
+
+
 def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
     import importlib.util
     import json
