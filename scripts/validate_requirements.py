@@ -177,10 +177,11 @@ def missing_required_packages(path: Path = DEFAULT_REQUIREMENTS_PATH) -> list[st
 def non_regular_python_source_roots(paths: list[Path] = SOURCE_PATHS) -> list[str]:
     issues: list[str] = []
     for path in paths:
-        if not path.exists():
-            continue
         if path.is_symlink():
             issues.append(f"python source root is not a regular directory: {path}")
+            continue
+        if not path.exists():
+            continue
     return issues
 
 
