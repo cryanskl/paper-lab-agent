@@ -517,7 +517,21 @@ def category_parent_option_label(category: Any) -> str:
     return f"#{id_label} {slug_label}"
 
 
-def paper_category_option_label(category: dict[str, Any]) -> str:
+def paper_category_options(categories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        category
+        for category in categories
+        if isinstance(category, dict)
+        and isinstance(category.get("id"), int)
+        and not isinstance(category.get("id"), bool)
+        and isinstance(category.get("slug"), str)
+        and category.get("slug", "").strip()
+    ]
+
+
+def paper_category_option_label(category: Any) -> str:
+    if not isinstance(category, dict):
+        return "category · category"
     return f"{category.get('slug') or 'category'} · {category.get('name') or 'category'}"
 
 

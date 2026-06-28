@@ -2015,6 +2015,30 @@ def test_paper_category_option_label_uses_fallback_name():
     assert label == "methods · category"
 
 
+def test_paper_category_options_skip_malformed_items():
+    from app import frontend_api
+
+    valid_category = {"id": 2, "slug": "chemistry", "name": "等离子体化学"}
+
+    assert frontend_api.paper_category_options(
+        [
+            "bad-category",
+            {"id": 3, "name": "missing slug"},
+            {"slug": "missing-id"},
+            valid_category,
+            None,
+        ]
+    ) == [valid_category]
+
+
+def test_paper_category_option_label_handles_non_object_item():
+    from app import frontend_api
+
+    label = frontend_api.paper_category_option_label("bad-category")
+
+    assert label == "category · category"
+
+
 def test_paper_upload_option_label_returns_unlinked_choice():
     from app import frontend_api
 
