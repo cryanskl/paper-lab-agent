@@ -4322,6 +4322,39 @@ def test_build_release_handoff_removes_package_on_package_validation_failure(mon
     assert "release package invalid zip: bad central directory" in report["issues"]
 
 
+def test_build_release_handoff_preserves_artifact_symlink_for_export_rejection(monkeypatch, tmp_path):
+    build_release_handoff = load_build_release_handoff()
+    outside_dir = tmp_path / "outside-release"
+    artifact_dir = tmp_path / "linked-release"
+    package_path = tmp_path / "paper-lab-agent-release.zip"
+    outside_dir.mkdir()
+    artifact_dir.symlink_to(outside_dir, target_is_directory=True)
+
+    def fake_export_release_artifacts(output_dir, *, compact=False):
+        if output_dir.is_symlink():
+            return {
+                "ok": False,
+                "output_dir": str(output_dir.absolute()),
+                "issues": [f"release artifact output directory is not a regular directory: {output_dir.absolute()}"],
+            }
+        return {"service": "paper-lab-agent", "version": "0.1.0"}
+
+    def unexpected_success(*args, **kwargs):
+        raise AssertionError("build_release_handoff should stop when export rejects artifact dir symlink")
+
+    monkeypatch.setattr(build_release_handoff, "export_release_artifacts", fake_export_release_artifacts)
+    monkeypatch.setattr(build_release_handoff, "validate_release_artifacts", unexpected_success)
+    monkeypatch.setattr(build_release_handoff, "package_release_artifacts", unexpected_success)
+    monkeypatch.setattr(build_release_handoff, "validate_release_package", unexpected_success)
+
+    report = build_release_handoff.build_release_handoff(artifact_dir, package_path)
+
+    assert report["ok"] is False
+    assert report["stage"] == "export"
+    assert report["artifact_dir"] == str(artifact_dir.absolute())
+    assert f"release artifact output directory is not a regular directory: {artifact_dir.absolute()}" in report["issues"]
+
+
 def test_release_docs_explain_single_command_handoff_builder():
     repo = Path(__file__).resolve().parent.parent
     readme = (repo / "README.md").read_text(encoding="utf-8")

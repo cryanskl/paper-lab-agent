@@ -38,8 +38,8 @@ def failed_report(
     return {
         "ok": False,
         "stage": stage,
-        "artifact_dir": str(artifact_dir.resolve()),
-        "package_path": str(package_path.resolve()),
+        "artifact_dir": report.get("artifact_dir") or report.get("output_dir") or str(artifact_dir.resolve()),
+        "package_path": report.get("package_path") or str(package_path.resolve()),
         "package_sha256": report.get("package_sha256"),
         "artifact_names": report.get("artifact_names") or [],
         "source": report.get("source") or {},
@@ -88,9 +88,6 @@ def build_release_handoff(
     require_clean_source: bool = False,
     compact_artifacts: bool = False,
 ) -> dict[str, Any]:
-    artifact_dir = artifact_dir.resolve()
-    package_path = package_path.resolve()
-
     export_report = export_release_artifacts(artifact_dir, compact=compact_artifacts)
     if export_report.get("ok") is False:
         return failed_report_after_stale_package_cleanup(
