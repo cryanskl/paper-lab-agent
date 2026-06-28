@@ -1,6 +1,7 @@
 import json
 import re
 import string
+import stat
 import zipfile
 from pathlib import Path
 
@@ -5929,6 +5930,30 @@ def test_validate_release_package_rejects_windows_rooted_artifact_name(tmp_path)
     assert "release package contains unsafe artifact names: ['\\\\evil.txt']" in report["issues"]
 
 
+def test_validate_release_package_rejects_symlink_artifact_entry(tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    validate_release_package = load_validate_release_package()
+    artifact_dir = tmp_path / "release"
+    package_path = tmp_path / "paper-lab-agent-release.zip"
+    export_report = export_release_artifacts.export_release_artifacts(artifact_dir, compact=True)
+    assert export_report["service"] == "paper-lab-agent"
+
+    with zipfile.ZipFile(package_path, mode="w") as archive:
+        for artifact_path in sorted(artifact_dir.iterdir()):
+            if artifact_path.name == "openapi.json":
+                info = zipfile.ZipInfo(artifact_path.name)
+                info.create_system = 3
+                info.external_attr = (stat.S_IFLNK | 0o777) << 16
+                archive.writestr(info, artifact_path.read_bytes())
+            else:
+                archive.write(artifact_path, arcname=artifact_path.name)
+
+    report = validate_release_package.validate_release_package(package_path)
+
+    assert report["ok"] is False
+    assert "release package contains symlink artifact entries: ['openapi.json']" in report["issues"]
+
+
 def test_release_check_derives_expected_runtime_version_from_app_version():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
@@ -9564,7 +9589,7 @@ def test_requirements_validator_ignores_standard_library_imports(tmp_path):
     source_dir = tmp_path / "scripts"
     source_dir.mkdir()
     (source_dir / "uses_stdlib.py").write_text(
-        "import email.utils\nimport fnmatch\nimport importlib.util\nimport shlex\nimport subprocess\nimport unicodedata\nimport zipfile\n",
+        "import email.utils\nimport fnmatch\nimport importlib.util\nimport shlex\nimport stat\nimport subprocess\nimport unicodedata\nimport zipfile\n",
         encoding="utf-8",
     )
     requirements_path = tmp_path / "requirements.txt"

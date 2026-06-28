@@ -49,6 +49,7 @@ FALLBACK_STDLIB_MODULES = {
     "re",
     "shlex",
     "sqlite3",
+    "stat",
     "subprocess",
     "sys",
     "tempfile",

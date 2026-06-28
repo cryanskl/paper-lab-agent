@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import stat
 import sys
 import tempfile
 import zipfile
@@ -169,6 +170,13 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             ]
             if unsafe_names:
                 issues.append(f"release package contains unsafe artifact names: {unsafe_names!r}")
+            symlink_names = [
+                info.filename
+                for info in archive.infolist()
+                if stat.S_IFMT(info.external_attr >> 16) == stat.S_IFLNK
+            ]
+            if symlink_names:
+                issues.append(f"release package contains symlink artifact entries: {symlink_names!r}")
 
             if not issues:
                 with tempfile.TemporaryDirectory(prefix="paper-lab-release-package-") as extract_dir:
