@@ -821,6 +821,25 @@ def document_chunk_option_label(chunk: dict[str, Any]) -> str:
 def rag_source_rows(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for source in sources:
+        if not isinstance(source, dict):
+            rows.append(
+                {
+                    "citation": "[invalid]",
+                    "source_location": "invalid",
+                    "document_id": None,
+                    "paper_id": None,
+                    "paper_title": None,
+                    "section_id": None,
+                    "section_seq": None,
+                    "section_title": None,
+                    "section_type": None,
+                    "source_excerpt": None,
+                    "chunk_id": None,
+                    "vector_id": None,
+                    "score": None,
+                }
+            )
+            continue
         paper_id = source.get("paper_id")
         document_id = source.get("document_id")
         section_seq = source.get("section_seq")

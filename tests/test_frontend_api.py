@@ -2518,6 +2518,55 @@ def test_rag_source_rows_include_citation_and_location_labels():
     ]
 
 
+def test_rag_source_rows_handle_malformed_source_entries():
+    from app import frontend_api
+
+    rows = frontend_api.rag_source_rows(
+        [
+            "bad-source",
+            {
+                "document_id": 4,
+                "section_id": 20,
+                "section_title": "Appendix",
+                "source_excerpt": "valid appendix evidence",
+            },
+        ]
+    )
+
+    assert rows == [
+        {
+            "citation": "[invalid]",
+            "source_location": "invalid",
+            "document_id": None,
+            "paper_id": None,
+            "paper_title": None,
+            "section_id": None,
+            "section_seq": None,
+            "section_title": None,
+            "section_type": None,
+            "source_excerpt": None,
+            "chunk_id": None,
+            "vector_id": None,
+            "score": None,
+        },
+        {
+            "citation": "[doc 4 · section 20]",
+            "source_location": "doc 4 · section 20 · Appendix",
+            "document_id": 4,
+            "paper_id": None,
+            "paper_title": None,
+            "section_id": 20,
+            "section_seq": None,
+            "section_title": "Appendix",
+            "section_type": None,
+            "source_excerpt": "valid appendix evidence",
+            "chunk_id": None,
+            "vector_id": None,
+            "score": None,
+        },
+    ]
+
+
 def test_rag_source_option_label_combines_citation_and_location():
     from app import frontend_api
 
