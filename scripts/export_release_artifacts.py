@@ -21,6 +21,7 @@ from scripts.validate_release_artifacts import first_symlink_parent
 
 
 EXPECTED_ARTIFACT_NAMES = {"openapi.json", "demo-summary.json", "release-manifest.json"}
+EXPECTED_ARTIFACT_NAME_LIST = sorted(EXPECTED_ARTIFACT_NAMES)
 DEMO_WORKFLOW_STATUS_KEYS = [
     "parse_status",
     "index_status",
@@ -204,6 +205,7 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
             "manifest": manifest_path.name,
         },
         "artifact_count": len(EXPECTED_ARTIFACT_NAMES),
+        "artifact_names": EXPECTED_ARTIFACT_NAME_LIST,
         "demo_ready": demo_summary.get("ready") is True,
         "demo_counts": demo_summary.get("counts") or {},
         "demo_workflow_statuses": demo_workflow_statuses(demo_summary),

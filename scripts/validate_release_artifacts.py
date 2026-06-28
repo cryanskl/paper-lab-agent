@@ -24,6 +24,7 @@ EXPECTED_ARTIFACTS = {
     "demo_summary": "demo-summary.json",
     "manifest": "release-manifest.json",
 }
+EXPECTED_ARTIFACT_NAMES = sorted(EXPECTED_ARTIFACTS.values())
 EXPECTED_EXPORT_FORMATS = ["json", "txt", "bolsig"]
 EXPECTED_DEMO_COUNT_MINIMUMS = {
     "documents": 1,
@@ -244,6 +245,8 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             issues.append(f"release manifest artifacts mismatch: {manifest.get('artifacts')!r}")
         if "artifact_count" in manifest and manifest.get("artifact_count") != len(EXPECTED_ARTIFACTS):
             issues.append(f"release manifest artifact_count mismatch: {manifest.get('artifact_count')!r}")
+        if "artifact_names" in manifest and manifest.get("artifact_names") != EXPECTED_ARTIFACT_NAMES:
+            issues.append(f"release manifest artifact_names mismatch: {manifest.get('artifact_names')!r}")
         if manifest.get("demo_ready") is not True:
             issues.append("release manifest demo_ready must be true")
         if manifest.get("demo_counts") != demo_counts:
