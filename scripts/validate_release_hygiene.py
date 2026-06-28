@@ -145,7 +145,7 @@ def missing_required_ci_release_gate(repo: Path) -> list[str]:
     workflow_path = repo / REQUIRED_CI_WORKFLOW
     if first_non_directory_parent(workflow_path, repo) is not None:
         return ["ci_workflow_parent_not_regular_directory"]
-    if not workflow_path.exists():
+    if not workflow_path.exists() and not workflow_path.is_symlink():
         return ["ci_workflow"]
     if first_symlink_parent(workflow_path, repo) is not None or not workflow_path.parent.is_dir():
         return ["ci_workflow_parent_not_regular_directory"]
