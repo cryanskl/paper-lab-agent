@@ -2255,6 +2255,20 @@ def test_document_chunk_option_label_falls_back_to_id_and_dash_title():
     assert label == "32 · -"
 
 
+def test_document_chunk_option_label_handles_malformed_chunk():
+    from app import frontend_api
+
+    assert frontend_api.document_chunk_option_label("bad-chunk") == "invalid · -"
+
+
+def test_document_chunk_preview_text_handles_malformed_chunk_and_text():
+    from app import frontend_api
+
+    assert frontend_api.document_chunk_preview_text("bad-chunk") == ""
+    assert frontend_api.document_chunk_preview_text({"text": ["not", "text"]}) == ""
+    assert frontend_api.document_chunk_preview_text({"text": "Electron kinetics evidence."}) == "Electron kinetics evidence."
+
+
 def test_document_asset_downloads_read_pdf_bytes_and_tei_text(tmp_path):
     from app import frontend_api
 

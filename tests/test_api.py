@@ -17455,6 +17455,7 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
         "section_preview",
         "format_func=document_section_option_label",
         "format_func=document_chunk_option_label",
+        "document_chunk_preview_text(chunk_preview)",
         "parse_error",
         "vector_id",
     ]:

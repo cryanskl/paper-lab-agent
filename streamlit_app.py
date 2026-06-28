@@ -19,6 +19,7 @@ from app.frontend_api import (
     document_asset_downloads,
     document_chunk_rows,
     document_chunk_option_label,
+    document_chunk_preview_text,
     document_filter_summary,
     document_option_label,
     document_section_option_label,
@@ -825,7 +826,7 @@ with documents_tab:
                     chunks["items"],
                     format_func=document_chunk_option_label,
                 )
-                st.code(chunk_preview.get("text") or "")
+                st.code(document_chunk_preview_text(chunk_preview))
             st.caption(f"chunks page {chunks['page']} · page_size {chunks['page_size']} · total {chunks['total']}")
             st.dataframe(document_chunk_rows(chunks["items"]), use_container_width=True)
 

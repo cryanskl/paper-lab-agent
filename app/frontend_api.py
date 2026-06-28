@@ -831,8 +831,17 @@ def document_chunk_rows(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def document_chunk_option_label(chunk: dict[str, Any]) -> str:
+    if not isinstance(chunk, dict):
+        return "invalid · -"
     chunk_ref = chunk.get("vector_id") or chunk.get("id")
     return f"{chunk_ref} · {chunk.get('section_title') or '-'}"
+
+
+def document_chunk_preview_text(chunk: Any) -> str:
+    if not isinstance(chunk, dict):
+        return ""
+    text = chunk.get("text")
+    return text if isinstance(text, str) else ""
 
 
 def rag_source_rows(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
