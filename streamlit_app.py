@@ -28,6 +28,7 @@ from app.frontend_api import (
     document_section_rows,
     document_status_filter_options,
     document_status_rows,
+    dict_or_empty,
     external_capabilities_display_state,
     filter_documents_by_status,
     format_error_payload,
@@ -407,7 +408,7 @@ with search_tab:
             st.warning(format_error_payload(exc.payload, exc.status_code))
             st.json(exc.payload)
         if job_detail:
-            diagnostics = job_detail.get("diagnostics", {})
+            diagnostics = dict_or_empty(job_detail.get("diagnostics"))
             j1, j2, j3, j4 = st.columns(4)
             j1.metric("found", diagnostics.get("papers_found", 0))
             j2.metric("filtered", diagnostics.get("papers_filtered", 0))

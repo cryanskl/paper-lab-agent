@@ -18211,6 +18211,20 @@ def test_streamlit_crawl_jobs_table_flattens_diagnostics():
     assert "st.dataframe(crawl_job_diagnostic_rows(job_detail), use_container_width=True)" in search_section
 
 
+def test_streamlit_crawl_job_detail_metrics_guard_malformed_diagnostics():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+    crawl_job_detail_section = search_section[
+        search_section.index("if job_detail:") :
+        search_section.index("st.dataframe(crawl_job_diagnostic_rows(job_detail), use_container_width=True)")
+    ]
+
+    assert "dict_or_empty" in streamlit
+    assert 'diagnostics = dict_or_empty(job_detail.get("diagnostics"))' in crawl_job_detail_section
+    assert 'diagnostics = job_detail.get("diagnostics", {})' not in crawl_job_detail_section
+
+
 def test_streamlit_crawl_jobs_use_option_label_helper():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
