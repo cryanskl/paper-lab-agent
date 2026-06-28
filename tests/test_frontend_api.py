@@ -1402,6 +1402,50 @@ def test_crawl_job_rows_summarize_diagnostics_and_workflow_state():
     ]
 
 
+def test_crawl_job_rows_handle_malformed_diagnostics_counts():
+    from app import frontend_api
+
+    rows = frontend_api.crawl_job_rows(
+        [
+            {
+                "id": 13,
+                "journal_id": 4,
+                "status": "success",
+                "diagnostics": {
+                    "papers_found": ["12"],
+                    "papers_filtered": "4",
+                    "papers_accepted": ["8"],
+                    "papers_existing": "3",
+                    "papers_new": ["5"],
+                    "keyword_terms": {"term": "plasma"},
+                },
+            }
+        ]
+    )
+
+    assert rows == [
+        {
+            "id": 13,
+            "journal": 4,
+            "status": "success",
+            "workflow_state": "success",
+            "period": None,
+            "date_from": None,
+            "date_to": None,
+            "found": 0,
+            "filtered": 0,
+            "accepted": 0,
+            "existing": 0,
+            "new": 0,
+            "progress_summary": "0 found / 0 accepted / 0 new",
+            "outcome": None,
+            "keyword_mode": None,
+            "keyword_terms": "",
+            "error": None,
+        }
+    ]
+
+
 def test_crawl_job_diagnostic_rows_flatten_job_detail_for_review():
     from app import frontend_api
 

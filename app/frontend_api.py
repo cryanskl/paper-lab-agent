@@ -551,9 +551,13 @@ def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         journal = job.get("journal") or {}
         status = diagnostics.get("status") or job.get("status")
         error = diagnostics.get("error") or job.get("error")
-        found = int(diagnostics.get("papers_found") or 0)
-        accepted = int(diagnostics.get("papers_accepted") or 0)
-        new = int(diagnostics.get("papers_new") or 0)
+        found = non_negative_int_or_zero(diagnostics.get("papers_found"))
+        filtered = non_negative_int_or_zero(diagnostics.get("papers_filtered"))
+        accepted = non_negative_int_or_zero(diagnostics.get("papers_accepted"))
+        existing = non_negative_int_or_zero(diagnostics.get("papers_existing"))
+        new = non_negative_int_or_zero(diagnostics.get("papers_new"))
+        keyword_terms = diagnostics.get("keyword_terms")
+        keyword_terms_label = ", ".join(keyword_terms) if isinstance(keyword_terms, list) else ""
         rows.append(
             {
                 "id": job.get("id") or job.get("job_id"),
@@ -564,14 +568,14 @@ def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "date_from": diagnostics.get("date_from") or job.get("date_from"),
                 "date_to": diagnostics.get("date_to") or job.get("date_to"),
                 "found": found,
-                "filtered": int(diagnostics.get("papers_filtered") or 0),
+                "filtered": filtered,
                 "accepted": accepted,
-                "existing": int(diagnostics.get("papers_existing") or 0),
+                "existing": existing,
                 "new": new,
                 "progress_summary": f"{found} found / {accepted} accepted / {new} new",
                 "outcome": diagnostics.get("outcome"),
                 "keyword_mode": diagnostics.get("keyword_mode"),
-                "keyword_terms": ", ".join(diagnostics.get("keyword_terms") or []),
+                "keyword_terms": keyword_terms_label,
                 "error": error,
             }
         )
