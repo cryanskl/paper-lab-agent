@@ -12,16 +12,22 @@ from app.frontend_api import (
     crawl_job_rows,
     crawl_journal_option_label,
     crawl_journal_options,
+    dataframe_display_rows,
     document_asset_downloads,
     document_chunk_rows,
     document_chunk_option_label,
+    document_filter_summary,
     document_option_label,
     document_section_option_label,
     document_section_rows,
+    document_status_filter_options,
     document_status_rows,
+    filter_documents_by_status,
     format_error_payload,
     journal_option_label,
     paper_category_option_label,
+    paper_upload_query_params,
+    paper_upload_option_label,
     rag_source_option_label,
     rag_source_rows,
     reaction_audit_rows,
@@ -29,13 +35,16 @@ from app.frontend_api import (
     reaction_export_download,
     reaction_export_rows,
     reaction_review_form_state,
+    reaction_review_list_state,
     reaction_review_payload,
     reaction_review_rows,
     reaction_set_option_label,
     reaction_set_review_state,
     reaction_set_rows,
+    release_readiness_display_state,
     request_json,
     request_json_status,
+    storage_health_caption_rows,
     translation_download,
     translation_status_rows,
 )
@@ -104,26 +113,18 @@ with st.sidebar:
     st.metric("文档", status["counts"]["documents"])
     release_readiness = status.get("release_readiness") or {}
     st.subheader("发布就绪")
-    blockers = []
-    blocker_groups = {
-        "demo_data_missing": "demo data missing:",
-        "failed_workflows": "failed workflows:",
-        "config_warning_codes": "config warnings:",
-        "storage_errors": "storage errors:",
-    }
-    for key in blocker_groups:
-        blockers.extend(str(item) for item in release_readiness.get(key) or [] if str(item).strip())
-    release_ready = release_readiness.get("ready") is True and not blockers
+    release_display = release_readiness_display_state(release_readiness)
+    blockers = release_display["blockers"]
+    release_ready = release_display["ready"]
     if release_ready:
         st.success("release ready")
     else:
         blocker_label = ", ".join(blockers) if blockers else "unknown"
         st.warning(f"release blockers: {blocker_label}")
         st.caption("release blocker details")
-        for key, label in blocker_groups.items():
-            items = [str(item) for item in release_readiness.get(key) or [] if str(item).strip()]
-            if items:
-                st.caption(f"{label} {', '.join(items)}")
+        for group in release_display["groups"]:
+            if group["items"]:
+                st.caption(f"{group['label']} {', '.join(group['items'])}")
     demo_data = status.get("demo_data") or {}
     st.subheader("演示数据")
     if demo_data.get("ready"):
@@ -172,17 +173,11 @@ with st.sidebar:
     storage_health = status.get("storage_health", {})
     if storage_health:
         st.subheader("存储健康")
-        for key in ["data_dir", "pdf_dir", "tei_dir", "translation_dir", "export_dir", "database", "vector_db"]:
-            health_entry = storage_health.get(key) or {}
-            exists_label = "exists" if health_entry.get("exists") else "missing"
-            writable_label = "writable" if health_entry.get("writable") else "not writable"
-            st.caption(f"{key}: {exists_label} · {writable_label} · {health_entry.get('path') or '-'}")
-            if key == "vector_db":
-                valid_json = health_entry.get("valid_json")
-                valid_json_label = "unchecked" if valid_json is None else ("valid_json" if valid_json else "invalid_json")
-                st.caption(f"vector_db valid_json: {valid_json_label}")
-            if health_entry.get("error"):
-                st.warning(f"{key} error: {health_entry['error']}")
+        for row in storage_health_caption_rows(storage_health):
+            if row["kind"] == "warning":
+                st.warning(row["text"])
+            else:
+                st.caption(row["text"])
     status_counts = status.get("status_counts", {})
     if status_counts:
         st.subheader("状态分布")
@@ -588,10 +583,23 @@ with config_tab:
 
 with documents_tab:
     uploaded = st.file_uploader("PDF", type=["pdf"])
-    paper_id = st.number_input("paper_id", min_value=0, value=0)
+    paper_upload_query = st.text_input("关联论文搜索", value="", key="document-upload-paper-query")
+    try:
+        paper_upload_papers = api_get("/papers", **paper_upload_query_params(paper_upload_query))
+    except FrontendApiError as exc:
+        st.warning(format_error_payload(exc.payload, exc.status_code))
+        st.json(exc.payload)
+        paper_upload_papers = {"items": []}
+    paper_upload_options = [None] + paper_upload_papers.get("items", [])
+    selected_upload_paper = st.selectbox(
+        "关联论文",
+        paper_upload_options,
+        format_func=paper_upload_option_label,
+        key="document-upload-paper",
+    )
     if st.button("上传", disabled=uploaded is None):
         files = {"file": (uploaded.name, uploaded.getvalue(), uploaded.type or "application/pdf")}
-        data = {"paper_id": str(paper_id)} if paper_id else {}
+        data = {"paper_id": str(selected_upload_paper["id"])} if selected_upload_paper else {}
         status, payload = api_post("/documents", files=files, data=data)
         if status == 201:
             st.success(f"document #{payload['id']}")
@@ -626,10 +634,15 @@ with documents_tab:
         f"page_size {documents_response['page_size']} · "
         f"total {documents_response['total']}"
     )
+    document_status_filter = st.selectbox("文档状态筛选", document_status_filter_options(), key="documents-status-filter")
+    display_docs = filter_documents_by_status(docs, document_status_filter)
+    st.caption(document_filter_summary(len(docs), len(display_docs), document_status_filter))
     if not docs:
         st.info("暂无文档，请先上传 PDF。")
+    elif not display_docs:
+        st.info("暂无匹配文档，请调整文档状态筛选。")
     else:
-        selected = st.selectbox("文档", docs, format_func=document_option_label)
+        selected = st.selectbox("文档", display_docs, format_func=document_option_label)
         try:
             document_detail = api_get(f"/documents/{selected['id']}")
         except FrontendApiError as exc:
@@ -738,7 +751,7 @@ with documents_tab:
             st.stop()
         index_status = chunks.get("index_status") or ("indexed" if chunks["indexed"] else "not_indexed")
         st.caption(f"index_status: {index_status} · chunks: {chunks['total']}")
-        st.dataframe(document_status_rows(document_detail, chunks), use_container_width=True)
+        st.dataframe(dataframe_display_rows(document_status_rows(document_detail, chunks)), use_container_width=True)
         if chunks.get("index_error"):
             st.warning(f"index_error: {chunks['index_error']}")
         section_tab, translation_tab, chunks_tab = st.tabs(["章节", "翻译预览", "索引"])
@@ -829,16 +842,22 @@ with rag_tab:
         f"page_size {rag_documents_response['page_size']} · "
         f"total {rag_documents_response['total']}"
     )
-    if rag_documents:
+    rag_document_status_filter = st.selectbox("RAG 文档状态筛选", document_status_filter_options(), key="rag-documents-status-filter")
+    filtered_rag_documents = filter_documents_by_status(rag_documents, rag_document_status_filter)
+    st.caption(document_filter_summary(len(rag_documents), len(filtered_rag_documents), rag_document_status_filter))
+    if not rag_documents:
+        selected_rag_documents = []
+        st.info("暂无可选文档，请先上传并索引文档。")
+    elif not filtered_rag_documents:
+        selected_rag_documents = []
+        st.info("当前页没有匹配筛选状态的 RAG 文档。")
+    else:
         selected_rag_documents = st.multiselect(
             "限定文档",
-            rag_documents,
+            filtered_rag_documents,
             format_func=document_option_label,
             key="rag-document-select",
         )
-    else:
-        selected_rag_documents = []
-        st.info("暂无可选文档，请先上传并索引文档。")
     doc_ids = st.text_input("document_ids", value="")
     question = st.text_input("问题", value="plasma chemistry")
     top_k = st.number_input("top_k", min_value=1, max_value=20, value=6)
@@ -912,8 +931,17 @@ with chemistry_tab:
         f"page_size {chemistry_documents_response['page_size']} · "
         f"total {chemistry_documents_response['total']}"
     )
-    if chemistry_documents:
-        chemistry_document_options = chemistry_documents
+    chemistry_document_status_filter = st.selectbox("化学库文档状态筛选", document_status_filter_options(), key="chemistry-documents-status-filter")
+    filtered_chemistry_documents = filter_documents_by_status(chemistry_documents, chemistry_document_status_filter)
+    st.caption(document_filter_summary(len(chemistry_documents), len(filtered_chemistry_documents), chemistry_document_status_filter))
+    if not chemistry_documents:
+        st.info("暂无可选文档，请先上传并抽取化学库。")
+        chemistry_document_id = st.number_input("手动 document_id", min_value=1, value=1)
+    elif not filtered_chemistry_documents:
+        st.info("当前页没有匹配筛选状态的化学库文档。")
+        chemistry_document_id = st.number_input("手动 document_id", min_value=1, value=1)
+    else:
+        chemistry_document_options = filtered_chemistry_documents
         selected_chemistry_document = st.selectbox(
             "化学库文档",
             chemistry_document_options,
@@ -922,9 +950,6 @@ with chemistry_tab:
         )
         chemistry_document_id = int(selected_chemistry_document["id"])
         st.caption(f"chemistry_document_id: {chemistry_document_id}")
-    else:
-        st.info("暂无可选文档，请先上传并抽取化学库。")
-        chemistry_document_id = st.number_input("手动 document_id", min_value=1, value=1)
     reaction_sets_page_col, reaction_sets_page_size_col = st.columns(2)
     reaction_sets_page = reaction_sets_page_col.number_input(
         "reaction_sets_page",
@@ -993,6 +1018,8 @@ with chemistry_tab:
         if review_state.get("source_note"):
             st.caption(f"source_note: {review_state['source_note']}")
         show_only_unverified = st.checkbox("只显示未复核", value=False, key="show_only_unverified")
+        review_list_state = reaction_review_list_state(reactions, only_unverified=show_only_unverified)
+        st.caption(review_list_state["summary"])
         if unverified_reactions:
             st.subheader("未复核反应")
             st.dataframe(reaction_review_rows(reactions, only_unverified=True), use_container_width=True)
@@ -1021,7 +1048,7 @@ with chemistry_tab:
                 else:
                     st.warning(f"导出文件不存在: {payload.get('output_path')}")
                 st.json(payload)
-        display_reactions = unverified_reactions if show_only_unverified else reactions
+        display_reactions = review_list_state["display_reactions"]
         for reaction in display_reactions:
             with st.container(border=True):
                 display_state = reaction_display_state(reaction)

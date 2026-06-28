@@ -307,16 +307,36 @@ def validate_migrations() -> list[str]:
     return issues
 
 
+def first_symlink_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
+
+
 def validate_schema(schema_path: Path = DEFAULT_SCHEMA_PATH) -> list[str]:
     issues: list[str] = []
     if not schema_path.exists():
         return [f"schema not found: {schema_path}"]
+    symlink_parent = first_symlink_parent(schema_path)
+    if symlink_parent is not None:
+        return [f"schema file parent is not a regular directory: {symlink_parent}"]
+    if schema_path.is_symlink() or not schema_path.is_file():
+        return [f"schema file is not a regular file: {schema_path}"]
 
     with tempfile.TemporaryDirectory(prefix="paper-lab-schema-") as temp_dir:
         database_path = Path(temp_dir) / "schema.db"
         conn = sqlite3.connect(database_path)
         try:
-            conn.executescript(schema_path.read_text(encoding="utf-8"))
+            try:
+                schema_sql = schema_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                issues.append(f"schema file unreadable: {schema_path}: {exc}")
+                return issues
+            conn.executescript(schema_sql)
             issues.extend(validate_connection_schema(conn, require_seed_counts=True))
         except sqlite3.Error as exc:
             issues.append(f"schema execution failed: {exc}")

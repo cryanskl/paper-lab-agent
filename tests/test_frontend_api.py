@@ -56,6 +56,33 @@ def test_frontend_api_status_request_normalizes_paths_without_leading_slash(monk
     assert payload == {"items": [], "total": 0}
 
 
+def test_frontend_api_status_request_strips_base_url_whitespace(monkeypatch):
+    from app import frontend_api
+
+    class FakeResponse:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {"ok": True}
+
+    def fake_request(method, url, **kwargs):
+        assert method == "GET"
+        assert url == "http://api.test/api/v1/system/status"
+        return FakeResponse()
+
+    monkeypatch.setattr(frontend_api.requests, "request", fake_request)
+
+    status_code, payload = frontend_api.request_json_status(
+        "GET",
+        "  http://api.test/api/v1/  ",
+        "system/status",
+    )
+
+    assert status_code == 200
+    assert payload == {"ok": True}
+
+
 def test_frontend_api_get_raises_readable_api_error_for_json_error(monkeypatch):
     from app import frontend_api
 
@@ -160,6 +187,83 @@ def test_frontend_api_status_request_promotes_invalid_success_payload(monkeypatc
     assert status_code == 599
     assert payload["error"]["code"] == "invalid_response"
     assert "HTTP 200" in payload["error"]["message"]
+
+
+def test_release_readiness_display_state_surfaces_only_blocking_config_warnings():
+    from app import frontend_api
+
+    state = frontend_api.release_readiness_display_state(
+        {
+            "ready": False,
+            "demo_data_missing": [],
+            "failed_workflows": [],
+            "config_warning_codes": ["missing_llm_api_key", "unsupported_vector_db_backend"],
+            "storage_errors": [],
+        }
+    )
+
+    assert state["ready"] is False
+    assert state["blockers"] == ["config_warning_codes:unsupported_vector_db_backend"]
+    assert {
+        "label": "config warnings:",
+        "items": ["config_warning_codes:unsupported_vector_db_backend"],
+    } in state["groups"]
+    assert "config_warning_codes:missing_llm_api_key" not in state["blockers"]
+
+
+def test_release_readiness_display_state_rejects_inconsistent_ready_payload():
+    from app import frontend_api
+
+    state = frontend_api.release_readiness_display_state(
+        {
+            "ready": True,
+            "demo_data_missing": ["documents>=1"],
+            "failed_workflows": [],
+            "config_warning_codes": [],
+            "storage_errors": [],
+        }
+    )
+
+    assert state["ready"] is False
+    assert state["blockers"] == ["documents>=1"]
+    assert {
+        "label": "demo data missing:",
+        "items": ["documents>=1"],
+    } in state["groups"]
+
+
+def test_storage_health_caption_rows_include_parent_dirs_and_vector_json_state():
+    from app import frontend_api
+
+    rows = frontend_api.storage_health_caption_rows(
+        {
+            "data_dir": {"path": "data", "exists": True, "writable": True},
+            "database": {"path": "data/plasma.db", "exists": True, "writable": True},
+            "database_parent": {"path": "data", "exists": True, "writable": True},
+            "vector_db_parent": {"path": "data", "exists": True, "writable": True},
+            "vector_db": {
+                "path": "data/vector-index.json",
+                "exists": True,
+                "writable": True,
+                "valid_json": False,
+                "error": "invalid json",
+            },
+        }
+    )
+
+    assert rows == [
+        {"kind": "caption", "text": "data_dir: exists · writable · data"},
+        {"kind": "caption", "text": "pdf_dir: missing · not writable · -"},
+        {"kind": "caption", "text": "tei_dir: missing · not writable · -"},
+        {"kind": "caption", "text": "translation_dir: missing · not writable · -"},
+        {"kind": "caption", "text": "export_dir: missing · not writable · -"},
+        {"kind": "caption", "text": "database: exists · writable · data/plasma.db"},
+        {"kind": "caption", "text": "database_parent: exists · writable · data"},
+        {"kind": "caption", "text": "vector_db_parent: exists · writable · data"},
+        {"kind": "caption", "text": "vector_db: exists · writable · data/vector-index.json"},
+        {"kind": "caption", "text": "vector_db valid_json: invalid_json"},
+        {"kind": "warning", "text": "vector_db error: invalid json"},
+    ]
 
 
 def test_crawl_job_option_label_summarizes_job_status():
@@ -321,6 +425,7 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
         [
             {
                 "id": 1,
+                "document_id": 7,
                 "name": "Ar chemistry",
                 "status": "verified",
                 "reaction_count": 4,
@@ -332,6 +437,7 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
             },
             {
                 "id": 2,
+                "document_id": 7,
                 "name": "O2 chemistry",
                 "status": "pending",
                 "reaction_count": 5,
@@ -341,6 +447,7 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
             },
             {
                 "id": 3,
+                "document_id": 8,
                 "name": "Empty extraction",
                 "status": "rejected",
                 "reaction_count": 0,
@@ -354,6 +461,7 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
     assert rows == [
         {
             "id": 1,
+            "document_id": 7,
             "name": "Ar chemistry",
             "status": "verified",
             "reaction_count": 4,
@@ -367,6 +475,7 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
         },
         {
             "id": 2,
+            "document_id": 7,
             "name": "O2 chemistry",
             "status": "pending",
             "reaction_count": 5,
@@ -380,6 +489,7 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
         },
         {
             "id": 3,
+            "document_id": 8,
             "name": "Empty extraction",
             "status": "rejected",
             "reaction_count": 0,
@@ -400,6 +510,7 @@ def test_reaction_set_option_label_summarizes_review_and_export_state():
     label = frontend_api.reaction_set_option_label(
         {
             "id": 3,
+            "document_id": 7,
             "name": "Ar chemistry",
             "status": "pending",
             "export_ready": False,
@@ -407,7 +518,7 @@ def test_reaction_set_option_label_summarizes_review_and_export_state():
         }
     )
 
-    assert label == "#3 · pending · export_ready False · 未复核 2 · Ar chemistry"
+    assert label == "#3 · doc 7 · pending · export_ready False · 未复核 2 · Ar chemistry"
 
 
 def test_reaction_set_option_label_uses_fallbacks_for_sparse_items():
@@ -600,6 +711,40 @@ def test_reaction_export_download_returns_none_for_missing_output_file(tmp_path)
     assert frontend_api.reaction_export_download({"output_path": str(missing_path)}) is None
 
 
+def test_reaction_export_download_rejects_symlinked_output_file(tmp_path):
+    from app import frontend_api
+
+    outside_path = tmp_path / "outside-secret.txt"
+    outside_path.write_text("secret export\n", encoding="utf-8")
+    export_path = tmp_path / "reaction-set-3.txt"
+    export_path.symlink_to(outside_path)
+
+    download = frontend_api.reaction_export_download(
+        {
+            "output_path": str(export_path),
+            "mime_type": "text/plain",
+        }
+    )
+
+    assert download is None
+
+
+def test_reaction_export_download_returns_none_when_read_fails_after_safety_check(tmp_path, monkeypatch):
+    from app import frontend_api
+
+    missing_path = tmp_path / "raced.txt"
+    monkeypatch.setattr(frontend_api, "is_safe_download_file", lambda path: True)
+
+    download = frontend_api.reaction_export_download(
+        {
+            "output_path": str(missing_path),
+            "mime_type": "text/plain",
+        }
+    )
+
+    assert download is None
+
+
 def test_reaction_set_review_state_blocks_empty_reaction_sets():
     from app import frontend_api
 
@@ -685,6 +830,7 @@ def test_reaction_audit_rows_flatten_field_changes_for_review():
                 "field_changes": {
                     "reaction_type": {"before": "unknown", "after": "ionization"},
                     "rate_value": {"before": None, "after": "1.2e-8 cm3/s"},
+                    "verified": {"before": False, "after": True},
                 },
             },
             {
@@ -711,8 +857,17 @@ def test_reaction_audit_rows_flatten_field_changes_for_review():
             "audit_id": 31,
             "reaction_id": 7,
             "field": "rate_value",
-            "before": None,
+            "before": "",
             "after": "1.2e-8 cm3/s",
+            "verified_by": "engineer_a",
+            "verified_at": "2026-06-25T10:00:00",
+        },
+        {
+            "audit_id": 31,
+            "reaction_id": 7,
+            "field": "verified",
+            "before": "False",
+            "after": "True",
             "verified_by": "engineer_a",
             "verified_at": "2026-06-25T10:00:00",
         },
@@ -720,12 +875,53 @@ def test_reaction_audit_rows_flatten_field_changes_for_review():
             "audit_id": 32,
             "reaction_id": 7,
             "field": "-",
-            "before": None,
-            "after": None,
+            "before": "",
+            "after": "",
             "verified_by": "engineer_b",
             "verified_at": "2026-06-26T11:00:00",
         },
     ]
+
+
+def test_reaction_review_list_state_summarizes_filtered_review_scope():
+    from app import frontend_api
+
+    reactions = [
+        {"id": 1, "reaction": "e + Ar -> e + Ar", "verified": True},
+        {"id": 2, "reaction": "e + Ar -> 2e + Ar+", "verified": False},
+        {"id": 3, "reaction": "Ar+ + e -> Ar", "verified": False},
+    ]
+
+    state = frontend_api.reaction_review_list_state(reactions, only_unverified=True)
+
+    assert state == {
+        "display_reactions": [reactions[1], reactions[2]],
+        "total_count": 3,
+        "display_count": 2,
+        "unverified_count": 2,
+        "mode": "unverified",
+        "summary": "当前显示未复核: 2/3 · 已隐藏已复核: 1",
+    }
+
+
+def test_reaction_review_list_state_summarizes_full_review_scope():
+    from app import frontend_api
+
+    reactions = [
+        {"id": 1, "reaction": "e + Ar -> e + Ar", "verified": True},
+        {"id": 2, "reaction": "e + Ar -> 2e + Ar+", "verified": False},
+    ]
+
+    state = frontend_api.reaction_review_list_state(reactions, only_unverified=False)
+
+    assert state == {
+        "display_reactions": reactions,
+        "total_count": 2,
+        "display_count": 2,
+        "unverified_count": 1,
+        "mode": "all",
+        "summary": "当前显示全部反应: 2 · 未复核: 1",
+    }
 
 
 def test_crawl_job_rows_summarize_diagnostics_and_workflow_state():
@@ -959,6 +1155,98 @@ def test_paper_category_option_label_uses_fallback_name():
     assert label == "methods · category"
 
 
+def test_paper_upload_option_label_returns_unlinked_choice():
+    from app import frontend_api
+
+    label = frontend_api.paper_upload_option_label(None)
+
+    assert label == "不关联论文"
+
+
+def test_paper_upload_option_label_summarizes_paper_identity():
+    from app import frontend_api
+
+    label = frontend_api.paper_upload_option_label(
+        {
+            "id": 42,
+            "title": "Ar/O2 ICP chemistry",
+            "doi": "10.1234/plasma",
+            "journal_name": "Plasma Sources Science and Technology",
+            "published_date": "2026-06-01",
+        }
+    )
+
+    assert label == "#42 · Ar/O2 ICP chemistry · DOI: 10.1234/plasma · Plasma Sources Science and Technology · 2026-06-01"
+
+
+def test_paper_upload_option_label_uses_sparse_fallbacks():
+    from app import frontend_api
+
+    label = frontend_api.paper_upload_option_label({"id": 7})
+
+    assert label == "#7 · Untitled · DOI: - · - · -"
+
+
+def test_paper_upload_query_params_include_trimmed_search_text():
+    from app import frontend_api
+
+    params = frontend_api.paper_upload_query_params("  Ar/O2 ICP  ")
+
+    assert params == {"page": 1, "page_size": 100, "q": "Ar/O2 ICP"}
+
+
+def test_paper_upload_query_params_omit_blank_search_text():
+    from app import frontend_api
+
+    params = frontend_api.paper_upload_query_params("   ")
+
+    assert params == {"page": 1, "page_size": 100}
+
+
+def test_document_status_filter_options_cover_actionable_workflows():
+    from app import frontend_api
+
+    assert frontend_api.document_status_filter_options() == [
+        "全部",
+        "待解析",
+        "解析中",
+        "解析失败",
+        "待索引",
+        "索引中",
+        "索引失败",
+        "待抽取",
+        "抽取中",
+        "抽取失败",
+        "抽取被拒绝",
+    ]
+
+
+def test_filter_documents_by_status_matches_selected_workflow_state():
+    from app import frontend_api
+
+    documents = [
+        {"id": 1, "parse_status": "uploaded", "index_status": "not_indexed", "chemistry_status": "not_extracted"},
+        {"id": 2, "parse_status": "failed", "index_status": "failed", "chemistry_status": "failed"},
+        {"id": 3, "parse_status": "parsed", "index_status": "indexed", "chemistry_status": "extracted"},
+        {"id": 4, "parse_status": "parsing", "index_status": "indexing", "chemistry_status": "extracting"},
+        {"id": 5, "parse_status": "parsed", "index_status": "indexed", "chemistry_status": "rejected"},
+    ]
+
+    assert [document["id"] for document in frontend_api.filter_documents_by_status(documents, "全部")] == [1, 2, 3, 4, 5]
+    assert [document["id"] for document in frontend_api.filter_documents_by_status(documents, "解析失败")] == [2]
+    assert [document["id"] for document in frontend_api.filter_documents_by_status(documents, "待索引")] == [1]
+    assert [document["id"] for document in frontend_api.filter_documents_by_status(documents, "抽取中")] == [4]
+    assert [document["id"] for document in frontend_api.filter_documents_by_status(documents, "抽取被拒绝")] == [5]
+
+
+def test_document_filter_summary_reports_current_page_match_count():
+    from app import frontend_api
+
+    summary = frontend_api.document_filter_summary(total_count=12, filtered_count=3, filter_value="解析失败")
+
+    assert summary == "当前页匹配 3/12 · 筛选: 解析失败"
+
+
 def test_document_option_label_surfaces_processing_states():
     from app import frontend_api
 
@@ -974,6 +1262,30 @@ def test_document_option_label_surfaces_processing_states():
     )
 
     assert label == "#9 · argon-kinetics.pdf · parse=parsed · index=indexed · chemistry=extracted"
+
+
+def test_document_option_label_includes_linked_paper_identity():
+    from app import frontend_api
+
+    label = frontend_api.document_option_label(
+        {
+            "id": 9,
+            "original_name": "argon-kinetics.pdf",
+            "parse_status": "parsed",
+            "index_status": "indexed",
+            "chemistry_status": "extracted",
+            "paper": {
+                "title": "Global model of an Ar/O2 inductively coupled plasma",
+                "doi": "10.1088/1361-6595/fixture-ar-o2",
+            },
+        }
+    )
+
+    assert (
+        label
+        == "#9 · argon-kinetics.pdf · Global model of an Ar/O2 inductively coupled plasma · "
+        "DOI: 10.1088/1361-6595/fixture-ar-o2 · parse=parsed · index=indexed · chemistry=extracted"
+    )
 
 
 def test_document_option_label_falls_back_to_file_name_and_unknown_states():
@@ -1010,6 +1322,32 @@ def test_document_status_rows_summarize_document_workflow_and_errors():
         {"field": "chemistry_status", "value": "failed"},
         {"field": "chemistry_error", "value": "no parsed sections"},
     ]
+
+
+def test_dataframe_display_rows_normalize_mixed_value_column_for_streamlit():
+    from app import frontend_api
+
+    rows = frontend_api.dataframe_display_rows(
+        [
+            {"field": "document_id", "value": 12},
+            {"field": "parse_status", "value": "failed"},
+            {"field": "parse_error", "value": None},
+        ]
+    )
+
+    assert rows == [
+        {"field": "document_id", "value": "12"},
+        {"field": "parse_status", "value": "failed"},
+        {"field": "parse_error", "value": ""},
+    ]
+
+
+def test_dataframe_display_rows_preserve_non_value_columns():
+    from app import frontend_api
+
+    rows = frontend_api.dataframe_display_rows([{"id": 1, "status": "ok"}])
+
+    assert rows == [{"id": 1, "status": "ok"}]
 
 
 def test_document_section_rows_surface_location_and_preview():
@@ -1215,6 +1553,101 @@ def test_document_asset_downloads_report_missing_files(tmp_path):
     ]
 
 
+def test_document_asset_downloads_reject_symlinked_files(tmp_path):
+    from app import frontend_api
+
+    outside_pdf = tmp_path / "outside.pdf"
+    outside_pdf.write_bytes(b"%PDF secret")
+    pdf_path = tmp_path / "paper.pdf"
+    pdf_path.symlink_to(outside_pdf)
+    outside_tei = tmp_path / "outside.tei.xml"
+    outside_tei.write_text("<TEI>secret</TEI>", encoding="utf-8")
+    tei_path = tmp_path / "paper.tei.xml"
+    tei_path.symlink_to(outside_tei)
+
+    downloads = frontend_api.document_asset_downloads(
+        {"file_path": str(pdf_path), "tei_path": str(tei_path)}
+    )
+
+    assert downloads == [
+        {
+            "kind": "pdf",
+            "label": "下载原始 PDF",
+            "data": None,
+            "file_name": "paper.pdf",
+            "mime": "application/pdf",
+            "path": str(pdf_path),
+            "exists": False,
+            "missing_message": f"PDF 文件不存在: {pdf_path}",
+        },
+        {
+            "kind": "tei",
+            "label": "下载 TEI XML",
+            "data": None,
+            "file_name": "paper.tei.xml",
+            "mime": "application/xml",
+            "path": str(tei_path),
+            "exists": False,
+            "missing_message": f"TEI 文件不存在: {tei_path}",
+        },
+    ]
+
+
+def test_document_asset_downloads_report_missing_when_read_fails_after_safety_check(tmp_path, monkeypatch):
+    from app import frontend_api
+
+    missing_pdf = tmp_path / "raced.pdf"
+    missing_tei = tmp_path / "raced.tei.xml"
+    monkeypatch.setattr(frontend_api, "is_safe_download_file", lambda path: True)
+
+    downloads = frontend_api.document_asset_downloads(
+        {"file_path": str(missing_pdf), "tei_path": str(missing_tei)}
+    )
+
+    assert downloads == [
+        {
+            "kind": "pdf",
+            "label": "下载原始 PDF",
+            "data": None,
+            "file_name": "raced.pdf",
+            "mime": "application/pdf",
+            "path": str(missing_pdf),
+            "exists": False,
+            "missing_message": f"PDF 文件不存在: {missing_pdf}",
+        },
+        {
+            "kind": "tei",
+            "label": "下载 TEI XML",
+            "data": None,
+            "file_name": "raced.tei.xml",
+            "mime": "application/xml",
+            "path": str(missing_tei),
+            "exists": False,
+            "missing_message": f"TEI 文件不存在: {missing_tei}",
+        },
+    ]
+
+
+def test_frontend_download_allows_system_root_symlink_parent():
+    import tempfile
+    from pathlib import Path
+
+    import pytest
+
+    from app import frontend_api
+
+    var_path = Path("/var")
+    if not var_path.is_symlink():
+        pytest.skip("/var is not a symlink on this platform")
+
+    with tempfile.TemporaryDirectory(dir="/var/tmp") as temp_dir:
+        download_path = Path(temp_dir) / "paper.tei.xml"
+        download_path.write_text("<TEI>plasma</TEI>", encoding="utf-8")
+
+        assert str(download_path).startswith("/var/")
+        assert frontend_api.is_safe_download_file(download_path) is True
+
+
 def test_translation_status_rows_summarize_output_file_preview():
     from app import frontend_api
 
@@ -1267,6 +1700,26 @@ def test_translation_download_returns_none_for_missing_output_file(tmp_path):
     from app import frontend_api
 
     missing_path = tmp_path / "missing.md"
+
+    assert frontend_api.translation_download({"output_path": str(missing_path)}) is None
+
+
+def test_translation_download_rejects_symlinked_output_file(tmp_path):
+    from app import frontend_api
+
+    outside_path = tmp_path / "outside.md"
+    outside_path.write_text("# Secret\n", encoding="utf-8")
+    output_path = tmp_path / "document-5-zh.md"
+    output_path.symlink_to(outside_path)
+
+    assert frontend_api.translation_download({"output_path": str(output_path)}) is None
+
+
+def test_translation_download_returns_none_when_read_fails_after_safety_check(tmp_path, monkeypatch):
+    from app import frontend_api
+
+    missing_path = tmp_path / "raced.md"
+    monkeypatch.setattr(frontend_api, "is_safe_download_file", lambda path: True)
 
     assert frontend_api.translation_download({"output_path": str(missing_path)}) is None
 

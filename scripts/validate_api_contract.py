@@ -35,6 +35,13 @@ ASYNC_POST_PATHS = {
     "/api/v1/documents/{}/extract-chemistry",
 }
 ASYNC_RESPONSE_FIELDS = ("job_id", "status")
+ASYNC_RESPONSE_FIELDS_BY_PATH = {
+    "/api/v1/crawl/run": ("job_id", "journal_id", "period", "date_from", "date_to", "status"),
+    "/api/v1/documents/{}/parse": ("job_id", "document_id", "parse_status", "status"),
+    "/api/v1/documents/{}/translate": ("job_id", "document_id", "target_lang", "status"),
+    "/api/v1/documents/{}/index": ("job_id", "document_id", "index_status", "status"),
+    "/api/v1/documents/{}/extract-chemistry": ("job_id", "document_id", "chemistry_status", "status"),
+}
 ASYNC_JOBS_RESPONSE_PATHS = {"/api/v1/crawl/run"}
 REQUIRED_SEMANTIC_ERROR_RESPONSES = {
     ("POST", "/api/v1/documents"): ("409", "415"),
@@ -106,6 +113,7 @@ SYSTEM_STATUS_RESPONSE_FIELDS = (
     "demo_data",
     "release_readiness",
 )
+CONFIG_WARNING_RESPONSE_FIELDS = ("code", "capability", "message", "actual", "supported")
 SYSTEM_STATUS_NESTED_FIELDS = {
     "runtime": ("api_prefix", "scheduler_enabled", "scheduler_jobs", "version"),
     "demo_data": ("ready", "requirements", "missing", "counts"),
@@ -334,6 +342,16 @@ def display_path(path: str) -> str:
     if not value.startswith("/api/v1/") and value != "/api/v1":
         value = f"/api/v1{value}"
     return value
+
+
+def first_symlink_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
 
 
 def documented_routes(path: Path = DEFAULT_CONTRACT_PATH) -> list[tuple[str, str, str]]:
@@ -695,6 +713,14 @@ def system_status_response_contract_issues(openapi: dict | None = None) -> list[
         ]
         if missing_nested:
             return [f"{method} {path} {field} missing fields: {', '.join(missing_nested)}"]
+
+    config_warnings_schema = schema_property(schema, "config_warnings", source_openapi)
+    config_warning_item_schema = effective_schema(config_warnings_schema.get("items", {}), source_openapi)
+    missing_config_warning = [
+        field for field in CONFIG_WARNING_RESPONSE_FIELDS if not schema_declares_fields(config_warning_item_schema, (field,))
+    ]
+    if missing_config_warning:
+        return [f"{method} {path} config_warnings item fields missing: {', '.join(missing_config_warning)}"]
     return []
 
 
@@ -1073,6 +1099,7 @@ def async_response_body_contract_issues(
         if spec is None:
             continue
         schema = response_schema(spec, source_openapi, "202")
+        required_fields = ASYNC_RESPONSE_FIELDS_BY_PATH.get(normalized, ASYNC_RESPONSE_FIELDS)
         if normalized in ASYNC_JOBS_RESPONSE_PATHS:
             missing = [] if schema_declares_fields(schema, ("jobs",)) else ["jobs"]
             if missing:
@@ -1080,11 +1107,11 @@ def async_response_body_contract_issues(
                 continue
             jobs_schema = resolve_openapi_ref(schema.get("properties", {}).get("jobs", {}), source_openapi)
             item_schema = resolve_openapi_ref(jobs_schema.get("items", {}), source_openapi)
-            missing_job_fields = [name for name in ASYNC_RESPONSE_FIELDS if not schema_declares_fields(item_schema, (name,))]
+            missing_job_fields = [name for name in required_fields if not schema_declares_fields(item_schema, (name,))]
             if missing_job_fields:
                 issues.append(f"{method} {display} missing 202 response job fields: {', '.join(missing_job_fields)}")
             continue
-        missing = [name for name in ASYNC_RESPONSE_FIELDS if not schema_declares_fields(schema, (name,))]
+        missing = [name for name in required_fields if not schema_declares_fields(schema, (name,))]
         if missing:
             issues.append(f"{method} {display} missing 202 response fields: {', '.join(missing)}")
     return issues
@@ -1228,11 +1255,28 @@ def main() -> int:
     parser.add_argument("contract_path", nargs="?", default=str(DEFAULT_CONTRACT_PATH))
     args = parser.parse_args()
 
-    missing = missing_documented_routes(Path(args.contract_path))
-    duplicates = duplicate_documented_routes(Path(args.contract_path))
-    undocumented = undocumented_app_routes(Path(args.contract_path))
-    pagination_issues = pagination_contract_issues(Path(args.contract_path))
-    pagination_response_issues = pagination_response_contract_issues(Path(args.contract_path))
+    contract_path = Path(args.contract_path)
+    if not contract_path.exists():
+        print(f"api contract file not found: {contract_path}", file=sys.stderr)
+        return 1
+    symlink_parent = first_symlink_parent(contract_path)
+    if symlink_parent is not None:
+        print(f"api contract file parent is not a regular directory: {symlink_parent}", file=sys.stderr)
+        return 1
+    if contract_path.is_symlink() or not contract_path.is_file():
+        print(f"api contract file is not a regular file: {contract_path}", file=sys.stderr)
+        return 1
+    try:
+        contract_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        print(f"api contract file unreadable: {contract_path}: {exc}", file=sys.stderr)
+        return 1
+
+    missing = missing_documented_routes(contract_path)
+    duplicates = duplicate_documented_routes(contract_path)
+    undocumented = undocumented_app_routes(contract_path)
+    pagination_issues = pagination_contract_issues(contract_path)
+    pagination_response_issues = pagination_response_contract_issues(contract_path)
     error_response_issues = error_response_contract_issues()
     semantic_error_status_issues = semantic_error_status_contract_issues()
     health_response_issues = health_response_contract_issues()
@@ -1256,8 +1300,8 @@ def main() -> int:
     paper_list_response_issues = paper_list_response_contract_issues()
     crawl_job_detail_response_issues = crawl_job_detail_response_contract_issues()
     crawl_job_list_response_issues = crawl_job_list_response_contract_issues()
-    async_issues = async_response_contract_issues(Path(args.contract_path))
-    async_body_issues = async_response_body_contract_issues(Path(args.contract_path))
+    async_issues = async_response_contract_issues(contract_path)
+    async_body_issues = async_response_body_contract_issues(contract_path)
     empty_success_schema_issues = empty_success_response_schema_issues()
     bare_success_schema_issues = bare_success_response_schema_issues()
     named_success_schema_issues = named_success_response_schema_issues()

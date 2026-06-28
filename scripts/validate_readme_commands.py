@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import ast
+import importlib.util
 import re
 import shlex
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -14,15 +17,13 @@ BASH_FENCE_RE = re.compile(r"^```(?:bash|sh|shell)\s*$")
 FENCE_RE = re.compile(r"^```")
 ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 INLINE_CODE_RE = re.compile(r"`([^`]+)`")
-LOCAL_COMMANDS = {"bash", "curl", "python", "python3", "pip", "source"}
+LOCAL_COMMANDS = {"bash", "curl", "python", "python3", "pip", "source", "uvicorn"}
 LOCAL_CURL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 HTTP_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH"}
 UVICORN_OPTIONS_WITH_VALUES = {
     "--app-dir",
     "--backlog",
-    "--date-header",
     "--env-file",
-    "--factory",
     "--fd",
     "--forwarded-allow-ips",
     "--h11-max-incomplete-event-size",
@@ -35,13 +36,11 @@ UVICORN_OPTIONS_WITH_VALUES = {
     "--log-level",
     "--loop",
     "--port",
-    "--proxy-headers",
     "--reload-delay",
     "--reload-dir",
     "--reload-exclude",
     "--reload-include",
     "--root-path",
-    "--server-header",
     "--ssl-ca-certs",
     "--ssl-cert-reqs",
     "--ssl-certfile",
@@ -50,7 +49,6 @@ UVICORN_OPTIONS_WITH_VALUES = {
     "--timeout-graceful-shutdown",
     "--timeout-keep-alive",
     "--uds",
-    "--use-colors",
     "--workers",
     "--ws",
     "--ws-max-queue",
@@ -59,6 +57,7 @@ UVICORN_OPTIONS_WITH_VALUES = {
     "--ws-ping-timeout",
     "--ws-per-message-deflate",
 }
+UVICORN_FLAG_OPTIONS = {"--date-header", "--factory", "--proxy-headers", "--server-header", "--use-colors"}
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -96,7 +95,8 @@ def inline_command_lines(readme_path: Path) -> list[str]:
         for match in INLINE_CODE_RE.finditer(raw_line):
             candidate = match.group(1).strip()
             tokens = strip_leading_env_assignments(split_command(candidate))
-            if tokens and (tokens[0] in LOCAL_COMMANDS or tokens[0].startswith("scripts/")):
+            command = tokens[0].removeprefix("./") if tokens else ""
+            if command and (command in LOCAL_COMMANDS or command.startswith("scripts/")):
                 lines.append(candidate)
     return lines
 
@@ -181,8 +181,9 @@ def command_targets(readme_path: Path) -> list[str]:
     for line in command_lines(readme_path):
         tokens = strip_leading_env_assignments(split_command(line))
         for index, token in enumerate(tokens):
-            if token.startswith("scripts/") and token.endswith((".py", ".sh")):
-                targets.append(token)
+            script_target = token.removeprefix("./")
+            if script_target.startswith("scripts/") and script_target.endswith((".py", ".sh")):
+                targets.append(script_target)
             elif token == "streamlit_app.py":
                 targets.append(token)
             elif token == "-m" and index + 1 < len(tokens):
@@ -200,7 +201,7 @@ def python_script_option_refs(readme_path: Path) -> list[tuple[str, str]]:
             continue
         for index, token in enumerate(tokens):
             if token in {"python", "python3"} and index + 1 < len(tokens):
-                script = tokens[index + 1]
+                script = tokens[index + 1].removeprefix("./")
                 option_tokens = tokens[index + 2 :]
             elif token == "-m" and index > 0 and tokens[index - 1] in {"python", "python3"} and index + 1 < len(tokens):
                 module = tokens[index + 1]
@@ -218,8 +219,124 @@ def python_script_option_refs(readme_path: Path) -> list[tuple[str, str]]:
     return refs
 
 
-def uvicorn_app_refs(readme_path: Path) -> list[str]:
-    refs: list[str] = []
+def safe_python_script_target(repo: Path, script: str) -> bool:
+    script_path = repo / script
+    return (
+        script_path.exists()
+        and is_within_repo(repo, script_path)
+        and first_symlink_parent(script_path) is None
+        and not script_path.is_symlink()
+        and script_path.is_file()
+    )
+
+
+def is_within_repo(repo: Path, path: Path) -> bool:
+    try:
+        path.resolve().relative_to(repo.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+@contextmanager
+def repo_on_sys_path(repo: Path):
+    repo_path = str(repo.resolve())
+    inserted = False
+    if repo_path not in sys.path:
+        sys.path.insert(0, repo_path)
+        inserted = True
+    importlib.invalidate_caches()
+    try:
+        yield
+    finally:
+        if inserted:
+            try:
+                sys.path.remove(repo_path)
+            except ValueError:
+                pass
+        importlib.invalidate_caches()
+
+
+@contextmanager
+def isolated_module_cache(module_name: str):
+    names = [".".join(module_name.split(".")[:index]) for index in range(1, len(module_name.split(".")) + 1)]
+    saved = {name: sys.modules[name] for name in names if name in sys.modules}
+    for name in reversed(names):
+        sys.modules.pop(name, None)
+    try:
+        yield
+    finally:
+        for name in reversed(names):
+            sys.modules.pop(name, None)
+        sys.modules.update(saved)
+
+
+def local_module_path(repo: Path, module_name: str) -> Path | None:
+    parts = module_name.split(".")
+    module_file = repo.joinpath(*parts).with_suffix(".py")
+    package_init = repo.joinpath(*parts, "__init__.py")
+    for candidate in [module_file, package_init]:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def top_level_names(path: Path) -> set[str]:
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return set()
+    names: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                names.update(assigned_names(target))
+        elif isinstance(node, ast.AnnAssign):
+            names.update(assigned_names(node.target))
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                names.add(alias.asname or alias.name.split(".", 1)[0])
+    return names
+
+
+def assigned_names(node: ast.AST) -> set[str]:
+    if isinstance(node, ast.Name):
+        return {node.id}
+    if isinstance(node, (ast.Tuple, ast.List)):
+        names: set[str] = set()
+        for element in node.elts:
+            names.update(assigned_names(element))
+        return names
+    return set()
+
+
+def local_uvicorn_target_issue(
+    repo: Path,
+    search_root: Path,
+    module_name: str,
+    attribute_path: str,
+    target: str,
+    label: str,
+) -> str | None:
+    module_path = local_module_path(search_root, module_name)
+    if module_path is None:
+        return None
+    if not is_within_repo(repo, module_path):
+        return f"{label}: uvicorn target outside repository: {target}"
+    if first_symlink_parent(module_path) is not None or module_path.is_symlink() or not module_path.is_file():
+        return f"{label}: uvicorn target missing: {target}"
+    if "." in attribute_path:
+        return f"{label}: uvicorn target missing: {target}"
+    attribute = attribute_path.split(".", 1)[0]
+    if attribute not in top_level_names(module_path):
+        return f"{label}: uvicorn target missing: {target}"
+    return ""
+
+
+def uvicorn_app_refs(readme_path: Path) -> list[tuple[str, str | None]]:
+    refs: list[tuple[str, str | None]] = []
     for line in command_lines(readme_path):
         tokens = strip_leading_env_assignments(split_command(line))
         if not tokens:
@@ -231,52 +348,83 @@ def uvicorn_app_refs(readme_path: Path) -> list[str]:
         else:
             continue
         skip_next = False
-        for token in option_tokens:
+        app_dir: str | None = None
+        for index, token in enumerate(option_tokens):
             if skip_next:
                 skip_next = False
                 continue
             if token.startswith("-"):
                 option_name = token.split("=", 1)[0]
+                if option_name == "--app-dir":
+                    if "=" in token:
+                        app_dir = token.split("=", 1)[1]
+                    elif index + 1 < len(option_tokens):
+                        app_dir = option_tokens[index + 1]
+                if option_name in UVICORN_FLAG_OPTIONS:
+                    continue
                 if option_name in UVICORN_OPTIONS_WITH_VALUES and "=" not in token:
                     skip_next = True
                 continue
             if ":" in token:
-                refs.append(token)
+                refs.append((token, app_dir))
                 break
     return refs
 
 
-def uvicorn_target_exists(target: str) -> bool:
+def uvicorn_search_root(repo: Path, app_dir: str | None) -> Path:
+    if not app_dir:
+        return repo
+    app_dir_path = Path(app_dir)
+    return app_dir_path if app_dir_path.is_absolute() else repo / app_dir_path
+
+
+def uvicorn_target_issue(repo: Path, target: str, label: str, app_dir: str | None = None) -> str | None:
     if ":" not in target:
-        return False
+        return f"{label}: uvicorn target missing: {target}"
     module_name, attribute_path = target.rsplit(":", 1)
     if not module_name or not attribute_path:
-        return False
-    try:
-        module = __import__(module_name, fromlist=["*"])
-    except Exception:
-        return False
+        return f"{label}: uvicorn target missing: {target}"
+    search_root = uvicorn_search_root(repo, app_dir)
+    if not is_within_repo(repo, search_root) or first_symlink_parent(search_root) is not None or search_root.is_symlink():
+        return f"{label}: uvicorn target outside repository: {target}"
+    local_issue = local_uvicorn_target_issue(repo, search_root, module_name, attribute_path, target, label)
+    if local_issue is not None:
+        return None if local_issue == "" else local_issue
+    with repo_on_sys_path(search_root), isolated_module_cache(module_name):
+        try:
+            spec = importlib.util.find_spec(module_name)
+        except ModuleNotFoundError:
+            spec = None
+        if spec is None or spec.origin is None:
+            return f"{label}: uvicorn target missing: {target}"
+        if spec.origin not in {"built-in", "frozen"} and not is_within_repo(repo, Path(spec.origin)):
+            return f"{label}: uvicorn target outside repository: {target}"
+        try:
+            module = __import__(module_name, fromlist=["*"])
+        except Exception:
+            return f"{label}: uvicorn target missing: {target}"
     current = module
     for attribute in attribute_path.split("."):
         if not hasattr(current, attribute):
-            return False
+            return f"{label}: uvicorn target missing: {target}"
         current = getattr(current, attribute)
-    return True
+    return None
 
 
 def missing_uvicorn_targets(readme_path: Path) -> list[str]:
+    repo = readme_path.parent
     return [
-        f"README.md: uvicorn target missing: {target}"
-        for target in uvicorn_app_refs(readme_path)
-        if not uvicorn_target_exists(target)
+        issue
+        for target, app_dir in uvicorn_app_refs(readme_path)
+        if (issue := uvicorn_target_issue(repo, target, "README.md", app_dir)) is not None
     ]
 
 
-def missing_uvicorn_targets_for_doc(doc_path: Path, label: str) -> list[str]:
+def missing_uvicorn_targets_for_doc(repo: Path, doc_path: Path, label: str) -> list[str]:
     return [
-        f"{label}: uvicorn target missing: {target}"
-        for target in uvicorn_app_refs(doc_path)
-        if not uvicorn_target_exists(target)
+        issue
+        for target, app_dir in uvicorn_app_refs(doc_path)
+        if (issue := uvicorn_target_issue(repo, target, label, app_dir)) is not None
     ]
 
 
@@ -284,8 +432,7 @@ def missing_python_script_options_for_doc(repo: Path, doc_path: Path, label: str
     issues: list[str] = []
     help_cache: dict[str, str | None] = {}
     for script, option in python_script_option_refs(doc_path):
-        script_path = repo / script
-        if not script_path.exists():
+        if not safe_python_script_target(repo, script):
             continue
         if script not in help_cache:
             result = subprocess.run(
@@ -314,13 +461,42 @@ def command_doc_paths(repo: Path) -> list[tuple[Path, str]]:
     return docs
 
 
+def first_symlink_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
+
+
 def missing_command_targets_for_doc(repo: Path, doc_path: Path, label: str) -> list[str]:
+    if first_symlink_parent(doc_path) is not None:
+        return [f"{label}: command doc parent is not a regular directory"]
+    if doc_path.is_symlink() or not doc_path.is_file():
+        return [f"{label}: command doc is not a regular file"]
+    try:
+        doc_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return [f"{label}: command doc unreadable"]
+
     issues: list[str] = []
     for target in command_targets(doc_path):
-        if not (repo / target).exists():
+        target_path = repo / target
+        if not target_path.exists():
             issues.append(f"{label}: command target missing: {target}")
+            continue
+        if not is_within_repo(repo, target_path):
+            issues.append(f"{label}: command target escapes repository: {target}")
+            continue
+        if first_symlink_parent(target_path) is not None:
+            issues.append(f"{label}: command target parent is not a regular directory: {target}")
+            continue
+        if target_path.is_symlink() or not target_path.is_file():
+            issues.append(f"{label}: command target is not a regular file: {target}")
     issues.extend(missing_python_script_options_for_doc(repo, doc_path, label))
-    issues.extend(missing_uvicorn_targets_for_doc(doc_path, label))
+    issues.extend(missing_uvicorn_targets_for_doc(repo, doc_path, label))
     actual_routes = app_routes()
     for method, path in documented_local_curl_routes(doc_path):
         if (method, path) not in actual_routes:

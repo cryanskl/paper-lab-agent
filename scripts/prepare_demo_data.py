@@ -83,6 +83,39 @@ def verify_all_reactions(reaction_set: dict, verified_by: str) -> dict:
     return current
 
 
+def export_has_audit_summary(export_format: str, export_payload: dict) -> bool:
+    output_path = export_payload.get("output_path")
+    if not isinstance(output_path, str) or not output_path:
+        return False
+    path = Path(output_path)
+    if not path.exists() or not path.is_file():
+        return False
+    if export_format == "json":
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        reactions = payload.get("reactions") if isinstance(payload, dict) else None
+        return any(reaction.get("audit_log") for reaction in reactions or [] if isinstance(reaction, dict))
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    if export_format == "txt":
+        return (
+            "audit_entries:" in content
+            and "last_verified_by:" in content
+            and "last_verified_at:" in content
+        )
+    if export_format == "bolsig":
+        return (
+            "AUDIT_ENTRIES:" in content
+            and "LAST_VERIFIED_BY:" in content
+            and "LAST_VERIFIED_AT:" in content
+        )
+    return False
+
+
 def demo_summary(
     document: dict,
     translation: dict,
@@ -101,10 +134,54 @@ def demo_summary(
         "translation_status": translation.get("status"),
         "reaction_set_id": reaction_set.get("id"),
         "reaction_set_status": reaction_set.get("status"),
+        "reaction_set_verified_by": reaction_set.get("verified_by"),
+        "reaction_set_verified_at": reaction_set.get("verified_at"),
         "reaction_count": reaction_set.get("reaction_count", 0),
         "export_formats": list(exports),
+        "export_audit_entry_counts": {
+            fmt: int(export_payload.get("audit_entry_count") or 0)
+            for fmt, export_payload in exports.items()
+        },
+        "export_audit_summary_formats": [
+            fmt
+            for fmt, export_payload in exports.items()
+            if export_has_audit_summary(fmt, export_payload)
+        ],
         "counts": counts,
     }
+
+
+def output_path_error(path: Path) -> str | None:
+    if path.is_symlink():
+        return f"output path is not a regular file: {path}"
+    symlink_parent = first_symlink_parent(path)
+    if symlink_parent is not None:
+        return f"output path parent is not a regular directory: {symlink_parent}"
+    if path.exists() and not path.is_file():
+        return f"output path is not a regular file: {path}"
+    return None
+
+
+def write_output_file(path: Path, text: str) -> str | None:
+    output_error = output_path_error(path)
+    if output_error:
+        return output_error
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{text}\n", encoding="utf-8")
+    except OSError as exc:
+        return f"failed to write output file {path}: {exc}"
+    return None
+
+
+def first_symlink_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
 
 
 def prepare_demo_data(target_lang: str = "zh", verified_by: str = "prepare-demo-data") -> dict:
@@ -161,6 +238,8 @@ def prepare_demo_data(target_lang: str = "zh", verified_by: str = "prepare-demo-
     reaction_set_payload = {
         "id": verified_reaction_set.get("id"),
         "status": verified_reaction_set.get("status"),
+        "verified_by": verified_reaction_set.get("verified_by"),
+        "verified_at": verified_reaction_set.get("verified_at"),
         "reaction_count": len(verified_reaction_set.get("reactions") or []),
     }
     demo_data = demo_data_status(counts)
@@ -187,14 +266,22 @@ def main() -> int:
     parser.add_argument("--output", type=Path, help="Write the JSON payload to this path instead of stdout")
     args = parser.parse_args()
 
+    if args.output is not None:
+        output_error = output_path_error(args.output)
+        if output_error:
+            print(f"prepare_demo_data failed: {output_error}", file=sys.stderr)
+            return 1
+
     payload = prepare_demo_data(args.target_lang, args.verified_by)
     output = payload["summary"] if args.summary_only else payload
     text = json.dumps(output, ensure_ascii=False, indent=None if args.compact else 2)
     if args.output is None:
         print(text)
     else:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(f"{text}\n", encoding="utf-8")
+        output_error = write_output_file(args.output, text)
+        if output_error:
+            print(f"prepare_demo_data failed: {output_error}", file=sys.stderr)
+            return 1
     return 0
 
 

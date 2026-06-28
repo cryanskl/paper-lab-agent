@@ -53,6 +53,7 @@ FALLBACK_STDLIB_MODULES = {
     "sys",
     "tempfile",
     "typing",
+    "unicodedata",
     "urllib",
     "xml",
     "zipfile",
@@ -173,15 +174,101 @@ def missing_required_packages(path: Path = DEFAULT_REQUIREMENTS_PATH) -> list[st
     return [package for package in REQUIRED_PACKAGES if normalize_package_name(package) not in declared]
 
 
+def non_regular_python_source_roots(paths: list[Path] = SOURCE_PATHS) -> list[str]:
+    issues: list[str] = []
+    for path in paths:
+        if not path.exists():
+            continue
+        if path.is_symlink():
+            issues.append(f"python source root is not a regular directory: {path}")
+    return issues
+
+
+def non_regular_python_sources(paths: list[Path] = SOURCE_PATHS) -> list[str]:
+    issues: list[str] = []
+    for path in python_files(paths):
+        if path.is_symlink() or not path.is_file():
+            issues.append(f"python source is not a regular file: {path}")
+    return issues
+
+
+def unreadable_python_sources(paths: list[Path] = SOURCE_PATHS) -> list[str]:
+    issues: list[str] = []
+    for path in python_files(paths):
+        try:
+            path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            issues.append(f"python source unreadable: {path}: {exc}")
+    return issues
+
+
+def invalid_python_sources(paths: list[Path] = SOURCE_PATHS) -> list[str]:
+    issues: list[str] = []
+    for path in python_files(paths):
+        try:
+            ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError as exc:
+            issues.append(f"python source invalid: {path}: {exc}")
+    return issues
+
+
+def first_symlink_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate required package declarations in requirements.txt.")
     parser.add_argument("requirements_path", nargs="?", default=str(DEFAULT_REQUIREMENTS_PATH))
     args = parser.parse_args()
 
-    missing = missing_required_packages(Path(args.requirements_path))
-    missing_imports = missing_imported_packages(Path(args.requirements_path))
-    unpinned = unpinned_packages(Path(args.requirements_path))
-    duplicates = duplicate_packages(Path(args.requirements_path))
+    requirements_path = Path(args.requirements_path)
+    if not requirements_path.exists():
+        print(f"requirements file not found: {requirements_path}", file=sys.stderr)
+        return 1
+    symlink_parent = first_symlink_parent(requirements_path)
+    if symlink_parent is not None:
+        print(f"requirements file parent is not a regular directory: {symlink_parent}", file=sys.stderr)
+        return 1
+    if requirements_path.is_symlink() or not requirements_path.is_file():
+        print(f"requirements file is not a regular file: {requirements_path}", file=sys.stderr)
+        return 1
+    try:
+        requirements_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        print(f"requirements file unreadable: {requirements_path}: {exc}", file=sys.stderr)
+        return 1
+
+    source_root_issues = non_regular_python_source_roots()
+    if source_root_issues:
+        for issue in source_root_issues:
+            print(issue, file=sys.stderr)
+        return 1
+    source_path_issues = non_regular_python_sources()
+    if source_path_issues:
+        for issue in source_path_issues:
+            print(issue, file=sys.stderr)
+        return 1
+    source_read_issues = unreadable_python_sources()
+    if source_read_issues:
+        for issue in source_read_issues:
+            print(issue, file=sys.stderr)
+        return 1
+    source_parse_issues = invalid_python_sources()
+    if source_parse_issues:
+        for issue in source_parse_issues:
+            print(issue, file=sys.stderr)
+        return 1
+
+    missing = missing_required_packages(requirements_path)
+    missing_imports = missing_imported_packages(requirements_path)
+    unpinned = unpinned_packages(requirements_path)
+    duplicates = duplicate_packages(requirements_path)
     if missing or missing_imports or unpinned or duplicates:
         if missing:
             print(f"requirements missing packages: {', '.join(missing)}", file=sys.stderr)

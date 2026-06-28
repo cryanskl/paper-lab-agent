@@ -33,6 +33,32 @@ strip_env_inline_comment() {
 
 load_env_file_if_unset() {
   local env_file="${1:-.env}"
+  if [[ -L "${env_file}" || ( -e "${env_file}" && ! -f "${env_file}" ) ]]; then
+    printf "env file is not a regular file: %s\n" "${env_file}" >&2
+    return 1
+  fi
+  local env_parent="${env_file%/*}"
+  local env_parent_cursor="" env_parent_part
+  if [[ "${env_parent}" != "${env_file}" ]]; then
+    if [[ "${env_parent}" == /* ]]; then
+      env_parent_cursor="/"
+    fi
+    IFS="/" read -ra env_parent_parts <<< "${env_parent}"
+    for env_parent_part in "${env_parent_parts[@]}"; do
+      [[ -z "${env_parent_part}" || "${env_parent_part}" == "." ]] && continue
+      if [[ -z "${env_parent_cursor}" ]]; then
+        env_parent_cursor="${env_parent_part}"
+      elif [[ "${env_parent_cursor}" == "/" ]]; then
+        env_parent_cursor="/${env_parent_part}"
+      else
+        env_parent_cursor="${env_parent_cursor}/${env_parent_part}"
+      fi
+      if [[ -L "${env_parent_cursor}" ]]; then
+        printf "env file parent is not a regular directory: %s\n" "${env_parent_cursor}" >&2
+        return 1
+      fi
+    done
+  fi
   [[ -f "${env_file}" ]] || return 0
 
   local raw_line line key value

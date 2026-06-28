@@ -9,6 +9,11 @@ from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from app.release_readiness import RELEASE_BLOCKING_CONFIG_WARNING_CODES
 
 HEALTH_PATH = "/api/v1/health"
 STATUS_PATH = "/api/v1/system/status"
@@ -47,6 +52,17 @@ STORAGE_HEALTH_REQUIRED_KEYS = {
     "vector_db_parent",
     "vector_db",
 }
+STORAGE_HEALTH_SUMMARY_KEYS = (
+    "data_dir",
+    "pdf_dir",
+    "tei_dir",
+    "translation_dir",
+    "export_dir",
+    "database",
+    "database_parent",
+    "vector_db_parent",
+    "vector_db",
+)
 STORAGE_HEALTH_ENTRY_REQUIRED_KEYS = {"path", "exists", "writable"}
 STORAGE_HEALTH_PATH_KEYS = {"data_dir", "pdf_dir", "tei_dir", "translation_dir", "export_dir"}
 VECTOR_DB_HEALTH_REQUIRED_KEYS = {"path", "exists", "readable", "writable", "valid_json", "error"}
@@ -130,10 +146,19 @@ def clean_env_value(value: str) -> str:
     return cleaned
 
 
-def load_env_file(path: Path = Path(".env")) -> None:
+def load_env_file(path: Path = Path(".env")) -> Optional[str]:
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        return f"env file is not a regular file: {path}"
+    symlink_parent = first_symlink_parent(path)
+    if symlink_parent is not None:
+        return f"env file parent is not a regular directory: {symlink_parent}"
     if not path.exists():
-        return
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        return None
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        return f"failed to read env file {path}: {exc}"
+    for raw_line in lines:
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -144,6 +169,7 @@ def load_env_file(path: Path = Path(".env")) -> None:
         value = clean_env_value(value)
         if key not in os.environ:
             os.environ[key] = value
+    return None
 
 
 def normalize_base_url(url: str) -> str:
@@ -151,6 +177,32 @@ def normalize_base_url(url: str) -> str:
     if value.endswith(EXPECTED_API_PREFIX):
         return value[: -len(EXPECTED_API_PREFIX)]
     return value
+
+
+def write_output_file(path: Path, rendered: str) -> Optional[str]:
+    if path.is_symlink():
+        return f"output path is not a regular file: {path}"
+    symlink_parent = first_symlink_parent(path)
+    if symlink_parent is not None:
+        return f"output path parent is not a regular directory: {symlink_parent}"
+    if path.exists() and not path.is_file():
+        return f"output path is not a regular file: {path}"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{rendered}\n", encoding="utf-8")
+    except OSError as exc:
+        return f"failed to write output file {path}: {exc}"
+    return None
+
+
+def first_symlink_parent(path: Path) -> Optional[Path]:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
 
 
 def connect_host(host: str) -> str:
@@ -295,6 +347,18 @@ def validate_system_status(status: dict) -> list[str]:
                 for key in sorted(CONFIG_WARNING_REQUIRED_KEYS & set(warning))
                 if not isinstance(warning[key], str) or not warning[key].strip()
             )
+            if "actual" in warning and (not isinstance(warning["actual"], str) or not warning["actual"].strip()):
+                invalid_warnings.append(f"{index}.actual")
+            if "supported" in warning:
+                supported = warning["supported"]
+                if not isinstance(supported, list):
+                    invalid_warnings.append(f"{index}.supported")
+                else:
+                    invalid_warnings.extend(
+                        f"{index}.supported.{item_index}"
+                        for item_index, value in enumerate(supported)
+                        if not isinstance(value, str) or not value.strip()
+                    )
         if invalid_warnings:
             errors.append(f"config_warnings invalid values: {', '.join(invalid_warnings)}")
     runtime = status.get("runtime")
@@ -586,9 +650,10 @@ def failed_workflow_errors(status: dict) -> list[str]:
     for workflow, counts in status_counts.items():
         if not isinstance(counts, dict):
             continue
-        failed = counts.get("failed")
-        if isinstance(failed, int) and not isinstance(failed, bool) and failed > 0:
-            errors.append(f"{workflow}.failed={failed}")
+        for blocking_status in ("failed", "rejected"):
+            count = counts.get(blocking_status)
+            if isinstance(count, int) and not isinstance(count, bool) and count > 0:
+                errors.append(f"{workflow}.{blocking_status}={count}")
     return errors
 
 
@@ -645,13 +710,44 @@ def list_values(value) -> list[str]:
 
 def release_readiness_blockers(readiness: dict) -> list[str]:
     blockers: list[str] = []
-    for key in ("demo_data_missing", "failed_workflows", "config_warning_codes", "storage_errors"):
+    for key in ("demo_data_missing", "failed_workflows", "storage_errors"):
         blockers.extend(f"{key}:{value}" for value in readiness.get(key, []))
+    blockers.extend(
+        f"config_warning_codes:{value}"
+        for value in readiness.get("config_warning_codes", [])
+        if value in RELEASE_BLOCKING_CONFIG_WARNING_CODES
+    )
     if blockers:
         return blockers
     if readiness.get("ready") is True:
         return []
     return ["ready=false"]
+
+
+def storage_health_summary(status: dict) -> dict:
+    storage_health = status.get("storage_health")
+    if not isinstance(storage_health, dict):
+        return {}
+
+    summary: dict[str, dict] = {}
+    for key in STORAGE_HEALTH_SUMMARY_KEYS:
+        entry = storage_health.get(key)
+        if not isinstance(entry, dict):
+            continue
+        compact_entry = {}
+        path = entry.get("path")
+        if isinstance(path, str):
+            compact_entry["path"] = path
+        for field in ("exists", "readable", "writable", "valid_json"):
+            value = entry.get(field)
+            if isinstance(value, bool):
+                compact_entry[field] = value
+        error = entry.get("error")
+        if isinstance(error, str) and error.strip():
+            compact_entry["error"] = error
+        if compact_entry:
+            summary[key] = compact_entry
+    return summary
 
 
 def probe_blocker(prefix: str, detail: Optional[dict]) -> Optional[str]:
@@ -701,7 +797,7 @@ def health_summary(
             for warning in config_warnings
             if isinstance(warning, dict) and isinstance(warning.get("code"), str) and warning["code"].strip()
         ]
-        release_ready = not (storage_errors or failed_workflows or config_warning_codes or demo_data_missing)
+        release_ready = not (storage_errors or failed_workflows or demo_data_missing)
     readiness_blockers = release_readiness_blockers(
         {
             "ready": release_ready,
@@ -733,6 +829,13 @@ def health_summary(
         "api_status": health.get("status") if isinstance(health, dict) else None,
         "api_prefix": runtime.get("api_prefix"),
         "version": runtime.get("version"),
+        "scheduler_enabled": runtime.get("scheduler_enabled"),
+        "scheduler_job_count": len(runtime.get("scheduler_jobs") or []),
+        "scheduler_job_ids": [
+            job.get("id")
+            for job in (runtime.get("scheduler_jobs") or [])
+            if isinstance(job, dict) and isinstance(job.get("id"), str)
+        ],
         "release_ready": release_blockers == [],
         "release_blockers": release_blockers,
         "demo_data_ready": demo_data.get("ready") is True,
@@ -744,6 +847,7 @@ def health_summary(
         "config_warning_codes": config_warning_codes,
         "storage_writable": storage_errors == [],
         "storage_errors": storage_errors,
+        "storage_health": storage_health_summary(safe_status),
     }
     if frontend is not None:
         summary.update(
@@ -777,7 +881,10 @@ def health_summary(
 
 
 def main() -> int:
-    load_env_file()
+    env_error = load_env_file()
+    if env_error:
+        print(f"health_check failed: {env_error}", file=sys.stderr)
+        return 1
     parser = argparse.ArgumentParser(description="Check paper-lab-agent API health.")
     parser.add_argument("--base-url", default=default_base_url(), help="FastAPI base URL without /api/v1")
     parser.add_argument("--check-frontend", action="store_true", help="Also check Streamlit frontend health")
@@ -788,7 +895,11 @@ def main() -> int:
     parser.add_argument("--check-external", action="store_true", help="Also check configured external services")
     parser.add_argument("--require-grobid", action="store_true", help="Fail when GROBID is unavailable")
     parser.add_argument("--require-storage-writable", action="store_true", help="Fail when local storage paths are missing or not writable")
-    parser.add_argument("--require-no-failed-workflows", action="store_true", help="Fail when workflow status counts include failed items")
+    parser.add_argument(
+        "--require-no-failed-workflows",
+        action="store_true",
+        help="Fail when workflow status counts include failed or rejected items",
+    )
     parser.add_argument("--require-no-config-warnings", action="store_true", help="Fail when system status reports configuration warnings")
     parser.add_argument("--require-demo-data", action="store_true", help="Fail when walking skeleton demo data is not loaded")
     parser.add_argument(
@@ -798,6 +909,7 @@ def main() -> int:
     )
     parser.add_argument("--compact", action="store_true", help="Print health JSON on one line")
     parser.add_argument("--summary-only", action="store_true", help="Print only release/demo readiness summary JSON")
+    parser.add_argument("--output", type=Path, help="Also write the emitted health JSON to this file")
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args()
 
@@ -819,13 +931,13 @@ def main() -> int:
         output["frontend"] = frontend
     if openapi is not None:
         output["openapi"] = openapi
-    print(
-        json.dumps(
-            health_summary(health, status, frontend, openapi) if args.summary_only else output,
-            ensure_ascii=False,
-            indent=None if args.compact else 2,
-        )
+    emitted = health_summary(health, status, frontend, openapi) if args.summary_only else output
+    rendered = json.dumps(
+        emitted,
+        ensure_ascii=False,
+        indent=None if args.compact else 2,
     )
+    print(rendered)
     if not isinstance(health, dict):
         print("health_check failed: health response must be an object", file=sys.stderr)
         return 1
@@ -842,6 +954,11 @@ def main() -> int:
     if status_errors:
         print(f"health_check failed: system status invalid ({'; '.join(status_errors)})", file=sys.stderr)
         return 1
+    if args.output:
+        output_error = write_output_file(args.output, rendered)
+        if output_error:
+            print(f"health_check failed: {output_error}", file=sys.stderr)
+            return 1
     api_readiness = api_release_readiness(status)
     if args.require_release_ready and api_readiness is not None:
         readiness_errors = release_readiness_blockers(api_readiness)

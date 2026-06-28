@@ -11,7 +11,7 @@ from fastapi import UploadFile
 from app.clients.grobid import GrobidClient
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
-from app.services.rag import JsonVectorStore
+from app.services.rag import get_vector_store
 from app.utils import now_iso
 
 
@@ -28,6 +28,29 @@ def safe_original_filename(filename: Optional[str]) -> str:
 
 
 def mark_parse_queued(document_id: int) -> None:
+    settings = get_settings()
+    try:
+        get_vector_store(settings).delete_document(document_id)
+    except Exception as exc:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM sections WHERE document_id=?", (document_id,))
+            conn.execute(
+                """
+                UPDATE documents
+                SET parse_status='failed',
+                    parse_error=?,
+                    index_status='not_indexed',
+                    index_error=NULL,
+                    chemistry_status='not_extracted',
+                    chemistry_error=NULL
+                WHERE id=?
+                """,
+                (str(exc), document_id),
+            )
+        raise
     with get_conn() as conn:
         conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
         conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))
@@ -48,6 +71,17 @@ def mark_parse_queued(document_id: int) -> None:
         )
 
 
+def assert_safe_document_storage_path(path: Path) -> None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        raise OSError(f"document storage path parent is not a regular directory: {parent}")
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise OSError(f"document storage path is not a regular file: {path}")
+
+
 async def save_upload(file: UploadFile, paper_id: Optional[int]) -> tuple[dict, bool]:
     settings = get_settings()
     content = await file.read()
@@ -57,6 +91,7 @@ async def save_upload(file: UploadFile, paper_id: Optional[int]) -> tuple[dict, 
         if existing:
             return dict_from_row(existing), False
         stored = settings.pdf_dir / f"{digest}.pdf"
+        assert_safe_document_storage_path(stored)
         stored.write_bytes(content)
         cursor = conn.execute(
             """
@@ -164,11 +199,72 @@ def sections_from_tei(tei: str) -> list[dict]:
             parts.append(child.tail or "")
         return clean_mixed_text(parts)
 
+    def content_without_descendants(
+        node: ET.Element, excluded: list[Optional[ET.Element]], include_targets: bool = True
+    ) -> str:
+        excluded_ids = {id(excluded_node) for excluded_node in excluded if excluded_node is not None}
+
+        def collect(current: ET.Element) -> str:
+            parts = [current.text or ""]
+            for child in list(current):
+                if id(child) in excluded_ids:
+                    parts.append(child.tail or "")
+                    continue
+                child_text = collect(child)
+                if include_targets and local_name(child) in {"ptr", "ref"}:
+                    target = clean_text(child.get("target") or "")
+                    if target:
+                        child_text = f"{child_text} ({target})" if child_text else target
+                parts.append(child_text)
+                parts.append(child.tail or "")
+            return clean_mixed_text(parts)
+
+        return collect(node)
+
+    def date_value(date: ET.Element) -> str:
+        text = text_content(date, include_targets=False)
+        if text:
+            return text
+        for attr in ["when", "from", "to", "notBefore", "notAfter"]:
+            value = clean_text(date.get(attr) or "")
+            if value:
+                return value
+        return ""
+
+    def bibliographic_scope_value(scope: ET.Element) -> str:
+        text = text_content(scope, include_targets=False)
+        if text:
+            return text
+        start = clean_text(scope.get("from") or "")
+        end = clean_text(scope.get("to") or "")
+        if start and end:
+            return f"{start}-{end}"
+        return start or end
+
     def reference_text(bibl: ET.Element) -> str:
         id_nodes = findall(bibl, ".//tei:idno")
-        text = content_without_children(bibl, id_nodes, include_targets=False)
+        attribute_nodes = [
+            node
+            for node in bibl.iter()
+            if (
+                local_name(node) == "date"
+                and date_value(node)
+                and not text_content(node, include_targets=False)
+            )
+            or (
+                local_name(node) == "biblScope"
+                and bibliographic_scope_value(node)
+                and not text_content(node, include_targets=False)
+            )
+        ]
+        text = content_without_descendants(bibl, [*id_nodes, *attribute_nodes], include_targets=False)
         parts = [text] if text else []
         seen_values = {text} if text else set()
+        for attr_node in attribute_nodes:
+            value = date_value(attr_node) if local_name(attr_node) == "date" else bibliographic_scope_value(attr_node)
+            if value and value not in seen_values:
+                parts.append(value)
+                seen_values.add(value)
         for id_node in id_nodes:
             value = text_content(id_node, include_targets=False)
             if not value or value in seen_values:
@@ -205,7 +301,8 @@ def sections_from_tei(tei: str) -> list[dict]:
     def append_body_div(div: ET.Element) -> None:
         head = find(div, "tei:head")
         explicit_title = text_content(head, include_targets=False) if head is not None else None
-        content_parts = []
+        initial_text = clean_text(div.text or "")
+        content_parts = [initial_text] if initial_text else []
 
         def flush_body_content() -> None:
             nonlocal content_parts
@@ -216,8 +313,8 @@ def sections_from_tei(tei: str) -> list[dict]:
         for child in list(div):
             child_name = local_name(child)
             if child_name == "head":
-                continue
-            if child_name == "p":
+                pass
+            elif child_name in {"p", "formula", "equation", "note", "quote", "cit"}:
                 content_parts.append(text_content(child))
             elif child_name == "list":
                 content_parts.extend(text_content(item) for item in findall(child, "tei:item"))
@@ -230,6 +327,9 @@ def sections_from_tei(tei: str) -> list[dict]:
             elif child_name == "table":
                 flush_body_content()
                 append_table(child)
+            tail = clean_text(child.tail or "")
+            if tail:
+                content_parts.append(tail)
         flush_body_content()
 
     def append_figure(figure: ET.Element) -> None:
@@ -273,7 +373,8 @@ def sections_from_tei(tei: str) -> list[dict]:
 
     for body in findall(root, ".//tei:text//tei:body"):
         pending_body_head = None
-        content_parts = []
+        initial_text = clean_text(body.text or "")
+        content_parts = [initial_text] if initial_text else []
 
         def flush_body_content() -> None:
             nonlocal content_parts, pending_body_head
@@ -292,6 +393,8 @@ def sections_from_tei(tei: str) -> list[dict]:
                 append_body_div(child)
             elif child_name == "p":
                 content_parts.append(text_content(child))
+            elif child_name in {"formula", "equation", "note", "quote", "cit"}:
+                content_parts.append(text_content(child))
             elif child_name == "list":
                 content_parts.extend(text_content(item) for item in findall(child, "tei:item"))
             elif child_name == "figure":
@@ -300,6 +403,9 @@ def sections_from_tei(tei: str) -> list[dict]:
             elif child_name == "table":
                 flush_body_content()
                 append_table(child)
+            tail = clean_text(child.tail or "")
+            if tail:
+                content_parts.append(tail)
         flush_body_content()
 
     reference_index = 1
@@ -342,6 +448,35 @@ async def parse_document(document_id: int) -> dict:
     grobid = GrobidClient(settings.grobid_url)
     parse_error = None
     try:
+        assert_safe_document_storage_path(Path(doc["file_path"]))
+    except Exception as exc:
+        parse_error = f"Document source validation failed: {exc}"
+        try:
+            get_vector_store(settings).delete_document(document_id)
+        except Exception as cleanup_exc:
+            parse_error = f"{parse_error}; vector cleanup failed: {cleanup_exc}"
+        with get_conn() as conn:
+            conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
+            conn.execute("DELETE FROM sections WHERE document_id=?", (document_id,))
+            conn.execute(
+                """
+                UPDATE documents
+                SET parse_status='failed',
+                    parse_error=?,
+                    index_status='not_indexed',
+                    index_error=NULL,
+                    chemistry_status='not_extracted',
+                    chemistry_error=NULL
+                WHERE id=?
+                """,
+                (parse_error, document_id),
+            )
+            row = conn.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
+            return dict_from_row(row)
+
+    try:
         grobid_health = await grobid.health_detail()
         if grobid_health.get("available"):
             tei_text = await grobid.process_fulltext(doc["file_path"])
@@ -373,7 +508,7 @@ async def parse_document(document_id: int) -> dict:
         except Exception as exc:
             parse_error = f"Local text fallback failed: {exc}"
             try:
-                JsonVectorStore(settings.vector_db_path).delete_document(document_id)
+                get_vector_store(settings).delete_document(document_id)
             except Exception as cleanup_exc:
                 parse_error = f"{parse_error}; vector cleanup failed: {cleanup_exc}"
             with get_conn() as conn:
@@ -399,8 +534,9 @@ async def parse_document(document_id: int) -> dict:
 
     try:
         tei_path = settings.tei_dir / f"document-{document_id}.tei.xml"
+        assert_safe_document_storage_path(tei_path)
         tei_path.write_text(tei_text or "", encoding="utf-8")
-        JsonVectorStore(settings.vector_db_path).delete_document(document_id)
+        get_vector_store(settings).delete_document(document_id)
         with get_conn() as conn:
             conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
             conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))

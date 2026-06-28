@@ -10,7 +10,8 @@ from pathlib import Path
 import sys
 
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+SCRIPT_PATH = Path(__file__).absolute()
+REPO_ROOT = SCRIPT_PATH.resolve().parent.parent
 SETTINGS_CONFIG_PATH = REPO_ROOT / "app" / "config.py"
 DEV_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev.sh"
 
@@ -200,9 +201,22 @@ def script_runtime_default_mismatches(path: Path, dev_script_path: Path = DEV_SC
             mismatches.append(f"FRONTEND_URL expected {expected_frontend_url}, got {frontend_url}")
     expected_timeout = dev_ready_timeout_default(dev_script_path)
     actual_timeout = values.get("DEV_READY_TIMEOUT")
+    if actual_timeout and not expected_timeout:
+        mismatches.append(f"DEV_READY_TIMEOUT default missing from {dev_script_path}")
+        return mismatches
     if expected_timeout and actual_timeout and actual_timeout != expected_timeout:
         mismatches.append(f"DEV_READY_TIMEOUT expected {expected_timeout}, got {actual_timeout}")
     return mismatches
+
+
+def first_symlink_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
 
 
 def main() -> int:
@@ -210,9 +224,64 @@ def main() -> int:
     parser.add_argument("path", nargs="?", default=".env.example", help="Path to env example file")
     args = parser.parse_args()
 
+    if SCRIPT_PATH.is_symlink() or not SCRIPT_PATH.is_file():
+        print(f"validator script is not a regular file: {SCRIPT_PATH}", file=sys.stderr)
+        return 1
+    validator_script_parent = first_symlink_parent(SCRIPT_PATH)
+    if validator_script_parent is not None:
+        print(f"validator script parent is not a regular directory: {validator_script_parent}", file=sys.stderr)
+        return 1
+
     path = Path(args.path)
     if not path.exists():
         print(f"env example not found: {path}", file=sys.stderr)
+        return 1
+    symlink_parent = first_symlink_parent(path)
+    if symlink_parent is not None:
+        print(f"env example parent is not a regular directory: {symlink_parent}", file=sys.stderr)
+        return 1
+    if path.is_symlink() or not path.is_file():
+        print(f"env example is not a regular file: {path}", file=sys.stderr)
+        return 1
+    try:
+        path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        print(f"env example unreadable: {path}: {exc}", file=sys.stderr)
+        return 1
+    if SETTINGS_CONFIG_PATH.is_symlink() or (
+        SETTINGS_CONFIG_PATH.exists() and not SETTINGS_CONFIG_PATH.is_file()
+    ):
+        print(f"settings config is not a regular file: {SETTINGS_CONFIG_PATH}", file=sys.stderr)
+        return 1
+    settings_config_parent = first_symlink_parent(SETTINGS_CONFIG_PATH)
+    if settings_config_parent is not None:
+        print(f"settings config parent is not a regular directory: {settings_config_parent}", file=sys.stderr)
+        return 1
+    if SETTINGS_CONFIG_PATH.exists():
+        try:
+            settings_config_text = SETTINGS_CONFIG_PATH.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            print(f"settings config unreadable: {SETTINGS_CONFIG_PATH}: {exc}", file=sys.stderr)
+            return 1
+        try:
+            ast.parse(settings_config_text)
+        except SyntaxError as exc:
+            print(f"settings config invalid: {SETTINGS_CONFIG_PATH}: {exc}", file=sys.stderr)
+            return 1
+    if DEV_SCRIPT_PATH.is_symlink() or (DEV_SCRIPT_PATH.exists() and not DEV_SCRIPT_PATH.is_file()):
+        print(f"dev script is not a regular file: {DEV_SCRIPT_PATH}", file=sys.stderr)
+        return 1
+    if not DEV_SCRIPT_PATH.exists():
+        print(f"dev script not found: {DEV_SCRIPT_PATH}", file=sys.stderr)
+        return 1
+    dev_script_parent = first_symlink_parent(DEV_SCRIPT_PATH)
+    if dev_script_parent is not None:
+        print(f"dev script parent is not a regular directory: {dev_script_parent}", file=sys.stderr)
+        return 1
+    try:
+        DEV_SCRIPT_PATH.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        print(f"dev script unreadable: {DEV_SCRIPT_PATH}: {exc}", file=sys.stderr)
         return 1
 
     missing = missing_required_keys(path)

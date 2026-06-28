@@ -1,5 +1,7 @@
 import hashlib
 import re
+import unicodedata
+from datetime import date
 from typing import Any, Optional
 
 from app.clients.crossref import CrossrefClient
@@ -10,13 +12,17 @@ from app.db import dict_from_row, get_conn
 from app.services.classification import get_classifier
 from app.utils import json_dumps, json_loads, now_iso, today_iso
 
+SUBSCRIPT_DIGIT_TRANSLATION = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")
+
 
 def normalize_text(value: Any) -> str:
-    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+    normalized = unicodedata.normalize("NFKC", str(value or ""))
+    return re.sub(r"\s+", " ", normalized.strip().lower())
 
 
 def normalize_keyword_text(value: Any) -> str:
-    text = re.sub(r"[^0-9a-zA-Z]+", " ", str(value or "").strip().lower())
+    normalized = unicodedata.normalize("NFKC", str(value or "")).translate(SUBSCRIPT_DIGIT_TRANSLATION)
+    text = re.sub(r"[^0-9a-zA-Z]+", " ", normalized.strip().lower())
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -38,9 +44,10 @@ def matches_keywords(work: dict[str, Any], keywords: Any) -> bool:
     if not terms:
         return True
     haystack = normalize_keyword_text(f"{work.get('title') or ''}\n{work.get('abstract') or ''}")
+    padded_haystack = f" {haystack} "
     if mode == "and":
-        return all(term in haystack for term in terms)
-    return any(term in haystack for term in terms)
+        return all(f" {term} " in padded_haystack for term in terms)
+    return any(f" {term} " in padded_haystack for term in terms)
 
 
 def optional_text(value: Any, default: Optional[str] = None) -> Optional[str]:
@@ -238,7 +245,7 @@ async def run_crawl_job(job_id: int, journal_id: int, date_from: str, date_to: s
         journal = dict_from_row(journal_row)
 
     try:
-        issn = journal.get("issn_electronic") or journal.get("issn_print")
+        issn = optional_text(journal.get("issn_electronic")) or optional_text(journal.get("issn_print"))
         if not issn:
             raise RuntimeError("journal has no ISSN")
         works, source_warning = await fetch_metadata_works(settings, issn, date_from, date_to)
@@ -319,6 +326,8 @@ def create_jobs(journal_ids: Optional[list[int]], period: str, date_from: Option
                     (journal["id"],),
                 ).fetchone()
                 start = last["date_to"] if last else f"{journal.get('year_from') or 1990}-01-01"
+            if date.fromisoformat(start) > date.fromisoformat(date_to):
+                raise ValueError(f"date_from must be before or equal to date_to for journal {journal['id']}")
             cursor = conn.execute(
                 """
                 INSERT INTO crawl_jobs (journal_id, period, date_from, date_to, status)

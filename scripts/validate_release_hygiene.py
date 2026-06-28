@@ -123,11 +123,27 @@ def workflow_declares_trigger(workflow_text: str, trigger: str) -> bool:
     return False
 
 
+def first_symlink_parent(path: Path, stop_at: Path) -> Path | None:
+    parent = path.parent
+    while parent != stop_at and parent != parent.parent:
+        if parent.is_symlink():
+            return parent
+        parent = parent.parent
+    return None
+
+
 def missing_required_ci_release_gate(repo: Path) -> list[str]:
     workflow_path = repo / REQUIRED_CI_WORKFLOW
     if not workflow_path.exists():
         return ["ci_workflow"]
-    workflow_text = workflow_path.read_text(encoding="utf-8")
+    if first_symlink_parent(workflow_path, repo) is not None or not workflow_path.parent.is_dir():
+        return ["ci_workflow_parent_not_regular_directory"]
+    if workflow_path.is_symlink() or not workflow_path.is_file():
+        return ["ci_workflow_not_regular_file"]
+    try:
+        workflow_text = workflow_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return ["ci_workflow_unreadable"]
     missing = []
     for trigger in REQUIRED_CI_TRIGGERS:
         if not workflow_declares_trigger(workflow_text, trigger):
@@ -178,6 +194,15 @@ def main() -> int:
     args = parser.parse_args()
 
     repo = args.gitignore.parent
+    if args.gitignore.is_symlink() or not args.gitignore.is_file():
+        print(f"gitignore is not a regular file: {args.gitignore}", file=sys.stderr)
+        return 1
+    try:
+        args.gitignore.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        print(f"gitignore unreadable: {args.gitignore}: {exc}", file=sys.stderr)
+        return 1
+
     missing = missing_required_gitignore_patterns(args.gitignore)
     missing_ci = missing_required_ci_release_gate(repo)
     forbidden = forbidden_tracked_paths(tracked_files(repo))

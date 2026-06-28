@@ -5,6 +5,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Iterable, Optional, Protocol
 
+from app.rag_registry import SUPPORTED_EMBEDDING_MODELS, SUPPORTED_VECTOR_DB_BACKENDS
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
 
@@ -46,8 +47,6 @@ class LocalHashEmbeddingAdapter:
         return local_hash_embedding(text)
 
 
-SUPPORTED_EMBEDDING_MODELS = {"local-hash"}
-SUPPORTED_VECTOR_DB_BACKENDS = {"local-json"}
 SOURCE_EXCERPT_MAX_CHARS = 360
 
 
@@ -55,8 +54,12 @@ def normalize_vector_db_backend(backend: Optional[str]) -> str:
     return (backend or "local-json").strip().lower()
 
 
+def normalize_embedding_model(model_name: Optional[str]) -> str:
+    return (model_name or "local-hash").strip().lower()
+
+
 def get_embedding_adapter(model_name: str) -> EmbeddingAdapter:
-    normalized = (model_name or "local-hash").strip().lower()
+    normalized = normalize_embedding_model(model_name)
     if normalized == "local-hash":
         return LocalHashEmbeddingAdapter()
     raise ValueError(f"unsupported embedding model: {model_name}")
@@ -107,6 +110,79 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
     return sum(a * b for a, b in zip(left, right))
 
 
+def assert_safe_vector_store_path(path: Path) -> None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        raise ValueError(f"vector store path parent is not a regular directory: {parent}")
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise ValueError(f"vector store path is not a regular file: {path}")
+
+
+def is_vector_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def parse_vector_store_json(raw: str) -> dict:
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"vector store JSON is invalid: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("vector store JSON must be an object")
+    for vector_id, record in data.items():
+        if not isinstance(vector_id, str) or not vector_id.strip():
+            raise ValueError("vector store record id must be a non-empty string")
+        if not isinstance(record, dict):
+            raise ValueError(f"vector store record must be an object: {vector_id}")
+        chunk_id = record.get("chunk_id")
+        if chunk_id is not None and (
+            not isinstance(chunk_id, int) or isinstance(chunk_id, bool) or chunk_id <= 0
+        ):
+            raise ValueError(f"vector store record chunk_id must be a positive integer: {vector_id}")
+        section_id = record.get("section_id")
+        if section_id is not None and (
+            not isinstance(section_id, int) or isinstance(section_id, bool) or section_id <= 0
+        ):
+            raise ValueError(f"vector store record section_id must be a positive integer: {vector_id}")
+        document_id = record.get("document_id")
+        if not isinstance(document_id, int) or isinstance(document_id, bool) or document_id <= 0:
+            raise ValueError(f"vector store record document_id must be a positive integer: {vector_id}")
+        embedding = record.get("embedding")
+        if not isinstance(embedding, list):
+            raise ValueError(f"vector store record embedding must be a numeric array: {vector_id}")
+        if not embedding:
+            raise ValueError(f"vector store record embedding must not be empty: {vector_id}")
+        if any(not isinstance(value, (int, float)) or isinstance(value, bool) for value in embedding):
+            raise ValueError(f"vector store record embedding must be a numeric array: {vector_id}")
+        if any(not is_vector_number(value) for value in embedding):
+            raise ValueError(f"vector store record embedding must be a finite numeric array: {vector_id}")
+        dimensions = record.get("dimensions")
+        if dimensions is not None and (
+            not isinstance(dimensions, int) or isinstance(dimensions, bool) or dimensions != len(embedding)
+        ):
+            raise ValueError(f"vector store record dimensions must match embedding length: {vector_id}")
+        text = record.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError(f"vector store record text must be a non-empty string: {vector_id}")
+        embedding_model = record.get("embedding_model")
+        if not isinstance(embedding_model, str) or not embedding_model.strip():
+            raise ValueError(f"vector store record embedding_model must be a non-empty string: {vector_id}")
+        embedding_model = normalize_embedding_model(embedding_model)
+        if embedding_model not in SUPPORTED_EMBEDDING_MODELS:
+            raise ValueError(f"vector store record embedding_model is unsupported: {vector_id}")
+        record["embedding_model"] = embedding_model
+        vector_db_backend = record.get("vector_db_backend")
+        if vector_db_backend is not None:
+            if not isinstance(vector_db_backend, str) or not vector_db_backend.strip():
+                raise ValueError(f"vector store record vector_db_backend must be a non-empty string: {vector_id}")
+            if normalize_vector_db_backend(vector_db_backend) not in SUPPORTED_VECTOR_DB_BACKENDS:
+                raise ValueError(f"vector store record vector_db_backend is unsupported: {vector_id}")
+    return data
+
+
 class JsonVectorStore:
     def __init__(self, path: Path):
         self.path = path
@@ -114,15 +190,14 @@ class JsonVectorStore:
     def load(self) -> dict:
         if not self.path.exists():
             return {}
-        try:
-            return json.loads(self.path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"vector store JSON is invalid: {exc}") from exc
+        assert_safe_vector_store_path(self.path)
+        return parse_vector_store_json(self.path.read_text(encoding="utf-8"))
 
     def upsert_many(self, records: dict[str, dict]) -> None:
         existing = self.load()
         existing.update(records)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        assert_safe_vector_store_path(self.path)
         self.path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def delete_document(self, document_id: int) -> None:
@@ -133,6 +208,7 @@ class JsonVectorStore:
             if record.get("document_id") != document_id
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        assert_safe_vector_store_path(self.path)
         self.path.write_text(json.dumps(filtered, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def search(self, query_embedding: list[float], document_ids: list[int], top_k: int) -> list[dict]:
@@ -167,6 +243,17 @@ def chunk_text(text: str, max_words: int = 220) -> Iterable[str]:
 
 
 def mark_index_queued(document_id: int) -> None:
+    settings = get_settings()
+    try:
+        get_vector_store(settings).delete_document(document_id)
+    except Exception as exc:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+            conn.execute(
+                "UPDATE documents SET index_status='failed', index_error=? WHERE id=?",
+                (str(exc), document_id),
+            )
+        raise
     with get_conn() as conn:
         conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
         conn.execute(
@@ -204,6 +291,7 @@ def index_document(document_id: int) -> dict:
             conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
             vector_store.delete_document(document_id)
             embedding_adapter = get_embedding_adapter(settings.embedding_model)
+            vector_db_backend = normalize_vector_db_backend(settings.vector_db_backend)
             for section in sections:
                 for seq, chunk in enumerate(chunk_text(section["content"] or ""), start=1):
                     vector_id = f"doc-{document_id}-section-{section['id']}-chunk-{seq}"
@@ -222,7 +310,7 @@ def index_document(document_id: int) -> dict:
                         "text": chunk,
                         "embedding": embedding,
                         "embedding_model": embedding_adapter.model_name,
-                        "vector_db_backend": settings.vector_db_backend,
+                        "vector_db_backend": vector_db_backend,
                         "dimensions": len(embedding),
                     }
                     count += 1
@@ -236,17 +324,18 @@ def index_document(document_id: int) -> dict:
             )
             return {"document_id": document_id, "chunks": count, "embedded": 1, "status": "indexed"}
         except Exception as exc:
+            error = str(exc)
             conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
             if vector_store is not None:
                 try:
                     vector_store.delete_document(document_id)
-                except Exception:
-                    pass
+                except Exception as cleanup_exc:
+                    error = f"{error}; vector cleanup failed: {cleanup_exc}"
             conn.execute(
                 "UPDATE documents SET index_status='failed', index_error=? WHERE id=?",
-                (str(exc), document_id),
+                (error, document_id),
             )
-            return {"document_id": document_id, "chunks": 0, "embedded": 0, "status": "failed", "error": str(exc)}
+            return {"document_id": document_id, "chunks": 0, "embedded": 0, "status": "failed", "error": error}
 
 
 def query(question: str, document_ids: list[int], top_k: int) -> dict:

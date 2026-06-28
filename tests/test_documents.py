@@ -196,3 +196,128 @@ def test_sections_from_tei_preserves_table_notes_with_rows():
             "section_type": "table",
         }
     ]
+
+
+def test_sections_from_tei_preserves_direct_body_and_div_notes():
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <note>Global note: source data kept in original units.</note>
+          <div>
+            <head>Rate data</head>
+            <p>Argon reaction rates are listed below.</p>
+            <note>Footnote: values copied from the source table.</note>
+          </div>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Section 1",
+            "content": "Global note: source data kept in original units.",
+            "section_type": "body",
+        },
+        {
+            "seq": 2,
+            "title": "Rate data",
+            "content": "Argon reaction rates are listed below. Footnote: values copied from the source table.",
+            "section_type": "body",
+        },
+    ]
+
+
+def test_sections_from_tei_preserves_direct_body_and_div_quote_blocks():
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <quote>Quoted plasma kinetics note from the source.</quote>
+          <div>
+            <head>Cross-section sources</head>
+            <p>The model cites the following source.</p>
+            <cit>
+              <quote>Electron impact cross sections are tabulated in LXCat.</quote>
+              <bibl>LXCat Argon set</bibl>
+            </cit>
+          </div>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Section 1",
+            "content": "Quoted plasma kinetics note from the source.",
+            "section_type": "body",
+        },
+        {
+            "seq": 2,
+            "title": "Cross-section sources",
+            "content": (
+                "The model cites the following source. "
+                "Electron impact cross sections are tabulated in LXCat. LXCat Argon set"
+            ),
+            "section_type": "body",
+        },
+    ]
+
+
+def test_sections_from_tei_preserves_body_and_div_mixed_text_tails():
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          Lead text before the first body paragraph.
+          <head>Body heading</head>
+          Text after the body heading.
+          <p>Body paragraph.</p>
+          Text after the body paragraph.
+          <div>
+            Intro text before the div heading.
+            <head>Div heading</head>
+            Text after the div heading.
+            <p>Div paragraph.</p>
+            Text after the div paragraph.
+          </div>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Section 1",
+            "content": "Lead text before the first body paragraph.",
+            "section_type": "body",
+        },
+        {
+            "seq": 2,
+            "title": "Body heading",
+            "content": "Text after the body heading. Body paragraph. Text after the body paragraph.",
+            "section_type": "body",
+        },
+        {
+            "seq": 3,
+            "title": "Div heading",
+            "content": (
+                "Intro text before the div heading. "
+                "Text after the div heading. "
+                "Div paragraph. "
+                "Text after the div paragraph."
+            ),
+            "section_type": "body",
+        },
+    ]

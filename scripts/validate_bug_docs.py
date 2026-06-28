@@ -61,15 +61,32 @@ def has_incomplete_release_gate_evidence(text: str) -> bool:
     return False
 
 
+def first_symlink_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
+
+
 def bug_doc_issues(repo: Path) -> list[str]:
     repo = repo.resolve()
     bug_dir = repo / "docs" / "bug"
     if not bug_dir.exists():
         return ["docs/bug: missing"]
+    if first_symlink_parent(bug_dir) is not None:
+        return ["docs/bug: bug directory parent is not a regular directory"]
+    if bug_dir.is_symlink() or not bug_dir.is_dir():
+        return ["docs/bug: bug directory is not a regular directory"]
 
     issues: list[str] = []
-    if not (bug_dir / "README.md").exists():
+    readme_path = bug_dir / "README.md"
+    if not readme_path.exists():
         issues.append("docs/bug/README.md: missing")
+    elif readme_path.is_symlink() or not readme_path.is_file():
+        issues.append("docs/bug/README.md: bug docs README is not a regular file")
 
     for path in sorted(bug_dir.glob("*.md")):
         if path.name == "README.md":
@@ -77,8 +94,15 @@ def bug_doc_issues(repo: Path) -> list[str]:
         rel = path.relative_to(repo).as_posix()
         if not BUG_FILENAME_RE.fullmatch(path.name):
             issues.append(f"{rel}: filename must match YYYY-MM-DD-short-slug.md")
+        if path.is_symlink() or not path.is_file():
+            issues.append(f"{rel}: bug doc is not a regular file")
+            continue
 
-        text = path.read_text(encoding="utf-8")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            issues.append(f"{rel}: bug doc unreadable")
+            continue
         if not has_title(text):
             issues.append(f"{rel}: missing title")
         missing_sections = [

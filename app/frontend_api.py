@@ -3,6 +3,7 @@ from typing import Any, Optional
 
 import requests
 
+from app.release_readiness import RELEASE_BLOCKING_CONFIG_WARNING_CODES
 
 ERROR_TEXT_LIMIT = 500
 
@@ -15,7 +16,7 @@ class FrontendApiError(RuntimeError):
 
 
 def normalize_base_url(base_url: str) -> str:
-    return base_url.rstrip("/")
+    return base_url.strip().rstrip("/")
 
 
 def normalize_path(path: str) -> str:
@@ -38,6 +39,19 @@ def summarize_text(text: str, limit: int = ERROR_TEXT_LIMIT) -> str:
     if len(value) <= limit:
         return value
     return f"{value[:limit].rstrip()}..."
+
+
+def is_safe_download_file(path: Path) -> bool:
+    try:
+        for candidate in (path, *path.parents):
+            if not candidate.is_symlink():
+                continue
+            if candidate.is_absolute() and candidate.parent == Path(candidate.anchor):
+                continue
+            return False
+        return path.exists() and path.is_file()
+    except OSError:
+        return False
 
 
 def response_payload(response) -> dict[str, Any]:
@@ -122,6 +136,84 @@ def compact_parts(parts: list[Any]) -> list[str]:
     return [str(part) for part in parts if part is not None and str(part) != ""]
 
 
+def dataframe_display_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    display_rows = []
+    for row in rows:
+        if "value" not in row:
+            display_rows.append(row)
+            continue
+        value = row.get("value")
+        display_rows.append({**row, "value": "" if value is None else str(value)})
+    return display_rows
+
+
+def release_readiness_display_state(release_readiness: dict[str, Any]) -> dict[str, Any]:
+    config_warning_codes = [
+        str(code) for code in release_readiness.get("config_warning_codes") or [] if str(code).strip()
+    ]
+    blocking_config_warnings = [
+        f"config_warning_codes:{code}" for code in config_warning_codes if code in RELEASE_BLOCKING_CONFIG_WARNING_CODES
+    ]
+    groups = [
+        {
+            "label": "demo data missing:",
+            "items": [str(item) for item in release_readiness.get("demo_data_missing") or [] if str(item).strip()],
+        },
+        {
+            "label": "failed workflows:",
+            "items": [str(item) for item in release_readiness.get("failed_workflows") or [] if str(item).strip()],
+        },
+        {
+            "label": "config warnings:",
+            "items": blocking_config_warnings,
+        },
+        {
+            "label": "storage errors:",
+            "items": [str(item) for item in release_readiness.get("storage_errors") or [] if str(item).strip()],
+        },
+    ]
+    blockers = [item for group in groups for item in group["items"]]
+    return {
+        "ready": release_readiness.get("ready") is True and not blockers,
+        "blockers": blockers,
+        "groups": groups,
+    }
+
+
+STORAGE_HEALTH_DISPLAY_KEYS = [
+    "data_dir",
+    "pdf_dir",
+    "tei_dir",
+    "translation_dir",
+    "export_dir",
+    "database",
+    "database_parent",
+    "vector_db_parent",
+    "vector_db",
+]
+
+
+def storage_health_caption_rows(storage_health: dict[str, Any]) -> list[dict[str, str]]:
+    rows = []
+    for key in STORAGE_HEALTH_DISPLAY_KEYS:
+        health_entry = storage_health.get(key) or {}
+        exists_label = "exists" if health_entry.get("exists") else "missing"
+        writable_label = "writable" if health_entry.get("writable") else "not writable"
+        rows.append(
+            {
+                "kind": "caption",
+                "text": f"{key}: {exists_label} · {writable_label} · {health_entry.get('path') or '-'}",
+            }
+        )
+        if key == "vector_db":
+            valid_json = health_entry.get("valid_json")
+            valid_json_label = "unchecked" if valid_json is None else ("valid_json" if valid_json else "invalid_json")
+            rows.append({"kind": "caption", "text": f"vector_db valid_json: {valid_json_label}"})
+        if health_entry.get("error"):
+            rows.append({"kind": "warning", "text": f"{key} error: {health_entry['error']}"})
+    return rows
+
+
 def crawl_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     options = [{"label": "全部 active 期刊", "journal_id": None}]
     for journal in journals:
@@ -147,6 +239,56 @@ def category_parent_option_label(category: Optional[dict[str, Any]]) -> str:
 
 def paper_category_option_label(category: dict[str, Any]) -> str:
     return f"{category.get('slug') or 'category'} · {category.get('name') or 'category'}"
+
+
+def paper_upload_option_label(paper: Optional[dict[str, Any]]) -> str:
+    if paper is None:
+        return "不关联论文"
+    return (
+        f"#{paper.get('id')} · {paper.get('title') or 'Untitled'} · "
+        f"DOI: {paper.get('doi') or '-'} · "
+        f"{paper.get('journal_name') or '-'} · "
+        f"{paper.get('published_date') or '-'}"
+    )
+
+
+def paper_upload_query_params(query: Optional[str]) -> dict[str, Any]:
+    params: dict[str, Any] = {"page": 1, "page_size": 100}
+    normalized = (query or "").strip()
+    if normalized:
+        params["q"] = normalized
+    return params
+
+
+DOCUMENT_STATUS_FILTERS: dict[str, Optional[tuple[str, str]]] = {
+    "全部": None,
+    "待解析": ("parse_status", "uploaded"),
+    "解析中": ("parse_status", "parsing"),
+    "解析失败": ("parse_status", "failed"),
+    "待索引": ("index_status", "not_indexed"),
+    "索引中": ("index_status", "indexing"),
+    "索引失败": ("index_status", "failed"),
+    "待抽取": ("chemistry_status", "not_extracted"),
+    "抽取中": ("chemistry_status", "extracting"),
+    "抽取失败": ("chemistry_status", "failed"),
+    "抽取被拒绝": ("chemistry_status", "rejected"),
+}
+
+
+def document_status_filter_options() -> list[str]:
+    return list(DOCUMENT_STATUS_FILTERS)
+
+
+def filter_documents_by_status(documents: list[dict[str, Any]], filter_value: str) -> list[dict[str, Any]]:
+    condition = DOCUMENT_STATUS_FILTERS.get(filter_value)
+    if condition is None:
+        return list(documents)
+    field, expected = condition
+    return [document for document in documents if document.get(field) == expected]
+
+
+def document_filter_summary(total_count: int, filtered_count: int, filter_value: str) -> str:
+    return f"当前页匹配 {filtered_count}/{total_count} · 筛选: {filter_value}"
 
 
 def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -217,11 +359,19 @@ def crawl_job_diagnostic_rows(job: dict[str, Any]) -> list[dict[str, Any]]:
 def document_option_label(document: dict[str, Any]) -> str:
     file_path = str(document.get("file_path") or "")
     file_name = document.get("original_name") or file_path.rsplit("/", 1)[-1] or "document"
+    paper = document.get("paper") if isinstance(document.get("paper"), dict) else {}
+    paper_parts = compact_parts(
+        [
+            paper.get("title"),
+            f"DOI: {paper.get('doi')}" if paper.get("doi") else None,
+        ]
+    )
+    paper_suffix = f" · {' · '.join(paper_parts)}" if paper_parts else ""
     parse_status = document.get("parse_status") or "unknown"
     index_status = document.get("index_status") or "unknown"
     chemistry_status = document.get("chemistry_status") or "unknown"
     return (
-        f"#{document.get('id')} · {file_name} · "
+        f"#{document.get('id')} · {file_name}{paper_suffix} · "
         f"parse={parse_status} · index={index_status} · chemistry={chemistry_status}"
     )
 
@@ -254,13 +404,13 @@ def document_asset_downloads(document: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(raw_path, str) or not raw_path:
             continue
         path = Path(raw_path)
-        exists = path.exists() and path.is_file()
-        if exists and data_mode == "bytes":
-            data = path.read_bytes()
-        elif exists:
-            data = path.read_text(encoding="utf-8")
-        else:
-            data = None
+        exists = is_safe_download_file(path)
+        data = None
+        if exists:
+            try:
+                data = path.read_bytes() if data_mode == "bytes" else path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                exists = False
         downloads.append(
             {
                 "kind": kind,
@@ -334,11 +484,15 @@ def translation_download(translation: dict[str, Any]) -> Optional[dict[str, Any]
     if not isinstance(output_path, str) or not output_path:
         return None
     path = Path(output_path)
-    if not path.exists() or not path.is_file():
+    if not is_safe_download_file(path):
+        return None
+    try:
+        data = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
         return None
     return {
         "label": "下载双语翻译",
-        "data": path.read_text(encoding="utf-8"),
+        "data": data,
         "file_name": path.name,
         "mime": "text/markdown",
         "path": str(path),
@@ -453,6 +607,7 @@ def reaction_set_rows(reaction_sets: list[dict[str, Any]]) -> list[dict[str, Any
         rows.append(
             {
                 "id": item.get("id"),
+                "document_id": item.get("document_id"),
                 "name": item.get("name"),
                 "status": item.get("status"),
                 "reaction_count": reaction_count,
@@ -493,8 +648,9 @@ def reaction_display_state(reaction: dict[str, Any]) -> dict[str, Any]:
 
 
 def reaction_set_option_label(item: dict[str, Any]) -> str:
+    document_part = f"doc {item.get('document_id')} · " if item.get("document_id") is not None else ""
     return (
-        f"#{item['id']} · {item.get('status') or 'unknown'} · "
+        f"#{item['id']} · {document_part}{item.get('status') or 'unknown'} · "
         f"export_ready {bool(item.get('export_ready'))} · "
         f"未复核 {item.get('unverified_count', 0)} · {item.get('name') or 'Reaction set'}"
     )
@@ -584,10 +740,17 @@ def reaction_export_download(payload: dict[str, Any]) -> Optional[dict[str, Any]
     if not isinstance(output_path, str) or not output_path:
         return None
     path = Path(output_path)
-    if not path.exists() or not path.is_file():
+    if not is_safe_download_file(path):
         return None
     mime = payload.get("mime_type") or "application/octet-stream"
-    data = path.read_text(encoding="utf-8") if mime.startswith("text/") or mime == "application/json" else path.read_bytes()
+    try:
+        data = (
+            path.read_text(encoding="utf-8")
+            if mime.startswith("text/") or mime == "application/json"
+            else path.read_bytes()
+        )
+    except (OSError, UnicodeError):
+        return None
     return {
         "label": "下载导出文件",
         "data": data,
@@ -651,8 +814,8 @@ def reaction_audit_rows(audit_log: list[dict[str, Any]]) -> list[dict[str, Any]]
                     "audit_id": audit.get("id"),
                     "reaction_id": audit.get("reaction_id"),
                     "field": "-",
-                    "before": None,
-                    "after": None,
+                    "before": "",
+                    "after": "",
                     "verified_by": audit.get("verified_by"),
                     "verified_at": audit.get("verified_at"),
                 }
@@ -664,13 +827,40 @@ def reaction_audit_rows(audit_log: list[dict[str, Any]]) -> list[dict[str, Any]]
                     "audit_id": audit.get("id"),
                     "reaction_id": audit.get("reaction_id"),
                     "field": field,
-                    "before": change.get("before"),
-                    "after": change.get("after"),
+                    "before": audit_cell_text(change.get("before")),
+                    "after": audit_cell_text(change.get("after")),
                     "verified_by": audit.get("verified_by"),
                     "verified_at": audit.get("verified_at"),
                 }
             )
     return rows
+
+
+def audit_cell_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value)
+
+
+def reaction_review_list_state(reactions: list[dict[str, Any]], *, only_unverified: bool = False) -> dict[str, Any]:
+    unverified_reactions = [reaction for reaction in reactions if not reaction.get("verified")]
+    if only_unverified:
+        display_reactions = unverified_reactions
+        hidden_verified_count = len(reactions) - len(unverified_reactions)
+        summary = f"当前显示未复核: {len(display_reactions)}/{len(reactions)} · 已隐藏已复核: {hidden_verified_count}"
+        mode = "unverified"
+    else:
+        display_reactions = reactions
+        summary = f"当前显示全部反应: {len(display_reactions)} · 未复核: {len(unverified_reactions)}"
+        mode = "all"
+    return {
+        "display_reactions": display_reactions,
+        "total_count": len(reactions),
+        "display_count": len(display_reactions),
+        "unverified_count": len(unverified_reactions),
+        "mode": mode,
+        "summary": summary,
+    }
 
 
 def reaction_review_rows(reactions: list[dict[str, Any]], *, only_unverified: bool = False) -> list[dict[str, Any]]:

@@ -1,6 +1,8 @@
 import json
 import re
+import unicodedata
 from collections import Counter
+from pathlib import Path
 from typing import Optional
 
 from app.config import get_settings
@@ -8,21 +10,25 @@ from app.db import dict_from_row, get_conn
 from app.utils import now_iso
 
 
-REACTION_SPECIES_CHARS = r"A-Za-z0-9+*()\-\s\u00b0-\u00b3\u00b7\u00b9\u0370-\u03ff\u1d00-\u1d7f\u2070-\u209f\u2212"
-REACTION_ARROWS = ("<->", "=>", "->", "→", "⇌", "↔")
+REACTION_SPECIES_CHARS = r"A-Za-z0-9Ａ-Ｚａ-ｚ０-９+＋*()\-\s\u00b0-\u00b3\u00b7\u00b9\u0370-\u03ff\u1d00-\u1d7f\u2070-\u209f\u2212\uff0d"
+REACTION_ARROWS = ("<->", "=>", "->", "＝＞", "－＞", "−>", "→", "⇌", "↔")
 REACTION_RE = re.compile(rf"([{REACTION_SPECIES_CHARS}]+(?:{'|'.join(map(re.escape, REACTION_ARROWS))})[{REACTION_SPECIES_CHARS}]+)")
-SPECIES_SEPARATOR_RE = re.compile(r"\s*\+\s*(?=[A-Za-z0-9(\u0370-\u03ff\u2070-\u209f\u2212])")
+SPECIES_SEPARATOR_RE = re.compile(r"\s*[+＋]\s*(?=[A-Za-z0-9Ａ-Ｚａ-ｚ０-９(\u0370-\u03ff\u2070-\u209f\u2212])")
 URL_RE = re.compile(r"https?://[^\s),;]+")
-LXCAT_DB_RE = re.compile(r"LXCat\s+([A-Za-z0-9_.-]+)", re.IGNORECASE)
-GAS_MIXTURE_RE = re.compile(r"\b([A-Z][a-z]?\d?(?:/[A-Z][a-z]?\d?)+)\b")
+LXCAT_DB_RE = re.compile(r"LXCat(?:\s+database)?(?:(?:\s*(?::|=|-)\s*)|\s+)([A-Za-z0-9_.-]+)", re.IGNORECASE)
+GAS_FORMULA_PATTERN = r"(?:[A-ZＡ-Ｚ][a-zａ-ｚ]?[0-9０-９₀₁₂₃₄₅₆₇₈₉]*)+"
+GAS_MIXTURE_RE = re.compile(rf"\b({GAS_FORMULA_PATTERN}(?:\s*[/／]\s*{GAS_FORMULA_PATTERN})+)\b")
 THRESHOLD_EV_RE = re.compile(
-    r"\bthreshold(?:\s+energy)?\s*(?:is|=|:)?\s*([0-9]+(?:\.[0-9]+)?)\s*eV\b",
+    r"\b(?:threshold(?:\s+energy)?|E(?:\s*_\s*(?:th|thr)|ₜₕ|th))\s*(?:is|=|:)?\s*([0-9０-９]+(?:[.．][0-9０-９]+)?)\s*[eｅ][VＶ]\b",
     re.IGNORECASE,
 )
 RATE_VALUE_RE = re.compile(
-    r"\b(?:rate\s+(?:coefficient|constant)\s*(?:is|=|:)?|k\s*(?:=|:))\s*"
-    r"([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?\d+)?"
-    r"(?:\s*(?:cm\^?3/s|m\^?3/s|s\^-?1|s-1|1/s))?)\b",
+    r"\b(?:rate\s+(?:coefficient|constant)\s*(?:is|=|:)?|k(?:[0-9０-９]+|[₀₁₂₃₄₅₆₇₈₉]+|\s*_\s*[0-9０-９]+)?(?:\s*\(T(?:\s*_\s*e|e|ₑ)?\))?\s*(?:=|:))\s*"
+    r"([0-9０-９]+(?:[.．][0-9０-９]+)?"
+    r"(?:\s*[eEｅＥ]\s*[+\-＋－−]?\s*[0-9０-９]+|\s*[×xｘ·]\s*(?:10|１０)(?:\s*\^?\s*[+\-＋－−]?[0-9０-９]+|\s*[⁺⁻−]?[⁰¹²³⁴⁵⁶⁷⁸⁹]+))?"
+    r"(?:\s*(?:[cｃ][mｍ](?:\^?[3３6６]|[³⁶])(?:[/／][sｓ]|\s+(?:mol(?:ec(?:ules?)?)?(?:\^[\-－−]?[1１2２]|[\-－−][1１2２]|⁻[¹²])\s+)?[sｓ](?:\^[\-－−]?[1１]|[\-－−]?[1１]|⁻¹))|"
+    r"[mｍ](?:\^?[3３6６]|[³⁶])(?:[/／][sｓ]|\s+(?:mol(?:ec(?:ules?)?)?(?:\^[\-－−]?[1１2２]|[\-－−][1１2２]|⁻[¹²])\s+)?[sｓ](?:\^[\-－−]?[1１]|[\-－−][1１]|⁻¹))|"
+    r"[sｓ]\^[\-－]?[1１]|[sｓ][\-－][1１]|[1１][/／][sｓ]))?)\b",
     re.IGNORECASE,
 )
 
@@ -54,13 +60,19 @@ def normalize_reaction(reaction: str) -> tuple[str, list[str], list[str]]:
     return normalized, reactants, products
 
 
+def canonical_species(species: str) -> str:
+    return unicodedata.normalize("NFKC", species)
+
+
 def infer_reaction_type(reactants: list[str], products: list[str]) -> str:
-    reactant_electrons = sum(1 for species in reactants if species == "e")
-    product_electrons = sum(1 for species in products if species == "e")
-    consumes_positive_ion = any(species.endswith("+") for species in reactants)
-    produces_positive_ion = any(species.endswith("+") for species in products)
-    produces_negative_ion = any(species.endswith("-") or species.endswith("⁻") for species in products)
-    produces_excited_species = any(species.endswith("*") for species in products)
+    canonical_reactants = [canonical_species(species) for species in reactants]
+    canonical_products = [canonical_species(species) for species in products]
+    reactant_electrons = sum(1 for species in canonical_reactants if species == "e")
+    product_electrons = sum(1 for species in canonical_products if species == "e")
+    consumes_positive_ion = any(species.endswith(("+", "⁺", "＋")) for species in canonical_reactants)
+    produces_positive_ion = any(species.endswith(("+", "⁺", "＋")) for species in canonical_products)
+    produces_negative_ion = any(species.endswith(("-", "⁻", "−", "－")) for species in canonical_products)
+    produces_excited_species = any(species.endswith("*") for species in canonical_products)
     if reactant_electrons >= 1 and product_electrons > reactant_electrons and produces_positive_ion:
         return "ionization"
     if reactant_electrons >= 1 and produces_negative_ion:
@@ -69,7 +81,7 @@ def infer_reaction_type(reactants: list[str], products: list[str]) -> str:
         return "excitation"
     if reactant_electrons >= 1 and consumes_positive_ion and product_electrons == 0 and not produces_positive_ion:
         return "recombination"
-    if reactant_electrons >= 1 and Counter(reactants) == Counter(products):
+    if reactant_electrons >= 1 and Counter(canonical_reactants) == Counter(canonical_products):
         return "elastic"
     return "unknown"
 
@@ -96,7 +108,8 @@ def detect_threshold_ev(text: str, start: int, end: int, window: int = 120) -> O
         else:
             direction_priority = 2
             distance = 0
-        candidates.append((direction_priority, distance, absolute_start, float(match.group(1))))
+        threshold_ev = float(unicodedata.normalize("NFKC", match.group(1)))
+        candidates.append((direction_priority, distance, absolute_start, threshold_ev))
     if candidates:
         return min(candidates)[3]
     return None
@@ -343,6 +356,23 @@ def reaction_set_detail(reaction_set: dict, conn=None) -> dict:
     return reaction_set
 
 
+def reconcile_reaction_set_review_state(conn, reaction_set_id: int, verified_by: Optional[str]) -> None:
+    remaining = conn.execute(
+        "SELECT COUNT(*) AS n FROM reactions WHERE reaction_set_id=? AND verified=0",
+        (reaction_set_id,),
+    ).fetchone()["n"]
+    if remaining == 0:
+        conn.execute(
+            "UPDATE reaction_sets SET status='verified', verified_by=?, verified_at=? WHERE id=?",
+            (verified_by, now_iso(), reaction_set_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE reaction_sets SET status='pending', verified_by=NULL, verified_at=NULL WHERE id=?",
+            (reaction_set_id,),
+        )
+
+
 def verify_reaction(
     reaction_id: int,
     verified: bool,
@@ -395,6 +425,7 @@ def verify_reaction(
                     verified_by,
                 ),
             )
+            reconcile_reaction_set_review_state(conn, reaction_set_id, verified_by)
             rs = conn.execute("SELECT * FROM reaction_sets WHERE id=?", (reaction_set_id,)).fetchone()
             return reaction_set_detail(dict_from_row(rs), conn)
         assignments = ", ".join(f"{key}=?" for key in changed_updates)
@@ -414,22 +445,20 @@ def verify_reaction(
             """,
             (reaction_id, "verify" if verified else "unverify", json.dumps(audit_changes, ensure_ascii=False), verified_by),
         )
-        remaining = conn.execute(
-            "SELECT COUNT(*) AS n FROM reactions WHERE reaction_set_id=? AND verified=0",
-            (reaction_set_id,),
-        ).fetchone()["n"]
-        if remaining == 0:
-            conn.execute(
-                "UPDATE reaction_sets SET status='verified', verified_by=?, verified_at=? WHERE id=?",
-                (verified_by, now_iso(), reaction_set_id),
-            )
-        else:
-            conn.execute(
-                "UPDATE reaction_sets SET status='pending', verified_by=NULL, verified_at=NULL WHERE id=?",
-                (reaction_set_id,),
-            )
+        reconcile_reaction_set_review_state(conn, reaction_set_id, verified_by)
         rs = conn.execute("SELECT * FROM reaction_sets WHERE id=?", (reaction_set_id,)).fetchone()
         return reaction_set_detail(dict_from_row(rs), conn)
+
+
+def assert_safe_reaction_export_path(path) -> None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        raise OSError(f"reaction export path parent is not a regular directory: {parent}")
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise OSError(f"reaction export path is not a regular file: {path}")
 
 
 def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
@@ -458,6 +487,7 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
     audit_entry_count = sum(len(reaction.get("audit_log") or []) for reaction in detail["reactions"])
     suffix_by_format = {"json": "json", "txt": "txt", "bolsig": "bolsig.txt"}
     out_path = settings.export_dir / f"reaction-set-{reaction_set_id}.{suffix_by_format[fmt]}"
+    assert_safe_reaction_export_path(out_path)
     if fmt == "json":
         out_path.write_text(json.dumps(detail, ensure_ascii=False, indent=2), encoding="utf-8")
         mime_type = "application/json"
@@ -507,6 +537,14 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
                 lines.append(f"SOURCE_LABEL: {reaction['source_label']}")
             if reaction.get("source_excerpt"):
                 lines.append(f"SOURCE_EXCERPT: {reaction['source_excerpt']}")
+            audit_log = reaction.get("audit_log") or []
+            lines.append(f"AUDIT_ENTRIES: {len(audit_log)}")
+            if audit_log:
+                latest_audit = audit_log[0]
+                if latest_audit.get("verified_by"):
+                    lines.append(f"LAST_VERIFIED_BY: {latest_audit['verified_by']}")
+                if latest_audit.get("verified_at"):
+                    lines.append(f"LAST_VERIFIED_AT: {latest_audit['verified_at']}")
             lines.append("END")
         out_path.write_text("\n".join(lines), encoding="utf-8")
         mime_type = "text/plain"
@@ -532,6 +570,14 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
                 lines.append(f"source_label: {reaction['source_label']}")
             if reaction.get("source_excerpt"):
                 lines.append(f"source_excerpt: {reaction['source_excerpt']}")
+            audit_log = reaction.get("audit_log") or []
+            lines.append(f"audit_entries: {len(audit_log)}")
+            if audit_log:
+                latest_audit = audit_log[0]
+                if latest_audit.get("verified_by"):
+                    lines.append(f"last_verified_by: {latest_audit['verified_by']}")
+                if latest_audit.get("verified_at"):
+                    lines.append(f"last_verified_at: {latest_audit['verified_at']}")
         out_path.write_text("\n".join(lines), encoding="utf-8")
         mime_type = "text/plain"
     return {

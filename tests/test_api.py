@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -170,6 +171,15 @@ def test_crawl_service_strips_space_after_doi_prefix_for_dedupe():
     assert build_dedupe_key({"id": 2}, work) == "doi:10.5555/abc.def"
 
 
+def test_crawl_service_normalizes_fullwidth_doi_for_dedupe():
+    from app.services.crawl import build_dedupe_key, normalize_doi
+
+    work = {"doi": "ＤＯＩ：１０.５５５５／ＡＢＣ．Ｄｅｆ", "title": "Example"}
+
+    assert normalize_doi(work["doi"]) == "10.5555/abc.def"
+    assert build_dedupe_key({"id": 2}, work) == "doi:10.5555/abc.def"
+
+
 def test_crawl_keyword_matching_collapses_internal_whitespace():
     from app.services.crawl import matches_keywords, normalize_keyword_config
 
@@ -193,6 +203,43 @@ def test_crawl_keyword_matching_treats_punctuation_as_word_boundaries():
 
     assert matches_keywords(work, ["plasma chemistry"]) is True
     assert matches_keywords(work, {"mode": "and", "terms": ["ar o2", "global discharge"]}) is True
+
+
+def test_crawl_keyword_matching_normalizes_unicode_subscript_digits():
+    from app.services.crawl import matches_keywords, normalize_keyword_text
+
+    work = {
+        "title": "CO₂ conversion in an Ar/O₂ plasma",
+        "abstract": "N₂ admixtures alter oxygen reaction pathways.",
+    }
+
+    assert normalize_keyword_text("CO₂/O₂") == "co2 o2"
+    assert matches_keywords(work, {"mode": "and", "terms": ["co2 conversion", "ar o2", "n2 admixtures"]}) is True
+
+
+def test_crawl_keyword_matching_normalizes_fullwidth_ascii_variants():
+    from app.services.crawl import matches_keywords, normalize_keyword_text
+
+    work = {
+        "title": "ＣＯ２ conversion in Ａｒ/Ｏ２ plasma",
+        "abstract": "Fullwidth metadata should still match ASCII keyword configuration.",
+    }
+
+    assert normalize_keyword_text("ＣＯ２/Ｏ２") == "co2 o2"
+    assert matches_keywords(work, {"mode": "and", "terms": ["co2 conversion", "ar o2"]}) is True
+
+
+def test_crawl_keyword_matching_does_not_match_inside_words():
+    from app.services.crawl import matches_keywords
+
+    work = {
+        "title": "Plasma simulation benchmark",
+        "abstract": "A global model for neutral transport.",
+    }
+
+    assert matches_keywords(work, ["plasma simulation"]) is True
+    assert matches_keywords(work, ["ion"]) is False
+    assert matches_keywords(work, {"mode": "and", "terms": ["plasma", "ion"]}) is False
 
 
 def test_crawl_keyword_matching_strips_mode_whitespace():
@@ -292,6 +339,107 @@ def test_health_seed_and_search(tmp_path):
             "method": "manual",
         },
     ]
+
+
+def test_system_status_reports_symlinked_storage_dir_not_writable(tmp_path):
+    client = make_client(tmp_path)
+    outside_dir = tmp_path / "outside-pdfs"
+    outside_dir.mkdir()
+    pdf_dir = tmp_path / "pdfs"
+    pdf_dir.rmdir()
+    pdf_dir.symlink_to(outside_dir, target_is_directory=True)
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    pdf_health = payload["storage_health"]["pdf_dir"]
+    assert pdf_health["path"] == str(pdf_dir)
+    assert pdf_health["exists"] is True
+    assert pdf_health["writable"] is False
+    assert "pdf_dir.writable" in payload["release_readiness"]["storage_errors"]
+
+
+def test_system_status_reports_storage_dir_file_not_writable(tmp_path):
+    client = make_client(tmp_path)
+    pdf_dir = tmp_path / "pdfs"
+    pdf_dir.rmdir()
+    pdf_dir.write_text("not a directory", encoding="utf-8")
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    pdf_health = payload["storage_health"]["pdf_dir"]
+    assert pdf_health["path"] == str(pdf_dir)
+    assert pdf_health["exists"] is True
+    assert pdf_health["writable"] is False
+    assert "pdf_dir.writable" in payload["release_readiness"]["storage_errors"]
+
+
+def test_system_status_reports_symlinked_storage_parent_not_writable(tmp_path, monkeypatch):
+    data_target = tmp_path / "outside-data"
+    for child in ["pdfs", "tei", "translations", "exports"]:
+        (data_target / child).mkdir(parents=True, exist_ok=True)
+    linked_data = tmp_path / "linked-data"
+    linked_data.symlink_to(data_target, target_is_directory=True)
+
+    monkeypatch.setenv("PAPER_LAB_DATA_DIR", str(linked_data))
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "test.db"))
+    for key in [
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+    ]:
+        monkeypatch.delenv(key, raising=False)
+
+    from app.config import get_settings
+    from app.db import init_db
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    get_settings.cache_clear()
+    init_db()
+    response = TestClient(app).get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    for key in ["data_dir", "pdf_dir", "tei_dir", "translation_dir", "export_dir", "vector_db_parent"]:
+        assert payload["storage_health"][key]["writable"] is False
+        assert f"{key}.writable" in payload["release_readiness"]["storage_errors"]
+
+
+def test_init_db_rejects_symlinked_database_path(tmp_path, monkeypatch):
+    import pytest
+
+    outside_dir = tmp_path / "outside-db"
+    outside_dir.mkdir()
+    outside_db = outside_dir / "plasma.db"
+    outside_db.write_bytes(b"")
+    linked_db = tmp_path / "linked-plasma.db"
+    linked_db.symlink_to(outside_db)
+
+    monkeypatch.setenv("PAPER_LAB_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("DATABASE_PATH", str(linked_db))
+    for key in [
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+    ]:
+        monkeypatch.delenv(key, raising=False)
+
+    from app.config import get_settings
+    from app.db import init_db
+
+    get_settings.cache_clear()
+    with pytest.raises(OSError, match="database path is not a regular file"):
+        init_db()
+
+    assert outside_db.read_bytes() == b""
 
 
 def test_paper_category_override_deduplicates_category_ids(tmp_path):
@@ -1390,6 +1538,30 @@ def test_document_upload_records_pdf_page_count(tmp_path):
     assert response.json()["num_pages"] == 2
 
 
+def test_document_upload_rejects_symlinked_pdf_storage_dir(tmp_path):
+    make_client(tmp_path)
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app, raise_server_exceptions=False)
+    outside_dir = tmp_path / "outside-pdfs"
+    outside_dir.mkdir()
+    pdf_dir = tmp_path / "pdfs"
+    pdf_dir.rmdir()
+    pdf_dir.symlink_to(outside_dir, target_is_directory=True)
+
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("symlinked-storage.pdf", pdf_bytes(b"Argon plasma chemistry"), "application/pdf")},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "document_upload_failed"
+    assert "document storage path parent is not a regular directory" in payload["error"]["message"]
+    assert not list(outside_dir.glob("*.pdf"))
+
+
 def test_document_upload_rejects_non_pdf_file(tmp_path):
     client = make_client(tmp_path)
 
@@ -1484,6 +1656,698 @@ def test_rag_query_backend_failure_returns_json_error(tmp_path):
     assert "vector store JSON is invalid" in payload["error"]["message"]
 
 
+def test_rag_query_non_object_vector_store_json_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    (tmp_path / "vector-index.json").write_text("[]", encoding="utf-8")
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            ("/tmp/rag-query-vector-list.txt", "rag-query-vector-list", "rag-query-vector-list.txt"),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store JSON must be an object"
+
+
+def test_rag_query_malformed_vector_store_record_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    (tmp_path / "vector-index.json").write_text('{"bad-vector": []}', encoding="utf-8")
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            ("/tmp/rag-query-bad-vector-record.txt", "rag-query-bad-vector-record", "rag-query-bad-vector-record.txt"),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record must be an object: bad-vector"
+
+
+def test_rag_query_malformed_vector_embedding_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": 1, "embedding": "argon plasma"}}',
+        encoding="utf-8",
+    )
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-bad-vector-embedding.txt",
+                "rag-query-bad-vector-embedding",
+                "rag-query-bad-vector-embedding.txt",
+            ),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record embedding must be a numeric array: bad-vector"
+
+
+def test_rag_query_boolean_vector_embedding_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": 1, "embedding": [true]}}',
+        encoding="utf-8",
+    )
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-bool-vector-embedding.txt",
+                "rag-query-bool-vector-embedding",
+                "rag-query-bool-vector-embedding.txt",
+            ),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record embedding must be a numeric array: bad-vector"
+
+
+def test_rag_query_non_finite_vector_embedding_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": 1, "embedding": [NaN]}}',
+        encoding="utf-8",
+    )
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-nan-vector-embedding.txt",
+                "rag-query-nan-vector-embedding",
+                "rag-query-nan-vector-embedding.txt",
+            ),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record embedding must be a finite numeric array: bad-vector"
+
+
+def test_rag_query_vector_dimension_mismatch_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": 1, "embedding": [0.1], "dimensions": 64}}',
+        encoding="utf-8",
+    )
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-vector-dimension-mismatch.txt",
+                "rag-query-vector-dimension-mismatch",
+                "rag-query-vector-dimension-mismatch.txt",
+            ),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record dimensions must match embedding length: bad-vector"
+
+
+def test_rag_query_empty_vector_embedding_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": 1, "embedding": []}}',
+        encoding="utf-8",
+    )
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-empty-vector-embedding.txt",
+                "rag-query-empty-vector-embedding",
+                "rag-query-empty-vector-embedding.txt",
+            ),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record embedding must not be empty: bad-vector"
+
+
+def test_rag_query_string_vector_document_id_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": "1", "embedding": [0.1], "dimensions": 1}}',
+        encoding="utf-8",
+    )
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-string-vector-document-id.txt",
+                "rag-query-string-vector-document-id",
+                "rag-query-string-vector-document-id.txt",
+            ),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record document_id must be a positive integer: bad-vector"
+
+
+def test_rag_query_non_string_vector_text_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import local_hash_embedding
+
+    vector_record = {
+        "bad-vector": {
+            "document_id": 1,
+            "embedding": local_hash_embedding("argon plasma"),
+            "dimensions": 64,
+            "embedding_model": "local-hash",
+            "text": ["argon plasma"],
+        }
+    }
+    (tmp_path / "vector-index.json").write_text(json.dumps(vector_record), encoding="utf-8")
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-non-string-vector-text.txt",
+                "rag-query-non-string-vector-text",
+                "rag-query-non-string-vector-text.txt",
+            ),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record text must be a non-empty string: bad-vector"
+
+
+def test_rag_query_invalid_vector_embedding_model_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import local_hash_embedding
+
+    vector_record = {
+        "bad-vector": {
+            "document_id": 1,
+            "embedding": local_hash_embedding("argon plasma"),
+            "dimensions": 64,
+            "embedding_model": [],
+            "text": "argon plasma",
+        }
+    }
+    (tmp_path / "vector-index.json").write_text(json.dumps(vector_record), encoding="utf-8")
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-invalid-vector-embedding-model.txt",
+                "rag-query-invalid-vector-embedding-model",
+                "rag-query-invalid-vector-embedding-model.txt",
+            ),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record embedding_model must be a non-empty string: bad-vector"
+
+
+def test_rag_query_unsupported_vector_embedding_model_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import local_hash_embedding
+
+    vector_record = {
+        "bad-vector": {
+            "document_id": 1,
+            "embedding": local_hash_embedding("argon plasma"),
+            "dimensions": 64,
+            "embedding_model": "unsupported-model",
+            "text": "argon plasma",
+        }
+    }
+    (tmp_path / "vector-index.json").write_text(json.dumps(vector_record), encoding="utf-8")
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-unsupported-vector-embedding-model.txt",
+                "rag-query-unsupported-vector-embedding-model",
+                "rag-query-unsupported-vector-embedding-model.txt",
+            ),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record embedding_model is unsupported: bad-vector"
+
+
+def test_rag_query_treats_normalizable_embedding_model_as_local_hash(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import local_hash_embedding
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-normalizable-vector-embedding-model.txt",
+                "rag-query-normalizable-vector-embedding-model",
+                "rag-query-normalizable-vector-embedding-model.txt",
+            ),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Collision evidence', 'argon plasma chemistry evidence', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        chunk_id = conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'argon plasma chemistry evidence', 4, 'legacy-embedding-vector', 1)
+            """,
+            (document_id, section_id),
+        ).lastrowid
+
+    vector_record = {
+        "legacy-embedding-vector": {
+            "chunk_id": chunk_id,
+            "section_id": section_id,
+            "document_id": document_id,
+            "embedding": local_hash_embedding("argon plasma chemistry evidence"),
+            "dimensions": 64,
+            "embedding_model": " LOCAL-HASH ",
+            "vector_db_backend": "local-json",
+            "text": "argon plasma chemistry evidence",
+        }
+    }
+    (tmp_path / "vector-index.json").write_text(json.dumps(vector_record), encoding="utf-8")
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "av", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sources"] == []
+    assert "证据不足" in payload["answer"]
+
+
+def test_rag_query_empty_vector_id_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import local_hash_embedding
+
+    vector_record = {
+        "": {
+            "document_id": 1,
+            "embedding": local_hash_embedding("argon plasma"),
+            "dimensions": 64,
+            "embedding_model": "local-hash",
+            "text": "argon plasma",
+        }
+    }
+    (tmp_path / "vector-index.json").write_text(json.dumps(vector_record), encoding="utf-8")
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-empty-vector-id.txt",
+                "rag-query-empty-vector-id",
+                "rag-query-empty-vector-id.txt",
+            ),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record id must be a non-empty string"
+
+
+def test_rag_query_unsupported_vector_db_backend_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import local_hash_embedding
+
+    vector_record = {
+        "bad-vector": {
+            "document_id": 1,
+            "embedding": local_hash_embedding("argon plasma"),
+            "dimensions": 64,
+            "embedding_model": "local-hash",
+            "vector_db_backend": "unsupported-backend",
+            "text": "argon plasma",
+        }
+    }
+    (tmp_path / "vector-index.json").write_text(json.dumps(vector_record), encoding="utf-8")
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-unsupported-vector-db-backend.txt",
+                "rag-query-unsupported-vector-db-backend",
+                "rag-query-unsupported-vector-db-backend.txt",
+            ),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record vector_db_backend is unsupported: bad-vector"
+
+
+def test_rag_query_invalid_vector_db_backend_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import local_hash_embedding
+
+    vector_record = {
+        "bad-vector": {
+            "document_id": 1,
+            "embedding": local_hash_embedding("argon plasma"),
+            "dimensions": 64,
+            "embedding_model": "local-hash",
+            "vector_db_backend": [],
+            "text": "argon plasma",
+        }
+    }
+    (tmp_path / "vector-index.json").write_text(json.dumps(vector_record), encoding="utf-8")
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-invalid-vector-db-backend.txt",
+                "rag-query-invalid-vector-db-backend",
+                "rag-query-invalid-vector-db-backend.txt",
+            ),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record vector_db_backend must be a non-empty string: bad-vector"
+
+
+def test_rag_query_accepts_normalizable_vector_db_backend_metadata(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import local_hash_embedding
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-normalizable-vector-db-backend.txt",
+                "rag-query-normalizable-vector-db-backend",
+                "rag-query-normalizable-vector-db-backend.txt",
+            ),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Backend metadata', 'argon plasma chemistry evidence', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        chunk_id = conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'argon plasma chemistry evidence', 4, 'legacy-backend-vector', 1)
+            """,
+            (document_id, section_id),
+        ).lastrowid
+
+    vector_record = {
+        "legacy-backend-vector": {
+            "chunk_id": chunk_id,
+            "section_id": section_id,
+            "document_id": document_id,
+            "embedding": local_hash_embedding("argon plasma chemistry evidence"),
+            "dimensions": 64,
+            "embedding_model": "local-hash",
+            "vector_db_backend": " LOCAL-JSON ",
+            "text": "argon plasma chemistry evidence",
+        }
+    }
+    (tmp_path / "vector-index.json").write_text(json.dumps(vector_record), encoding="utf-8")
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sources"]
+    assert payload["sources"][0]["vector_id"] == "legacy-backend-vector"
+
+
+def test_rag_query_invalid_vector_chunk_id_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import local_hash_embedding
+
+    vector_record = {
+        "bad-vector": {
+            "chunk_id": [],
+            "document_id": 1,
+            "embedding": local_hash_embedding("argon plasma"),
+            "dimensions": 64,
+            "embedding_model": "local-hash",
+            "vector_db_backend": "local-json",
+            "text": "argon plasma",
+        }
+    }
+    (tmp_path / "vector-index.json").write_text(json.dumps(vector_record), encoding="utf-8")
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-invalid-vector-chunk-id.txt",
+                "rag-query-invalid-vector-chunk-id",
+                "rag-query-invalid-vector-chunk-id.txt",
+            ),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record chunk_id must be a positive integer: bad-vector"
+
+
+def test_rag_query_invalid_vector_section_id_returns_clear_error(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import local_hash_embedding
+
+    vector_record = {
+        "bad-vector": {
+            "section_id": [],
+            "document_id": 1,
+            "embedding": local_hash_embedding("argon plasma"),
+            "dimensions": 64,
+            "embedding_model": "local-hash",
+            "vector_db_backend": "local-json",
+            "text": "argon plasma",
+        }
+    }
+    (tmp_path / "vector-index.json").write_text(json.dumps(vector_record), encoding="utf-8")
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (
+                "/tmp/rag-query-invalid-vector-section-id.txt",
+                "rag-query-invalid-vector-section-id",
+                "rag-query-invalid-vector-section-id.txt",
+            ),
+        ).lastrowid
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_query_failed"
+    assert payload["error"]["message"] == "vector store record section_id must be a positive integer: bad-vector"
+
+
 def test_fixture_loader_supports_walking_skeleton(tmp_path):
     client = make_client(tmp_path)
 
@@ -1520,6 +2384,29 @@ def test_fixture_loader_imports_idempotent_document_sample(tmp_path):
     assert document["parse_status"] == "uploaded"
     assert Path(document["file_path"]).exists()
     assert document["paper"]["doi"] == "10.1088/1361-6595/fixture-ar-o2"
+
+
+def test_fixture_loader_rejects_symlinked_pdf_storage_dir(tmp_path):
+    make_client(tmp_path)
+
+    from app.fixture_loader import load_fixture_documents, load_fixture_papers
+
+    outside_dir = tmp_path / "outside-fixture-pdfs"
+    outside_dir.mkdir()
+    pdf_dir = tmp_path / "pdfs"
+    pdf_dir.rmdir()
+    pdf_dir.symlink_to(outside_dir, target_is_directory=True)
+
+    try:
+        load_fixture_papers()
+        load_fixture_documents()
+    except OSError as exc:
+        error = str(exc)
+    else:
+        error = ""
+
+    assert "document storage path parent is not a regular directory" in error
+    assert not list(outside_dir.glob("*.pdf"))
 
 
 def test_fixture_import_script_runs_from_repo_root(tmp_path):
@@ -1612,6 +2499,12 @@ def test_prepare_demo_data_script_populates_walking_skeleton(tmp_path):
     assert payload["summary"]["reaction_set_status"] == "verified"
     assert payload["summary"]["reaction_count"] == payload["reaction_set"]["reaction_count"]
     assert payload["summary"]["export_formats"] == ["json", "txt", "bolsig"]
+    assert payload["summary"]["export_audit_entry_counts"] == {
+        fmt: export_payload["audit_entry_count"]
+        for fmt, export_payload in payload["exports"].items()
+    }
+    assert all(count >= 1 for count in payload["summary"]["export_audit_entry_counts"].values())
+    assert payload["summary"]["export_audit_summary_formats"] == ["json", "txt", "bolsig"]
     assert payload["summary"]["counts"] == payload["counts"]
     assert payload["exports"]["json"]["reaction_count"] >= 1
     assert Path(payload["exports"]["json"]["output_path"]).exists()
@@ -1653,6 +2546,8 @@ def test_prepare_demo_data_script_can_print_summary_only(tmp_path):
     assert summary["translation_status"] == "done"
     assert summary["reaction_set_status"] == "verified"
     assert summary["export_formats"] == ["json", "txt", "bolsig"]
+    assert summary["export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
+    assert summary["export_audit_summary_formats"] == ["json", "txt", "bolsig"]
     assert "document" not in summary
     assert "exports" not in summary
 
@@ -1697,8 +2592,97 @@ def test_prepare_demo_data_script_can_write_summary_output_file(tmp_path):
     summary = json.loads(output_path.read_text(encoding="utf-8"))
     assert summary["ready"] is True
     assert summary["export_formats"] == ["json", "txt", "bolsig"]
+    assert summary["export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
+    assert summary["export_audit_summary_formats"] == ["json", "txt", "bolsig"]
     assert "document" not in summary
     assert "exports" not in summary
+
+
+def test_prepare_demo_data_script_rejects_symlinked_output_file(tmp_path):
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(tmp_path / "data")
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+    outside_path = tmp_path / "outside-demo-summary.json"
+    outside_path.write_text("outside-original", encoding="utf-8")
+    output_path = tmp_path / "out" / "demo-summary.json"
+    output_path.parent.mkdir()
+    output_path.symlink_to(outside_path)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/prepare_demo_data.py",
+            "--summary-only",
+            "--compact",
+            "--output",
+            str(output_path),
+        ],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert f"prepare_demo_data failed: output path is not a regular file: {output_path}" in result.stderr
+    assert outside_path.read_text(encoding="utf-8") == "outside-original"
+    assert not (tmp_path / "data").exists()
+
+
+def test_prepare_demo_data_script_rejects_symlinked_output_parent(tmp_path):
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(tmp_path / "data")
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+    outside_dir = tmp_path / "outside-out"
+    outside_dir.mkdir()
+    linked_parent = tmp_path / "out"
+    linked_parent.symlink_to(outside_dir, target_is_directory=True)
+    output_path = linked_parent / "demo-summary.json"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/prepare_demo_data.py",
+            "--summary-only",
+            "--compact",
+            "--output",
+            str(output_path),
+        ],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert f"prepare_demo_data failed: output path parent is not a regular directory: {linked_parent}" in result.stderr
+    assert not (outside_dir / "demo-summary.json").exists()
 
 
 def test_smoke_check_covers_translation_and_chemistry_chain():
@@ -1738,12 +2722,14 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["rag_source_excerpts"] == 1
     assert result["verified_export_txt_has_verification_metadata"] is True
     assert result["verified_export_bolsig_has_verification_metadata"] is True
+    assert result["verified_export_txt_has_audit_summary"] is True
+    assert result["verified_export_bolsig_has_audit_summary"] is True
     assert result["translation_output_path"].endswith("document-1-zh.md")
     assert result["verified_export_path"].endswith("reaction-set-1.json")
     assert result["runtime_version"] == "0.1.0"
     assert result["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert result["config_warning_count"] == 3
-    assert result["release_readiness"]["ready"] is False
+    assert result["release_readiness"]["ready"] is True
     assert result["release_readiness"]["demo_data_missing"] == []
     assert result["release_readiness"]["failed_workflows"] == []
     assert result["release_readiness"]["config_warning_codes"] == [
@@ -1793,10 +2779,12 @@ def test_smoke_check_script_outputs_json():
     assert payload["rag_source_excerpts"] == 1
     assert payload["verified_export_txt_has_verification_metadata"] is True
     assert payload["verified_export_bolsig_has_verification_metadata"] is True
+    assert payload["verified_export_txt_has_audit_summary"] is True
+    assert payload["verified_export_bolsig_has_audit_summary"] is True
     assert payload["runtime_version"] == "0.1.0"
     assert payload["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert payload["config_warning_count"] == 3
-    assert payload["release_readiness"]["ready"] is False
+    assert payload["release_readiness"]["ready"] is True
     assert payload["release_readiness"]["config_warning_codes"] == [
         "missing_openalex_mailto",
         "missing_unpaywall_email",
@@ -2769,6 +3757,29 @@ def test_openalex_client_sends_polite_user_agent_with_mailto():
     assert seen_user_agents == ["paper-lab-agent (mailto:lab@example.test)"]
 
 
+def test_openalex_client_strips_mailto_whitespace_for_polite_pool():
+    import asyncio
+
+    import httpx
+
+    from app.clients.openalex import OpenAlexClient
+
+    seen_user_agents = []
+    seen_mailtos = []
+
+    def handler(request):
+        seen_user_agents.append(request.headers.get("user-agent"))
+        seen_mailtos.append(request.url.params.get("mailto"))
+        return httpx.Response(200, json={"results": [], "meta": {}})
+
+    client = OpenAlexClient("  lab@example.test  ", transport=httpx.MockTransport(handler))
+    works = asyncio.run(client.works_by_issn("1234-5678", "2025-01-01", "2026-01-01"))
+
+    assert works == []
+    assert seen_mailtos == ["lab@example.test"]
+    assert seen_user_agents == ["paper-lab-agent (mailto:lab@example.test)"]
+
+
 def test_openalex_client_honors_retry_after_without_real_sleep():
     import asyncio
 
@@ -2824,6 +3835,22 @@ def test_openalex_client_reconstructs_abstract_inverted_index():
     )
 
     assert work["abstract"] == "Argon plasma chemistry drives oxygen reaction plasma"
+
+
+def test_openalex_client_falls_back_to_year_when_publication_date_is_invalid():
+    from app.clients.openalex import OpenAlexClient
+
+    work = OpenAlexClient().normalize(
+        {
+            "doi": "https://doi.org/10.1/date-fallback",
+            "title": "Date fallback",
+            "publication_date": "2026-00-00",
+            "publication_year": 2026,
+        }
+    )
+
+    assert work["published_date"] == "2026-01-01"
+    assert work["published_year"] == 2026
 
 
 def test_openalex_client_prefers_primary_landing_page_url():
@@ -2910,6 +3937,22 @@ def test_crossref_client_strips_jats_tags_from_abstract():
     assert work["abstract"] == "Argon plasma chemistry & kinetics."
 
 
+def test_crossref_client_strips_jats_tags_from_title_and_journal_name():
+    from app.clients.crossref import CrossrefClient
+
+    work = CrossrefClient().normalize(
+        {
+            "DOI": "10.2/tagged-title",
+            "title": ["Ar/O<jats:sub>2</jats:sub> <jats:italic>plasma</jats:italic> chemistry &amp; kinetics"],
+            "container-title": ["<jats:italic>Plasma</jats:italic> Sources"],
+            "published-online": {"date-parts": [[2026, 4, 5]]},
+        }
+    )
+
+    assert work["title"] == "Ar/O2 plasma chemistry & kinetics"
+    assert work["journal_name"] == "Plasma Sources"
+
+
 def test_crossref_client_uses_issued_date_when_published_dates_are_missing():
     from app.clients.crossref import CrossrefClient
 
@@ -2979,6 +4022,29 @@ def test_unpaywall_client_sends_polite_user_agent_with_email():
         return httpx.Response(200, json={"oa_status": "closed"})
 
     client = UnpaywallClient("lab@example.test", transport=httpx.MockTransport(handler))
+    result = asyncio.run(client.resolve("10.1/polite"))
+
+    assert result["oa_status"] == "closed"
+    assert seen_emails == ["lab@example.test"]
+    assert seen_user_agents == ["paper-lab-agent (mailto:lab@example.test)"]
+
+
+def test_unpaywall_client_strips_email_whitespace_for_polite_pool():
+    import asyncio
+
+    import httpx
+
+    from app.clients.unpaywall import UnpaywallClient
+
+    seen_user_agents = []
+    seen_emails = []
+
+    def handler(request):
+        seen_user_agents.append(request.headers.get("user-agent"))
+        seen_emails.append(request.url.params.get("email"))
+        return httpx.Response(200, json={"oa_status": "closed"})
+
+    client = UnpaywallClient("  lab@example.test  ", transport=httpx.MockTransport(handler))
     result = asyncio.run(client.resolve("10.1/polite"))
 
     assert result["oa_status"] == "closed"
@@ -3120,6 +4186,88 @@ def test_resolve_oa_records_failure_without_server_error(tmp_path, monkeypatch):
     assert payload["raw_metadata"]["oa_resolution_error"] == "Unpaywall temporary outage"
 
 
+def test_resolve_oa_clears_stale_unpaywall_raw_on_failure(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import papers as papers_router
+
+    class FailingUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            raise RuntimeError("Unpaywall 404 for DOI")
+
+    monkeypatch.setattr(papers_router, "UnpaywallClient", FailingUnpaywallClient)
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, ?, '[]', 'fixture', ?)
+            """,
+            (
+                "10.7/manual-resolve-stale-raw",
+                "Manual OA stale raw",
+                "argon plasma",
+                '{"source":"fixture","unpaywall":{"oa_status":"green","best_oa_location":{"url_for_pdf":"https://old.example/paper.pdf"}}}',
+            ),
+        )
+        paper_id = cursor.lastrowid
+
+    response = client.post(f"/api/v1/papers/{paper_id}/resolve-oa")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["oa_status"] == "unknown"
+    assert payload["oa_pdf_url"] is None
+    assert payload["raw_metadata"]["source"] == "fixture"
+    assert payload["raw_metadata"]["oa_resolution_error"] == "Unpaywall 404 for DOI"
+    assert "unpaywall" not in payload["raw_metadata"]
+
+
+def test_resolve_oa_clears_stale_unpaywall_raw_on_adapter_error(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import papers as papers_router
+
+    class ErrorUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            return {"oa_status": "unknown", "oa_pdf_url": None, "error": "UNPAYWALL_EMAIL is not configured"}
+
+    monkeypatch.setattr(papers_router, "UnpaywallClient", ErrorUnpaywallClient)
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, ?, '[]', 'fixture', ?)
+            """,
+            (
+                "10.7/manual-resolve-stale-adapter-error",
+                "Manual OA stale adapter error",
+                "argon plasma",
+                '{"source":"fixture","unpaywall":{"oa_status":"green","best_oa_location":{"url_for_pdf":"https://old.example/paper.pdf"}}}',
+            ),
+        )
+        paper_id = cursor.lastrowid
+
+    response = client.post(f"/api/v1/papers/{paper_id}/resolve-oa")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["oa_status"] == "unknown"
+    assert payload["oa_pdf_url"] is None
+    assert payload["raw_metadata"]["source"] == "fixture"
+    assert payload["raw_metadata"]["oa_resolution_error"] == "UNPAYWALL_EMAIL is not configured"
+    assert "unpaywall" not in payload["raw_metadata"]
+
+
 def test_resolve_oa_records_unpaywall_raw_metadata(tmp_path, monkeypatch):
     client = make_client(tmp_path)
 
@@ -3163,6 +4311,47 @@ def test_resolve_oa_records_unpaywall_raw_metadata(tmp_path, monkeypatch):
     assert payload["raw_metadata"]["unpaywall"]["doi"] == "10.7/manual-resolve-raw"
     assert payload["raw_metadata"]["unpaywall"]["oa_status"] == "green"
     assert "oa_resolution_error" not in payload["raw_metadata"]
+
+
+def test_resolve_oa_clears_stale_unpaywall_raw_when_success_has_no_raw(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import papers as papers_router
+
+    class RawlessUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            return {"oa_status": "green", "oa_pdf_url": "https://repository.example.test/new.pdf"}
+
+    monkeypatch.setattr(papers_router, "UnpaywallClient", RawlessUnpaywallClient)
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, ?, '[]', 'fixture', ?)
+            """,
+            (
+                "10.7/manual-resolve-rawless-success",
+                "Manual OA rawless success",
+                "argon plasma",
+                '{"source":"fixture","oa_resolution_error":"previous failure","unpaywall":{"oa_status":"closed","best_oa_location":null}}',
+            ),
+        )
+        paper_id = cursor.lastrowid
+
+    response = client.post(f"/api/v1/papers/{paper_id}/resolve-oa")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["oa_status"] == "green"
+    assert payload["oa_pdf_url"] == "https://repository.example.test/new.pdf"
+    assert payload["raw_metadata"]["source"] == "fixture"
+    assert "oa_resolution_error" not in payload["raw_metadata"]
+    assert "unpaywall" not in payload["raw_metadata"]
 
 
 def test_resolve_oa_normalizes_adapter_oa_status_before_storing(tmp_path, monkeypatch):
@@ -3356,6 +4545,62 @@ def test_crawl_job_passes_api_retry_and_page_settings(tmp_path, monkeypatch):
         ("openalex", "1361-6595", "2026-01-01", "2026-01-31", 4),
         ("crossref", "1361-6595", "2026-01-01", "2026-01-31", 4),
     ]
+
+
+def test_crawl_job_uses_print_issn_when_electronic_issn_is_blank(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import crawl as crawl_service
+
+    calls = []
+
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE journals SET issn_print=?, issn_electronic=? WHERE id=?",
+            ("1111-2222", "   ", 2),
+        )
+
+    class FakeOpenAlexClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def works_by_issn(self, issn, *args, **kwargs):
+            calls.append(issn)
+            return [
+                {
+                    "doi": "10.4/print-issn-fallback",
+                    "title": "Print ISSN fallback plasma chemistry paper",
+                    "abstract": "argon plasma chemistry",
+                    "authors": [],
+                    "published_date": "2026-01-03",
+                    "published_year": 2026,
+                    "landing_url": "https://example.test/print-issn-fallback",
+                    "source_api": "openalex",
+                    "raw_metadata": {},
+                }
+            ]
+
+    class FakeUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            return {"oa_status": "unknown", "oa_pdf_url": None}
+
+    monkeypatch.setattr(crawl_service, "OpenAlexClient", FakeOpenAlexClient)
+    monkeypatch.setattr(crawl_service, "UnpaywallClient", FakeUnpaywallClient)
+
+    job = crawl_service.create_jobs([2], "manual", "2026-01-01", "2026-01-31")[0]
+    import asyncio
+
+    asyncio.run(crawl_service.run_crawl_job(job["job_id"], 2, "2026-01-01", "2026-01-31"))
+
+    with get_conn() as conn:
+        stored_job = conn.execute("SELECT * FROM crawl_jobs WHERE id=?", (job["job_id"],)).fetchone()
+
+    assert calls == ["1111-2222"]
+    assert stored_job["status"] == "success"
 
 
 def test_crawl_job_falls_back_to_crossref_when_openalex_fails(tmp_path, monkeypatch):
@@ -3883,6 +5128,31 @@ def test_crawl_run_rejects_invalid_period_and_reversed_dates(tmp_path):
     assert reversed_dates.json()["error"]["code"] == "validation_error"
 
 
+def test_crawl_run_rejects_derived_reversed_incremental_date_range(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO crawl_jobs (journal_id, period, date_from, date_to, status, finished_at)
+            VALUES (2, 'manual', '2026-12-01', '2026-12-31', 'success', '2026-12-31T00:00:00')
+            """
+        )
+
+    response = client.post(
+        "/api/v1/crawl/run",
+        json={"journal_ids": [2], "period": "manual", "date_to": "2026-01-31"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_crawl_date_range"
+    with get_conn() as conn:
+        pending_count = conn.execute("SELECT COUNT(*) AS n FROM crawl_jobs WHERE status='pending'").fetchone()["n"]
+    assert pending_count == 0
+
+
 def test_crawl_run_accepts_missing_body_with_default_all_active_journals(tmp_path, monkeypatch):
     client = make_client(tmp_path)
 
@@ -4206,6 +5476,25 @@ def test_system_status_reports_missing_optional_config_without_blocking(tmp_path
     assert all(warning["capability"] for warning in warnings)
 
 
+def test_system_status_treats_blank_optional_config_as_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_MAILTO", "   ")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "   ")
+    monkeypatch.setenv("LLM_API_KEY", "   ")
+
+    client = make_client(tmp_path)
+
+    status = client.get("/api/v1/system/status").json()
+    codes = {warning["code"] for warning in status["config_warnings"]}
+
+    assert "missing_openalex_mailto" in codes
+    assert "missing_unpaywall_email" in codes
+    assert "missing_llm_api_key" in codes
+    assert status["external_capabilities"]["openalex_mailto"] is False
+    assert status["external_capabilities"]["unpaywall_email"] is False
+    assert status["external_capabilities"]["llm_api_key"] is False
+    assert status["external_capabilities"]["translation_adapter"] == "local-echo"
+
+
 def test_system_status_reports_corrupt_vector_store_health(tmp_path):
     client = make_client(tmp_path)
     (tmp_path / "vector-index.json").write_text("{not valid json", encoding="utf-8")
@@ -4222,12 +5511,422 @@ def test_system_status_reports_corrupt_vector_store_health(tmp_path):
     assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
 
 
+def test_system_status_reports_non_object_vector_store_json(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text("[]", encoding="utf-8")
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store JSON must be an object"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_reports_malformed_vector_store_record(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text('{"bad-vector": []}', encoding="utf-8")
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record must be an object: bad-vector"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_reports_malformed_vector_embedding(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": 1, "embedding": "argon plasma"}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record embedding must be a numeric array: bad-vector"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_reports_boolean_vector_embedding(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": 1, "embedding": [true]}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record embedding must be a numeric array: bad-vector"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_reports_non_finite_vector_embedding(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": 1, "embedding": [NaN]}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record embedding must be a finite numeric array: bad-vector"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_reports_vector_dimension_mismatch(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": 1, "embedding": [0.1], "dimensions": 64}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record dimensions must match embedding length: bad-vector"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_reports_empty_vector_embedding(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": 1, "embedding": []}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record embedding must not be empty: bad-vector"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_reports_string_vector_document_id(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": "1", "embedding": [0.1], "dimensions": 1}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record document_id must be a positive integer: bad-vector"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_reports_non_string_vector_text(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": 1, "embedding": [0.1], "dimensions": 1, "text": ["argon plasma"]}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record text must be a non-empty string: bad-vector"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_reports_invalid_vector_embedding_model(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": 1, "embedding": [0.1], "dimensions": 1, '
+        '"text": "argon plasma", "embedding_model": []}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record embedding_model must be a non-empty string: bad-vector"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_reports_unsupported_vector_embedding_model(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": 1, "embedding": [0.1], "dimensions": 1, '
+        '"text": "argon plasma", "embedding_model": "unsupported-model"}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record embedding_model is unsupported: bad-vector"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_accepts_normalizable_vector_embedding_model(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"legacy-vector": {"document_id": 1, "embedding": [0.1], "dimensions": 1, '
+        '"text": "argon plasma", "embedding_model": " LOCAL-HASH ", '
+        '"vector_db_backend": "local-json"}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is True
+    assert vector_db["error"] is None
+    assert "vector_db.valid_json" not in response.json()["release_readiness"]["storage_errors"]
+
+
+def test_system_status_reports_empty_vector_id(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"": {"document_id": 1, "embedding": [0.1], "dimensions": 1, '
+        '"text": "argon plasma", "embedding_model": "local-hash"}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record id must be a non-empty string"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_reports_unsupported_vector_db_backend(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": 1, "embedding": [0.1], "dimensions": 1, '
+        '"text": "argon plasma", "embedding_model": "local-hash", '
+        '"vector_db_backend": "unsupported-backend"}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record vector_db_backend is unsupported: bad-vector"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_reports_invalid_vector_db_backend(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"document_id": 1, "embedding": [0.1], "dimensions": 1, '
+        '"text": "argon plasma", "embedding_model": "local-hash", '
+        '"vector_db_backend": []}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record vector_db_backend must be a non-empty string: bad-vector"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_accepts_normalizable_vector_db_backend_metadata(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"legacy-vector": {"document_id": 1, "embedding": [0.1], "dimensions": 1, '
+        '"text": "argon plasma", "embedding_model": "local-hash", '
+        '"vector_db_backend": " LOCAL-JSON "}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is True
+    assert vector_db["error"] is None
+    assert "vector_db.valid_json" not in response.json()["release_readiness"]["storage_errors"]
+
+
+def test_system_status_reports_invalid_vector_chunk_id(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"chunk_id": [], "document_id": 1, "embedding": [0.1], "dimensions": 1, '
+        '"text": "argon plasma", "embedding_model": "local-hash", '
+        '"vector_db_backend": "local-json"}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record chunk_id must be a positive integer: bad-vector"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_reports_invalid_vector_section_id(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "vector-index.json").write_text(
+        '{"bad-vector": {"section_id": [], "document_id": 1, "embedding": [0.1], "dimensions": 1, '
+        '"text": "argon plasma", "embedding_model": "local-hash", '
+        '"vector_db_backend": "local-json"}}',
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["readable"] is True
+    assert vector_db["valid_json"] is False
+    assert vector_db["error"] == "vector store record section_id must be a positive integer: bad-vector"
+    assert response.json()["release_readiness"]["storage_errors"] == ["vector_db.valid_json"]
+
+
+def test_system_status_reports_symlinked_vector_store_health_error(tmp_path):
+    client = make_client(tmp_path)
+    outside_path = tmp_path / "outside-vector-index.json"
+    outside_path.write_text("{}", encoding="utf-8")
+    (tmp_path / "vector-index.json").symlink_to(outside_path)
+
+    response = client.get("/api/v1/system/status")
+
+    assert response.status_code == 200
+    vector_db = response.json()["storage_health"]["vector_db"]
+    assert vector_db["path"] == str(tmp_path / "vector-index.json")
+    assert vector_db["exists"] is True
+    assert vector_db["writable"] is False
+    assert vector_db["valid_json"] is False
+    assert "vector store path is not a regular file" in vector_db["error"]
+    assert response.json()["release_readiness"]["storage_errors"] == [
+        "vector_db.writable",
+        "vector_db.valid_json",
+    ]
+
+
 def test_system_status_reports_vector_db_backend(tmp_path):
     client = make_client(tmp_path)
 
     status = client.get("/api/v1/system/status").json()
 
     assert status["external_capabilities"]["vector_db_backend"] == "local-json"
+
+
+def test_system_status_reports_normalized_effective_vector_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("EMBEDDING_MODEL", " LOCAL-HASH ")
+    monkeypatch.setenv("VECTOR_DB_BACKEND", " LOCAL-JSON ")
+
+    client = make_client(tmp_path)
+
+    status = client.get("/api/v1/system/status").json()
+    codes = {warning["code"] for warning in status["config_warnings"]}
+
+    assert "unsupported_embedding_model" not in codes
+    assert "unsupported_vector_db_backend" not in codes
+    assert status["external_capabilities"]["embedding_model"] == "local-hash"
+    assert status["external_capabilities"]["vector_db_backend"] == "local-json"
+
+
+def test_system_status_reports_supported_adapter_warning_details(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv("EMBEDDING_MODEL", " experimental-vectors ")
+    monkeypatch.setenv("VECTOR_DB_BACKEND", " faiss ")
+
+    client = make_client(tmp_path)
+
+    status = client.get("/api/v1/system/status").json()
+    warnings = {warning["code"]: warning for warning in status["config_warnings"]}
+
+    assert warnings["unsupported_embedding_model"]["actual"] == "experimental-vectors"
+    assert warnings["unsupported_embedding_model"]["supported"] == ["local-hash"]
+    assert warnings["unsupported_vector_db_backend"]["actual"] == "faiss"
+    assert warnings["unsupported_vector_db_backend"]["supported"] == ["local-json"]
+    assert status["release_readiness"]["ready"] is False
+    assert status["release_readiness"]["config_warning_codes"] == [
+        "unsupported_embedding_model",
+        "unsupported_vector_db_backend",
+    ]
 
 
 def test_system_status_reports_translation_adapter(tmp_path, monkeypatch):
@@ -4306,6 +6005,121 @@ def test_parse_document_fallback_writes_valid_tei_xml(tmp_path, monkeypatch):
     assert "Ar &amp; O2 &lt;plasma&gt; chemistry" in tei_text
 
 
+def test_parse_document_rejects_symlinked_tei_storage_dir(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("tei-symlink.pdf", pdf_bytes(b"local plasma tei text"), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    outside_dir = tmp_path / "outside-tei"
+    outside_dir.mkdir()
+    tei_dir = tmp_path / "tei"
+    tei_dir.rmdir()
+    tei_dir.symlink_to(outside_dir, target_is_directory=True)
+
+    from app.services import documents as document_service
+
+    async def fake_health_detail(self):
+        return {
+            "available": False,
+            "url": "http://grobid.test",
+            "status_code": None,
+            "error": "connection refused",
+        }
+
+    monkeypatch.setattr(document_service.GrobidClient, "health_detail", fake_health_detail)
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    document = client.get(f"/api/v1/documents/{document_id}").json()
+
+    assert document["parse_status"] == "failed"
+    assert "document storage path parent is not a regular directory" in document["parse_error"]
+    assert not list(outside_dir.glob("*.tei.xml"))
+
+
+def test_parse_document_rejects_symlinked_source_pdf(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+    outside_pdf = tmp_path / "outside-source.pdf"
+    outside_pdf.write_bytes(pdf_bytes(b"outside symlink plasma text"))
+    linked_pdf = tmp_path / "pdfs" / "linked-source.pdf"
+    linked_pdf.symlink_to(outside_pdf)
+
+    from app.db import get_conn
+    from app.services import documents as document_service
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'uploaded')
+            """,
+            (str(linked_pdf), "linked-source-hash", "linked-source.pdf"),
+        ).lastrowid
+
+    async def fake_health_detail(self):
+        return {
+            "available": False,
+            "url": "http://grobid.test",
+            "status_code": None,
+            "error": "connection refused",
+        }
+
+    monkeypatch.setattr(document_service.GrobidClient, "health_detail", fake_health_detail)
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    document = client.get(f"/api/v1/documents/{document_id}").json()
+
+    assert document["parse_status"] == "failed"
+    assert "document storage path is not a regular file" in document["parse_error"]
+
+
+def test_parse_document_source_validation_reports_unsupported_vector_db_backend(tmp_path, monkeypatch):
+    import asyncio
+
+    monkeypatch.setenv("VECTOR_DB_BACKEND", "faiss")
+    make_client(tmp_path)
+    outside_pdf = tmp_path / "outside-source-backend.pdf"
+    outside_pdf.write_bytes(pdf_bytes(b"outside backend plasma text"))
+    linked_pdf = tmp_path / "pdfs" / "linked-source-backend.pdf"
+    linked_pdf.symlink_to(outside_pdf)
+
+    from app.db import get_conn
+    from app.services import documents as document_service
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'uploaded')
+            """,
+            (str(linked_pdf), "linked-source-backend-hash", "linked-source-backend.pdf"),
+        ).lastrowid
+
+    result = asyncio.run(document_service.parse_document(document_id))
+
+    assert result["parse_status"] == "failed"
+    assert "Document source validation failed" in result["parse_error"]
+    assert "vector cleanup failed: unsupported vector db backend: faiss" in result["parse_error"]
+    with get_conn() as conn:
+        document = conn.execute(
+            """
+            SELECT parse_status, parse_error, index_status, index_error, chemistry_status, chemistry_error
+            FROM documents WHERE id=?
+            """,
+            (document_id,),
+        ).fetchone()
+        section_count = conn.execute("SELECT COUNT(*) AS n FROM sections WHERE document_id=?", (document_id,)).fetchone()["n"]
+    assert document["parse_status"] == "failed"
+    assert "vector cleanup failed: unsupported vector db backend: faiss" in document["parse_error"]
+    assert document["index_status"] == "not_indexed"
+    assert document["index_error"] is None
+    assert document["chemistry_status"] == "not_extracted"
+    assert document["chemistry_error"] is None
+    assert section_count == 0
+
+
 def test_parse_document_falls_back_when_grobid_returns_only_references(tmp_path, monkeypatch):
     client = make_client(tmp_path)
     response = client.post(
@@ -4382,9 +6196,6 @@ def test_parse_document_records_failed_status_when_artifact_cleanup_fails(tmp_pa
         }
 
     class FailingVectorStore:
-        def __init__(self, path):
-            self.path = path
-
         def delete_document(self, document_id):
             raise RuntimeError("vector cleanup failed")
 
@@ -4430,7 +6241,7 @@ def test_parse_document_records_failed_status_when_artifact_cleanup_fails(tmp_pa
         )
 
     monkeypatch.setattr(document_service.GrobidClient, "health_detail", fake_health_detail)
-    monkeypatch.setattr(document_service, "JsonVectorStore", FailingVectorStore)
+    monkeypatch.setattr(document_service, "get_vector_store", lambda settings: FailingVectorStore())
 
     result = asyncio.run(document_service.parse_document(document_id))
 
@@ -4564,6 +6375,103 @@ def test_parse_document_fallback_failure_clears_stale_artifacts(tmp_path, monkey
     assert counts == {"sections": 0, "chunks": 0, "translations": 0, "reaction_sets": 0}
     vector_index = json.loads((tmp_path / "vector-index.json").read_text(encoding="utf-8"))
     assert all(record["document_id"] != document_id for record in vector_index.values())
+
+
+def test_parse_document_fallback_failure_reports_unsupported_vector_db_backend(tmp_path, monkeypatch):
+    import asyncio
+
+    monkeypatch.setenv("VECTOR_DB_BACKEND", "faiss")
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("fallback-backend.pdf", pdf_bytes(b"fallback backend text"), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    from app.db import get_conn
+    from app.services import documents as document_service
+
+    async def fake_health_detail(self):
+        return {
+            "available": False,
+            "url": "http://grobid.test",
+            "status_code": None,
+            "error": "connection refused",
+        }
+
+    def failing_read_document_text(file_path):
+        raise RuntimeError("local text read failed")
+
+    monkeypatch.setattr(document_service.GrobidClient, "health_detail", fake_health_detail)
+    monkeypatch.setattr(document_service, "read_document_text", failing_read_document_text)
+
+    result = asyncio.run(document_service.parse_document(document_id))
+
+    assert result["parse_status"] == "failed"
+    assert "Local text fallback failed: local text read failed" in result["parse_error"]
+    assert "vector cleanup failed: unsupported vector db backend: faiss" in result["parse_error"]
+    with get_conn() as conn:
+        document = conn.execute(
+            """
+            SELECT parse_status, parse_error, index_status, index_error, chemistry_status, chemistry_error
+            FROM documents WHERE id=?
+            """,
+            (document_id,),
+        ).fetchone()
+        section_count = conn.execute("SELECT COUNT(*) AS n FROM sections WHERE document_id=?", (document_id,)).fetchone()["n"]
+    assert document["parse_status"] == "failed"
+    assert "vector cleanup failed: unsupported vector db backend: faiss" in document["parse_error"]
+    assert document["index_status"] == "not_indexed"
+    assert document["index_error"] is None
+    assert document["chemistry_status"] == "not_extracted"
+    assert document["chemistry_error"] is None
+    assert section_count == 0
+
+
+def test_parse_document_finalization_rejects_unsupported_vector_db_backend(tmp_path, monkeypatch):
+    import asyncio
+
+    monkeypatch.setenv("VECTOR_DB_BACKEND", "faiss")
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("parse-backend.pdf", pdf_bytes(b"local plasma finalization text"), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    from app.db import get_conn
+    from app.services import documents as document_service
+
+    async def fake_health_detail(self):
+        return {
+            "available": False,
+            "url": "http://grobid.test",
+            "status_code": None,
+            "error": "connection refused",
+        }
+
+    monkeypatch.setattr(document_service.GrobidClient, "health_detail", fake_health_detail)
+
+    result = asyncio.run(document_service.parse_document(document_id))
+
+    assert result["parse_status"] == "failed"
+    assert result["parse_error"] == "Parse finalization failed: unsupported vector db backend: faiss"
+    with get_conn() as conn:
+        document = conn.execute(
+            """
+            SELECT parse_status, parse_error, index_status, index_error, chemistry_status, chemistry_error
+            FROM documents WHERE id=?
+            """,
+            (document_id,),
+        ).fetchone()
+        section_count = conn.execute("SELECT COUNT(*) AS n FROM sections WHERE document_id=?", (document_id,)).fetchone()["n"]
+    assert document["parse_status"] == "failed"
+    assert document["parse_error"] == "Parse finalization failed: unsupported vector db backend: faiss"
+    assert document["index_status"] == "not_indexed"
+    assert document["index_error"] is None
+    assert document["chemistry_status"] == "not_extracted"
+    assert document["chemistry_error"] is None
+    assert section_count == 0
 
 
 def test_sections_from_tei_extracts_structured_sections():
@@ -4723,6 +6631,40 @@ def test_sections_from_tei_body_includes_direct_list_items():
             "seq": 1,
             "title": "Operating conditions",
             "content": "Base discharge setup. Pressure 10 Pa. Power 100 W.",
+            "section_type": "body",
+        }
+    ]
+
+
+def test_sections_from_tei_body_includes_direct_formula_nodes():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <div>
+            <head>Rate model</head>
+            <p>The ionization rate is defined below.</p>
+            <formula>k_i = n_e n_Ar &lt;sigma v&gt;</formula>
+            <p>The expression is used for the argon chemistry model.</p>
+          </div>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Rate model",
+            "content": (
+                "The ionization rate is defined below. "
+                "k_i = n_e n_Ar <sigma v> "
+                "The expression is used for the argon chemistry model."
+            ),
             "section_type": "body",
         }
     ]
@@ -5115,6 +7057,89 @@ def test_sections_from_tei_extracts_biblstruct_reference_identifiers():
                 "Plasma Chemistry and Plasma Processing 2026 "
                 "DOI: 10.1234/plasma.2026.001 "
                 "URL: https://doi.org/10.1234/plasma.2026.001"
+            ),
+            "section_type": "reference",
+        }
+    ]
+
+
+def test_sections_from_tei_preserves_reference_date_attributes():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <back>
+          <listBibl>
+            <biblStruct>
+              <analytic>
+                <title level="a">Plasma sheath measurements</title>
+              </analytic>
+              <monogr>
+                <title level="j">Journal of Applied Plasma</title>
+                <imprint>
+                  <date type="published" when="2026"/>
+                </imprint>
+              </monogr>
+              <idno type="DOI">10.1234/plasma.date</idno>
+            </biblStruct>
+          </listBibl>
+        </back>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Reference 1",
+            "content": (
+                "Plasma sheath measurements Journal of Applied Plasma "
+                "2026 DOI: 10.1234/plasma.date"
+            ),
+            "section_type": "reference",
+        }
+    ]
+
+
+def test_sections_from_tei_preserves_reference_biblscope_attributes():
+    from app.services.documents import sections_from_tei
+
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <back>
+          <listBibl>
+            <biblStruct>
+              <analytic>
+                <title level="a">Plasma sheath measurements</title>
+              </analytic>
+              <monogr>
+                <title level="j">Journal of Applied Plasma</title>
+                <imprint>
+                  <biblScope unit="volume">12</biblScope>
+                  <biblScope unit="page" from="101" to="109"/>
+                </imprint>
+              </monogr>
+              <idno type="DOI">10.1234/plasma.pages</idno>
+            </biblStruct>
+          </listBibl>
+        </back>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Reference 1",
+            "content": (
+                "Plasma sheath measurements Journal of Applied Plasma "
+                "12 101-109 DOI: 10.1234/plasma.pages"
             ),
             "section_type": "reference",
         }
@@ -5688,6 +7713,40 @@ def test_rag_index_uses_local_vector_store(tmp_path):
     assert "electron impact reactions" in rag["sources"][0]["source_excerpt"]
 
 
+def test_rag_index_normalizes_vector_db_backend_metadata(tmp_path, monkeypatch):
+    monkeypatch.setenv("VECTOR_DB_BACKEND", " LOCAL-JSON ")
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/v1/documents",
+        files={
+            "file": (
+                "rag-backend-normalized.pdf",
+                pdf_bytes(b"Argon plasma chemistry and electron impact reactions."),
+                "application/pdf",
+            )
+        },
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/index").status_code == 202
+
+    vector_index = json.loads((tmp_path / "vector-index.json").read_text(encoding="utf-8"))
+    assert vector_index
+    first_record = next(iter(vector_index.values()))
+    assert first_record["vector_db_backend"] == "local-json"
+
+    status = client.get("/api/v1/system/status").json()
+    assert status["storage_health"]["vector_db"]["valid_json"] is True
+    assert "vector_db.valid_json" not in status["release_readiness"]["storage_errors"]
+
+    rag = client.post(
+        "/api/v1/rag/query",
+        json={"question": "electron impact chemistry", "document_ids": [document_id], "top_k": 2},
+    ).json()
+    assert rag["sources"]
+
+
 def test_rag_sources_include_linked_paper_identity(tmp_path):
     client = make_client(tmp_path)
 
@@ -6250,6 +8309,59 @@ def test_rag_index_records_failed_status_when_vector_store_json_is_corrupt(tmp_p
     assert "vector store JSON is invalid" in document["index_error"]
 
 
+def test_rag_index_records_cleanup_failure_after_vector_upsert_fails(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import rag as rag_service
+    from app.services.rag import index_document
+
+    class UpsertThenCleanupFailingVectorStore:
+        def __init__(self):
+            self.delete_calls = 0
+
+        def delete_document(self, document_id):
+            self.delete_calls += 1
+            if self.delete_calls == 3:
+                raise RuntimeError("vector cleanup failed")
+
+        def upsert_many(self, records):
+            raise RuntimeError("vector upsert failed")
+
+    vector_store = UpsertThenCleanupFailingVectorStore()
+    monkeypatch.setattr(rag_service, "get_vector_store", lambda settings: vector_store)
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            ("/tmp/upsert-cleanup-fail.txt", "upsert-cleanup-fail", "upsert-cleanup-fail.txt"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Upsert cleanup', 'argon plasma evidence', 'body')
+            """,
+            (document_id,),
+        )
+
+    failed = index_document(document_id)
+
+    assert failed["status"] == "failed"
+    assert "vector upsert failed" in failed["error"]
+    assert "vector cleanup failed: vector cleanup failed" in failed["error"]
+    with get_conn() as conn:
+        document = conn.execute("SELECT index_status, index_error FROM documents WHERE id=?", (document_id,)).fetchone()
+        chunk_count = conn.execute("SELECT COUNT(*) AS n FROM chunks WHERE document_id=?", (document_id,)).fetchone()["n"]
+    assert chunk_count == 0
+    assert document["index_status"] == "failed"
+    assert "vector upsert failed" in document["index_error"]
+    assert "vector cleanup failed: vector cleanup failed" in document["index_error"]
+
+
 def test_rag_index_rejects_unsupported_vector_db_backend(tmp_path, monkeypatch):
     monkeypatch.setenv("VECTOR_DB_BACKEND", "faiss")
     make_client(tmp_path)
@@ -6406,6 +8518,209 @@ def test_extract_chemistry_handles_unicode_species_subscripts_and_charges(tmp_pa
     assert detail["reactions"][0]["products"] == ["O⁻", "O"]
 
 
+def test_extract_chemistry_classifies_superscript_positive_ion_products(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={
+            "file": (
+                "superscript-positive-ion.pdf",
+                pdf_bytes("e + Ar -> e + e + Ar⁺ .".encode("utf-8")),
+                "application/pdf",
+            )
+        },
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + e + Ar⁺"
+    assert reaction["products"] == ["e", "e", "Ar⁺"]
+    assert reaction["reaction_type"] == "ionization"
+
+
+def test_extract_chemistry_classifies_fullwidth_positive_ion_products(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={
+            "file": (
+                "fullwidth-positive-ion.pdf",
+                pdf_bytes("e + Ar -> e + e + Ar＋ .".encode("utf-8")),
+                "application/pdf",
+            )
+        },
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + e + Ar＋"
+    assert reaction["products"] == ["e", "e", "Ar＋"]
+    assert reaction["reaction_type"] == "ionization"
+
+
+def test_extract_chemistry_classifies_unicode_minus_negative_ions(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={
+            "file": (
+                "unicode-minus-negative-ion.pdf",
+                pdf_bytes("e + O2 -> O− + O .".encode("utf-8")),
+                "application/pdf",
+            )
+        },
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["reactions"][0]["reaction"] == "e + O2 -> O− + O"
+    assert detail["reactions"][0]["products"] == ["O−", "O"]
+    assert detail["reactions"][0]["reaction_type"] == "attachment"
+
+
+def test_extract_chemistry_classifies_fullwidth_minus_negative_ions(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={
+            "file": (
+                "fullwidth-minus-negative-ion.pdf",
+                pdf_bytes("e + O2 -> O－ + O .".encode("utf-8")),
+                "application/pdf",
+            )
+        },
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + O2 -> O－ + O"
+    assert reaction["products"] == ["O－", "O"]
+    assert reaction["reaction_type"] == "attachment"
+
+
+def test_extract_chemistry_handles_fullwidth_species_letters_and_digits(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={
+            "file": (
+                "fullwidth-species.pdf",
+                pdf_bytes("ｅ + Ｏ２ -> Ｏ－ + Ｏ .".encode("utf-8")),
+                "application/pdf",
+            )
+        },
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "ｅ + Ｏ２ -> Ｏ－ + Ｏ"
+    assert reaction["reactants"] == ["ｅ", "Ｏ２"]
+    assert reaction["products"] == ["Ｏ－", "Ｏ"]
+    assert reaction["reaction_type"] == "attachment"
+
+
+def test_extract_chemistry_handles_fullwidth_reaction_arrow(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={
+            "file": (
+                "fullwidth-reaction-arrow.pdf",
+                pdf_bytes("ｅ + Ｏ２ －＞ Ｏ－ + Ｏ .".encode("utf-8")),
+                "application/pdf",
+            )
+        },
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "ｅ + Ｏ２ -> Ｏ－ + Ｏ"
+    assert reaction["reactants"] == ["ｅ", "Ｏ２"]
+    assert reaction["products"] == ["Ｏ－", "Ｏ"]
+    assert reaction["reaction_type"] == "attachment"
+
+
+def test_extract_chemistry_handles_unicode_minus_reaction_arrow(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={
+            "file": (
+                "unicode-minus-reaction-arrow.pdf",
+                pdf_bytes("ｅ + Ｏ２ −> Ｏ－ + Ｏ .".encode("utf-8")),
+                "application/pdf",
+            )
+        },
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "ｅ + Ｏ２ -> Ｏ－ + Ｏ"
+    assert reaction["reactants"] == ["ｅ", "Ｏ２"]
+    assert reaction["products"] == ["Ｏ－", "Ｏ"]
+    assert reaction["reaction_type"] == "attachment"
+
+
+def test_extract_chemistry_handles_fullwidth_double_reaction_arrow(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={
+            "file": (
+                "fullwidth-double-reaction-arrow.pdf",
+                pdf_bytes("ｅ + Ｏ２ ＝＞ Ｏ－ + Ｏ .".encode("utf-8")),
+                "application/pdf",
+            )
+        },
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "ｅ + Ｏ２ -> Ｏ－ + Ｏ"
+    assert reaction["reactants"] == ["ｅ", "Ｏ２"]
+    assert reaction["products"] == ["Ｏ－", "Ｏ"]
+    assert reaction["reaction_type"] == "attachment"
+
+
 def test_extract_chemistry_infers_excitation_for_starred_product(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
@@ -6547,6 +8862,114 @@ def test_extract_chemistry_reads_explicit_threshold_ev_near_reaction(tmp_path):
     assert detail["reactions"][0]["threshold_ev"] == 15.76
 
 
+def test_extract_chemistry_reads_fullwidth_threshold_ev(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + e + Ar+ . The threshold energy is １５．７６ eV in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("fullwidth-threshold-energy.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["reactions"][0]["reaction"] == "e + Ar -> e + e + Ar+"
+    assert detail["reactions"][0]["threshold_ev"] == 15.76
+
+
+def test_extract_chemistry_reads_fullwidth_threshold_ev_unit(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + e + Ar+ . The threshold energy is １５．７６ ｅＶ in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("fullwidth-threshold-energy-unit.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["reactions"][0]["reaction"] == "e + Ar -> e + e + Ar+"
+    assert detail["reactions"][0]["threshold_ev"] == 15.76
+
+
+def test_extract_chemistry_reads_eth_threshold_ev(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + e + Ar+ . E_th = 15.76 eV in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("eth-threshold-energy.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["reactions"][0]["reaction"] == "e + Ar -> e + e + Ar+"
+    assert detail["reactions"][0]["threshold_ev"] == 15.76
+
+
+def test_extract_chemistry_reads_subscript_eth_threshold_ev(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + e + Ar+ . Eₜₕ = 15.76 eV in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("subscript-eth-threshold-energy.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["reactions"][0]["reaction"] == "e + Ar -> e + e + Ar+"
+    assert detail["reactions"][0]["threshold_ev"] == 15.76
+
+
+def test_extract_chemistry_reads_compact_eth_threshold_ev(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + e + Ar+ . Eth = 15.76 eV in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("compact-eth-threshold-energy.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["reactions"][0]["reaction"] == "e + Ar -> e + e + Ar+"
+    assert detail["reactions"][0]["threshold_ev"] == 15.76
+
+
+def test_extract_chemistry_reads_ethr_threshold_ev(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + e + Ar+ . E_thr = 15.76 eV in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("ethr-threshold-energy.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["reactions"][0]["reaction"] == "e + Ar -> e + e + Ar+"
+    assert detail["reactions"][0]["threshold_ev"] == 15.76
+
+
 def test_extract_chemistry_uses_nearest_threshold_ev_per_reaction(tmp_path):
     client = make_client(tmp_path)
     content = (
@@ -6587,6 +9010,632 @@ def test_extract_chemistry_preserves_explicit_rate_value_near_reaction(tmp_path)
     assert reaction["reaction"] == "e + Ar -> e + Ar+"
     assert reaction["rate_type"] == "constant"
     assert reaction["rate_value"] == "1.2e-13 cm3/s"
+
+
+def test_extract_chemistry_preserves_numbered_k_rate_value(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . k1 = 1.2e-13 cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("numbered-k-rate-value.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-13 cm3/s"
+
+
+def test_extract_chemistry_preserves_underscored_k_rate_value(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . k_1 = 1.2e-13 cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("underscored-k-rate-value.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-13 cm3/s"
+
+
+def test_extract_chemistry_preserves_subscript_k_rate_value(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . k₁ = 1.2e-13 cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("subscript-k-rate-value.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-13 cm3/s"
+
+
+def test_extract_chemistry_preserves_temperature_k_rate_value(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . k(T) = 1.2e-13 cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("temperature-k-rate-value.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-13 cm3/s"
+
+
+def test_extract_chemistry_preserves_electron_temperature_k_rate_value(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . k(T_e) = 1.2e-13 cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("electron-temperature-k-rate-value.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-13 cm3/s"
+
+
+def test_extract_chemistry_preserves_subscript_e_temperature_k_rate_value(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . k(Tₑ) = 1.2e-13 cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("subscript-e-temperature-k-rate-value.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-13 cm3/s"
+
+
+def test_extract_chemistry_preserves_spaced_e_notation_rate_value(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2 e -13 cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("spaced-e-notation-rate-value.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2 e -13 cm3/s"
+
+
+def test_extract_chemistry_preserves_superscript_rate_units(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2e-13 cm³/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("superscript-rate-unit.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-13 cm³/s"
+
+
+def test_extract_chemistry_preserves_cm6_rate_units(tmp_path):
+    client = make_client(tmp_path)
+    content = "Ar + Ar+ -> Ar2+ . The rate coefficient is 1.2e-30 cm6/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("cm6-rate-unit.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "Ar + Ar+ -> Ar2+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-30 cm6/s"
+
+
+def test_extract_chemistry_preserves_m6_rate_units(tmp_path):
+    client = make_client(tmp_path)
+    content = "Ar + Ar+ -> Ar2+ . The rate coefficient is 1.2e-42 m6/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("m6-rate-unit.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "Ar + Ar+ -> Ar2+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-42 m6/s"
+
+
+def test_extract_chemistry_preserves_m6_mol_rate_units(tmp_path):
+    client = make_client(tmp_path)
+    content = "Ar + Ar+ -> Ar2+ . The rate coefficient is 1.2e-42 m6 mol-2 s-1 in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("m6-mol-rate-unit.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "Ar + Ar+ -> Ar2+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-42 m6 mol-2 s-1"
+
+
+def test_extract_chemistry_preserves_caret_m6_mol_rate_units(tmp_path):
+    client = make_client(tmp_path)
+    content = "Ar + Ar+ -> Ar2+ . The rate coefficient is 1.2e-42 m6 mol^-2 s^-1 in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("caret-m6-mol-rate-unit.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "Ar + Ar+ -> Ar2+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-42 m6 mol^-2 s^-1"
+
+
+def test_extract_chemistry_preserves_space_separated_rate_units(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2e-13 cm3 s-1 in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("space-separated-rate-unit.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-13 cm3 s-1"
+
+
+def test_extract_chemistry_preserves_molecule_rate_units(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2e-13 cm3 molecule-1 s-1 in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("molecule-rate-unit.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-13 cm3 molecule-1 s-1"
+
+
+def test_extract_chemistry_preserves_termolecular_molecule_rate_units(tmp_path):
+    client = make_client(tmp_path)
+    content = "Ar + Ar+ -> Ar2+ . The rate coefficient is 1.2e-30 cm6 molecule-2 s-1 in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("termolecular-molecule-rate-unit.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "Ar + Ar+ -> Ar2+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-30 cm6 molecule-2 s-1"
+
+
+def test_extract_chemistry_preserves_caret_molecule_rate_units(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2e-13 cm3 molecule^-1 s^-1 in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("caret-molecule-rate-unit.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-13 cm3 molecule^-1 s^-1"
+
+
+def test_extract_chemistry_preserves_abbreviated_molecule_rate_units(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2e-13 cm3 molec^-1 s^-1 in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("abbreviated-molecule-rate-unit.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-13 cm3 molec^-1 s^-1"
+
+
+def test_extract_chemistry_preserves_unicode_minus_molecule_rate_units(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2e-13 cm3 molecule−1 s−1 in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("unicode-minus-molecule-rate-unit.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-13 cm3 molecule−1 s−1"
+
+
+def test_extract_chemistry_preserves_mol_rate_units(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2e-13 cm3 mol^-1 s^-1 in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("mol-rate-unit.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-13 cm3 mol^-1 s^-1"
+
+
+def test_extract_chemistry_preserves_superscript_space_separated_rate_units(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2e-13 cm³ s⁻¹ in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("superscript-space-separated-rate-unit.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2e-13 cm³ s⁻¹"
+
+
+def test_extract_chemistry_preserves_multiplication_scientific_rate_value(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2×10^-13 cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("multiplication-rate-value.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2×10^-13 cm3/s"
+
+
+def test_extract_chemistry_preserves_space_before_multiplication_rate_value(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2 × 10^-13 cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("space-before-multiplication-rate-value.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2 × 10^-13 cm3/s"
+
+
+def test_extract_chemistry_preserves_spaced_exponent_rate_value(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2 × 10 ^ -13 cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("spaced-exponent-rate-value.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2 × 10 ^ -13 cm3/s"
+
+
+def test_extract_chemistry_preserves_middle_dot_scientific_rate_value(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2·10^-13 cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("middle-dot-scientific-rate-value.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2·10^-13 cm3/s"
+
+
+def test_extract_chemistry_preserves_unicode_minus_scientific_rate_value(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2×10−13 cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("unicode-minus-scientific-rate-value.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2×10−13 cm3/s"
+
+
+def test_extract_chemistry_preserves_unicode_minus_superscript_rate_value(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2×10−¹³ cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("unicode-minus-superscript-rate-value.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2×10−¹³ cm3/s"
+
+
+def test_extract_chemistry_preserves_superscript_scientific_rate_value(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is 1.2×10⁻¹³ cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("superscript-scientific-rate-value.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "1.2×10⁻¹³ cm3/s"
+
+
+def test_extract_chemistry_preserves_fullwidth_scientific_rate_value(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is １．２×１０⁻¹³ cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("fullwidth-scientific-rate-value.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "１．２×１０⁻¹³ cm3/s"
+
+
+def test_extract_chemistry_preserves_fullwidth_x_scientific_rate_value(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is １．２ｘ１０⁻¹³ cm3/s in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("fullwidth-x-scientific-rate-value.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "１．２ｘ１０⁻¹³ cm3/s"
+
+
+def test_extract_chemistry_preserves_fullwidth_rate_unit(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is １．２×１０⁻¹³ ｃｍ３／ｓ in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("fullwidth-rate-unit.pdf", pdf_bytes(content.encode("utf-8")), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "１．２×１０⁻¹³ ｃｍ３／ｓ"
+
+
+def test_extract_chemistry_preserves_fullwidth_space_separated_rate_unit(tmp_path):
+    client = make_client(tmp_path)
+    content = "e + Ar -> e + Ar+ . The rate coefficient is １．２×１０⁻¹³ ｃｍ３ ｓ－１ in the source table."
+    response = client.post(
+        "/api/v1/documents",
+        files={
+            "file": (
+                "fullwidth-space-separated-rate-unit.pdf",
+                pdf_bytes(content.encode("utf-8")),
+                "application/pdf",
+            )
+        },
+    )
+    document_id = response.json()["id"]
+
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    reaction = detail["reactions"][0]
+    assert reaction["reaction"] == "e + Ar -> e + Ar+"
+    assert reaction["rate_type"] == "constant"
+    assert reaction["rate_value"] == "１．２×１０⁻¹³ ｃｍ３ ｓ－１"
 
 
 def test_reaction_verify_updates_fields_and_records_audit(tmp_path):
@@ -6667,6 +9716,48 @@ def test_reaction_verify_records_audit_for_unchanged_review(tmp_path):
     assert repeated_audit["action"] == "verify"
     assert repeated_audit["changes"] == {}
     assert repeated_audit["field_changes"] == {}
+
+
+def test_reaction_verify_reconciles_reaction_set_status_on_unchanged_review(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("stale-set-status.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+    reaction_id = detail["reactions"][0]["id"]
+
+    verified = client.put(
+        f"/api/v1/reactions/{reaction_id}/verify",
+        json={"verified": True, "verified_by": "chemist-a"},
+    ).json()
+    assert verified["status"] == "verified"
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE reaction_sets SET status='pending', verified_by=NULL, verified_at=NULL WHERE id=?",
+            (reaction_set["id"],),
+        )
+
+    reconciled = client.put(
+        f"/api/v1/reactions/{reaction_id}/verify",
+        json={"verified": True, "verified_by": "chemist-b"},
+    ).json()
+
+    assert reconciled["status"] == "verified"
+    assert reconciled["verified_by"] == "chemist-b"
+    assert reconciled["verified_at"]
+    assert reconciled["export_ready"] is True
+    assert reconciled["verified_count"] == reconciled["reaction_count"] == 1
+    assert reconciled["unverified_count"] == 0
+    assert reconciled["reactions"][0]["audit_log"][0]["verified_by"] == "chemist-b"
+    assert reconciled["reactions"][0]["audit_log"][0]["field_changes"] == {}
 
 
 def test_reaction_verify_can_clear_optional_review_fields(tmp_path):
@@ -7020,6 +10111,101 @@ def test_reaction_export_bolsig_text_and_rejects_unknown_format(tmp_path):
     assert blank.json()["error"]["code"] == "unsupported_export_format"
 
 
+def test_reaction_export_text_formats_include_per_reaction_audit_summary(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("export-audit-summary.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+    reaction_id = detail["reactions"][0]["id"]
+
+    reviewed = client.put(
+        f"/api/v1/reactions/{reaction_id}/verify",
+        json={"verified": True, "rate_value": "reviewed source value", "verified_by": "chemist-a"},
+    ).json()
+    audit = reviewed["reactions"][0]["audit_log"][0]
+
+    exported_txt = client.post(f"/api/v1/reaction-sets/{reaction_set['id']}/export?format=txt").json()
+    txt = Path(exported_txt["output_path"]).read_text(encoding="utf-8")
+    assert "audit_entries: 1" in txt
+    assert "last_verified_by: chemist-a" in txt
+    assert f"last_verified_at: {audit['verified_at']}" in txt
+
+    exported_bolsig = client.post(f"/api/v1/reaction-sets/{reaction_set['id']}/export?format=bolsig").json()
+    bolsig = Path(exported_bolsig["output_path"]).read_text(encoding="utf-8")
+    assert "AUDIT_ENTRIES: 1" in bolsig
+    assert "LAST_VERIFIED_BY: chemist-a" in bolsig
+    assert f"LAST_VERIFIED_AT: {audit['verified_at']}" in bolsig
+
+
+def test_reaction_export_rejects_symlinked_output_file(tmp_path):
+    make_client(tmp_path)
+    import pytest
+
+    from app.db import get_conn
+    from app.services import chemistry as chemistry_service
+
+    with get_conn() as conn:
+        reaction_set_id = conn.execute(
+            "INSERT INTO reaction_sets (name, status) VALUES (?, ?)",
+            ("Symlinked export set", "verified"),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO reactions (reaction_set_id, reaction, verified)
+            VALUES (?, ?, 1)
+            """,
+            (reaction_set_id, "e + Ar -> e + e + Ar+"),
+        )
+
+    outside_path = tmp_path / "outside-reaction-export.json"
+    outside_path.write_text('{"outside": true}', encoding="utf-8")
+    output_path = tmp_path / "exports" / f"reaction-set-{reaction_set_id}.json"
+    output_path.symlink_to(outside_path)
+
+    with pytest.raises(OSError, match="reaction export path is not a regular file"):
+        chemistry_service.export_reaction_set(reaction_set_id, "json")
+
+    assert outside_path.read_text(encoding="utf-8") == '{"outside": true}'
+
+
+def test_reaction_export_rejects_symlinked_output_parent(tmp_path):
+    make_client(tmp_path)
+    import pytest
+
+    from app.db import get_conn
+    from app.services import chemistry as chemistry_service
+
+    with get_conn() as conn:
+        reaction_set_id = conn.execute(
+            "INSERT INTO reaction_sets (name, status) VALUES (?, ?)",
+            ("Symlinked export parent set", "verified"),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO reactions (reaction_set_id, reaction, verified)
+            VALUES (?, ?, 1)
+            """,
+            (reaction_set_id, "e + Ar -> e + e + Ar+"),
+        )
+
+    outside_dir = tmp_path / "outside-exports"
+    outside_dir.mkdir()
+    export_dir = tmp_path / "exports"
+    export_dir.rmdir()
+    export_dir.symlink_to(outside_dir, target_is_directory=True)
+
+    with pytest.raises(OSError, match="reaction export path parent is not a regular directory"):
+        chemistry_service.export_reaction_set(reaction_set_id, "json")
+
+    assert not (outside_dir / f"reaction-set-{reaction_set_id}.json").exists()
+
+
 def test_reaction_export_rejects_empty_reaction_set(tmp_path):
     client = make_client(tmp_path)
 
@@ -7142,26 +10328,11 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "bash -n scripts/env.sh" in release_text
     assert "bash -n scripts/dev.sh" in release_text
     assert "-m py_compile" in release_text
-    for compiled_script in [
-        "scripts/health_check.py",
-        "scripts/import_fixtures.py",
-        "scripts/export_release_artifacts.py",
-        "scripts/prepare_demo_data.py",
-        "scripts/smoke_check.py",
-        "scripts/validate_api_contract.py",
-        "scripts/validate_bug_docs.py",
-        "scripts/validate_docs_links.py",
-        "scripts/validate_env_example.py",
-        "scripts/validate_readme_commands.py",
-        "scripts/validate_release_hygiene.py",
-        "scripts/validate_requirements.py",
-        "scripts/validate_schema.py",
-        "streamlit_app.py",
-    ]:
-        assert compiled_script in release_text
-    assert "scripts/health_check.py --help" in release_text
-    assert "scripts/export_release_artifacts.py --help" in release_text
-    assert "scripts/prepare_demo_data.py --help" in release_text
+    assert "find scripts -maxdepth 1 -type f -name '*.py' | sort" in release_text
+    assert 'PY_COMPILE_TARGETS=("${RELEASE_SCRIPT_TARGETS[@]}" streamlit_app.py)' in release_text
+    assert "RELEASE_HELP_SCRIPTS=(" in release_text
+    assert 'RELEASE_HELP_SCRIPTS=("${RELEASE_SCRIPT_TARGETS[@]}")' in release_text
+    assert '"${script}" --help' in release_text
     assert "scripts/validate_api_contract.py" in release_text
     assert "scripts/validate_bug_docs.py" in release_text
     assert "scripts/validate_docs_links.py" in release_text
@@ -7218,6 +10389,8 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "rag_source_excerpts" in release_text
     assert "verified_export_txt_has_verification_metadata" in release_text
     assert "verified_export_bolsig_has_verification_metadata" in release_text
+    assert "verified_export_txt_has_audit_summary" in release_text
+    assert "verified_export_bolsig_has_audit_summary" in release_text
     assert "-m pytest -q" in release_text
     assert prepare_demo_data.exists()
     assert smoke_check.exists()
@@ -7254,6 +10427,8 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert '"rag_source_excerpts"' in smoke_text
     assert '"verified_export_txt_has_verification_metadata"' in smoke_text
     assert '"verified_export_bolsig_has_verification_metadata"' in smoke_text
+    assert '"verified_export_txt_has_audit_summary"' in smoke_text
+    assert '"verified_export_bolsig_has_audit_summary"' in smoke_text
     assert '"/api/v1/system/status"' in smoke_text
     assert "runtime_version" in smoke_text
     assert "config_warning_count" in smoke_text
@@ -7265,6 +10440,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "python scripts/health_check.py",
         "python scripts/health_check.py --compact",
         "python scripts/health_check.py --summary-only --compact",
+        "python scripts/health_check.py --summary-only --compact --output out/health-summary.json",
         "API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py",
         "curl http://127.0.0.1:8000/api/v1/system/status",
         "`config_warnings`",
@@ -7297,6 +10473,9 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "`grobid_available`",
         "`workflows_ok`",
         "`config_ready`",
+        "`scheduler_enabled`",
+        "`scheduler_job_count`",
+        "`scheduler_job_ids`",
         "`release_blockers`",
         "`storage_errors`",
         "python scripts/health_check.py --require-frontend",
@@ -7477,6 +10656,25 @@ def test_health_check_brackets_ipv6_loopback_hosts(monkeypatch):
     assert health_check.default_frontend_url() == "http://[::1]:9501"
 
 
+def test_health_check_cli_help_runs_with_app_imports():
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+
+    result = subprocess.run(
+        [sys.executable, "scripts/health_check.py", "--help"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "usage:" in result.stdout
+    assert "ModuleNotFoundError" not in result.stderr
+
+
 def test_env_loader_preserves_existing_environment_values(tmp_path):
     import subprocess
 
@@ -7513,6 +10711,65 @@ def test_env_loader_preserves_existing_environment_values(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert result.stdout == "9000|8501|http://127.0.0.1:8000/api/v1"
+
+
+def test_env_loader_rejects_symlinked_env_file(tmp_path):
+    import subprocess
+
+    repo = Path(__file__).resolve().parent.parent
+    env_script = repo / "scripts" / "env.sh"
+    outside_env = tmp_path / "outside.env"
+    outside_env.write_text("API_PORT=9999\n", encoding="utf-8")
+    (tmp_path / ".env").symlink_to(outside_env)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                "set -euo pipefail; "
+                f"source {env_script}; "
+                "load_env_file_if_unset .env"
+            ),
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "env file is not a regular file: .env" in result.stderr
+
+
+def test_env_loader_rejects_symlinked_env_parent(tmp_path):
+    import subprocess
+
+    repo = Path(__file__).resolve().parent.parent
+    env_script = repo / "scripts" / "env.sh"
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    (outside_dir / ".env").write_text("API_PORT=9999\n", encoding="utf-8")
+    (tmp_path / "linked").symlink_to(outside_dir, target_is_directory=True)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                "set -euo pipefail; "
+                f"source {env_script}; "
+                "load_env_file_if_unset linked/.env"
+            ),
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "env file parent is not a regular directory: linked" in result.stderr
 
 
 def test_dev_api_base_url_tracks_runtime_port_override(tmp_path):
@@ -7725,6 +10982,83 @@ def test_system_status_reports_release_readiness(tmp_path, monkeypatch):
     assert readiness["failed_workflows"] == []
     assert readiness["config_warning_codes"] == []
     assert readiness["storage_errors"] == []
+
+
+def test_release_readiness_allows_offline_config_warnings():
+    from app.routers.system import release_readiness_status
+
+    readiness = release_readiness_status(
+        {"ready": True, "missing": []},
+        [
+            {
+                "code": "missing_llm_api_key",
+                "capability": "llm_translation",
+                "message": "LLM_API_KEY is not configured.",
+            }
+        ],
+        health_check_storage_health(),
+        health_check_status_counts(),
+    )
+
+    assert readiness["ready"] is True
+    assert readiness["demo_data_missing"] == []
+    assert readiness["failed_workflows"] == []
+    assert readiness["config_warning_codes"] == ["missing_llm_api_key"]
+    assert readiness["storage_errors"] == []
+
+
+def test_release_readiness_blocks_unsupported_local_adapter_warnings():
+    from app.routers.system import release_readiness_status
+
+    readiness = release_readiness_status(
+        {"ready": True, "missing": []},
+        [
+            {
+                "code": "unsupported_vector_db_backend",
+                "capability": "rag_indexing",
+                "message": "VECTOR_DB_BACKEND=faiss is not supported.",
+            },
+            {
+                "code": "unsupported_embedding_model",
+                "capability": "rag_indexing",
+                "message": "EMBEDDING_MODEL=text-embedding-3-small is not supported.",
+            },
+        ],
+        health_check_storage_health(),
+        health_check_status_counts(),
+    )
+
+    assert readiness["ready"] is False
+    assert readiness["demo_data_missing"] == []
+    assert readiness["failed_workflows"] == []
+    assert readiness["config_warning_codes"] == [
+        "unsupported_vector_db_backend",
+        "unsupported_embedding_model",
+    ]
+    assert readiness["storage_errors"] == []
+
+
+def test_release_blocking_config_warning_codes_are_shared():
+    import importlib.util
+
+    from app import frontend_api
+    from app.release_readiness import RELEASE_BLOCKING_CONFIG_WARNING_CODES
+    from app.routers import system
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_shared_blocking_warnings", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    assert RELEASE_BLOCKING_CONFIG_WARNING_CODES == frozenset(
+        {"unsupported_embedding_model", "unsupported_vector_db_backend"}
+    )
+    assert system.RELEASE_BLOCKING_CONFIG_WARNING_CODES is RELEASE_BLOCKING_CONFIG_WARNING_CODES
+    assert frontend_api.RELEASE_BLOCKING_CONFIG_WARNING_CODES is RELEASE_BLOCKING_CONFIG_WARNING_CODES
+    assert health_check.RELEASE_BLOCKING_CONFIG_WARNING_CODES is RELEASE_BLOCKING_CONFIG_WARNING_CODES
 
 
 def test_system_status_counts_reaction_audits(tmp_path):
@@ -7981,6 +11315,36 @@ def test_health_check_fails_when_system_status_shape_is_invalid(monkeypatch, cap
     assert health_check.main() == 1
     captured = capsys.readouterr()
     assert "system status" in captured.err
+
+
+def test_health_check_does_not_write_output_when_status_shape_is_invalid(monkeypatch, tmp_path):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_invalid_status_output", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {"database_path": "/tmp/plasma.db"}
+
+    output_path = tmp_path / "health.json"
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["health_check.py", "--base-url", "http://api.test", "--output", str(output_path)],
+    )
+
+    assert health_check.main() == 1
+    assert not output_path.exists()
 
 
 def test_health_check_fails_when_runtime_status_is_missing(monkeypatch, capsys):
@@ -9360,6 +12724,72 @@ def test_health_check_rejects_invalid_config_warning_shape():
     assert "1" in joined
 
 
+def test_health_check_rejects_invalid_config_warning_detail_shape():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_config_warning_detail_shape", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [
+                {
+                    "code": "unsupported_embedding_model",
+                    "capability": "rag_indexing",
+                    "message": "Unsupported embedding model.",
+                    "actual": "",
+                    "supported": ["local-hash", ""],
+                },
+                {
+                    "code": "unsupported_vector_db_backend",
+                    "capability": "rag_indexing",
+                    "message": "Unsupported vector backend.",
+                    "actual": 123,
+                    "supported": "local-json",
+                },
+            ],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
+            "status_counts": health_check_status_counts(),
+        }
+    )
+
+    joined = "; ".join(errors)
+    assert "config_warnings invalid values" in joined
+    assert "0.actual" in joined
+    assert "0.supported.1" in joined
+    assert "1.actual" in joined
+    assert "1.supported" in joined
+
+
 def test_health_check_fails_when_grobid_status_keys_are_missing(monkeypatch, capsys):
     import importlib.util
     import sys
@@ -9838,7 +13268,7 @@ def test_health_check_require_release_ready_runs_combined_gates(monkeypatch, cap
                 "counts": {"papers": 2},
             },
             "release_readiness": health_check_release_readiness(
-                ready=False,
+                ready=True,
                 config_warning_codes=["missing_llm_api_key"],
             ),
             "status_counts": health_check_status_counts(),
@@ -9847,11 +13277,8 @@ def test_health_check_require_release_ready_runs_combined_gates(monkeypatch, cap
     monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
     monkeypatch.setattr(sys, "argv", ["health_check.py", "--base-url", "http://api.test", "--require-release-ready"])
 
-    assert health_check.main() == 1
-    captured = capsys.readouterr()
-    assert "release readiness blockers present" in captured.err
-    assert "config_warning_codes:missing_llm_api_key" in captured.err
-    assert "missing_llm_api_key" in captured.err
+    assert health_check.main() == 0
+    assert capsys.readouterr().err == ""
 
 
 def test_health_check_require_release_ready_prefers_api_release_readiness(monkeypatch, capsys):
@@ -9917,7 +13344,7 @@ def test_health_check_require_release_ready_prefers_api_release_readiness(monkey
     captured = capsys.readouterr()
     assert "release readiness blockers present" in captured.err
     assert "failed_workflows:translations.failed=2" in captured.err
-    assert "config_warning_codes:missing_llm_api_key" in captured.err
+    assert "config_warning_codes:missing_llm_api_key" not in captured.err
 
 
 def test_health_check_require_no_failed_workflows_fails_on_failed_status_counts(monkeypatch, capsys):
@@ -9972,6 +13399,60 @@ def test_health_check_require_no_failed_workflows_fails_on_failed_status_counts(
     captured = capsys.readouterr()
     assert "failed workflows present" in captured.err
     assert "document_parse.failed=2" in captured.err
+
+
+def test_health_check_require_no_failed_workflows_fails_on_rejected_status_counts(monkeypatch, capsys):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_require_no_rejected_workflows", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
+            "status_counts": health_check_status_counts(document_chemistry={"rejected": 1}),
+        }
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(sys, "argv", ["health_check.py", "--base-url", "http://api.test", "--require-no-failed-workflows"])
+
+    assert health_check.main() == 1
+    captured = capsys.readouterr()
+    assert "failed workflows present" in captured.err
+    assert "document_chemistry.rejected=1" in captured.err
 
 
 def test_health_check_outputs_config_warnings(monkeypatch, capsys):
@@ -10104,6 +13585,217 @@ def test_health_check_compact_outputs_single_line_json(monkeypatch, capsys):
     assert "\n  " not in captured.out
 
 
+def test_health_check_can_write_summary_output_file(monkeypatch, capsys, tmp_path):
+    import importlib.util
+    import json
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_output_file", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
+            "status_counts": health_check_status_counts(),
+        }
+
+    output_path = tmp_path / "out" / "health-summary.json"
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "health_check.py",
+            "--base-url",
+            "http://api.test",
+            "--summary-only",
+            "--compact",
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    assert health_check.main() == 0
+    stdout_payload = json.loads(capsys.readouterr().out)
+    file_payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert file_payload == stdout_payload
+    assert file_payload["release_ready"] is True
+
+
+def test_health_check_rejects_symlinked_output_file(monkeypatch, capsys, tmp_path):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_symlink_output", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
+            "status_counts": health_check_status_counts(),
+        }
+
+    outside_path = tmp_path / "outside-health-summary.json"
+    outside_path.write_text("outside-original", encoding="utf-8")
+    output_path = tmp_path / "out" / "health-summary.json"
+    output_path.parent.mkdir()
+    output_path.symlink_to(outside_path)
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "health_check.py",
+            "--base-url",
+            "http://api.test",
+            "--summary-only",
+            "--compact",
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    assert health_check.main() == 1
+    captured = capsys.readouterr()
+    assert f"health_check failed: output path is not a regular file: {output_path}" in captured.err
+    assert outside_path.read_text(encoding="utf-8") == "outside-original"
+
+
+def test_health_check_rejects_symlinked_output_parent(monkeypatch, capsys, tmp_path):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_symlink_output_parent", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
+            "status_counts": health_check_status_counts(),
+        }
+
+    outside_dir = tmp_path / "outside-out"
+    outside_dir.mkdir()
+    linked_parent = tmp_path / "out"
+    linked_parent.symlink_to(outside_dir, target_is_directory=True)
+    output_path = linked_parent / "health-summary.json"
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "health_check.py",
+            "--base-url",
+            "http://api.test",
+            "--summary-only",
+            "--compact",
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    assert health_check.main() == 1
+    captured = capsys.readouterr()
+    assert f"health_check failed: output path parent is not a regular directory: {linked_parent}" in captured.err
+    assert not (outside_dir / "health-summary.json").exists()
+
+
 def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
     import importlib.util
     import json
@@ -10180,8 +13872,11 @@ def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
         "api_status": "ok",
         "api_prefix": "/api/v1",
         "version": "0.1.0",
+        "scheduler_enabled": False,
+        "scheduler_job_count": 3,
+        "scheduler_job_ids": ["crawl-daily", "crawl-weekly", "crawl-monthly"],
         "release_ready": False,
-        "release_blockers": ["failed_workflows:document_parse.failed=1", "config_warning_codes:missing_llm_api_key"],
+        "release_blockers": ["failed_workflows:document_parse.failed=1"],
         "demo_data_ready": True,
         "demo_data_missing": [],
         "workflows_ok": False,
@@ -10191,6 +13886,22 @@ def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
         "config_warning_codes": ["missing_llm_api_key"],
         "storage_writable": True,
         "storage_errors": [],
+        "storage_health": {
+            "data_dir": {"path": "/tmp/data", "exists": True, "writable": True},
+            "pdf_dir": {"path": "/tmp/data/pdfs", "exists": True, "writable": True},
+            "tei_dir": {"path": "/tmp/data/tei", "exists": True, "writable": True},
+            "translation_dir": {"path": "/tmp/data/translations", "exists": True, "writable": True},
+            "export_dir": {"path": "/tmp/data/exports", "exists": True, "writable": True},
+            "database": {"path": "/tmp/plasma.db", "exists": True, "writable": True},
+            "database_parent": {"path": "/tmp", "exists": True, "writable": True},
+            "vector_db_parent": {"path": "/tmp/data", "exists": True, "writable": True},
+            "vector_db": {
+                "path": "/tmp/data/vector-index.json",
+                "exists": False,
+                "readable": False,
+                "writable": False,
+            },
+        },
     }
     assert "health" not in summary
     assert "status" not in summary
@@ -10226,6 +13937,9 @@ def test_health_check_summary_only_reports_release_ready_when_gates_are_clean():
 
     assert summary["release_ready"] is True
     assert summary["release_blockers"] == []
+    assert summary["scheduler_enabled"] is False
+    assert summary["scheduler_job_count"] == 3
+    assert summary["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert summary["demo_data_missing"] == []
     assert summary["workflows_ok"] is True
     assert summary["failed_workflows"] == []
@@ -10272,7 +13986,6 @@ def test_health_check_summary_prefers_api_release_readiness():
     assert summary["release_blockers"] == [
         "demo_data_missing:documents>=1",
         "failed_workflows:translations.failed=2",
-        "config_warning_codes:missing_llm_api_key",
         "storage_errors:pdf_dir.writable",
     ]
     assert summary["demo_data_missing"] == ["documents>=1"]
@@ -10319,8 +14032,50 @@ def test_health_check_summary_rejects_inconsistent_api_release_readiness():
 
     summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
 
+    assert summary["release_ready"] is True
+    assert summary["release_blockers"] == []
+    assert summary["config_warning_codes"] == ["missing_llm_api_key"]
+    assert summary["config_ready"] is False
+
+
+def test_health_check_summary_surfaces_blocking_config_warnings():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_blocking_config_warnings", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [],
+        "storage_health": health_check_storage_health(),
+        "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+        "demo_data": {
+            "ready": True,
+            "requirements": {"papers": 1},
+            "missing": [],
+            "counts": {"papers": 1},
+        },
+        "status_counts": health_check_status_counts(),
+        "release_readiness": {
+            "ready": False,
+            "demo_data_missing": [],
+            "failed_workflows": [],
+            "config_warning_codes": ["missing_llm_api_key", "unsupported_vector_db_backend"],
+            "storage_errors": [],
+        },
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
     assert summary["release_ready"] is False
-    assert summary["release_blockers"] == ["config_warning_codes:missing_llm_api_key"]
+    assert summary["release_blockers"] == ["config_warning_codes:unsupported_vector_db_backend"]
+    assert summary["config_warning_codes"] == ["missing_llm_api_key", "unsupported_vector_db_backend"]
+    assert summary["config_ready"] is False
 
 
 def test_health_check_validates_release_readiness_shape():
@@ -10434,6 +14189,59 @@ def test_health_check_summary_only_includes_storage_errors():
         "database_parent.writable",
         "vector_db.valid_json",
     ]
+
+
+def test_health_check_summary_only_includes_storage_health_details():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_summary_storage_health", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [],
+        "storage_health": health_check_storage_health(
+            database_parent={"path": "/tmp", "exists": True, "writable": True},
+            vector_db_parent={"path": "/tmp/data", "exists": True, "writable": True},
+            vector_db={
+                "path": "/tmp/data/vector-index.json",
+                "exists": True,
+                "readable": True,
+                "writable": True,
+                "valid_json": True,
+                "error": None,
+            },
+        ),
+        "counts": health_check_counts(),
+        "demo_data": health_check_demo_data(),
+        "release_readiness": health_check_release_readiness(),
+        "status_counts": health_check_status_counts(),
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
+    assert summary["storage_health"]["database_parent"] == {
+        "path": "/tmp",
+        "exists": True,
+        "writable": True,
+    }
+    assert summary["storage_health"]["vector_db_parent"] == {
+        "path": "/tmp/data",
+        "exists": True,
+        "writable": True,
+    }
+    assert summary["storage_health"]["vector_db"] == {
+        "path": "/tmp/data/vector-index.json",
+        "exists": True,
+        "readable": True,
+        "writable": True,
+        "valid_json": True,
+    }
 
 
 def test_health_check_summary_only_includes_frontend_probe(monkeypatch, capsys):
@@ -11134,6 +14942,27 @@ def test_health_check_env_loader_ignores_invalid_key_names(monkeypatch, tmp_path
     assert "1BAD" not in os.environ
 
 
+def test_health_check_env_loader_rejects_symlinked_env_file(monkeypatch, tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_env_symlink", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    outside_env = tmp_path / "outside.env"
+    env_file = tmp_path / ".env"
+    outside_env.write_text("API_BASE_URL=http://outside.test:9001/api/v1\n", encoding="utf-8")
+    env_file.symlink_to(outside_env)
+    monkeypatch.delenv("API_BASE_URL", raising=False)
+
+    assert health_check.load_env_file(env_file) == f"env file is not a regular file: {env_file}"
+    assert "API_BASE_URL" not in os.environ
+
+
 def test_health_check_rejects_unexpected_api_prefix():
     import importlib.util
 
@@ -11205,6 +15034,9 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         "reaction_set_option_label",
         "unverified_reactions",
         "show_only_unverified",
+        "reaction_review_list_state",
+        'review_list_state["summary"]',
+        'display_reactions = review_list_state["display_reactions"]',
         "export_blocked",
         "disabled=export_blocked",
         "reaction_set_review_state(detail)",
@@ -11229,20 +15061,52 @@ def test_streamlit_sidebar_surfaces_release_readiness():
         "发布就绪",
         "release ready",
         "release blockers",
-        "demo_data_missing",
-        "failed_workflows",
-        "config_warning_codes",
-        "storage_errors",
+        "release_readiness_display_state",
+        'release_display = release_readiness_display_state(release_readiness)',
+        'blockers = release_display["blockers"]',
+        'release_ready = release_display["ready"]',
         "release blocker details",
-        "demo data missing:",
-        "failed workflows:",
-        "config warnings:",
-        "storage errors:",
-        'release_ready = release_readiness.get("ready") is True and not blockers',
         "if release_ready:",
     ]:
         assert required in sidebar_section
     assert 'if release_readiness.get("ready"):' not in sidebar_section
+    release_blocker_section = sidebar_section[
+        sidebar_section.index("release_display = release_readiness_display_state")
+        : sidebar_section.index("demo_data = status.get")
+    ]
+    assert "release_readiness.get(\"ready\")" not in release_blocker_section
+    assert "blocker_groups = {" not in release_blocker_section
+
+
+def test_streamlit_sidebar_surfaces_blocking_release_config_warnings():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    frontend = (repo / "app" / "frontend_api.py").read_text(encoding="utf-8")
+    shared_release = (repo / "app" / "release_readiness.py").read_text(encoding="utf-8")
+
+    assert "release_readiness_display_state" in streamlit
+    assert "from app.release_readiness import RELEASE_BLOCKING_CONFIG_WARNING_CODES" in frontend
+    for required in ["RELEASE_BLOCKING_CONFIG_WARNING_CODES", "unsupported_embedding_model", "unsupported_vector_db_backend"]:
+        assert required in shared_release
+    assert "missing_llm_api_key" not in shared_release[
+        shared_release.index("RELEASE_BLOCKING_CONFIG_WARNING_CODES") :
+    ]
+
+
+def test_release_blocking_config_warning_codes_are_not_redeclared():
+    repo = Path(__file__).resolve().parent.parent
+    duplicate_targets = [
+        repo / "app" / "routers" / "system.py",
+        repo / "app" / "frontend_api.py",
+        repo / "scripts" / "health_check.py",
+    ]
+
+    for target in duplicate_targets:
+        source = target.read_text(encoding="utf-8")
+        assert "from app.release_readiness import RELEASE_BLOCKING_CONFIG_WARNING_CODES" in source
+        assert "RELEASE_BLOCKING_CONFIG_WARNING_CODES = " not in source
+        assert "unsupported_embedding_model\", \"unsupported_vector_db_backend" not in source
+        assert "unsupported_embedding_model', 'unsupported_vector_db_backend" not in source
 
 
 def test_streamlit_sidebar_system_status_error_shows_payload_details():
@@ -11283,6 +15147,7 @@ def test_streamlit_chemistry_tab_can_select_document_for_reaction_sets():
 
     for required in [
         'chemistry_documents = chemistry_documents_response["items"]',
+        "filtered_chemistry_documents = filter_documents_by_status(chemistry_documents, chemistry_document_status_filter)",
         'selected_chemistry_document = st.selectbox(',
         "chemistry_document_options",
         "format_func=document_option_label",
@@ -11292,6 +15157,24 @@ def test_streamlit_chemistry_tab_can_select_document_for_reaction_sets():
     ]:
         assert required in chemistry_section
     assert "format_func=lambda document" not in chemistry_section
+
+
+def test_streamlit_chemistry_tab_filters_current_page_by_document_status():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    for required in [
+        'chemistry_document_status_filter = st.selectbox("化学库文档状态筛选", document_status_filter_options(), key="chemistry-documents-status-filter")',
+        "filtered_chemistry_documents = filter_documents_by_status(chemistry_documents, chemistry_document_status_filter)",
+        "document_filter_summary(len(chemistry_documents), len(filtered_chemistry_documents), chemistry_document_status_filter)",
+        "if not chemistry_documents:",
+        "elif not filtered_chemistry_documents:",
+        "当前页没有匹配筛选状态的化学库文档。",
+        "chemistry_document_options = filtered_chemistry_documents",
+    ]:
+        assert required in chemistry_section
+    assert "chemistry_document_options = chemistry_documents" not in chemistry_section
 
 
 def test_streamlit_chemistry_tab_exposes_document_pagination_controls():
@@ -11711,6 +15594,307 @@ def test_document_index_route_clears_stale_chunks_before_background_task_runs(tm
     assert chunks["total"] == 0
 
 
+def test_document_index_route_clears_stale_vectors_before_background_task_runs(tmp_path):
+    import json
+    from fastapi import BackgroundTasks
+
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import documents as document_router
+    from app.services.rag import JsonVectorStore, local_hash_embedding
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (str(tmp_path / "queued-index-vector.pdf"), "queued-index-vector", "queued-index-vector.pdf"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Parsed section', 'fresh parsed text', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'old indexed text', 3, 'old-index-vector-id', 1)
+            """,
+            (document_id, section_id),
+        )
+
+    JsonVectorStore(tmp_path / "vector-index.json").upsert_many(
+        {
+            "old-index-vector-id": {
+                "chunk_id": 1,
+                "document_id": document_id,
+                "section_id": section_id,
+                "text": "old indexed text",
+                "embedding": local_hash_embedding("old indexed text"),
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+                "dimensions": 64,
+            }
+        }
+    )
+
+    index_payload = document_router.index(document_id, BackgroundTasks())
+    vector_index = json.loads((tmp_path / "vector-index.json").read_text(encoding="utf-8"))
+
+    assert index_payload["document_id"] == document_id
+    assert index_payload["index_status"] == "indexing"
+    assert all(record["document_id"] != document_id for record in vector_index.values())
+
+
+def test_document_index_route_records_queue_failure_when_vector_store_is_corrupt(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    (tmp_path / "vector-index.json").write_text("{not valid json", encoding="utf-8")
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (str(tmp_path / "queued-index-corrupt-vector.pdf"), "queued-index-corrupt", "queued-index-corrupt.pdf"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Parsed section', 'fresh parsed text', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'old indexed text', 3, 'old-corrupt-vector-id', 1)
+            """,
+            (document_id, section_id),
+        )
+
+    response = client.post(f"/api/v1/documents/{document_id}/index")
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "index_queue_failed"
+    assert "vector store JSON is invalid" in payload["error"]["message"]
+    with get_conn() as conn:
+        document = conn.execute("SELECT index_status, index_error FROM documents WHERE id=?", (document_id,)).fetchone()
+        chunk_count = conn.execute("SELECT COUNT(*) AS n FROM chunks WHERE document_id=?", (document_id,)).fetchone()["n"]
+    assert chunk_count == 0
+    assert document["index_status"] == "failed"
+    assert "vector store JSON is invalid" in document["index_error"]
+
+
+def test_document_parse_route_clears_stale_vectors_before_background_task_runs(tmp_path):
+    import json
+    from fastapi import BackgroundTasks
+
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import documents as document_router
+    from app.services.rag import JsonVectorStore, local_hash_embedding
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            (str(tmp_path / "queued-parse-vector.pdf"), "queued-parse-vector", "queued-parse-vector.pdf"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Old section', 'old vector evidence', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'old vector evidence', 3, 'old-vector-id', 1)
+            """,
+            (document_id, section_id),
+        )
+
+    JsonVectorStore(tmp_path / "vector-index.json").upsert_many(
+        {
+            "old-vector-id": {
+                "chunk_id": 1,
+                "document_id": document_id,
+                "section_id": section_id,
+                "text": "old vector evidence",
+                "embedding": local_hash_embedding("old vector evidence"),
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+                "dimensions": 64,
+            }
+        }
+    )
+
+    parse_payload = document_router.parse(document_id, BackgroundTasks())
+    vector_index = json.loads((tmp_path / "vector-index.json").read_text(encoding="utf-8"))
+
+    assert parse_payload["document_id"] == document_id
+    assert parse_payload["parse_status"] == "parsing"
+    assert all(record["document_id"] != document_id for record in vector_index.values())
+
+
+def test_document_parse_route_records_queue_failure_when_vector_store_is_corrupt(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    (tmp_path / "vector-index.json").write_text("{not valid json", encoding="utf-8")
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (
+                file_path, file_hash, original_name, parse_status,
+                index_status, index_error, chemistry_status, chemistry_error
+            )
+            VALUES (?, ?, ?, 'parsed', 'indexed', 'old index error', 'extracted', 'old chemistry error')
+            """,
+            (str(tmp_path / "queued-parse-corrupt-vector.pdf"), "queued-parse-corrupt", "queued-parse-corrupt.pdf"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Old section', 'old parsed text', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'old parsed text', 3, 'old-parse-corrupt-vector-id', 1)
+            """,
+            (document_id, section_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO translations (document_id, source_lang, target_lang, status, output_path)
+            VALUES (?, 'en', 'zh', 'done', ?)
+            """,
+            (document_id, str(tmp_path / "translations" / "old.md")),
+        )
+        conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, source_note, status)
+            VALUES (?, 'Old reaction set', 'old extraction', 'pending')
+            """,
+            (document_id,),
+        )
+
+    response = client.post(f"/api/v1/documents/{document_id}/parse")
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "parse_queue_failed"
+    assert "vector store JSON is invalid" in payload["error"]["message"]
+    with get_conn() as conn:
+        document = conn.execute(
+            """
+            SELECT parse_status, parse_error, index_status, index_error, chemistry_status, chemistry_error
+            FROM documents WHERE id=?
+            """,
+            (document_id,),
+        ).fetchone()
+        counts = {
+            table: conn.execute(f"SELECT COUNT(*) AS n FROM {table} WHERE document_id=?", (document_id,)).fetchone()["n"]
+            for table in ["sections", "chunks", "translations", "reaction_sets"]
+        }
+    assert document["parse_status"] == "failed"
+    assert "vector store JSON is invalid" in document["parse_error"]
+    assert document["index_status"] == "not_indexed"
+    assert document["index_error"] is None
+    assert document["chemistry_status"] == "not_extracted"
+    assert document["chemistry_error"] is None
+    assert counts == {"sections": 0, "chunks": 0, "translations": 0, "reaction_sets": 0}
+
+
+def test_document_parse_route_rejects_unsupported_vector_db_backend(tmp_path, monkeypatch):
+    monkeypatch.setenv("VECTOR_DB_BACKEND", "faiss")
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (
+                file_path, file_hash, original_name, parse_status,
+                index_status, index_error, chemistry_status, chemistry_error
+            )
+            VALUES (?, ?, ?, 'parsed', 'indexed', 'old index error', 'extracted', 'old chemistry error')
+            """,
+            (str(tmp_path / "queued-parse-unsupported-backend.pdf"), "queued-parse-backend", "queued-parse-backend.pdf"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Old section', 'old parsed text', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'old parsed text', 3, 'old-parse-backend-vector-id', 1)
+            """,
+            (document_id, section_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO translations (document_id, source_lang, target_lang, status, output_path)
+            VALUES (?, 'en', 'zh', 'done', ?)
+            """,
+            (document_id, str(tmp_path / "translations" / "old.md")),
+        )
+        conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, source_note, status)
+            VALUES (?, 'Old reaction set', 'old extraction', 'pending')
+            """,
+            (document_id,),
+        )
+
+    response = client.post(f"/api/v1/documents/{document_id}/parse")
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "parse_queue_failed"
+    assert payload["error"]["message"] == "unsupported vector db backend: faiss"
+    with get_conn() as conn:
+        document = conn.execute(
+            """
+            SELECT parse_status, parse_error, index_status, index_error, chemistry_status, chemistry_error
+            FROM documents WHERE id=?
+            """,
+            (document_id,),
+        ).fetchone()
+        counts = {
+            table: conn.execute(f"SELECT COUNT(*) AS n FROM {table} WHERE document_id=?", (document_id,)).fetchone()["n"]
+            for table in ["sections", "chunks", "translations", "reaction_sets"]
+        }
+    assert document["parse_status"] == "failed"
+    assert document["parse_error"] == "unsupported vector db backend: faiss"
+    assert document["index_status"] == "not_indexed"
+    assert document["index_error"] is None
+    assert document["chemistry_status"] == "not_extracted"
+    assert document["chemistry_error"] is None
+    assert counts == {"sections": 0, "chunks": 0, "translations": 0, "reaction_sets": 0}
+
+
 def test_document_extract_route_clears_stale_reaction_sets_before_background_task_runs(tmp_path):
     from fastapi import BackgroundTasks
 
@@ -12024,6 +16208,69 @@ def test_extract_reactions_detects_lxcat_database_and_url(tmp_path):
     assert reaction["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
 
 
+def test_extract_reactions_detects_colon_lxcat_database(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(
+        b"LXCat: Biagi database cross section: https://nl.lxcat.net/data/set/biagi. "
+        b"The process is e + Ar -> e + e + Ar+ ."
+    )
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("colon-lxcat.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["lxcat_db"] == "Biagi"
+    assert detail["reactions"][0]["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
+
+
+def test_extract_reactions_detects_labelled_lxcat_database(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(
+        b"LXCat database: Biagi cross section: https://nl.lxcat.net/data/set/biagi. "
+        b"The process is e + Ar -> e + e + Ar+ ."
+    )
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("labelled-lxcat.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["lxcat_db"] == "Biagi"
+    assert detail["reactions"][0]["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
+
+
+def test_extract_reactions_detects_compact_lxcat_separator(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(
+        b"LXCat=Biagi cross section: https://nl.lxcat.net/data/set/biagi. "
+        b"The process is e + Ar -> e + e + Ar+ ."
+    )
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("compact-lxcat-separator.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["lxcat_db"] == "Biagi"
+    assert detail["reactions"][0]["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
+
+
 def test_extract_reactions_detects_explicit_gas_mixture(tmp_path):
     client = make_client(tmp_path)
     content = pdf_bytes(b"The Ar/O2 plasma chemistry includes e + O2 -> O- + O .")
@@ -12039,6 +16286,78 @@ def test_extract_reactions_detects_explicit_gas_mixture(tmp_path):
     detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
 
     assert detail["gas_mixture"] == "Ar/O2"
+    assert detail["reactions"][0]["reaction"] == "e + O2 -> O- + O"
+
+
+def test_extract_reactions_detects_multi_element_gas_mixture(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(b"The CF4/O2 plasma chemistry includes e + O2 -> O- + O .")
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("multi-element-gas-mixture.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["gas_mixture"] == "CF4/O2"
+    assert detail["reactions"][0]["reaction"] == "e + O2 -> O- + O"
+
+
+def test_extract_reactions_detects_spaced_gas_mixture(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(b"The O2 / Ar plasma chemistry includes e + O2 -> O- + O .")
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("spaced-gas-mixture.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["gas_mixture"] == "O2 / Ar"
+    assert detail["reactions"][0]["reaction"] == "e + O2 -> O- + O"
+
+
+def test_extract_reactions_detects_subscript_gas_mixture(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes("The CF₄/O₂ plasma chemistry includes e + O₂ -> O⁻ + O .".encode("utf-8"))
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("subscript-gas-mixture.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["gas_mixture"] == "CF₄/O₂"
+    assert detail["reactions"][0]["reaction"] == "e + O₂ -> O⁻ + O"
+
+
+def test_extract_reactions_detects_fullwidth_gas_mixture(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes("The ＣＦ４／Ｏ２ plasma chemistry includes e + O2 -> O- + O .".encode("utf-8"))
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("fullwidth-gas-mixture.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["gas_mixture"] == "ＣＦ４／Ｏ２"
     assert detail["reactions"][0]["reaction"] == "e + O2 -> O- + O"
 
 
@@ -12134,6 +16453,158 @@ def test_translate_document_uses_filesystem_safe_target_lang_slug(tmp_path):
     assert output_path.exists()
 
 
+def test_translate_document_rejects_symlinked_output_file(tmp_path):
+    make_client(tmp_path)
+    from app.db import get_conn
+    from app.services import translation as translation_service
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            (str(tmp_path / "symlinked-translation.pdf"), "symlinked-translation", "symlinked-translation.pdf"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Body', 'Argon plasma text', 'body')
+            """,
+            (document_id,),
+        )
+
+    outside_path = tmp_path / "outside-translation.md"
+    outside_path.write_text("outside original", encoding="utf-8")
+    output_path = tmp_path / "translations" / f"document-{document_id}-zh.md"
+    output_path.symlink_to(outside_path)
+
+    result = translation_service.translate_document(document_id, "zh")
+
+    assert result["status"] == "failed"
+    assert result["output_path"] is None
+    assert "translation output path is not a regular file" in result["error"]
+    assert outside_path.read_text(encoding="utf-8") == "outside original"
+
+
+def test_translate_document_rejects_symlinked_output_parent(tmp_path):
+    make_client(tmp_path)
+    from app.db import get_conn
+    from app.services import translation as translation_service
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            (
+                str(tmp_path / "symlinked-translation-parent.pdf"),
+                "symlinked-translation-parent",
+                "symlinked-translation-parent.pdf",
+            ),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Body', 'Argon plasma text', 'body')
+            """,
+            (document_id,),
+        )
+
+    outside_dir = tmp_path / "outside-translations"
+    outside_dir.mkdir()
+    translation_dir = tmp_path / "translations"
+    translation_dir.rmdir()
+    translation_dir.symlink_to(outside_dir, target_is_directory=True)
+
+    result = translation_service.translate_document(document_id, "zh")
+
+    assert result["status"] == "failed"
+    assert result["output_path"] is None
+    assert "translation output path parent is not a regular directory" in result["error"]
+    assert not (outside_dir / f"document-{document_id}-zh.md").exists()
+
+
+def test_rag_index_rejects_symlinked_vector_store(tmp_path):
+    make_client(tmp_path)
+    from app.db import get_conn
+    from app.services import rag as rag_service
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            (str(tmp_path / "vector-symlink.pdf"), "vector-symlink", "vector-symlink.pdf"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Body', 'Argon plasma text', 'body')
+            """,
+            (document_id,),
+        )
+
+    outside_path = tmp_path / "outside-vector-index.json"
+    outside_payload = '{"outside": {"document_id": 999, "embedding": []}}'
+    outside_path.write_text(outside_payload, encoding="utf-8")
+    vector_path = tmp_path / "vector-index.json"
+    vector_path.symlink_to(outside_path)
+
+    result = rag_service.index_document(document_id)
+
+    assert result["status"] == "failed"
+    assert "vector store path is not a regular file" in result["error"]
+    assert outside_path.read_text(encoding="utf-8") == outside_payload
+
+
+def test_rag_index_rejects_symlinked_vector_store_parent(tmp_path):
+    make_client(tmp_path)
+    from app.db import get_conn
+    from app.services import rag as rag_service
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            (
+                str(tmp_path / "vector-parent-symlink.pdf"),
+                "vector-parent-symlink",
+                "vector-parent-symlink.pdf",
+            ),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Body', 'Argon plasma text', 'body')
+            """,
+            (document_id,),
+        )
+
+    outside_dir = tmp_path / "outside-vector-store"
+    outside_dir.mkdir()
+    vector_parent = tmp_path / "vector-parent"
+    vector_parent.symlink_to(outside_dir, target_is_directory=True)
+    os.environ["VECTOR_DB_PATH"] = str(vector_parent / "vector-index.json")
+
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    result = rag_service.index_document(document_id)
+
+    assert result["status"] == "failed"
+    assert "vector store path parent is not a regular directory" in result["error"]
+    assert not (outside_dir / "vector-index.json").exists()
+
+
 def test_index_unparsed_document_records_failed_status(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
@@ -12177,7 +16648,7 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
         "chemistry_status",
         "chemistry_error",
         "document_option_label",
-        "document_status_rows(document_detail, chunks)",
+        "dataframe_display_rows(document_status_rows(document_detail, chunks))",
         "section_preview",
         "format_func=document_section_option_label",
         "format_func=document_chunk_option_label",
@@ -12552,6 +17023,7 @@ def test_streamlit_rag_tab_can_select_documents_for_query_scope():
 
     for required in [
         'rag_documents = rag_documents_response["items"]',
+        "filtered_rag_documents = filter_documents_by_status(rag_documents, rag_document_status_filter)",
         "selected_rag_documents = st.multiselect(",
         "限定文档",
         "format_func=document_option_label",
@@ -12561,6 +17033,24 @@ def test_streamlit_rag_tab_can_select_documents_for_query_scope():
     ]:
         assert required in rag_section
     assert "format_func=lambda document" not in rag_section
+
+
+def test_streamlit_rag_tab_filters_current_page_by_document_status():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+
+    for required in [
+        'rag_document_status_filter = st.selectbox("RAG 文档状态筛选", document_status_filter_options(), key="rag-documents-status-filter")',
+        "filtered_rag_documents = filter_documents_by_status(rag_documents, rag_document_status_filter)",
+        "document_filter_summary(len(rag_documents), len(filtered_rag_documents), rag_document_status_filter)",
+        "if not rag_documents:",
+        "elif not filtered_rag_documents:",
+        "当前页没有匹配筛选状态的 RAG 文档。",
+        "filtered_rag_documents,",
+    ]:
+        assert required in rag_section
+    assert "            rag_documents,\n            format_func=document_option_label" not in rag_section
 
 
 def test_streamlit_rag_tab_exposes_document_pagination_controls():
@@ -12610,6 +17100,24 @@ def test_streamlit_document_upload_shows_duplicate_result():
         assert required in documents_section
 
 
+def test_streamlit_document_upload_can_select_linked_paper():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    for required in [
+        'paper_upload_query = st.text_input("关联论文搜索"',
+        "paper_upload_query_params(paper_upload_query)",
+        'paper_upload_papers = api_get("/papers", **paper_upload_query_params(paper_upload_query))',
+        'paper_upload_options = [None] + paper_upload_papers.get("items", [])',
+        'selected_upload_paper = st.selectbox(',
+        "format_func=paper_upload_option_label",
+        'data = {"paper_id": str(selected_upload_paper["id"])} if selected_upload_paper else {}',
+    ]:
+        assert required in documents_section
+    assert 'paper_id = st.number_input("paper_id"' not in documents_section
+
+
 def test_streamlit_document_upload_shows_error_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
@@ -12627,6 +17135,23 @@ def test_streamlit_documents_tab_shows_empty_state():
     documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
 
     assert "暂无文档，请先上传 PDF。" in documents_section
+
+
+def test_streamlit_documents_tab_filters_current_page_by_status():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    for required in [
+        'document_status_filter = st.selectbox("文档状态筛选", document_status_filter_options(), key="documents-status-filter")',
+        "display_docs = filter_documents_by_status(docs, document_status_filter)",
+        "document_filter_summary(len(docs), len(display_docs), document_status_filter)",
+        "elif not display_docs:",
+        "暂无匹配文档，请调整文档状态筛选。",
+        'selected = st.selectbox("文档", display_docs, format_func=document_option_label)',
+    ]:
+        assert required in documents_section
+    assert 'selected = st.selectbox("文档", docs, format_func=document_option_label)' not in documents_section
 
 
 def test_streamlit_documents_list_errors_show_payload_details():
@@ -12649,7 +17174,7 @@ def test_streamlit_document_detail_errors_show_payload_details():
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
     detail_section = documents_section[
-        documents_section.index('selected = st.selectbox("文档", docs, format_func=document_option_label)') :
+        documents_section.index('selected = st.selectbox("文档", display_docs, format_func=document_option_label)') :
         documents_section.index('if document_detail.get("parse_error"):')
     ]
 
@@ -12727,15 +17252,7 @@ def test_streamlit_sidebar_surfaces_storage_health():
     for required in [
         "存储健康",
         "storage_health",
-        "data_dir",
-        "pdf_dir",
-        "tei_dir",
-        "translation_dir",
-        "export_dir",
-        "database",
-        "vector_db",
-        "writable",
-        "valid_json",
+        "storage_health_caption_rows",
     ]:
         assert required in sidebar_section
 

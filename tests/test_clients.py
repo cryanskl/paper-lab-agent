@@ -59,6 +59,14 @@ def test_crossref_strips_space_after_doi_prefix():
     assert work["doi"] == "10.5555/abc.def"
 
 
+def test_crossref_normalizes_fullwidth_doi_text():
+    client = CrossrefClient()
+
+    work = client.normalize({"DOI": "ＤＯＩ：１０.５５５５／ＡＢＣ．Ｄｅｆ", "title": ["Example"]})
+
+    assert work["doi"] == "10.5555/abc.def"
+
+
 def test_crossref_normalizes_scalar_title_fields():
     client = CrossrefClient()
 
@@ -434,6 +442,14 @@ def test_openalex_strips_space_after_doi_prefix():
     assert work["doi"] == "10.5555/abc.def"
 
 
+def test_openalex_normalizes_fullwidth_doi_text():
+    client = OpenAlexClient()
+
+    work = client.normalize({"doi": "ＤＯＩ：１０.５５５５／ＡＢＣ．Ｄｅｆ", "title": "Example"})
+
+    assert work["doi"] == "10.5555/abc.def"
+
+
 def test_openalex_tolerates_malformed_title_fields():
     client = OpenAlexClient()
 
@@ -509,7 +525,7 @@ def test_openalex_tolerates_malformed_publication_fields():
     assert work["published_year"] is None
 
 
-def test_openalex_rejects_invalid_publication_date_string():
+def test_openalex_rejects_invalid_publication_date_string_without_fallback_year():
     client = OpenAlexClient()
 
     work = client.normalize(
@@ -517,12 +533,11 @@ def test_openalex_rejects_invalid_publication_date_string():
             "id": "https://openalex.org/W-invalid-date",
             "title": "Invalid publication date",
             "publication_date": "2026-13-40",
-            "publication_year": 2026,
         }
     )
 
     assert work["published_date"] is None
-    assert work["published_year"] == 2026
+    assert work["published_year"] is None
 
 
 def test_openalex_expands_missing_publication_date_from_year():
@@ -968,6 +983,46 @@ async def test_openalex_tolerates_malformed_top_level_payload():
 
 
 @pytest.mark.asyncio
+async def test_openalex_returns_no_works_for_blank_issn_without_request():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("OpenAlex should not be called for blank ISSN")
+
+    client = OpenAlexClient(transport=httpx.MockTransport(handler))
+
+    works = await client.works_by_issn("   ", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert works == []
+
+
+@pytest.mark.asyncio
+async def test_openalex_returns_no_works_for_non_string_issn_without_request():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("OpenAlex should not be called for non-string ISSN")
+
+    client = OpenAlexClient(transport=httpx.MockTransport(handler))
+
+    works = await client.works_by_issn(None, "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert works == []
+
+
+@pytest.mark.asyncio
+async def test_openalex_normalizes_fullwidth_issn_before_request():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["filter"] = request.url.params.get("filter")
+        return json_response({"results": [], "meta": {}})
+
+    client = OpenAlexClient(transport=httpx.MockTransport(handler))
+
+    works = await client.works_by_issn("１２３４－５６７８", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert works == []
+    assert "locations.source.issn:1234-5678" in captured["filter"]
+
+
+@pytest.mark.asyncio
 async def test_openalex_does_not_retry_permanent_http_errors():
     calls = 0
     sleep_calls = []
@@ -1136,6 +1191,46 @@ async def test_crossref_tolerates_malformed_top_level_payload():
 
 
 @pytest.mark.asyncio
+async def test_crossref_returns_no_works_for_blank_issn_without_request():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("Crossref should not be called for blank ISSN")
+
+    client = CrossrefClient(transport=httpx.MockTransport(handler))
+
+    works = await client.works_by_issn("   ", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert works == []
+
+
+@pytest.mark.asyncio
+async def test_crossref_returns_no_works_for_non_string_issn_without_request():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("Crossref should not be called for non-string ISSN")
+
+    client = CrossrefClient(transport=httpx.MockTransport(handler))
+
+    works = await client.works_by_issn(None, "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert works == []
+
+
+@pytest.mark.asyncio
+async def test_crossref_normalizes_fullwidth_issn_before_request():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        return json_response({"message": {"items": []}})
+
+    client = CrossrefClient(transport=httpx.MockTransport(handler))
+
+    works = await client.works_by_issn("１２３４－５６７８", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert works == []
+    assert captured["path"] == "/journals/1234-5678/works"
+
+
+@pytest.mark.asyncio
 async def test_crossref_does_not_retry_permanent_http_errors():
     calls = 0
     sleep_calls = []
@@ -1183,6 +1278,27 @@ async def test_crossref_includes_mailto_in_request_params_and_user_agent():
 
 
 @pytest.mark.asyncio
+async def test_crossref_strips_mailto_whitespace_for_polite_pool():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["mailto"] = request.url.params.get("mailto")
+        captured["user_agent"] = request.headers.get("User-Agent")
+        return json_response({"message": {"items": []}})
+
+    client = CrossrefClient(
+        mailto="  lab@example.test  ",
+        transport=httpx.MockTransport(handler),
+    )
+
+    works = await client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=1)
+
+    assert works == []
+    assert captured["mailto"] == "lab@example.test"
+    assert captured["user_agent"] == "paper-lab-agent (mailto:lab@example.test)"
+
+
+@pytest.mark.asyncio
 async def test_unpaywall_waits_after_successful_resolution():
     sleep_calls = []
 
@@ -1209,6 +1325,44 @@ async def test_unpaywall_waits_after_successful_resolution():
     assert result["oa_status"] == "gold"
     assert result["oa_pdf_url"] == "https://example.test/paper.pdf"
     assert sleep_calls == [0.25]
+
+
+@pytest.mark.asyncio
+async def test_unpaywall_returns_unknown_for_blank_doi_without_request():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"unexpected Unpaywall request: {request.url}")
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.resolve("   ")
+
+    assert result == {
+        "oa_status": "unknown",
+        "oa_pdf_url": None,
+        "error": "DOI is required for Unpaywall lookup",
+    }
+
+
+@pytest.mark.asyncio
+async def test_unpaywall_normalizes_fullwidth_doi_before_request():
+    seen_urls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_urls.append(str(request.url))
+        return json_response({"oa_status": "green"})
+
+    client = UnpaywallClient(
+        email="dev@example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.resolve("ＤＯＩ：１０.５５５５／ＡＢＣ．Ｄｅｆ")
+
+    assert seen_urls == ["https://api.unpaywall.org/v2/10.5555%2Fabc.def?email=dev%40example.test"]
+    assert result["oa_status"] == "green"
 
 
 @pytest.mark.asyncio

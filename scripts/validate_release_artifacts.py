@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import hashlib
 import json
 import re
@@ -23,7 +24,19 @@ EXPECTED_ARTIFACTS = {
     "demo_summary": "demo-summary.json",
     "manifest": "release-manifest.json",
 }
+EXPECTED_ARTIFACT_NAMES = sorted(EXPECTED_ARTIFACTS.values())
 EXPECTED_EXPORT_FORMATS = ["json", "txt", "bolsig"]
+EXPECTED_DEMO_COUNT_MINIMUMS = {
+    "documents": 1,
+    "reaction_audits": 1,
+}
+EXPECTED_DEMO_WORKFLOW_STATUSES = {
+    "parse_status": "parsed",
+    "index_status": "indexed",
+    "chemistry_status": "extracted",
+    "translation_status": "done",
+    "reaction_set_status": "verified",
+}
 GIT_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -44,8 +57,14 @@ def read_json(path: Path, label: str, issues: list[str]) -> dict[str, Any]:
     if not path.exists():
         issues.append(f"{label} missing: {path}")
         return {}
+    if path.is_symlink():
+        issues.append(f"{label} is not a regular file: {path}")
+        return {}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as exc:
+        issues.append(f"{label} unreadable: {exc}")
+        return {}
     except json.JSONDecodeError as exc:
         issues.append(f"{label} invalid JSON: {exc}")
         return {}
@@ -55,16 +74,165 @@ def read_json(path: Path, label: str, issues: list[str]) -> dict[str, Any]:
     return payload
 
 
+def demo_audit_entry_count_issues(demo_summary: dict[str, Any]) -> list[str]:
+    counts = demo_summary.get("export_audit_entry_counts")
+    if not isinstance(counts, dict):
+        missing = EXPECTED_EXPORT_FORMATS
+    else:
+        missing = [
+            fmt
+            for fmt in EXPECTED_EXPORT_FORMATS
+            if not isinstance(counts.get(fmt), int) or isinstance(counts.get(fmt), bool) or counts.get(fmt) <= 0
+        ]
+    if missing:
+        return [
+            "demo summary export_audit_entry_counts must include positive counts for: "
+            + ", ".join(missing)
+        ]
+    return []
+
+
+def demo_audit_summary_format_issues(demo_summary: dict[str, Any]) -> list[str]:
+    formats = demo_summary.get("export_audit_summary_formats")
+    if formats != EXPECTED_EXPORT_FORMATS:
+        return [f"demo summary export_audit_summary_formats mismatch: {formats or []!r}"]
+    return []
+
+
+def demo_count_issues(demo_summary: dict[str, Any]) -> list[str]:
+    counts = demo_summary.get("counts")
+    if not isinstance(counts, dict):
+        missing = list(EXPECTED_DEMO_COUNT_MINIMUMS)
+    else:
+        missing = [
+            key
+            for key, minimum in EXPECTED_DEMO_COUNT_MINIMUMS.items()
+            if not isinstance(counts.get(key), int)
+            or isinstance(counts.get(key), bool)
+            or counts.get(key) < minimum
+        ]
+    if missing:
+        return ["demo summary counts must include positive counts for: " + ", ".join(missing)]
+    return []
+
+
+def demo_workflow_statuses(demo_summary: dict[str, Any]) -> dict[str, Any]:
+    return {key: demo_summary.get(key) for key in EXPECTED_DEMO_WORKFLOW_STATUSES}
+
+
+def demo_workflow_status_issues(demo_summary: dict[str, Any]) -> list[str]:
+    statuses = demo_workflow_statuses(demo_summary)
+    if statuses != EXPECTED_DEMO_WORKFLOW_STATUSES:
+        return [f"demo summary workflow statuses mismatch: {statuses!r}"]
+    return []
+
+
+def is_iso8601_timestamp(value: Any) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
+
+
+def first_symlink_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
+
+
 def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool = False) -> dict[str, Any]:
+    requested_artifact_dir = artifact_dir
+    if requested_artifact_dir.is_symlink():
+        artifact_dir = requested_artifact_dir.absolute()
+        return {
+            "ok": False,
+            "artifact_dir": str(artifact_dir),
+            "service": None,
+            "version": None,
+            "source": {},
+            "demo_ready": None,
+            "demo_counts": {},
+            "demo_workflow_statuses": {},
+            "demo_export_formats": [],
+            "demo_export_audit_entry_counts": {},
+            "demo_export_audit_summary_formats": [],
+            "demo_reaction_set_verified_by": None,
+            "demo_reaction_set_verified_at": None,
+            "openapi_path_count": 0,
+            "checksums": {},
+            "issues": [f"release artifact directory is not a regular directory: {artifact_dir}"],
+        }
+    symlink_parent = first_symlink_parent(requested_artifact_dir)
+    if symlink_parent is not None:
+        artifact_dir = requested_artifact_dir.absolute()
+        return {
+            "ok": False,
+            "artifact_dir": str(artifact_dir),
+            "service": None,
+            "version": None,
+            "source": {},
+            "demo_ready": None,
+            "demo_counts": {},
+            "demo_workflow_statuses": {},
+            "demo_export_formats": [],
+            "demo_export_audit_entry_counts": {},
+            "demo_export_audit_summary_formats": [],
+            "demo_reaction_set_verified_by": None,
+            "demo_reaction_set_verified_at": None,
+            "openapi_path_count": 0,
+            "checksums": {},
+            "issues": [
+                "release artifact directory parent is not a regular directory: "
+                f"{symlink_parent}"
+            ],
+        }
     artifact_dir = artifact_dir.resolve()
     issues: list[str] = []
+    if artifact_dir.exists() and not artifact_dir.is_dir():
+        issues.append(f"release artifact directory is not a directory: {artifact_dir}")
+    elif artifact_dir.exists():
+        unexpected_files = sorted(
+            path.name
+            for path in artifact_dir.iterdir()
+            if path.name not in EXPECTED_ARTIFACTS.values()
+        )
+        if unexpected_files:
+            issues.append(f"release artifact directory contains unexpected files: {unexpected_files!r}")
     manifest = read_json(artifact_dir / EXPECTED_ARTIFACTS["manifest"], "release manifest", issues)
     openapi = read_json(artifact_dir / EXPECTED_ARTIFACTS["openapi"], "OpenAPI artifact", issues)
     demo_summary = read_json(artifact_dir / EXPECTED_ARTIFACTS["demo_summary"], "demo summary", issues)
 
     paths = openapi.get("paths", {}) if isinstance(openapi.get("paths"), dict) else {}
     openapi_path_count = len(paths)
+    openapi_tag_names = {
+        tag.get("name")
+        for tag in openapi.get("tags", [])
+        if isinstance(tag, dict) and isinstance(tag.get("name"), str)
+    }
+    openapi_schemas = (
+        openapi.get("components", {}).get("schemas", {})
+        if isinstance(openapi.get("components"), dict)
+        and isinstance(openapi.get("components", {}).get("schemas"), dict)
+        else {}
+    )
     demo_export_formats = demo_summary.get("export_formats") or []
+    demo_counts = demo_summary.get("counts") if isinstance(demo_summary.get("counts"), dict) else {}
+    demo_statuses = demo_workflow_statuses(demo_summary)
+    demo_export_audit_entry_counts = (
+        demo_summary.get("export_audit_entry_counts")
+        if isinstance(demo_summary.get("export_audit_entry_counts"), dict)
+        else {}
+    )
+    demo_export_audit_summary_formats = demo_summary.get("export_audit_summary_formats") or []
+    demo_reaction_set_verified_by = demo_summary.get("reaction_set_verified_by")
+    demo_reaction_set_verified_at = demo_summary.get("reaction_set_verified_at")
 
     if manifest:
         if manifest.get("service") != EXPECTED_SERVICE:
@@ -75,11 +243,42 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             issues.append("release manifest version does not match OpenAPI version")
         if manifest.get("artifacts") != EXPECTED_ARTIFACTS:
             issues.append(f"release manifest artifacts mismatch: {manifest.get('artifacts')!r}")
+        if "artifact_count" in manifest and manifest.get("artifact_count") != len(EXPECTED_ARTIFACTS):
+            issues.append(f"release manifest artifact_count mismatch: {manifest.get('artifact_count')!r}")
+        if "artifact_names" in manifest and manifest.get("artifact_names") != EXPECTED_ARTIFACT_NAMES:
+            issues.append(f"release manifest artifact_names mismatch: {manifest.get('artifact_names')!r}")
         if manifest.get("demo_ready") is not True:
             issues.append("release manifest demo_ready must be true")
+        if manifest.get("demo_counts") != demo_counts:
+            issues.append(f"release manifest demo_counts mismatch: {manifest.get('demo_counts')!r}")
+        if manifest.get("demo_workflow_statuses") != demo_statuses:
+            issues.append(
+                "release manifest demo_workflow_statuses mismatch: "
+                f"{manifest.get('demo_workflow_statuses')!r}"
+            )
         if manifest.get("demo_export_formats") != EXPECTED_EXPORT_FORMATS:
             issues.append(
                 f"release manifest demo_export_formats mismatch: {manifest.get('demo_export_formats')!r}"
+            )
+        if manifest.get("demo_export_audit_entry_counts") != demo_export_audit_entry_counts:
+            issues.append(
+                "release manifest demo_export_audit_entry_counts mismatch: "
+                f"{manifest.get('demo_export_audit_entry_counts')!r}"
+            )
+        if manifest.get("demo_export_audit_summary_formats") != demo_export_audit_summary_formats:
+            issues.append(
+                "release manifest demo_export_audit_summary_formats mismatch: "
+                f"{manifest.get('demo_export_audit_summary_formats')!r}"
+            )
+        if manifest.get("demo_reaction_set_verified_by") != demo_reaction_set_verified_by:
+            issues.append(
+                "release manifest demo_reaction_set_verified_by mismatch: "
+                f"{manifest.get('demo_reaction_set_verified_by')!r}"
+            )
+        if manifest.get("demo_reaction_set_verified_at") != demo_reaction_set_verified_at:
+            issues.append(
+                "release manifest demo_reaction_set_verified_at mismatch: "
+                f"{manifest.get('demo_reaction_set_verified_at')!r}"
             )
         if manifest.get("openapi_path_count") != openapi_path_count:
             issues.append(
@@ -109,7 +308,9 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
                 issues.append(f"release manifest checksums keys mismatch: {sorted(checksums)!r}")
             for artifact_name in (EXPECTED_ARTIFACTS["openapi"], EXPECTED_ARTIFACTS["demo_summary"]):
                 artifact_path = artifact_dir / artifact_name
-                if artifact_path.exists() and checksums.get(artifact_name) != sha256_file(artifact_path):
+                if artifact_path.exists() and (artifact_path.is_symlink() or not artifact_path.is_file()):
+                    issues.append(f"checksum unavailable: {artifact_name} is not a file: {artifact_path}")
+                elif artifact_path.exists() and checksums.get(artifact_name) != sha256_file(artifact_path):
                     issues.append(f"checksum mismatch: {artifact_name}")
             if checksums.get(EXPECTED_ARTIFACTS["manifest"]) != manifest_checksum(manifest):
                 issues.append(f"checksum mismatch: {EXPECTED_ARTIFACTS['manifest']}")
@@ -119,12 +320,26 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             issues.append(f"OpenAPI title mismatch: {openapi.get('info', {}).get('title')!r}")
         if "/api/v1/health" not in paths:
             issues.append("OpenAPI missing /api/v1/health")
+        if "system" not in openapi_tag_names:
+            issues.append("OpenAPI missing system tag metadata")
+        if "ErrorResponse" not in openapi_schemas:
+            issues.append("OpenAPI missing ErrorResponse schema")
 
     if demo_summary:
         if demo_summary.get("ready") is not True:
             issues.append("demo summary ready must be true")
+        issues.extend(demo_count_issues(demo_summary))
+        issues.extend(demo_workflow_status_issues(demo_summary))
         if demo_export_formats != EXPECTED_EXPORT_FORMATS:
             issues.append(f"demo summary export_formats mismatch: {demo_export_formats!r}")
+        issues.extend(demo_audit_entry_count_issues(demo_summary))
+        issues.extend(demo_audit_summary_format_issues(demo_summary))
+        if not isinstance(demo_reaction_set_verified_by, str) or not demo_reaction_set_verified_by.strip():
+            issues.append("demo summary reaction_set_verified_by must be a non-empty string")
+        if not isinstance(demo_reaction_set_verified_at, str) or not demo_reaction_set_verified_at.strip():
+            issues.append("demo summary reaction_set_verified_at must be a non-empty string")
+        elif not is_iso8601_timestamp(demo_reaction_set_verified_at):
+            issues.append("demo summary reaction_set_verified_at must be an ISO8601 timestamp")
 
     return {
         "ok": not issues,
@@ -133,7 +348,20 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
         "version": manifest.get("version"),
         "source": manifest.get("source") if isinstance(manifest.get("source"), dict) else {},
         "demo_ready": manifest.get("demo_ready"),
+        "demo_counts": manifest.get("demo_counts") if isinstance(manifest.get("demo_counts"), dict) else demo_counts,
+        "demo_workflow_statuses": manifest.get("demo_workflow_statuses")
+        if isinstance(manifest.get("demo_workflow_statuses"), dict)
+        else demo_statuses,
         "demo_export_formats": manifest.get("demo_export_formats") or [],
+        "demo_export_audit_entry_counts": manifest.get("demo_export_audit_entry_counts")
+        if isinstance(manifest.get("demo_export_audit_entry_counts"), dict)
+        else demo_export_audit_entry_counts,
+        "demo_export_audit_summary_formats": manifest.get("demo_export_audit_summary_formats")
+        or demo_export_audit_summary_formats,
+        "demo_reaction_set_verified_by": manifest.get("demo_reaction_set_verified_by")
+        or demo_reaction_set_verified_by,
+        "demo_reaction_set_verified_at": manifest.get("demo_reaction_set_verified_at")
+        or demo_reaction_set_verified_at,
         "openapi_path_count": openapi_path_count,
         "checksums": manifest.get("checksums") if isinstance(manifest.get("checksums"), dict) else {},
         "issues": issues,

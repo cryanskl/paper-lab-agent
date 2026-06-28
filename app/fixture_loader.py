@@ -2,7 +2,7 @@ import hashlib
 
 from app.config import get_settings
 from app.db import get_conn
-from app.services.documents import count_pdf_pages
+from app.services.documents import assert_safe_document_storage_path, count_pdf_pages
 from app.utils import json_dumps
 
 
@@ -105,6 +105,7 @@ def load_fixture_documents() -> dict:
             content = document["content"]
             digest = hashlib.sha256(content).hexdigest()
             stored = settings.pdf_dir / f"{digest}.pdf"
+            assert_safe_document_storage_path(stored)
             stored.write_bytes(content)
             paper = conn.execute("SELECT id FROM papers WHERE doi=?", (document["paper_doi"],)).fetchone()
             paper_id = paper["id"] if paper else None

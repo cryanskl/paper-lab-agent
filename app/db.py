@@ -13,9 +13,21 @@ def dict_from_row(row: sqlite3.Row) -> dict[str, Any]:
     return {key: row[key] for key in row.keys()}
 
 
+def assert_safe_database_path(path: Path) -> None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        raise OSError(f"database path parent is not a regular directory: {parent}")
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise OSError(f"database path is not a regular file: {path}")
+
+
 def connect() -> sqlite3.Connection:
     settings = get_settings()
     settings.ensure_dirs()
+    assert_safe_database_path(settings.database_path)
     conn = sqlite3.connect(settings.database_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")

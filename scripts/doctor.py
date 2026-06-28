@@ -10,6 +10,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from app.rag_registry import SUPPORTED_EMBEDDING_MODELS, SUPPORTED_VECTOR_DB_BACKENDS
+
 
 MIN_PYTHON = (3, 9)
 REQUIRED_FILES = (
@@ -75,6 +81,26 @@ SECRET_LIKE_ENV_EXAMPLE_KEYS = (
     "UNPAYWALL_EMAIL",
     "LLM_API_KEY",
 )
+OPTIONAL_EXTERNAL_CONFIG = (
+    (
+        "OPENALEX_MAILTO",
+        "openalex_mailto",
+        "missing_openalex_mailto",
+        "OPENALEX_MAILTO is not configured; local offline mode still works.",
+    ),
+    (
+        "UNPAYWALL_EMAIL",
+        "unpaywall_email",
+        "missing_unpaywall_email",
+        "UNPAYWALL_EMAIL is not configured; OA lookup may fail against the public API.",
+    ),
+    (
+        "LLM_API_KEY",
+        "llm_api_key",
+        "missing_llm_api_key",
+        "LLM_API_KEY is not configured; translation uses the local deterministic adapter.",
+    ),
+)
 ENV_EXAMPLE_DEFAULTS = {
     "PAPER_LAB_DATA_DIR": "data",
     "DATABASE_PATH": "data/plasma.db",
@@ -130,7 +156,12 @@ def check_required_files(repo: Path) -> dict[str, Any]:
     issues = []
     for rel_path in REQUIRED_FILES:
         path = repo / rel_path
-        if not path.exists() or not path.is_file():
+        if (
+            path.is_symlink()
+            or first_symlink_parent(path) is not None
+            or not path.exists()
+            or not path.is_file()
+        ):
             issues.append(
                 {
                     "code": "missing_required_file",
@@ -149,8 +180,23 @@ def check_required_files(repo: Path) -> dict[str, Any]:
 def check_env_example(repo: Path) -> dict[str, Any]:
     path = repo / ".env.example"
     issues = []
+    if path.exists() or path.is_symlink():
+        issues.extend(env_example_file_issues(path))
+        if issues:
+            return {
+                "name": "env_example",
+                "status": status_from_issues(issues),
+                "issues": issues,
+            }
     if path.exists() and path.is_file():
-        values = env_example_values(path)
+        values, read_issue = env_example_values(path)
+        if read_issue is not None:
+            issues.append(read_issue)
+            return {
+                "name": "env_example",
+                "status": status_from_issues(issues),
+                "issues": issues,
+            }
         keys = set(values)
         for key in REQUIRED_ENV_EXAMPLE_KEYS:
             if key not in keys:
@@ -198,13 +244,43 @@ def check_env_example(repo: Path) -> dict[str, Any]:
     }
 
 
+def env_example_file_issues(path: Path) -> list[dict[str, Any]]:
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        return [
+            {
+                "code": "env_example_not_regular",
+                "path": str(path),
+                "message": f".env.example must be a regular file path: {path}",
+            }
+        ]
+    symlink_parent = first_symlink_parent(path)
+    if symlink_parent is not None:
+        return [
+            {
+                "code": "env_example_parent_not_regular",
+                "path": str(symlink_parent),
+                "message": f".env.example parent must be a regular directory: {symlink_parent}",
+            }
+        ]
+    return []
+
+
 def env_example_keys(path: Path) -> set[str]:
-    return set(env_example_values(path))
+    values, _read_issue = env_example_values(path)
+    return set(values)
 
 
-def env_example_values(path: Path) -> dict[str, str]:
+def env_example_values(path: Path) -> tuple[dict[str, str], dict[str, Any] | None]:
     values: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        return values, {
+            "code": "env_example_unreadable",
+            "path": str(path),
+            "message": f"failed to read .env.example: {exc}",
+        }
+    for raw_line in lines:
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
@@ -214,7 +290,7 @@ def env_example_values(path: Path) -> dict[str, str]:
         key = key.strip()
         if separator and ENV_KEY_PATTERN.fullmatch(key):
             values[key] = _value.strip().strip('"').strip("'")
-    return values
+    return values, None
 
 
 def normalize_env_value(value: str) -> str:
@@ -286,9 +362,44 @@ def dev_ready_timeout_default(path: Path) -> str | None:
 
 
 def dev_ready_timeout_runtime_issue(values: dict[str, str], dev_script_path: Path) -> dict[str, str] | None:
-    expected = dev_ready_timeout_default(dev_script_path)
+    if dev_script_path.is_symlink() or (dev_script_path.exists() and not dev_script_path.is_file()):
+        return {
+            "code": "dev_script_not_regular",
+            "path": str(dev_script_path),
+            "message": f"scripts/dev.sh must be a regular file path: {dev_script_path}",
+        }
+    if not dev_script_path.exists():
+        return {
+            "code": "dev_script_missing",
+            "path": str(dev_script_path),
+            "message": f"scripts/dev.sh is required to validate DEV_READY_TIMEOUT: {dev_script_path}",
+        }
+    symlink_parent = first_symlink_parent(dev_script_path)
+    if symlink_parent is not None:
+        return {
+            "code": "dev_script_parent_not_regular",
+            "path": str(symlink_parent),
+            "message": f"scripts/dev.sh parent must be a regular directory: {symlink_parent}",
+        }
+    try:
+        expected = dev_ready_timeout_default(dev_script_path)
+    except (OSError, UnicodeError) as exc:
+        return {
+            "code": "dev_script_unreadable",
+            "path": str(dev_script_path),
+            "message": f"failed to read scripts/dev.sh: {exc}",
+        }
+    if not expected:
+        return {
+            "code": "dev_script_missing_ready_timeout_default",
+            "path": str(dev_script_path),
+            "message": (
+                "scripts/dev.sh must define "
+                f'DEV_READY_TIMEOUT="${{DEV_READY_TIMEOUT:-...}}": {dev_script_path}'
+            ),
+        }
     actual = values.get("DEV_READY_TIMEOUT")
-    if not expected or not actual or actual == expected:
+    if not actual or actual == expected:
         return None
     return {
         "code": "env_example_runtime_default_drift",
@@ -342,12 +453,53 @@ def clean_env_value(value: str) -> str:
     return cleaned
 
 
-def env_with_file_values(repo: Path, env: dict[str, str] | None = None) -> dict[str, str]:
-    merged = dict(os.environ if env is None else env)
+def env_file_issues(repo: Path) -> list[dict[str, Any]]:
+    env_path = repo / ".env"
+    if env_path.is_symlink() or (env_path.exists() and not env_path.is_file()):
+        return [
+            {
+                "code": "env_file_not_regular",
+                "path": str(env_path),
+                "message": f".env must be a regular file path: {env_path}",
+            }
+        ]
+    symlink_parent = first_symlink_parent(env_path)
+    if symlink_parent is not None:
+        return [
+            {
+                "code": "env_file_parent_not_regular",
+                "path": str(symlink_parent),
+                "message": f".env parent must be a regular directory: {symlink_parent}",
+            }
+        ]
+    return []
+
+
+def env_file_lines(repo: Path) -> tuple[list[str], list[dict[str, Any]]]:
+    issues = env_file_issues(repo)
+    if issues:
+        return [], issues
     env_path = repo / ".env"
     if not env_path.exists() or not env_path.is_file():
+        return [], []
+    try:
+        return env_path.read_text(encoding="utf-8").splitlines(), []
+    except (OSError, UnicodeError) as exc:
+        return [], [
+            {
+                "code": "env_file_unreadable",
+                "path": str(env_path),
+                "message": f"failed to read .env: {exc}",
+            }
+        ]
+
+
+def env_with_file_values(repo: Path, env: dict[str, str] | None = None) -> dict[str, str]:
+    merged = dict(os.environ if env is None else env)
+    lines, issues = env_file_lines(repo)
+    if issues:
         return merged
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+    for raw_line in lines:
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -383,10 +535,37 @@ def storage_path_config(repo: Path, env: dict[str, str] | None = None) -> dict[s
     }
 
 
+def storage_file_path_config(repo: Path, env: dict[str, str] | None = None) -> dict[str, Path]:
+    env = env_with_file_values(repo, env)
+    data_dir = Path(env.get("PAPER_LAB_DATA_DIR") or "data")
+    paths = {
+        "database_path": Path(env.get("DATABASE_PATH") or data_dir / "plasma.db"),
+        "vector_db_path": Path(env.get("VECTOR_DB_PATH") or data_dir / "vector-index.json"),
+    }
+    return {
+        key: path if path.is_absolute() else repo / path
+        for key, path in paths.items()
+    }
+
+
+def first_symlink_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
+
+
 def check_writable_directory(key: str, path: Path) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     try:
-        if path.exists() and not path.is_dir():
+        if (
+            path.is_symlink()
+            or first_symlink_parent(path) is not None
+            or (path.exists() and not path.is_dir())
+        ):
             return [
                 {
                     "code": "storage_path_not_directory",
@@ -411,20 +590,105 @@ def check_writable_directory(key: str, path: Path) -> list[dict[str, Any]]:
     return issues
 
 
+def check_regular_file_path(key: str, path: Path) -> list[dict[str, Any]]:
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        return [
+            {
+                "code": "storage_path_not_file",
+                "key": key,
+                "path": str(path),
+                "message": f"{key} must be a regular file path: {path}",
+            }
+        ]
+    return []
+
+
 def check_local_storage(repo: Path, env: dict[str, str] | None = None) -> dict[str, Any]:
     repo = repo.resolve()
     paths = storage_path_config(repo, env)
-    issues = [
+    file_paths = storage_file_path_config(repo, env)
+    _, issues = env_file_lines(repo)
+    issues.extend(
         issue
         for key, path in paths.items()
         for issue in check_writable_directory(key, path)
-    ]
+    )
+    issues.extend(
+        issue
+        for key, path in file_paths.items()
+        for issue in check_regular_file_path(key, path)
+    )
     return {
         "name": "local_storage",
         "status": status_from_issues(issues),
         "paths": {key: str(path) for key, path in paths.items()},
         "issues": issues,
     }
+
+
+def check_external_config(repo: Path, env: dict[str, str] | None = None) -> dict[str, Any]:
+    env = env_with_file_values(repo, env)
+    embedding_model = normalize_adapter_name(env.get("EMBEDDING_MODEL")) or "local-hash"
+    vector_db_backend = normalize_adapter_name(env.get("VECTOR_DB_BACKEND")) or "local-json"
+    capabilities = {
+        "openalex_mailto": configured_env_value(env.get("OPENALEX_MAILTO")),
+        "unpaywall_email": configured_env_value(env.get("UNPAYWALL_EMAIL")),
+        "grobid_url": configured_text(env.get("GROBID_URL")) or "http://127.0.0.1:8070",
+        "llm_api_key": configured_env_value(env.get("LLM_API_KEY")),
+        "embedding_model": embedding_model,
+        "vector_db_backend": vector_db_backend,
+    }
+    warnings = [
+        {
+            "code": code,
+            "capability": capability,
+            "message": message,
+        }
+        for key, capability, code, message in OPTIONAL_EXTERNAL_CONFIG
+        if not configured_env_value(env.get(key))
+    ]
+    if embedding_model not in SUPPORTED_EMBEDDING_MODELS:
+        warnings.append(
+            {
+                "code": "unsupported_embedding_model",
+                "capability": "rag_indexing",
+                "actual": embedding_model,
+                "supported": sorted(SUPPORTED_EMBEDDING_MODELS),
+                "message": f"EMBEDDING_MODEL={embedding_model} is not supported by the local adapter registry.",
+            }
+        )
+    if vector_db_backend not in SUPPORTED_VECTOR_DB_BACKENDS:
+        warnings.append(
+            {
+                "code": "unsupported_vector_db_backend",
+                "capability": "rag_indexing",
+                "actual": vector_db_backend,
+                "supported": sorted(SUPPORTED_VECTOR_DB_BACKENDS),
+                "message": f"VECTOR_DB_BACKEND={vector_db_backend} is not supported by the current vector store registry.",
+            }
+        )
+    return {
+        "name": "external_config",
+        "status": "pass",
+        "capabilities": capabilities,
+        "warnings": warnings,
+        "issues": [],
+    }
+
+
+def configured_text(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def normalize_adapter_name(value: Any) -> str | None:
+    text = configured_text(value)
+    return text.lower() if text is not None else None
+
+
+def configured_env_value(value: Any) -> bool:
+    return configured_text(value) is not None
 
 
 def run_checks(repo: Path = Path(".")) -> dict[str, Any]:
@@ -435,6 +699,7 @@ def run_checks(repo: Path = Path(".")) -> dict[str, Any]:
         check_env_example(repo),
         check_python_dependencies(),
         check_local_storage(repo),
+        check_external_config(repo),
     ]
     return {
         "ok": all(check["status"] == "pass" for check in checks),
@@ -449,12 +714,19 @@ def summary(payload: dict[str, Any]) -> dict[str, Any]:
         for check in payload["checks"]
         for issue in check.get("issues", [])
     ]
+    warnings = [
+        warning
+        for check in payload["checks"]
+        for warning in check.get("warnings", [])
+    ]
     return {
         "ok": payload["ok"],
         "repo": payload["repo"],
         "check_count": len(payload["checks"]),
         "issue_count": len(issues),
         "issue_codes": [issue.get("code") for issue in issues],
+        "warning_count": len(warnings),
+        "warning_codes": [warning.get("code") for warning in warnings],
     }
 
 

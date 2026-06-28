@@ -13,17 +13,37 @@ fi
 
 bash -n scripts/env.sh
 bash -n scripts/dev.sh
+git diff --check
+git diff --cached --check
 "${PYTHON_CMD[@]}" -m compileall -q app scripts tests streamlit_app.py
-"${PYTHON_CMD[@]}" -m py_compile scripts/doctor.py scripts/export_openapi.py scripts/export_release_artifacts.py scripts/health_check.py scripts/import_fixtures.py scripts/package_release_artifacts.py scripts/prepare_demo_data.py scripts/smoke_check.py scripts/validate_api_contract.py scripts/validate_bug_docs.py scripts/validate_docs_links.py scripts/validate_env_example.py scripts/validate_readme_commands.py scripts/validate_release_artifacts.py scripts/validate_release_hygiene.py scripts/validate_release_package.py scripts/validate_requirements.py scripts/validate_schema.py streamlit_app.py
-"${PYTHON_CMD[@]}" scripts/doctor.py --help >/dev/null
-"${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact
-"${PYTHON_CMD[@]}" scripts/export_openapi.py --help >/dev/null
-"${PYTHON_CMD[@]}" scripts/export_release_artifacts.py --help >/dev/null
-"${PYTHON_CMD[@]}" scripts/health_check.py --help >/dev/null
-"${PYTHON_CMD[@]}" scripts/package_release_artifacts.py --help >/dev/null
-"${PYTHON_CMD[@]}" scripts/prepare_demo_data.py --help >/dev/null
-"${PYTHON_CMD[@]}" scripts/validate_release_artifacts.py --help >/dev/null
-"${PYTHON_CMD[@]}" scripts/validate_release_package.py --help >/dev/null
+RELEASE_SCRIPT_TARGETS=()
+while IFS= read -r script_path; do
+  RELEASE_SCRIPT_TARGETS+=("${script_path}")
+done < <(find scripts -maxdepth 1 -type f -name '*.py' | sort)
+PY_COMPILE_TARGETS=("${RELEASE_SCRIPT_TARGETS[@]}" streamlit_app.py)
+"${PYTHON_CMD[@]}" -m py_compile "${PY_COMPILE_TARGETS[@]}"
+RELEASE_HELP_SCRIPTS=("${RELEASE_SCRIPT_TARGETS[@]}")
+for script in "${RELEASE_HELP_SCRIPTS[@]}"; do
+  "${PYTHON_CMD[@]}" "${script}" --help >/dev/null
+done
+DOCTOR_JSON="$("${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact)"
+printf '%s\n' "${DOCTOR_JSON}"
+DOCTOR_JSON="${DOCTOR_JSON}" "${PYTHON_CMD[@]}" - <<'PY'
+import json
+import os
+import sys
+
+doctor = json.loads(os.environ["DOCTOR_JSON"])
+if (
+    doctor.get("ok") is not True
+    or doctor.get("check_count") != 6
+    or doctor.get("issue_count") != 0
+    or doctor.get("warning_count") != 3
+    or doctor.get("warning_codes") != ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]
+):
+    print(f"release_check failed: doctor preflight summary={doctor!r}", file=sys.stderr)
+    raise SystemExit(1)
+PY
 "${PYTHON_CMD[@]}" scripts/validate_api_contract.py
 "${PYTHON_CMD[@]}" scripts/validate_bug_docs.py
 "${PYTHON_CMD[@]}" scripts/validate_docs_links.py
@@ -49,6 +69,18 @@ if "system" not in tag_names:
     raise SystemExit("release_check failed: OpenAPI missing system tag metadata")
 if "ErrorResponse" not in payload.get("components", {}).get("schemas", {}):
     raise SystemExit("release_check failed: OpenAPI missing ErrorResponse schema")
+config_warning = payload.get("components", {}).get("schemas", {}).get("ConfigWarningResponse", {})
+config_warning_fields = set((config_warning.get("properties") or {})) | set(config_warning.get("required") or [])
+missing_config_warning_fields = [
+    field
+    for field in ["code", "capability", "message", "actual", "supported"]
+    if field not in config_warning_fields
+]
+if missing_config_warning_fields:
+    raise SystemExit(
+        "release_check failed: OpenAPI ConfigWarningResponse missing fields: "
+        + ", ".join(missing_config_warning_fields)
+    )
 PY
 rm -f "${OPENAPI_JSON}"
 DEV_CHECK_JSON="$("${PYTHON_CMD[@]}" - <<'PY'
@@ -163,6 +195,38 @@ import os
 import subprocess
 import sys
 import tempfile
+from datetime import datetime
+
+
+def stable_prepare_demo_summary(summary):
+    return {key: value for key, value in summary.items() if key != "reaction_set_verified_at"}
+
+
+def validate_prepare_demo_summary_reviewer(summary, label):
+    if summary.get("reaction_set_verified_by") != "prepare-demo-data":
+        print(
+            f"release_check failed: prepare_demo_data {label}.reaction_set_verified_by="
+            f"{summary.get('reaction_set_verified_by')!r}, expected 'prepare-demo-data'",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    verified_at = summary.get("reaction_set_verified_at")
+    if not isinstance(verified_at, str) or not verified_at.strip():
+        print(
+            f"release_check failed: prepare_demo_data {label}.reaction_set_verified_at={verified_at!r}, "
+            "expected ISO8601 timestamp",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    try:
+        datetime.fromisoformat(verified_at.strip().replace("Z", "+00:00"))
+    except ValueError:
+        print(
+            f"release_check failed: prepare_demo_data {label}.reaction_set_verified_at={verified_at!r}, "
+            "expected ISO8601 timestamp",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
 with tempfile.TemporaryDirectory(prefix="paper-lab-demo-") as demo_dir:
     env = os.environ.copy()
@@ -234,10 +298,13 @@ if summary.get("ready") is not True:
         file=sys.stderr,
     )
     raise SystemExit(1)
-if summary_payload != summary:
+validate_prepare_demo_summary_reviewer(summary, "payload.summary")
+validate_prepare_demo_summary_reviewer(summary_payload, "--summary-only output")
+validate_prepare_demo_summary_reviewer(summary_output_payload, "--output summary")
+if stable_prepare_demo_summary(summary_payload) != stable_prepare_demo_summary(summary):
     print("release_check failed: prepare_demo_data --summary-only output does not match payload.summary", file=sys.stderr)
     raise SystemExit(1)
-if summary_output_payload != summary:
+if stable_prepare_demo_summary(summary_output_payload) != stable_prepare_demo_summary(summary):
     print("release_check failed: prepare_demo_data --output summary does not match payload.summary", file=sys.stderr)
     raise SystemExit(1)
 if any(key in summary_payload for key in ("document", "exports")):
@@ -344,11 +411,23 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     }:
         print(f"release_check failed: release manifest artifacts={manifest.get('artifacts')!r}", file=sys.stderr)
         raise SystemExit(1)
+    if manifest.get("artifact_count") != 3:
+        print(f"release_check failed: release manifest artifact_count={manifest.get('artifact_count')!r}", file=sys.stderr)
+        raise SystemExit(1)
+    if manifest.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]:
+        print(f"release_check failed: release manifest artifact_names={manifest.get('artifact_names')!r}", file=sys.stderr)
+        raise SystemExit(1)
     if manifest.get("demo_ready") is not True or demo_summary.get("ready") is not True:
         print("release_check failed: release handoff demo summary is not ready", file=sys.stderr)
         raise SystemExit(1)
     if manifest.get("demo_export_formats") != ["json", "txt", "bolsig"]:
         print(f"release_check failed: release manifest demo_export_formats={manifest.get('demo_export_formats')!r}", file=sys.stderr)
+        raise SystemExit(1)
+    if (
+        manifest.get("demo_reaction_set_verified_by") != "prepare-demo-data"
+        or not manifest.get("demo_reaction_set_verified_at")
+    ):
+        print(f"release_check failed: release manifest demo reviewer metadata={manifest!r}", file=sys.stderr)
         raise SystemExit(1)
     if "/api/v1/health" not in openapi.get("paths", {}):
         print("release_check failed: release handoff OpenAPI missing /api/v1/health", file=sys.stderr)
@@ -380,6 +459,21 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     if sorted(checksums) != ["demo-summary.json", "openapi.json", "release-manifest.json"]:
         print(f"release_check failed: release artifact checksums={checksums!r}", file=sys.stderr)
         raise SystemExit(1)
+    expected_checksum_names = {"openapi.json", "demo-summary.json", "release-manifest.json"}
+
+    def valid_sha256(value):
+        return (
+            isinstance(value, str)
+            and len(value) == 64
+            and all(char in "0123456789abcdef" for char in value)
+        )
+
+    def valid_release_checksums(checksums):
+        return (
+            set(checksums) == expected_checksum_names
+            and all(valid_sha256(value) for value in checksums.values())
+        )
+
     package_path = Path(release_dir) / "out" / "paper-lab-agent-release.zip"
     package_result = subprocess.run(
         [
@@ -396,7 +490,31 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         check=True,
     )
     package = json.loads(package_result.stdout)
-    if package.get("ok") is not True or package.get("artifact_count") != 3 or not package_path.exists():
+    if (
+        package.get("ok") is not True
+        or package.get("artifact_count") != 3
+        or package.get("artifact_dir") != str(output_dir.resolve())
+        or package.get("package_path") != str(package_path.resolve())
+        or package.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]
+        or package.get("service") != "paper-lab-agent"
+        or package.get("version") != "0.1.0"
+        or package.get("demo_ready") is not True
+        or package.get("demo_export_formats") != ["json", "txt", "bolsig"]
+        or package.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}
+        or package.get("demo_export_audit_summary_formats") != ["json", "txt", "bolsig"]
+        or package.get("source") != source
+        or package.get("demo_counts", {}).get("documents") != 1
+        or package.get("demo_counts", {}).get("reaction_audits") != 1
+        or package.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
+        or package.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"
+        or package.get("openapi_path_count") != 28
+        or not valid_sha256(package.get("package_sha256"))
+        or set((package.get("checksums") or {})) != {"openapi.json", "demo-summary.json", "release-manifest.json"}
+        or not valid_release_checksums(package.get("checksums") or {})
+        or package.get("demo_reaction_set_verified_by") != "prepare-demo-data"
+        or not package.get("demo_reaction_set_verified_at")
+        or not package_path.exists()
+    ):
         print(f"release_check failed: release artifact package={package!r}", file=sys.stderr)
         raise SystemExit(1)
     validate_package_result = subprocess.run(
@@ -415,11 +533,81 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     if (
         package_validation.get("ok") is not True
         or package_validation.get("artifact_count") != 3
+        or package_validation.get("package_path") != str(package_path.resolve())
         or package_validation.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]
+        or package_validation.get("service") != "paper-lab-agent"
+        or package_validation.get("version") != "0.1.0"
+        or package_validation.get("demo_ready") is not True
+        or package_validation.get("demo_export_formats") != ["json", "txt", "bolsig"]
+        or package_validation.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}
+        or package_validation.get("demo_export_audit_summary_formats") != ["json", "txt", "bolsig"]
+        or package_validation.get("source") != package.get("source")
+        or package_validation.get("demo_counts", {}).get("documents") != 1
+        or package_validation.get("demo_counts", {}).get("reaction_audits") != 1
+        or package_validation.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
+        or package_validation.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"
+        or package_validation.get("openapi_path_count") != 28
+        or not valid_sha256(package_validation.get("package_sha256"))
+        or package_validation.get("package_sha256") != package.get("package_sha256")
+        or set((package_validation.get("checksums") or {})) != {"openapi.json", "demo-summary.json", "release-manifest.json"}
+        or package_validation.get("checksums") != package.get("checksums")
+        or not valid_release_checksums(package_validation.get("checksums") or {})
+        or package_validation.get("demo_reaction_set_verified_by") != "prepare-demo-data"
+        or not package_validation.get("demo_reaction_set_verified_at")
     ):
         print(f"release_check failed: release package validation={package_validation!r}", file=sys.stderr)
         raise SystemExit(1)
-print(json.dumps(package, ensure_ascii=False))
+    handoff_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_release_handoff.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--package",
+            str(package_path),
+            "--compact",
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+    handoff = json.loads(handoff_result.stdout)
+    if (
+        handoff.get("ok") is not True
+        or handoff.get("stage") != "complete"
+        or handoff.get("stages") != {
+            "export": True,
+            "validate_artifacts": True,
+            "package": True,
+            "validate_package": True,
+        }
+        or handoff.get("artifact_dir") != str(output_dir.resolve())
+        or handoff.get("package_path") != str(package_path.resolve())
+        or handoff.get("artifact_count") != 3
+        or handoff.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]
+        or handoff.get("service") != "paper-lab-agent"
+        or handoff.get("version") != "0.1.0"
+        or handoff.get("demo_ready") is not True
+        or handoff.get("demo_export_formats") != ["json", "txt", "bolsig"]
+        or handoff.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}
+        or handoff.get("demo_export_audit_summary_formats") != ["json", "txt", "bolsig"]
+        or handoff.get("demo_counts", {}).get("documents") != 1
+        or handoff.get("demo_counts", {}).get("reaction_audits") != 1
+        or handoff.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
+        or handoff.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"
+        or handoff.get("openapi_path_count") != 28
+        or not valid_sha256(handoff.get("package_sha256"))
+        or handoff.get("package_sha256") != handoff.get("package_sha256", "").lower()
+        or set((handoff.get("checksums") or {})) != {"openapi.json", "demo-summary.json", "release-manifest.json"}
+        or not valid_release_checksums(handoff.get("checksums") or {})
+        or handoff.get("demo_reaction_set_verified_by") != "prepare-demo-data"
+        or not handoff.get("demo_reaction_set_verified_at")
+        or handoff.get("issues") != []
+    ):
+        print(f"release_check failed: single-command release handoff={handoff!r}", file=sys.stderr)
+        raise SystemExit(1)
+print(json.dumps(handoff, ensure_ascii=False))
 PY
 )"
 printf '%s\n' "${RELEASE_ARTIFACTS_JSON}"
@@ -449,6 +637,7 @@ expected = {
     "system_grobid_url": "http://127.0.0.1:8070",
     "system_storage_data_dir_writable": True,
     "system_storage_database_parent_writable": True,
+    "system_storage_vector_db_parent_writable": True,
     "system_storage_vector_db_exists": True,
     "system_storage_vector_db_valid_json": True,
     "document_detail_has_paper": True,
@@ -538,6 +727,8 @@ expected = {
     "verified_export_bolsig_has_confidence": True,
     "verified_export_txt_has_source_label": True,
     "verified_export_bolsig_has_source_label": True,
+    "verified_export_txt_has_audit_summary": True,
+    "verified_export_bolsig_has_audit_summary": True,
 }
 for key, value in expected.items():
     if payload.get(key) != value:
@@ -578,7 +769,7 @@ if not isinstance(release_readiness, dict):
     print("release_check failed: smoke release_readiness is missing", file=sys.stderr)
     raise SystemExit(1)
 expected_readiness = {
-    "ready": False,
+    "ready": True,
     "demo_data_missing": [],
     "failed_workflows": [],
     "config_warning_codes": ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"],

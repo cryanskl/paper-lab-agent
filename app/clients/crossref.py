@@ -1,6 +1,7 @@
 import asyncio
 import html
 import re
+import unicodedata
 from datetime import date
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -8,6 +9,10 @@ from urllib.parse import urlparse
 import httpx
 
 from app.clients.retry_after import retry_after_delay
+
+
+BLOCK_TAG_RE = re.compile(r"</?(?:jats:)?(?:abstract|body|br|fig|list|p|sec|table|tbody|td|th|title|tr)[^>]*>", re.IGNORECASE)
+TAG_RE = re.compile(r"<[^>]+>")
 
 
 class CrossrefClient:
@@ -23,7 +28,7 @@ class CrossrefClient:
         timeout: float = 20.0,
         sleep: Any = asyncio.sleep,
     ):
-        self.mailto = mailto
+        self.mailto = mailto.strip() if isinstance(mailto, str) and mailto.strip() else None
         self.transport = transport
         self.max_retries = max(1, max_retries)
         self.retry_backoff_seconds = retry_backoff_seconds
@@ -32,6 +37,11 @@ class CrossrefClient:
         self.sleep = sleep
 
     async def works_by_issn(self, issn: str, date_from: str, date_to: str, max_pages: int = 3) -> list[dict[str, Any]]:
+        if not isinstance(issn, str):
+            return []
+        issn = unicodedata.normalize("NFKC", issn).strip()
+        if not issn:
+            return []
         headers = {}
         if self.mailto:
             headers["User-Agent"] = f"paper-lab-agent (mailto:{self.mailto})"
@@ -96,17 +106,21 @@ class CrossrefClient:
                 return parsed_delay
         return self.retry_backoff_seconds * (attempt + 1)
 
-    def clean_abstract(self, value: Any) -> str:
+    def clean_text(self, value: Any) -> str:
         if not isinstance(value, str):
             return ""
-        without_tags = re.sub(r"<[^>]+>", " ", value)
+        with_block_spacing = BLOCK_TAG_RE.sub(" ", value)
+        without_tags = TAG_RE.sub("", with_block_spacing)
         decoded = html.unescape(without_tags)
         return re.sub(r"\s+", " ", decoded).strip()
+
+    def clean_abstract(self, value: Any) -> str:
+        return self.clean_text(value)
 
     def normalize_doi(self, value: Any) -> Optional[str]:
         if not isinstance(value, str):
             return None
-        doi = value.strip().lower()
+        doi = unicodedata.normalize("NFKC", value).strip().lower()
         if not doi:
             return None
         return (
@@ -119,11 +133,16 @@ class CrossrefClient:
 
     def first_text(self, value: Any, default: Optional[str] = None) -> Optional[str]:
         if isinstance(value, str) and value.strip():
-            return value.strip()
+            cleaned = self.clean_text(value)
+            return cleaned or None
         if isinstance(value, list):
             for item in value:
                 if isinstance(item, str) and item.strip():
-                    return item.strip()
+                    cleaned = self.clean_text(item)
+                    if cleaned:
+                        return cleaned
+        if isinstance(default, str) and default.strip():
+            return self.clean_text(default) or None
         return default
 
     def normalize_authors(self, value: Any) -> list[dict[str, Optional[str]]]:

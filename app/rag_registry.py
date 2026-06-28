@@ -1,0 +1,2 @@
+SUPPORTED_EMBEDDING_MODELS = {"local-hash"}
+SUPPORTED_VECTOR_DB_BACKENDS = {"local-json"}

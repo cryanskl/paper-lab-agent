@@ -1,4 +1,5 @@
 import asyncio
+import unicodedata
 from datetime import date
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -21,7 +22,7 @@ class OpenAlexClient:
         timeout: float = 20.0,
         sleep: Any = asyncio.sleep,
     ):
-        self.mailto = mailto
+        self.mailto = mailto.strip() if isinstance(mailto, str) and mailto.strip() else None
         self.transport = transport
         self.max_retries = max(1, max_retries)
         self.retry_backoff_seconds = retry_backoff_seconds
@@ -30,6 +31,11 @@ class OpenAlexClient:
         self.sleep = sleep
 
     async def works_by_issn(self, issn: str, date_from: str, date_to: str, max_pages: int = 3) -> list[dict[str, Any]]:
+        if not isinstance(issn, str):
+            return []
+        issn = unicodedata.normalize("NFKC", issn).strip()
+        if not issn:
+            return []
         filters = [
             f"locations.source.issn:{issn}",
             f"from_publication_date:{date_from}",
@@ -115,7 +121,7 @@ class OpenAlexClient:
     def normalize_doi(self, value: Any) -> Optional[str]:
         if not isinstance(value, str):
             return None
-        doi = value.strip().lower()
+        doi = unicodedata.normalize("NFKC", value).strip().lower()
         if not doi:
             return None
         return (
@@ -184,6 +190,8 @@ class OpenAlexClient:
             try:
                 date.fromisoformat(text)
             except ValueError:
+                if fallback_year is not None:
+                    return f"{fallback_year:04d}-01-01"
                 return None
             return text
         if value is None and fallback_year is not None:

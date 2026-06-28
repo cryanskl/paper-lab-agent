@@ -182,6 +182,7 @@ def get_document_or_404(document_id: int) -> dict:
     responses={
         409: {"description": "Duplicate document"},
         415: {"description": "Unsupported document type"},
+        500: {"description": "Document upload failed"},
     },
 )
 async def upload_document(file: UploadFile = File(...), paper_id: Optional[int] = Form(None)) -> dict:
@@ -191,7 +192,10 @@ async def upload_document(file: UploadFile = File(...), paper_id: Optional[int] 
             paper = conn.execute("SELECT id FROM papers WHERE id=?", (paper_id,)).fetchone()
         if paper is None:
             raise AppError(404, "paper_not_found", "Paper not found")
-    doc, created = await save_upload(file, paper_id)
+    try:
+        doc, created = await save_upload(file, paper_id)
+    except OSError as exc:
+        raise AppError(500, "document_upload_failed", str(exc))
     document = get_document_or_404(doc["id"])
     if not created:
         raise AppError(
@@ -221,10 +225,13 @@ def get_document(document_id: int) -> dict:
     return get_document_or_404(document_id)
 
 
-@router.post("/{document_id}/parse", status_code=202, response_model=AsyncJobResponse)
+@router.post("/{document_id}/parse", status_code=202, response_model=AsyncJobResponse, response_model_exclude_none=True)
 def parse(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
-    mark_parse_queued(document_id)
+    try:
+        mark_parse_queued(document_id)
+    except Exception as exc:
+        raise AppError(500, "parse_queue_failed", str(exc))
     background_tasks.add_task(parse_document, document_id)
     return {"job_id": document_id, "document_id": document_id, "parse_status": "parsing", "status": "pending"}
 
@@ -280,7 +287,7 @@ def list_chunks(
     }
 
 
-@router.post("/{document_id}/translate", status_code=202, response_model=AsyncJobResponse)
+@router.post("/{document_id}/translate", status_code=202, response_model=AsyncJobResponse, response_model_exclude_none=True)
 def translate(document_id: int, body: TranslateIn, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
     translation = create_translation_job(document_id, body.target_lang)
@@ -306,15 +313,23 @@ def get_translation(document_id: int) -> dict:
     return dict_from_row(row)
 
 
-@router.post("/{document_id}/index", status_code=202, response_model=AsyncJobResponse)
+@router.post("/{document_id}/index", status_code=202, response_model=AsyncJobResponse, response_model_exclude_none=True)
 def index(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
-    mark_index_queued(document_id)
+    try:
+        mark_index_queued(document_id)
+    except Exception as exc:
+        raise AppError(500, "index_queue_failed", str(exc))
     background_tasks.add_task(index_document, document_id)
     return {"job_id": document_id, "document_id": document_id, "index_status": "indexing", "status": "pending"}
 
 
-@router.post("/{document_id}/extract-chemistry", status_code=202, response_model=AsyncJobResponse)
+@router.post(
+    "/{document_id}/extract-chemistry",
+    status_code=202,
+    response_model=AsyncJobResponse,
+    response_model_exclude_none=True,
+)
 def extract_chemistry(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
     mark_chemistry_queued(document_id)

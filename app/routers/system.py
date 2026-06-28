@@ -1,4 +1,3 @@
-import json
 import os
 from pathlib import Path
 from typing import Optional
@@ -8,10 +7,18 @@ from pydantic import BaseModel
 
 from app import __version__
 from app.clients.grobid import GrobidClient
-from app.config import get_settings
+from app.config import first_symlink_parent, get_settings, is_safe_storage_directory
 from app.db import fetch_one, get_conn
+from app.release_readiness import RELEASE_BLOCKING_CONFIG_WARNING_CODES
 from app.scheduler import scheduled_crawl_jobs
-from app.services.rag import SUPPORTED_EMBEDDING_MODELS, SUPPORTED_VECTOR_DB_BACKENDS
+from app.services.rag import (
+    SUPPORTED_EMBEDDING_MODELS,
+    SUPPORTED_VECTOR_DB_BACKENDS,
+    assert_safe_vector_store_path,
+    normalize_embedding_model,
+    normalize_vector_db_backend,
+    parse_vector_store_json,
+)
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -55,6 +62,8 @@ class ConfigWarningResponse(BaseModel):
     code: str
     capability: str
     message: str
+    actual: Optional[str] = None
+    supported: Optional[list[str]] = None
 
 
 class StoragePathsResponse(BaseModel):
@@ -181,34 +190,51 @@ def demo_data_status(counts: dict[str, int]) -> dict:
     }
 
 
-def storage_path_health(path: Path) -> dict:
+def storage_path_health(path: Path, *, expected_type: str = "directory") -> dict:
     exists = path.exists()
+    if expected_type == "file":
+        safe_path = first_symlink_parent(path) is None and not path.is_symlink()
+        expected_shape = path.is_file()
+    else:
+        safe_path = is_safe_storage_directory(path)
+        expected_shape = path.is_dir()
     return {
         "path": str(path),
         "exists": exists,
-        "writable": bool(exists and os.access(path, os.W_OK)),
+        "writable": bool(exists and expected_shape and safe_path and os.access(path, os.W_OK)),
     }
 
 
 def vector_store_health(path: Path) -> dict:
     exists = path.exists()
+    safe_path = True
+    path_error = None
+    try:
+        assert_safe_vector_store_path(path)
+    except Exception as exc:
+        safe_path = False
+        path_error = str(exc)
     readable = bool(exists and os.access(path, os.R_OK))
     health = {
         "path": str(path),
         "exists": exists,
         "readable": readable,
-        "writable": bool(exists and os.access(path, os.W_OK)),
+        "writable": bool(exists and safe_path and os.access(path, os.W_OK)),
         "valid_json": None,
         "error": None,
     }
     if not exists:
+        return health
+    if not safe_path:
+        health["valid_json"] = False
+        health["error"] = path_error
         return health
     if not readable:
         health["valid_json"] = False
         health["error"] = "vector store is not readable"
         return health
     try:
-        json.loads(path.read_text(encoding="utf-8"))
+        parse_vector_store_json(path.read_text(encoding="utf-8"))
         health["valid_json"] = True
     except Exception as exc:
         health["valid_json"] = False
@@ -223,7 +249,7 @@ def storage_health(settings) -> dict:
         "tei_dir": storage_path_health(settings.tei_dir),
         "translation_dir": storage_path_health(settings.translation_dir),
         "export_dir": storage_path_health(settings.export_dir),
-        "database": storage_path_health(settings.database_path),
+        "database": storage_path_health(settings.database_path, expected_type="file"),
         "database_parent": storage_path_health(settings.database_path.parent),
         "vector_db_parent": storage_path_health(settings.vector_db_path.parent),
         "vector_db": vector_store_health(settings.vector_db_path),
@@ -256,19 +282,25 @@ def config_warnings(settings) -> list[dict]:
                 "message": "LLM_API_KEY is not configured; translation uses the local deterministic adapter.",
             }
         )
-    if (settings.embedding_model or "").strip().lower() not in SUPPORTED_EMBEDDING_MODELS:
+    embedding_model = normalize_embedding_model(settings.embedding_model)
+    vector_db_backend = normalize_vector_db_backend(settings.vector_db_backend)
+    if embedding_model not in SUPPORTED_EMBEDDING_MODELS:
         warnings.append(
             {
                 "code": "unsupported_embedding_model",
                 "capability": "rag_indexing",
+                "actual": embedding_model,
+                "supported": sorted(SUPPORTED_EMBEDDING_MODELS),
                 "message": f"EMBEDDING_MODEL={settings.embedding_model} is not supported by the local adapter registry.",
             }
         )
-    if (settings.vector_db_backend or "").strip().lower() not in SUPPORTED_VECTOR_DB_BACKENDS:
+    if vector_db_backend not in SUPPORTED_VECTOR_DB_BACKENDS:
         warnings.append(
             {
                 "code": "unsupported_vector_db_backend",
                 "capability": "rag_indexing",
+                "actual": vector_db_backend,
+                "supported": sorted(SUPPORTED_VECTOR_DB_BACKENDS),
                 "message": f"VECTOR_DB_BACKEND={settings.vector_db_backend} is not supported by the current vector store registry.",
             }
         )
@@ -329,9 +361,12 @@ def release_readiness_status(
     demo_data_missing = [str(item) for item in demo_data.get("missing", []) if str(item).strip()]
     failed_workflows = failed_workflow_errors(status_counts)
     config_warning_codes = warning_codes(warnings)
+    blocking_config_warnings = [
+        code for code in config_warning_codes if code in RELEASE_BLOCKING_CONFIG_WARNING_CODES
+    ]
     storage_errors = storage_readiness_errors(health)
     return {
-        "ready": not (demo_data_missing or failed_workflows or config_warning_codes or storage_errors),
+        "ready": not (demo_data_missing or failed_workflows or storage_errors or blocking_config_warnings),
         "demo_data_missing": demo_data_missing,
         "failed_workflows": failed_workflows,
         "config_warning_codes": config_warning_codes,
@@ -396,8 +431,8 @@ async def status(check_external: bool = False) -> dict:
             "llm_api_key": bool(settings.llm_api_key),
             "translation_adapter": "openai-compatible" if settings.llm_api_key else "local-echo",
             "llm_model": settings.llm_model,
-            "embedding_model": settings.embedding_model,
-            "vector_db_backend": settings.vector_db_backend,
+            "embedding_model": normalize_embedding_model(settings.embedding_model),
+            "vector_db_backend": normalize_vector_db_backend(settings.vector_db_backend),
         },
         "status_counts": status_counts,
         "counts": counts,

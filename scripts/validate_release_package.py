@@ -5,7 +5,7 @@ import argparse
 import sys
 import tempfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 
@@ -14,15 +14,91 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.package_release_artifacts import artifact_filenames, sha256_file
-from scripts.validate_release_artifacts import format_report, validate_release_artifacts
+from scripts.validate_release_artifacts import first_symlink_parent, format_report, validate_release_artifacts
+
+
+def is_unsafe_archive_name(name: str) -> bool:
+    posix_path = PurePosixPath(name)
+    windows_path = PureWindowsPath(name)
+    return (
+        posix_path.is_absolute()
+        or windows_path.is_absolute()
+        or bool(windows_path.drive)
+        or bool(windows_path.root)
+        or ".." in posix_path.parts
+        or ".." in windows_path.parts
+    )
 
 
 def validate_release_package(package_path: Path, *, require_clean_source: bool = False) -> dict[str, Any]:
+    requested_package_path = package_path
+    if requested_package_path.is_symlink():
+        package_path = requested_package_path.absolute()
+        return {
+            "ok": False,
+            "package_path": str(package_path),
+            "package_sha256": None,
+            "artifact_count": 0,
+            "artifact_names": [],
+            "source": {},
+            "service": None,
+            "version": None,
+            "openapi_path_count": 0,
+            "checksums": {},
+            "demo_ready": None,
+            "demo_counts": {},
+            "demo_workflow_statuses": {},
+            "demo_export_formats": [],
+            "demo_export_audit_entry_counts": {},
+            "demo_export_audit_summary_formats": [],
+            "demo_reaction_set_verified_by": None,
+            "demo_reaction_set_verified_at": None,
+            "issues": [f"release package is not a regular file: {package_path}"],
+        }
+    symlink_parent = first_symlink_parent(requested_package_path)
+    if symlink_parent is not None:
+        package_path = requested_package_path.absolute()
+        return {
+            "ok": False,
+            "package_path": str(package_path),
+            "package_sha256": None,
+            "artifact_count": 0,
+            "artifact_names": [],
+            "source": {},
+            "service": None,
+            "version": None,
+            "openapi_path_count": 0,
+            "checksums": {},
+            "demo_ready": None,
+            "demo_counts": {},
+            "demo_workflow_statuses": {},
+            "demo_export_formats": [],
+            "demo_export_audit_entry_counts": {},
+            "demo_export_audit_summary_formats": [],
+            "demo_reaction_set_verified_by": None,
+            "demo_reaction_set_verified_at": None,
+            "issues": [
+                "release package parent is not a regular directory: "
+                f"{symlink_parent}"
+            ],
+        }
     package_path = package_path.resolve()
     issues: list[str] = []
     artifact_names: list[str] = []
     source: dict[str, Any] = {}
-    package_sha256 = sha256_file(package_path) if package_path.exists() else None
+    service = None
+    version = None
+    openapi_path_count = 0
+    checksums: dict[str, Any] = {}
+    demo_ready = None
+    demo_counts: dict[str, Any] = {}
+    demo_workflow_statuses: dict[str, Any] = {}
+    demo_export_formats: list[str] = []
+    demo_export_audit_entry_counts: dict[str, Any] = {}
+    demo_export_audit_summary_formats: list[str] = []
+    demo_reaction_set_verified_by = None
+    demo_reaction_set_verified_at = None
+    package_sha256 = None
 
     if not package_path.exists():
         issues.append(f"release package missing: {package_path}")
@@ -33,8 +109,46 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             "artifact_count": 0,
             "artifact_names": artifact_names,
             "source": source,
+            "service": service,
+            "version": version,
+            "openapi_path_count": openapi_path_count,
+            "checksums": checksums,
+            "demo_ready": demo_ready,
+            "demo_counts": demo_counts,
+            "demo_workflow_statuses": demo_workflow_statuses,
+            "demo_export_formats": demo_export_formats,
+            "demo_export_audit_entry_counts": demo_export_audit_entry_counts,
+            "demo_export_audit_summary_formats": demo_export_audit_summary_formats,
+            "demo_reaction_set_verified_by": demo_reaction_set_verified_by,
+            "demo_reaction_set_verified_at": demo_reaction_set_verified_at,
             "issues": issues,
         }
+
+    if not package_path.is_file():
+        issues.append(f"release package is not a file: {package_path}")
+        return {
+            "ok": False,
+            "package_path": str(package_path),
+            "package_sha256": package_sha256,
+            "artifact_count": 0,
+            "artifact_names": artifact_names,
+            "source": source,
+            "service": service,
+            "version": version,
+            "openapi_path_count": openapi_path_count,
+            "checksums": checksums,
+            "demo_ready": demo_ready,
+            "demo_counts": demo_counts,
+            "demo_workflow_statuses": demo_workflow_statuses,
+            "demo_export_formats": demo_export_formats,
+            "demo_export_audit_entry_counts": demo_export_audit_entry_counts,
+            "demo_export_audit_summary_formats": demo_export_audit_summary_formats,
+            "demo_reaction_set_verified_by": demo_reaction_set_verified_by,
+            "demo_reaction_set_verified_at": demo_reaction_set_verified_at,
+            "issues": issues,
+        }
+
+    package_sha256 = sha256_file(package_path)
 
     expected_names = artifact_filenames()
     try:
@@ -47,7 +161,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             unsafe_names = [
                 name
                 for name in archive.namelist()
-                if Path(name).is_absolute() or ".." in Path(name).parts
+                if is_unsafe_archive_name(name)
             ]
             if unsafe_names:
                 issues.append(f"release package contains unsafe artifact names: {unsafe_names!r}")
@@ -56,13 +170,27 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
                 with tempfile.TemporaryDirectory(prefix="paper-lab-release-package-") as extract_dir:
                     archive.extractall(extract_dir)
                     validation = validate_release_artifacts(
-                        Path(extract_dir),
+                        Path(extract_dir).resolve(),
                         require_clean_source=require_clean_source,
                     )
                     source = validation.get("source") or {}
+                    service = validation.get("service")
+                    version = validation.get("version")
+                    openapi_path_count = int(validation.get("openapi_path_count") or 0)
+                    checksums = validation.get("checksums") or {}
+                    demo_ready = validation.get("demo_ready")
+                    demo_counts = validation.get("demo_counts") or {}
+                    demo_workflow_statuses = validation.get("demo_workflow_statuses") or {}
+                    demo_export_formats = validation.get("demo_export_formats") or []
+                    demo_export_audit_entry_counts = validation.get("demo_export_audit_entry_counts") or {}
+                    demo_export_audit_summary_formats = validation.get("demo_export_audit_summary_formats") or []
+                    demo_reaction_set_verified_by = validation.get("demo_reaction_set_verified_by")
+                    demo_reaction_set_verified_at = validation.get("demo_reaction_set_verified_at")
                     issues.extend(validation.get("issues") or [])
     except zipfile.BadZipFile as exc:
         issues.append(f"release package invalid zip: {exc}")
+    except OSError as exc:
+        issues.append(f"release package unreadable: {exc}")
 
     return {
         "ok": not issues,
@@ -71,6 +199,18 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
         "artifact_count": len(artifact_names),
         "artifact_names": artifact_names,
         "source": source,
+        "service": service,
+        "version": version,
+        "openapi_path_count": openapi_path_count,
+        "checksums": checksums,
+        "demo_ready": demo_ready,
+        "demo_counts": demo_counts,
+        "demo_workflow_statuses": demo_workflow_statuses,
+        "demo_export_formats": demo_export_formats,
+        "demo_export_audit_entry_counts": demo_export_audit_entry_counts,
+        "demo_export_audit_summary_formats": demo_export_audit_summary_formats,
+        "demo_reaction_set_verified_by": demo_reaction_set_verified_by,
+        "demo_reaction_set_verified_at": demo_reaction_set_verified_at,
         "issues": issues,
     }
 

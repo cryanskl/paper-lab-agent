@@ -2,8 +2,23 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def first_symlink_parent(path: Path) -> Optional[Path]:
+    for parent in path.parents:
+        if not parent.is_symlink():
+            continue
+        if parent.is_absolute() and parent.parent == Path(parent.anchor):
+            continue
+        return parent
+    return None
+
+
+def is_safe_storage_directory(path: Path) -> bool:
+    symlink_parent = first_symlink_parent(path)
+    return symlink_parent is None and not path.is_symlink()
 
 
 class Settings(BaseSettings):
@@ -37,6 +52,14 @@ class Settings(BaseSettings):
     unpaywall_api_timeout_seconds: float = Field(default=20.0, alias="UNPAYWALL_API_TIMEOUT_SECONDS")
 
     api_prefix: str = "/api/v1"
+
+    @field_validator("openalex_mailto", "unpaywall_email", "llm_api_key", mode="before")
+    @classmethod
+    def optional_secret_must_not_be_blank(cls, value):
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
+        return value
 
     @model_validator(mode="after")
     def derive_storage_paths_from_data_dir(self) -> "Settings":
@@ -72,6 +95,10 @@ class Settings(BaseSettings):
             self.export_dir,
             self.vector_db_path.parent,
         ]:
+            if not is_safe_storage_directory(path):
+                continue
+            if path.exists() and not path.is_dir():
+                continue
             path.mkdir(parents=True, exist_ok=True)
 
 
