@@ -456,7 +456,12 @@ def missing_python_script_options(repo: Path, readme_path: Path) -> list[str]:
 def command_doc_paths(repo: Path) -> list[tuple[Path, str]]:
     docs = [(repo / "README.md", "README.md")]
     release_checklist = repo / "docs" / "release-checklist.md"
-    if release_checklist.exists() or first_non_directory_parent(release_checklist) is not None:
+    symlink_parent = first_symlink_parent(release_checklist)
+    if (
+        release_checklist.exists()
+        or (symlink_parent is not None and symlink_parent != repo)
+        or first_non_directory_parent(release_checklist) is not None
+    ):
         docs.append((release_checklist, "docs/release-checklist.md"))
     return docs
 

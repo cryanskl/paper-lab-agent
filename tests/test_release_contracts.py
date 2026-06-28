@@ -9828,6 +9828,18 @@ def test_readme_commands_validator_rejects_file_release_checklist_parent(tmp_pat
     assert issues == ["docs/release-checklist.md: command doc parent is not a regular directory"]
 
 
+def test_readme_commands_validator_rejects_symlinked_missing_release_checklist_parent(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    outside_docs = tmp_path / "outside-docs"
+    outside_docs.mkdir()
+    (tmp_path / "README.md").write_text("# Test\n", encoding="utf-8")
+    (tmp_path / "docs").symlink_to(outside_docs, target_is_directory=True)
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == ["docs/release-checklist.md: command doc parent is not a regular directory"]
+
+
 def test_readme_commands_validator_reports_unknown_python_script_option(tmp_path):
     validate_readme_commands = load_validate_readme_commands()
     scripts_dir = tmp_path / "scripts"
