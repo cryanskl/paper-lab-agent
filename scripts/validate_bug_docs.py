@@ -74,10 +74,12 @@ def first_symlink_parent(path: Path) -> Path | None:
 def bug_doc_issues(repo: Path) -> list[str]:
     repo = repo.resolve()
     bug_dir = repo / "docs" / "bug"
-    if not bug_dir.exists():
-        return ["docs/bug: missing"]
     if first_symlink_parent(bug_dir) is not None:
         return ["docs/bug: bug directory parent is not a regular directory"]
+    if bug_dir.parent.exists() and not bug_dir.parent.is_dir():
+        return ["docs/bug: bug directory parent is not a regular directory"]
+    if not bug_dir.exists():
+        return ["docs/bug: missing"]
     if bug_dir.is_symlink() or not bug_dir.is_dir():
         return ["docs/bug: bug directory is not a regular directory"]
 

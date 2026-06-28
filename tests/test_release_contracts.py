@@ -1255,6 +1255,26 @@ def test_bug_doc_validator_rejects_symlinked_bug_parent(tmp_path):
     assert issues == ["docs/bug: bug directory parent is not a regular directory"]
 
 
+def test_bug_doc_validator_rejects_file_bug_parent(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_bug_docs.py"
+    spec = importlib.util.spec_from_file_location("validate_bug_docs_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_bug_docs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_bug_docs)
+
+    docs_path = tmp_path / "docs"
+    docs_path.write_text("not a directory", encoding="utf-8")
+
+    issues = validate_bug_docs.bug_doc_issues(tmp_path)
+
+    assert issues == ["docs/bug: bug directory parent is not a regular directory"]
+    assert docs_path.read_text(encoding="utf-8") == "not a directory"
+
+
 def test_bug_doc_validator_rejects_symlinked_readme(tmp_path):
     import importlib.util
 
