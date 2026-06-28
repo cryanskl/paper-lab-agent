@@ -2215,6 +2215,10 @@ def test_doctor_script_reports_unsupported_local_adapter_config_warnings(tmp_pat
         "unsupported_embedding_model",
         "unsupported_vector_db_backend",
     ]
+    assert check["warnings"][0]["actual"] == "experimental-vectors"
+    assert check["warnings"][0]["supported"] == ["local-hash"]
+    assert check["warnings"][1]["actual"] == "faiss"
+    assert check["warnings"][1]["supported"] == ["local-json"]
 
 
 def test_doctor_adapter_registry_matches_rag_service():

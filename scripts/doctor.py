@@ -652,6 +652,8 @@ def check_external_config(repo: Path, env: dict[str, str] | None = None) -> dict
             {
                 "code": "unsupported_embedding_model",
                 "capability": "rag_indexing",
+                "actual": embedding_model,
+                "supported": sorted(SUPPORTED_EMBEDDING_MODELS),
                 "message": f"EMBEDDING_MODEL={embedding_model} is not supported by the local adapter registry.",
             }
         )
@@ -660,6 +662,8 @@ def check_external_config(repo: Path, env: dict[str, str] | None = None) -> dict
             {
                 "code": "unsupported_vector_db_backend",
                 "capability": "rag_indexing",
+                "actual": vector_db_backend,
+                "supported": sorted(SUPPORTED_VECTOR_DB_BACKENDS),
                 "message": f"VECTOR_DB_BACKEND={vector_db_backend} is not supported by the current vector store registry.",
             }
         )
