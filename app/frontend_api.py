@@ -273,6 +273,32 @@ def external_capabilities_display_state(external_capabilities: Any) -> dict[str,
     }
 
 
+WORKFLOW_STATUS_COUNT_KEYS = [
+    "crawl_jobs",
+    "document_parse",
+    "document_index",
+    "document_chemistry",
+    "translations",
+    "reaction_sets",
+]
+
+
+def status_count_rows(status_counts: Any) -> list[dict[str, Any]]:
+    if not isinstance(status_counts, dict):
+        return [{"workflow": "status_counts", "status": "invalid", "count": 1}]
+    rows: list[dict[str, Any]] = []
+    for workflow in WORKFLOW_STATUS_COUNT_KEYS:
+        workflow_counts = status_counts.get(workflow) or {}
+        if not isinstance(workflow_counts, dict):
+            rows.append({"workflow": workflow, "status": "invalid", "count": 1})
+            continue
+        rows.extend(
+            {"workflow": workflow, "status": state, "count": count}
+            for state, count in workflow_counts.items()
+        )
+    return rows
+
+
 def crawl_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     options = [{"label": "全部 active 期刊", "journal_id": None}]
     for journal in journals:

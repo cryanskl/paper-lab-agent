@@ -18066,21 +18066,23 @@ def test_streamlit_sidebar_surfaces_storage_health():
 def test_streamlit_sidebar_surfaces_workflow_status_counts():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    frontend = (repo / "app" / "frontend_api.py").read_text(encoding="utf-8")
     sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
 
     for required in [
         "状态分布",
         "status_counts",
-        "crawl_jobs",
-        "document_parse",
-        "document_index",
-        "document_chemistry",
-        "translations",
-        "reaction_sets",
         "status_count_rows",
-        "st.dataframe(status_count_rows",
+        "workflow_status_count_rows = status_count_rows(status_counts)",
+        "st.dataframe(workflow_status_count_rows",
     ]:
         assert required in sidebar_section
+    for workflow in ["crawl_jobs", "document_parse", "document_index", "document_chemistry", "translations", "reaction_sets"]:
+        assert workflow in frontend
+    status_counts_section = sidebar_section[
+        sidebar_section.index("status_counts = status.get") : sidebar_section.index("config_warnings = status.get")
+    ]
+    assert "(status_counts.get(workflow) or {}).items()" not in status_counts_section
 
 
 def test_streamlit_sidebar_surfaces_demo_data_readiness():

@@ -379,6 +379,18 @@ def test_external_capabilities_display_state_blocks_malformed_objects():
     }
 
 
+def test_status_count_rows_blocks_malformed_status_counts_objects():
+    from app import frontend_api
+
+    rows = frontend_api.status_count_rows(["counts"])
+
+    assert rows == [{"workflow": "status_counts", "status": "invalid", "count": 1}]
+
+    nested_rows = frontend_api.status_count_rows({"document_parse": ["bad"]})
+
+    assert nested_rows == [{"workflow": "document_parse", "status": "invalid", "count": 1}]
+
+
 def test_crawl_job_option_label_summarizes_job_status():
     from app import frontend_api
 

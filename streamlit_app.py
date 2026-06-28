@@ -47,6 +47,7 @@ from app.frontend_api import (
     request_json,
     request_json_status,
     storage_health_caption_rows,
+    status_count_rows,
     translation_download,
     translation_status_rows,
 )
@@ -188,14 +189,10 @@ with st.sidebar:
     status_counts = status.get("status_counts", {})
     if status_counts:
         st.subheader("状态分布")
-        status_count_rows = [
-            {"workflow": workflow, "status": state, "count": count}
-            for workflow in ["crawl_jobs", "document_parse", "document_index", "document_chemistry", "translations", "reaction_sets"]
-            for state, count in (status_counts.get(workflow) or {}).items()
-        ]
-        if status_count_rows:
-            st.dataframe(status_count_rows, use_container_width=True)
-            failed_workflow_rows = [row for row in status_count_rows if row["status"] == "failed" and row["count"]]
+        workflow_status_count_rows = status_count_rows(status_counts)
+        if workflow_status_count_rows:
+            st.dataframe(workflow_status_count_rows, use_container_width=True)
+            failed_workflow_rows = [row for row in workflow_status_count_rows if row["status"] == "failed" and row["count"]]
             if failed_workflow_rows:
                 failed_summary = ", ".join(
                     f"{row['workflow']}={row['count']}" for row in failed_workflow_rows
