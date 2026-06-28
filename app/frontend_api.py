@@ -533,11 +533,12 @@ def document_status_filter_options() -> list[str]:
 
 
 def filter_documents_by_status(documents: list[dict[str, Any]], filter_value: str) -> list[dict[str, Any]]:
+    valid_documents = [document for document in documents if isinstance(document, dict)]
     condition = DOCUMENT_STATUS_FILTERS.get(filter_value)
     if condition is None:
-        return list(documents)
+        return valid_documents
     field, expected = condition
-    return [document for document in documents if document.get(field) == expected]
+    return [document for document in valid_documents if document.get(field) == expected]
 
 
 def document_filter_summary(total_count: int, filtered_count: int, filter_value: str) -> str:
@@ -615,7 +616,9 @@ def crawl_job_diagnostic_rows(job: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"field": field, "value": value} for field, value in fields]
 
 
-def document_option_label(document: dict[str, Any]) -> str:
+def document_option_label(document: Any) -> str:
+    if not isinstance(document, dict):
+        return "#- · document · parse=unknown · index=unknown · chemistry=unknown"
     file_path = str(document.get("file_path") or "")
     file_name = document.get("original_name") or file_path.rsplit("/", 1)[-1] or "document"
     paper = document.get("paper") if isinstance(document.get("paper"), dict) else {}

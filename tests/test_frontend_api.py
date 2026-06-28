@@ -1869,6 +1869,19 @@ def test_filter_documents_by_status_matches_selected_workflow_state():
     assert [document["id"] for document in frontend_api.filter_documents_by_status(documents, "抽取被拒绝")] == [5]
 
 
+def test_filter_documents_by_status_skips_malformed_documents():
+    from app import frontend_api
+
+    documents = [
+        "bad-document",
+        {"id": 1, "parse_status": "uploaded", "index_status": "not_indexed", "chemistry_status": "not_extracted"},
+        {"id": 2, "parse_status": "failed", "index_status": "failed", "chemistry_status": "failed"},
+    ]
+
+    assert [document["id"] for document in frontend_api.filter_documents_by_status(documents, "全部")] == [1, 2]
+    assert [document["id"] for document in frontend_api.filter_documents_by_status(documents, "解析失败")] == [2]
+
+
 def test_document_filter_summary_reports_current_page_match_count():
     from app import frontend_api
 
@@ -1924,6 +1937,12 @@ def test_document_option_label_falls_back_to_file_name_and_unknown_states():
     label = frontend_api.document_option_label({"id": 10, "file_path": "/tmp/uploads/no-name.pdf"})
 
     assert label == "#10 · no-name.pdf · parse=unknown · index=unknown · chemistry=unknown"
+
+
+def test_document_option_label_handles_malformed_document():
+    from app import frontend_api
+
+    assert frontend_api.document_option_label("bad-document") == "#- · document · parse=unknown · index=unknown · chemistry=unknown"
 
 
 def test_document_status_rows_summarize_document_workflow_and_errors():
