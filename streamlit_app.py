@@ -12,6 +12,7 @@ from app.frontend_api import (
     crawl_job_rows,
     crawl_journal_option_label,
     crawl_journal_options,
+    dataframe_display_rows,
     document_asset_downloads,
     document_chunk_rows,
     document_chunk_option_label,
@@ -22,6 +23,7 @@ from app.frontend_api import (
     format_error_payload,
     journal_option_label,
     paper_category_option_label,
+    paper_upload_option_label,
     rag_source_option_label,
     rag_source_rows,
     reaction_audit_rows,
@@ -582,10 +584,22 @@ with config_tab:
 
 with documents_tab:
     uploaded = st.file_uploader("PDF", type=["pdf"])
-    paper_id = st.number_input("paper_id", min_value=0, value=0)
+    try:
+        paper_upload_papers = api_get("/papers", page=1, page_size=100)
+    except FrontendApiError as exc:
+        st.warning(format_error_payload(exc.payload, exc.status_code))
+        st.json(exc.payload)
+        paper_upload_papers = {"items": []}
+    paper_upload_options = [None] + paper_upload_papers.get("items", [])
+    selected_upload_paper = st.selectbox(
+        "关联论文",
+        paper_upload_options,
+        format_func=paper_upload_option_label,
+        key="document-upload-paper",
+    )
     if st.button("上传", disabled=uploaded is None):
         files = {"file": (uploaded.name, uploaded.getvalue(), uploaded.type or "application/pdf")}
-        data = {"paper_id": str(paper_id)} if paper_id else {}
+        data = {"paper_id": str(selected_upload_paper["id"])} if selected_upload_paper else {}
         status, payload = api_post("/documents", files=files, data=data)
         if status == 201:
             st.success(f"document #{payload['id']}")
@@ -732,7 +746,7 @@ with documents_tab:
             st.stop()
         index_status = chunks.get("index_status") or ("indexed" if chunks["indexed"] else "not_indexed")
         st.caption(f"index_status: {index_status} · chunks: {chunks['total']}")
-        st.dataframe(document_status_rows(document_detail, chunks), use_container_width=True)
+        st.dataframe(dataframe_display_rows(document_status_rows(document_detail, chunks)), use_container_width=True)
         if chunks.get("index_error"):
             st.warning(f"index_error: {chunks['index_error']}")
         section_tab, translation_tab, chunks_tab = st.tabs(["章节", "翻译预览", "索引"])

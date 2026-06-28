@@ -16471,7 +16471,7 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
         "chemistry_status",
         "chemistry_error",
         "document_option_label",
-        "document_status_rows(document_detail, chunks)",
+        "dataframe_display_rows(document_status_rows(document_detail, chunks))",
         "section_preview",
         "format_func=document_section_option_label",
         "format_func=document_chunk_option_label",
@@ -16902,6 +16902,22 @@ def test_streamlit_document_upload_shows_duplicate_result():
         "duplicate_document",
     ]:
         assert required in documents_section
+
+
+def test_streamlit_document_upload_can_select_linked_paper():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    for required in [
+        'paper_upload_papers = api_get("/papers", page=1, page_size=100)',
+        'paper_upload_options = [None] + paper_upload_papers.get("items", [])',
+        'selected_upload_paper = st.selectbox(',
+        "format_func=paper_upload_option_label",
+        'data = {"paper_id": str(selected_upload_paper["id"])} if selected_upload_paper else {}',
+    ]:
+        assert required in documents_section
+    assert 'paper_id = st.number_input("paper_id"' not in documents_section
 
 
 def test_streamlit_document_upload_shows_error_payload_details():

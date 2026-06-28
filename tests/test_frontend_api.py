@@ -1104,6 +1104,38 @@ def test_paper_category_option_label_uses_fallback_name():
     assert label == "methods · category"
 
 
+def test_paper_upload_option_label_returns_unlinked_choice():
+    from app import frontend_api
+
+    label = frontend_api.paper_upload_option_label(None)
+
+    assert label == "不关联论文"
+
+
+def test_paper_upload_option_label_summarizes_paper_identity():
+    from app import frontend_api
+
+    label = frontend_api.paper_upload_option_label(
+        {
+            "id": 42,
+            "title": "Ar/O2 ICP chemistry",
+            "doi": "10.1234/plasma",
+            "journal_name": "Plasma Sources Science and Technology",
+            "published_date": "2026-06-01",
+        }
+    )
+
+    assert label == "#42 · Ar/O2 ICP chemistry · DOI: 10.1234/plasma · Plasma Sources Science and Technology · 2026-06-01"
+
+
+def test_paper_upload_option_label_uses_sparse_fallbacks():
+    from app import frontend_api
+
+    label = frontend_api.paper_upload_option_label({"id": 7})
+
+    assert label == "#7 · Untitled · DOI: - · - · -"
+
+
 def test_document_option_label_surfaces_processing_states():
     from app import frontend_api
 
@@ -1155,6 +1187,32 @@ def test_document_status_rows_summarize_document_workflow_and_errors():
         {"field": "chemistry_status", "value": "failed"},
         {"field": "chemistry_error", "value": "no parsed sections"},
     ]
+
+
+def test_dataframe_display_rows_normalize_mixed_value_column_for_streamlit():
+    from app import frontend_api
+
+    rows = frontend_api.dataframe_display_rows(
+        [
+            {"field": "document_id", "value": 12},
+            {"field": "parse_status", "value": "failed"},
+            {"field": "parse_error", "value": None},
+        ]
+    )
+
+    assert rows == [
+        {"field": "document_id", "value": "12"},
+        {"field": "parse_status", "value": "failed"},
+        {"field": "parse_error", "value": ""},
+    ]
+
+
+def test_dataframe_display_rows_preserve_non_value_columns():
+    from app import frontend_api
+
+    rows = frontend_api.dataframe_display_rows([{"id": 1, "status": "ok"}])
+
+    assert rows == [{"id": 1, "status": "ok"}]
 
 
 def test_document_section_rows_surface_location_and_preview():

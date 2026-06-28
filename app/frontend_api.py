@@ -136,6 +136,17 @@ def compact_parts(parts: list[Any]) -> list[str]:
     return [str(part) for part in parts if part is not None and str(part) != ""]
 
 
+def dataframe_display_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    display_rows = []
+    for row in rows:
+        if "value" not in row:
+            display_rows.append(row)
+            continue
+        value = row.get("value")
+        display_rows.append({**row, "value": "" if value is None else str(value)})
+    return display_rows
+
+
 def release_readiness_display_state(release_readiness: dict[str, Any]) -> dict[str, Any]:
     config_warning_codes = [
         str(code) for code in release_readiness.get("config_warning_codes") or [] if str(code).strip()
@@ -194,6 +205,17 @@ def category_parent_option_label(category: Optional[dict[str, Any]]) -> str:
 
 def paper_category_option_label(category: dict[str, Any]) -> str:
     return f"{category.get('slug') or 'category'} · {category.get('name') or 'category'}"
+
+
+def paper_upload_option_label(paper: Optional[dict[str, Any]]) -> str:
+    if paper is None:
+        return "不关联论文"
+    return (
+        f"#{paper.get('id')} · {paper.get('title') or 'Untitled'} · "
+        f"DOI: {paper.get('doi') or '-'} · "
+        f"{paper.get('journal_name') or '-'} · "
+        f"{paper.get('published_date') or '-'}"
+    )
 
 
 def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
