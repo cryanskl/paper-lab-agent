@@ -727,7 +727,28 @@ def summary(payload: dict[str, Any]) -> dict[str, Any]:
         "issue_codes": [issue.get("code") for issue in issues],
         "warning_count": len(warnings),
         "warning_codes": [warning.get("code") for warning in warnings],
+        "warning_details": warning_details(warnings),
     }
+
+
+def warning_details(warnings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    details = []
+    for warning in warnings:
+        if not isinstance(warning, dict):
+            continue
+        detail = {}
+        for key in ("code", "capability", "message", "actual"):
+            value = warning.get(key)
+            if isinstance(value, str) and value.strip():
+                detail[key] = value
+        supported = warning.get("supported")
+        if isinstance(supported, list):
+            values = [value for value in supported if isinstance(value, str) and value.strip()]
+            if values:
+                detail["supported"] = values
+        if {"code", "capability", "message"} <= set(detail):
+            details.append(detail)
+    return details
 
 
 def main() -> int:

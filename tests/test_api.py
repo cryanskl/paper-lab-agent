@@ -10263,6 +10263,62 @@ def test_reaction_export_rejects_empty_reaction_set(tmp_path):
     assert response.json()["error"]["code"] == "reaction_set_unverified"
 
 
+def test_doctor_compact_summary_includes_warning_details():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script_warning_details", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+
+    compact = doctor.summary(
+        {
+            "ok": True,
+            "repo": str(repo),
+            "checks": [
+                {
+                    "name": "external_config",
+                    "status": "pass",
+                    "warnings": [
+                        {
+                            "code": "missing_llm_api_key",
+                            "capability": "llm_translation",
+                            "message": "LLM_API_KEY is not configured.",
+                        },
+                        {
+                            "code": "unsupported_vector_db_backend",
+                            "capability": "rag_indexing",
+                            "actual": "faiss",
+                            "supported": ["local-json"],
+                            "message": "VECTOR_DB_BACKEND=faiss is not supported.",
+                        },
+                    ],
+                    "issues": [],
+                }
+            ],
+        }
+    )
+
+    assert compact["warning_codes"] == ["missing_llm_api_key", "unsupported_vector_db_backend"]
+    assert compact["warning_details"] == [
+        {
+            "code": "missing_llm_api_key",
+            "capability": "llm_translation",
+            "message": "LLM_API_KEY is not configured.",
+        },
+        {
+            "code": "unsupported_vector_db_backend",
+            "capability": "rag_indexing",
+            "actual": "faiss",
+            "supported": ["local-json"],
+            "message": "VECTOR_DB_BACKEND=faiss is not supported.",
+        },
+    ]
+
+
 def test_reaction_export_write_failure_returns_json_error(tmp_path, monkeypatch):
     make_client(tmp_path)
 
@@ -10391,6 +10447,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "runtime_version" in release_text
     assert "scheduler_job_ids" in release_text
     assert "config_warning_count" in release_text
+    assert "warning_details" in release_text
     assert "release_readiness" in release_text
     assert "config_warning_codes" in release_text
     assert "config_warning_details" in release_text
@@ -10478,6 +10535,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "`release_readiness`",
         "`demo_data_missing`",
         "`failed_workflows`",
+        "`warning_details`",
         "`config_warning_codes`",
         "`config_warning_details`",
         "`storage_errors`",

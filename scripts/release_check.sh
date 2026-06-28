@@ -34,12 +34,18 @@ import os
 import sys
 
 doctor = json.loads(os.environ["DOCTOR_JSON"])
+expected_doctor_warning_codes = ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]
+doctor_warning_details = doctor.get("warning_details")
+doctor_warning_detail_codes = [
+    warning.get("code") for warning in doctor_warning_details or [] if isinstance(warning, dict)
+]
 if (
     doctor.get("ok") is not True
     or doctor.get("check_count") != 6
     or doctor.get("issue_count") != 0
     or doctor.get("warning_count") != 3
-    or doctor.get("warning_codes") != ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]
+    or doctor.get("warning_codes") != expected_doctor_warning_codes
+    or doctor_warning_detail_codes != expected_doctor_warning_codes
 ):
     print(f"release_check failed: doctor preflight summary={doctor!r}", file=sys.stderr)
     raise SystemExit(1)

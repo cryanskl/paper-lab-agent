@@ -2585,7 +2585,10 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert "scripts/doctor.py --strict --compact" in release_check
     assert "DOCTOR_JSON=" in release_check
     assert 'doctor.get("warning_count") != 3' in release_check
-    assert 'doctor.get("warning_codes") != ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]' in release_check
+    assert 'expected_doctor_warning_codes = ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]' in release_check
+    assert 'doctor.get("warning_codes") != expected_doctor_warning_codes' in release_check
+    assert 'doctor_warning_details = doctor.get("warning_details")' in release_check
+    assert "doctor_warning_detail_codes != expected_doctor_warning_codes" in release_check
     assert "release_check failed: doctor preflight summary" in release_check
     assert "ConfigWarningResponse" in release_check
     assert "release_check failed: OpenAPI ConfigWarningResponse missing fields" in release_check
