@@ -155,7 +155,7 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
             }
         unsafe_artifact_path_issues = []
         for path in sorted((output_dir / name for name in EXPECTED_ARTIFACT_NAMES), key=lambda item: item.name):
-            if path.exists() and path.is_symlink():
+            if path.is_symlink():
                 unsafe_artifact_path_issues.append(
                     f"release artifact output path is not a regular file: {path}"
                 )

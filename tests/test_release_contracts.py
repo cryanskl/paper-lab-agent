@@ -3471,6 +3471,22 @@ def test_export_release_artifacts_rejects_expected_artifact_symlink(tmp_path):
     assert not (output_dir / "demo-summary.json").exists()
 
 
+def test_export_release_artifacts_rejects_broken_expected_artifact_symlink(tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    output_dir = tmp_path / "release"
+    openapi_path = output_dir / "openapi.json"
+    output_dir.mkdir()
+    openapi_path.symlink_to(tmp_path / "missing-openapi.json")
+
+    report = export_release_artifacts.export_release_artifacts(output_dir, compact=True)
+
+    assert report["ok"] is False
+    assert f"release artifact output path is not a regular file: {output_dir.resolve() / 'openapi.json'}" in report["issues"]
+    assert openapi_path.is_symlink()
+    assert not openapi_path.exists()
+    assert not (output_dir / "demo-summary.json").exists()
+
+
 def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     import os
     import subprocess
