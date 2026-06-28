@@ -78,7 +78,7 @@ def bug_doc_issues(repo: Path) -> list[str]:
         return ["docs/bug: bug directory parent is not a regular directory"]
     if bug_dir.parent.exists() and not bug_dir.parent.is_dir():
         return ["docs/bug: bug directory parent is not a regular directory"]
-    if not bug_dir.exists():
+    if not bug_dir.exists() and not bug_dir.is_symlink():
         return ["docs/bug: missing"]
     if bug_dir.is_symlink() or not bug_dir.is_dir():
         return ["docs/bug: bug directory is not a regular directory"]
