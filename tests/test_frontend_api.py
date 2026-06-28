@@ -1213,6 +1213,30 @@ def test_document_option_label_surfaces_processing_states():
     assert label == "#9 · argon-kinetics.pdf · parse=parsed · index=indexed · chemistry=extracted"
 
 
+def test_document_option_label_includes_linked_paper_identity():
+    from app import frontend_api
+
+    label = frontend_api.document_option_label(
+        {
+            "id": 9,
+            "original_name": "argon-kinetics.pdf",
+            "parse_status": "parsed",
+            "index_status": "indexed",
+            "chemistry_status": "extracted",
+            "paper": {
+                "title": "Global model of an Ar/O2 inductively coupled plasma",
+                "doi": "10.1088/1361-6595/fixture-ar-o2",
+            },
+        }
+    )
+
+    assert (
+        label
+        == "#9 · argon-kinetics.pdf · Global model of an Ar/O2 inductively coupled plasma · "
+        "DOI: 10.1088/1361-6595/fixture-ar-o2 · parse=parsed · index=indexed · chemistry=extracted"
+    )
+
+
 def test_document_option_label_falls_back_to_file_name_and_unknown_states():
     from app import frontend_api
 
