@@ -243,7 +243,7 @@ def main() -> int:
     if non_directory_parent is not None:
         print(f"requirements file parent is not a regular directory: {non_directory_parent}", file=sys.stderr)
         return 1
-    if not requirements_path.exists():
+    if not requirements_path.exists() and not requirements_path.is_symlink():
         print(f"requirements file not found: {requirements_path}", file=sys.stderr)
         return 1
     if requirements_path.is_symlink() or not requirements_path.is_file():

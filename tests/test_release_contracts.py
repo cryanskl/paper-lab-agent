@@ -9151,6 +9151,26 @@ def test_requirements_validator_rejects_symlinked_requirements_file(tmp_path):
     assert "requirements file is not a regular file: requirements.txt" in result.stderr
 
 
+def test_requirements_validator_rejects_broken_symlinked_requirements_file(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_requirements.py"
+    (tmp_path / "requirements.txt").symlink_to(tmp_path / "missing-requirements.txt")
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), "requirements.txt"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "requirements file is not a regular file: requirements.txt" in result.stderr
+
+
 def test_requirements_validator_rejects_symlinked_requirements_parent(tmp_path):
     import subprocess
     import sys
