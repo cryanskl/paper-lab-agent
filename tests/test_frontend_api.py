@@ -391,6 +391,7 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
         [
             {
                 "id": 1,
+                "document_id": 7,
                 "name": "Ar chemistry",
                 "status": "verified",
                 "reaction_count": 4,
@@ -402,6 +403,7 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
             },
             {
                 "id": 2,
+                "document_id": 7,
                 "name": "O2 chemistry",
                 "status": "pending",
                 "reaction_count": 5,
@@ -411,6 +413,7 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
             },
             {
                 "id": 3,
+                "document_id": 8,
                 "name": "Empty extraction",
                 "status": "rejected",
                 "reaction_count": 0,
@@ -424,6 +427,7 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
     assert rows == [
         {
             "id": 1,
+            "document_id": 7,
             "name": "Ar chemistry",
             "status": "verified",
             "reaction_count": 4,
@@ -437,6 +441,7 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
         },
         {
             "id": 2,
+            "document_id": 7,
             "name": "O2 chemistry",
             "status": "pending",
             "reaction_count": 5,
@@ -450,6 +455,7 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
         },
         {
             "id": 3,
+            "document_id": 8,
             "name": "Empty extraction",
             "status": "rejected",
             "reaction_count": 0,
@@ -470,6 +476,7 @@ def test_reaction_set_option_label_summarizes_review_and_export_state():
     label = frontend_api.reaction_set_option_label(
         {
             "id": 3,
+            "document_id": 7,
             "name": "Ar chemistry",
             "status": "pending",
             "export_ready": False,
@@ -477,7 +484,7 @@ def test_reaction_set_option_label_summarizes_review_and_export_state():
         }
     )
 
-    assert label == "#3 · pending · export_ready False · 未复核 2 · Ar chemistry"
+    assert label == "#3 · doc 7 · pending · export_ready False · 未复核 2 · Ar chemistry"
 
 
 def test_reaction_set_option_label_uses_fallbacks_for_sparse_items():
@@ -789,6 +796,7 @@ def test_reaction_audit_rows_flatten_field_changes_for_review():
                 "field_changes": {
                     "reaction_type": {"before": "unknown", "after": "ionization"},
                     "rate_value": {"before": None, "after": "1.2e-8 cm3/s"},
+                    "verified": {"before": False, "after": True},
                 },
             },
             {
@@ -815,8 +823,17 @@ def test_reaction_audit_rows_flatten_field_changes_for_review():
             "audit_id": 31,
             "reaction_id": 7,
             "field": "rate_value",
-            "before": None,
+            "before": "",
             "after": "1.2e-8 cm3/s",
+            "verified_by": "engineer_a",
+            "verified_at": "2026-06-25T10:00:00",
+        },
+        {
+            "audit_id": 31,
+            "reaction_id": 7,
+            "field": "verified",
+            "before": "False",
+            "after": "True",
             "verified_by": "engineer_a",
             "verified_at": "2026-06-25T10:00:00",
         },
@@ -824,8 +841,8 @@ def test_reaction_audit_rows_flatten_field_changes_for_review():
             "audit_id": 32,
             "reaction_id": 7,
             "field": "-",
-            "before": None,
-            "after": None,
+            "before": "",
+            "after": "",
             "verified_by": "engineer_b",
             "verified_at": "2026-06-26T11:00:00",
         },

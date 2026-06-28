@@ -573,6 +573,7 @@ def reaction_set_rows(reaction_sets: list[dict[str, Any]]) -> list[dict[str, Any
         rows.append(
             {
                 "id": item.get("id"),
+                "document_id": item.get("document_id"),
                 "name": item.get("name"),
                 "status": item.get("status"),
                 "reaction_count": reaction_count,
@@ -613,8 +614,9 @@ def reaction_display_state(reaction: dict[str, Any]) -> dict[str, Any]:
 
 
 def reaction_set_option_label(item: dict[str, Any]) -> str:
+    document_part = f"doc {item.get('document_id')} · " if item.get("document_id") is not None else ""
     return (
-        f"#{item['id']} · {item.get('status') or 'unknown'} · "
+        f"#{item['id']} · {document_part}{item.get('status') or 'unknown'} · "
         f"export_ready {bool(item.get('export_ready'))} · "
         f"未复核 {item.get('unverified_count', 0)} · {item.get('name') or 'Reaction set'}"
     )
@@ -778,8 +780,8 @@ def reaction_audit_rows(audit_log: list[dict[str, Any]]) -> list[dict[str, Any]]
                     "audit_id": audit.get("id"),
                     "reaction_id": audit.get("reaction_id"),
                     "field": "-",
-                    "before": None,
-                    "after": None,
+                    "before": "",
+                    "after": "",
                     "verified_by": audit.get("verified_by"),
                     "verified_at": audit.get("verified_at"),
                 }
@@ -791,13 +793,19 @@ def reaction_audit_rows(audit_log: list[dict[str, Any]]) -> list[dict[str, Any]]
                     "audit_id": audit.get("id"),
                     "reaction_id": audit.get("reaction_id"),
                     "field": field,
-                    "before": change.get("before"),
-                    "after": change.get("after"),
+                    "before": audit_cell_text(change.get("before")),
+                    "after": audit_cell_text(change.get("after")),
                     "verified_by": audit.get("verified_by"),
                     "verified_at": audit.get("verified_at"),
                 }
             )
     return rows
+
+
+def audit_cell_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value)
 
 
 def reaction_review_list_state(reactions: list[dict[str, Any]], *, only_unverified: bool = False) -> dict[str, Any]:
