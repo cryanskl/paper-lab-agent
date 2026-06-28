@@ -238,6 +238,32 @@ def system_count_metric_rows(counts: Any) -> list[dict[str, Any]]:
     return rows
 
 
+def runtime_status_rows(runtime: Any) -> list[dict[str, str]]:
+    if not isinstance(runtime, dict):
+        return [{"kind": "warning", "text": "runtime: invalid"}]
+    rows = [
+        {"kind": "caption", "text": f"API: {runtime.get('api_prefix') or '/api/v1'}"},
+        {"kind": "caption", "text": f"version: {runtime.get('version') or '-'}"},
+        {"kind": "caption", "text": f"scheduler_enabled: {bool(runtime.get('scheduler_enabled'))}"},
+    ]
+    scheduler_jobs = runtime.get("scheduler_jobs") or []
+    if not isinstance(scheduler_jobs, list):
+        return [*rows, {"kind": "warning", "text": "scheduler_jobs: invalid"}]
+    if scheduler_jobs:
+        rows.append({"kind": "caption", "text": "scheduler_jobs:"})
+    for job in scheduler_jobs:
+        if not isinstance(job, dict):
+            rows.append({"kind": "warning", "text": "scheduler_jobs: invalid"})
+            continue
+        rows.append(
+            {
+                "kind": "caption",
+                "text": f"- {job.get('period')} · {job.get('id')} · {job.get('schedule')} {job.get('timezone')}",
+            }
+        )
+    return rows
+
+
 STORAGE_HEALTH_DISPLAY_KEYS = [
     "data_dir",
     "pdf_dir",

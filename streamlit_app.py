@@ -47,6 +47,7 @@ from app.frontend_api import (
     release_readiness_display_state,
     request_json,
     request_json_status,
+    runtime_status_rows,
     storage_health_caption_rows,
     system_count_metric_rows,
     status_count_rows,
@@ -141,18 +142,15 @@ with st.sidebar:
         missing_label = ", ".join(missing_demo_data) if missing_demo_data else "unknown"
         st.warning(f"walking skeleton missing: {missing_label}")
         st.caption("run: python scripts/prepare_demo_data.py")
-    runtime = status.get("runtime", {})
-    st.caption(f"API: {runtime.get('api_prefix', '/api/v1')}")
-    st.caption(f"version: {runtime.get('version') or '-'}")
+    runtime_rows = runtime_status_rows(status.get("runtime"))
+    for row in runtime_rows:
+        if row["kind"] == "warning":
+            st.warning(row["text"])
+        else:
+            st.caption(row["text"])
     st.subheader("API 文档")
     for label, url in api_docs_links(API_BASE).items():
         st.link_button(label, url)
-    st.caption(f"scheduler_enabled: {runtime.get('scheduler_enabled', False)}")
-    scheduler_jobs = runtime.get("scheduler_jobs") or []
-    if scheduler_jobs:
-        st.caption("scheduler_jobs:")
-        for job in scheduler_jobs:
-            st.caption(f"- {job.get('period')} · {job.get('id')} · {job.get('schedule')} {job.get('timezone')}")
     st.caption(f"DB: {status['database_path']}")
     external_capabilities = status.get("external_capabilities", {})
     external_display = external_capabilities_display_state(external_capabilities)

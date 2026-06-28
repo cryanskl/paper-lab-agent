@@ -333,6 +333,26 @@ def test_system_count_metric_rows_blocks_malformed_counts_objects():
     ]
 
 
+def test_runtime_status_rows_blocks_malformed_runtime_objects():
+    from app import frontend_api
+
+    rows = frontend_api.runtime_status_rows(["runtime"])
+
+    assert rows == [{"kind": "warning", "text": "runtime: invalid"}]
+
+    nested_rows = frontend_api.runtime_status_rows(
+        {
+            "api_prefix": "/api/v1",
+            "version": "0.1.0",
+            "scheduler_enabled": False,
+            "scheduler_jobs": ["bad"],
+        }
+    )
+
+    assert {"kind": "caption", "text": "API: /api/v1"} in nested_rows
+    assert {"kind": "warning", "text": "scheduler_jobs: invalid"} in nested_rows
+
+
 def test_storage_health_caption_rows_include_parent_dirs_and_vector_json_state():
     from app import frontend_api
 

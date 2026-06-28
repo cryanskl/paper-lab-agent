@@ -18012,10 +18012,25 @@ def test_streamlit_documents_tab_exposes_pagination_controls():
 def test_streamlit_sidebar_exposes_runtime_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    frontend = (repo / "app" / "frontend_api.py").read_text(encoding="utf-8")
     sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
 
-    for required in ["runtime", "scheduler_enabled", "scheduler_jobs", "api_prefix", "version"]:
+    for required in [
+        "runtime",
+        "runtime_status_rows",
+        "runtime_rows = runtime_status_rows(status.get(\"runtime\"))",
+    ]:
         assert required in sidebar_section
+    for required in [
+        "scheduler_enabled",
+        "scheduler_jobs",
+        "api_prefix",
+        "version",
+    ]:
+        assert required in frontend
+    runtime_section = sidebar_section[sidebar_section.index("runtime_rows = runtime_status_rows") : sidebar_section.index("st.subheader(\"API 文档\")")]
+    assert "runtime.get(" not in runtime_section
+    assert "for job in scheduler_jobs:" not in runtime_section
 
 
 def test_streamlit_sidebar_uses_safe_system_count_metrics():
@@ -18119,7 +18134,9 @@ def test_streamlit_sidebar_surfaces_demo_data_readiness():
         "prepare_demo_data.py",
     ]:
         assert required in sidebar_section
-    demo_section = sidebar_section[sidebar_section.index("demo_data = status.get") : sidebar_section.index("runtime = status.get")]
+    demo_section = sidebar_section[
+        sidebar_section.index("demo_data = status.get") : sidebar_section.index("runtime_rows = runtime_status_rows")
+    ]
     assert 'demo_data.get("ready")' not in demo_section
     assert 'demo_data.get("missing")' not in demo_section
 
