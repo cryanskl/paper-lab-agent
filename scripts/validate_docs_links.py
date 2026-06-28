@@ -157,7 +157,7 @@ def broken_doc_links(repo: Path) -> list[str]:
     paths = doc_files(repo)
     docs_dir = repo / "docs"
     docs_dir_issue = (
-        docs_dir.exists()
+        (docs_dir.exists() or docs_dir.is_symlink())
         and (docs_dir.is_symlink() or not docs_dir.is_dir())
         and not any(path.is_relative_to(docs_dir) for path in paths)
     )

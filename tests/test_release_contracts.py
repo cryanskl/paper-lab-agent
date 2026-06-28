@@ -9442,6 +9442,16 @@ def test_docs_links_validator_rejects_symlinked_empty_docs_dir(tmp_path):
     assert issues == ["docs: doc source directory is not a regular directory"]
 
 
+def test_docs_links_validator_rejects_broken_symlinked_docs_dir(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    (tmp_path / "README.md").write_text("# Test\n", encoding="utf-8")
+    (tmp_path / "docs").symlink_to(tmp_path / "missing-docs")
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["docs: doc source directory is not a regular directory"]
+
+
 def test_docs_links_validator_rejects_symlinked_markdown_link_target(tmp_path):
     validate_docs_links = load_validate_docs_links()
     docs_dir = tmp_path / "docs"
