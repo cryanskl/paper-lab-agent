@@ -10762,6 +10762,7 @@ def test_health_check_cli_help_runs_with_app_imports():
 
     assert result.returncode == 0
     assert "usage:" in result.stdout
+    assert "FastAPI base URL; may include /api/v1" in result.stdout
     assert "ModuleNotFoundError" not in result.stderr
 
 

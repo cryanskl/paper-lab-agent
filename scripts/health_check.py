@@ -911,7 +911,7 @@ def main() -> int:
         print(f"health_check failed: {env_error}", file=sys.stderr)
         return 1
     parser = argparse.ArgumentParser(description="Check paper-lab-agent API health.")
-    parser.add_argument("--base-url", default=default_base_url(), help="FastAPI base URL without /api/v1")
+    parser.add_argument("--base-url", default=default_base_url(), help="FastAPI base URL; may include /api/v1")
     parser.add_argument("--check-frontend", action="store_true", help="Also check Streamlit frontend health")
     parser.add_argument("--frontend-url", default=default_frontend_url(), help="Streamlit base URL")
     parser.add_argument("--require-frontend", action="store_true", help="Fail when Streamlit frontend is unavailable")
