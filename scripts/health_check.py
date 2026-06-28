@@ -347,9 +347,13 @@ def validate_system_status(status: dict) -> list[str]:
                 for key in sorted(CONFIG_WARNING_REQUIRED_KEYS & set(warning))
                 if not isinstance(warning[key], str) or not warning[key].strip()
             )
-            if "actual" in warning and (not isinstance(warning["actual"], str) or not warning["actual"].strip()):
+            if (
+                "actual" in warning
+                and warning["actual"] is not None
+                and (not isinstance(warning["actual"], str) or not warning["actual"].strip())
+            ):
                 invalid_warnings.append(f"{index}.actual")
-            if "supported" in warning:
+            if "supported" in warning and warning["supported"] is not None:
                 supported = warning["supported"]
                 if not isinstance(supported, list):
                     invalid_warnings.append(f"{index}.supported")
@@ -750,6 +754,26 @@ def storage_health_summary(status: dict) -> dict:
     return summary
 
 
+def config_warning_details(config_warnings: list) -> list[dict]:
+    details = []
+    for warning in config_warnings:
+        if not isinstance(warning, dict):
+            continue
+        detail = {}
+        for key in ("code", "capability", "message", "actual"):
+            value = warning.get(key)
+            if isinstance(value, str) and value.strip():
+                detail[key] = value
+        supported = warning.get("supported")
+        if isinstance(supported, list):
+            values = [value for value in supported if isinstance(value, str) and value.strip()]
+            if values:
+                detail["supported"] = values
+        if {"code", "capability", "message"} <= set(detail):
+            details.append(detail)
+    return details
+
+
 def probe_blocker(prefix: str, detail: Optional[dict]) -> Optional[str]:
     if not isinstance(detail, dict):
         return None
@@ -845,6 +869,7 @@ def health_summary(
         "config_warning_count": len(config_warning_codes),
         "config_ready": config_warning_codes == [],
         "config_warning_codes": config_warning_codes,
+        "config_warning_details": config_warning_details(config_warnings),
         "storage_writable": storage_errors == [],
         "storage_errors": storage_errors,
         "storage_health": storage_health_summary(safe_status),

@@ -10448,6 +10448,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "`demo_data_missing`",
         "`failed_workflows`",
         "`config_warning_codes`",
+        "`config_warning_details`",
         "`storage_errors`",
         "`translation_adapter`",
         "`llm_model`",
@@ -12724,6 +12725,60 @@ def test_health_check_rejects_invalid_config_warning_shape():
     assert "1" in joined
 
 
+def test_health_check_allows_null_optional_config_warning_details():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_config_warning_null_details", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [
+                {
+                    "code": "missing_llm_api_key",
+                    "capability": "llm_translation",
+                    "message": "LLM_API_KEY is not configured.",
+                    "actual": None,
+                    "supported": None,
+                }
+            ],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
+            "status_counts": health_check_status_counts(),
+        }
+    )
+
+    assert errors == []
+
+
 def test_health_check_rejects_invalid_config_warning_detail_shape():
     import importlib.util
 
@@ -13884,6 +13939,13 @@ def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
         "config_warning_count": 1,
         "config_ready": False,
         "config_warning_codes": ["missing_llm_api_key"],
+        "config_warning_details": [
+            {
+                "code": "missing_llm_api_key",
+                "capability": "llm_translation",
+                "message": "LLM_API_KEY is not configured.",
+            }
+        ],
         "storage_writable": True,
         "storage_errors": [],
         "storage_health": {
@@ -13945,6 +14007,7 @@ def test_health_check_summary_only_reports_release_ready_when_gates_are_clean():
     assert summary["failed_workflows"] == []
     assert summary["config_ready"] is True
     assert summary["config_warning_codes"] == []
+    assert summary["config_warning_details"] == []
     assert summary["storage_errors"] == []
 
 
@@ -14076,6 +14139,56 @@ def test_health_check_summary_surfaces_blocking_config_warnings():
     assert summary["release_blockers"] == ["config_warning_codes:unsupported_vector_db_backend"]
     assert summary["config_warning_codes"] == ["missing_llm_api_key", "unsupported_vector_db_backend"]
     assert summary["config_ready"] is False
+
+
+def test_health_check_summary_includes_config_warning_details():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_config_warning_details", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [
+            {
+                "code": "unsupported_vector_db_backend",
+                "capability": "rag_indexing",
+                "message": "VECTOR_DB_BACKEND=faiss is not supported.",
+                "actual": "faiss",
+                "supported": ["local-json"],
+            }
+        ],
+        "storage_health": health_check_storage_health(),
+        "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+        "demo_data": {
+            "ready": True,
+            "requirements": {"papers": 1},
+            "missing": [],
+            "counts": {"papers": 1},
+        },
+        "status_counts": health_check_status_counts(),
+        "release_readiness": health_check_release_readiness(
+            ready=False,
+            config_warning_codes=["unsupported_vector_db_backend"],
+        ),
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
+    assert summary["config_warning_details"] == [
+        {
+            "code": "unsupported_vector_db_backend",
+            "capability": "rag_indexing",
+            "message": "VECTOR_DB_BACKEND=faiss is not supported.",
+            "actual": "faiss",
+            "supported": ["local-json"],
+        }
+    ]
 
 
 def test_health_check_validates_release_readiness_shape():
