@@ -1332,6 +1332,72 @@ def test_reaction_audit_rows_flatten_field_changes_for_review():
     ]
 
 
+def test_reaction_audit_rows_handle_malformed_entries_and_field_changes():
+    from app import frontend_api
+
+    rows = frontend_api.reaction_audit_rows(
+        [
+            "bad-audit",
+            {
+                "id": 33,
+                "reaction_id": 8,
+                "verified_by": "engineer_c",
+                "verified_at": "2026-06-27T12:00:00",
+                "field_changes": ["bad-field-changes"],
+            },
+            {
+                "id": 34,
+                "reaction_id": 9,
+                "verified_by": "engineer_d",
+                "verified_at": "2026-06-27T13:00:00",
+                "field_changes": {
+                    "rate_value": ["bad-change"],
+                    "verified": {"before": False, "after": True},
+                },
+            },
+        ]
+    )
+
+    assert rows == [
+        {
+            "audit_id": None,
+            "reaction_id": None,
+            "field": "invalid",
+            "before": "",
+            "after": "",
+            "verified_by": None,
+            "verified_at": None,
+        },
+        {
+            "audit_id": 33,
+            "reaction_id": 8,
+            "field": "field_changes",
+            "before": "invalid",
+            "after": "invalid",
+            "verified_by": "engineer_c",
+            "verified_at": "2026-06-27T12:00:00",
+        },
+        {
+            "audit_id": 34,
+            "reaction_id": 9,
+            "field": "rate_value",
+            "before": "invalid",
+            "after": "invalid",
+            "verified_by": "engineer_d",
+            "verified_at": "2026-06-27T13:00:00",
+        },
+        {
+            "audit_id": 34,
+            "reaction_id": 9,
+            "field": "verified",
+            "before": "False",
+            "after": "True",
+            "verified_by": "engineer_d",
+            "verified_at": "2026-06-27T13:00:00",
+        },
+    ]
+
+
 def test_reaction_review_list_state_summarizes_filtered_review_scope():
     from app import frontend_api
 

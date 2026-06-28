@@ -1089,7 +1089,33 @@ def reaction_set_review_state(detail: dict[str, Any]) -> dict[str, Any]:
 def reaction_audit_rows(audit_log: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for audit in audit_log:
+        if not isinstance(audit, dict):
+            rows.append(
+                {
+                    "audit_id": None,
+                    "reaction_id": None,
+                    "field": "invalid",
+                    "before": "",
+                    "after": "",
+                    "verified_by": None,
+                    "verified_at": None,
+                }
+            )
+            continue
         field_changes = audit.get("field_changes") or {}
+        if not isinstance(field_changes, dict):
+            rows.append(
+                {
+                    "audit_id": audit.get("id"),
+                    "reaction_id": audit.get("reaction_id"),
+                    "field": "field_changes",
+                    "before": "invalid",
+                    "after": "invalid",
+                    "verified_by": audit.get("verified_by"),
+                    "verified_at": audit.get("verified_at"),
+                }
+            )
+            continue
         if not field_changes:
             rows.append(
                 {
@@ -1104,6 +1130,19 @@ def reaction_audit_rows(audit_log: list[dict[str, Any]]) -> list[dict[str, Any]]
             )
             continue
         for field, change in field_changes.items():
+            if not isinstance(change, dict):
+                rows.append(
+                    {
+                        "audit_id": audit.get("id"),
+                        "reaction_id": audit.get("reaction_id"),
+                        "field": field,
+                        "before": "invalid",
+                        "after": "invalid",
+                        "verified_by": audit.get("verified_by"),
+                        "verified_at": audit.get("verified_at"),
+                    }
+                )
+                continue
             rows.append(
                 {
                     "audit_id": audit.get("id"),
