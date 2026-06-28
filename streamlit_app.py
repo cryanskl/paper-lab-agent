@@ -36,6 +36,7 @@ from app.frontend_api import (
     paper_upload_query_params,
     paper_upload_option_label,
     rag_source_option_label,
+    rag_source_preview_excerpt,
     rag_source_rows,
     reaction_audit_rows,
     reaction_display_state,
@@ -904,8 +905,9 @@ with rag_tab:
                         sources,
                         format_func=rag_source_option_label,
                     )
-                    if source_preview.get("source_excerpt"):
-                        st.code(source_preview.get("source_excerpt"))
+                    source_excerpt = rag_source_preview_excerpt(source_preview)
+                    if source_excerpt:
+                        st.code(source_excerpt)
                     st.json(source_preview)
                 else:
                     st.info("没有可定位引用来源。")

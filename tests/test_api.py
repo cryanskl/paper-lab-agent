@@ -17763,10 +17763,11 @@ def test_streamlit_rag_tab_separates_answer_and_sources():
         "st.dataframe(sources",
         "format_func=rag_source_option_label",
         "source_excerpt",
-        'source_preview.get("source_excerpt")',
-        "st.code(source_preview.get(\"source_excerpt\")",
+        "rag_source_preview_excerpt(source_preview)",
+        "st.code(source_excerpt)",
     ]:
         assert required in rag_section
+    assert 'source_preview.get("source_excerpt")' not in rag_section
     assert "format_func=lambda source" not in rag_section
 
 

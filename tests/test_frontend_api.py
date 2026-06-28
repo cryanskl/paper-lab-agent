@@ -2676,6 +2676,22 @@ def test_rag_source_option_label_combines_citation_and_location():
     assert label == "[paper 7 · doc 3 · section 4 · chunk 19] · paper 7 · doc 3 · section 4 · table · Reaction table"
 
 
+def test_rag_source_option_label_handles_malformed_source():
+    from app import frontend_api
+
+    assert frontend_api.rag_source_option_label("bad-source") == "引用来源"
+
+
+def test_rag_source_preview_excerpt_handles_malformed_source_and_excerpt():
+    from app import frontend_api
+
+    assert frontend_api.rag_source_preview_excerpt("bad-source") == ""
+    assert frontend_api.rag_source_preview_excerpt({"source_excerpt": ["not", "text"]}) == ""
+    assert frontend_api.rag_source_preview_excerpt({"source_excerpt": "e + Ar -> e + e + Ar+"}) == (
+        "e + Ar -> e + e + Ar+"
+    )
+
+
 def test_rag_source_option_label_uses_stable_fallback():
     from app import frontend_api
 

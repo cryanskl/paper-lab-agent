@@ -929,9 +929,18 @@ def rag_source_rows(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
-def rag_source_option_label(source: dict[str, Any]) -> str:
+def rag_source_option_label(source: Any) -> str:
+    if not isinstance(source, dict):
+        return "引用来源"
     label = " · ".join(compact_parts([source.get("citation"), source.get("source_location")]))
     return label or "引用来源"
+
+
+def rag_source_preview_excerpt(source: Any) -> str:
+    if not isinstance(source, dict):
+        return ""
+    excerpt = source.get("source_excerpt")
+    return excerpt if isinstance(excerpt, str) else ""
 
 
 def reaction_set_rows(reaction_sets: list[dict[str, Any]]) -> list[dict[str, Any]]:
