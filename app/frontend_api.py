@@ -645,7 +645,7 @@ def document_status_rows(document: dict[str, Any], chunks: Optional[dict[str, An
         ("parse_error", document.get("parse_error")),
         ("index_status", index_status),
         ("index_error", index_error),
-        ("chunks_total", int(chunks.get("total") or 0)),
+        ("chunks_total", non_negative_int_or_zero(chunks.get("total"))),
         ("chemistry_status", document.get("chemistry_status") or "unknown"),
         ("chemistry_error", document.get("chemistry_error")),
     ]

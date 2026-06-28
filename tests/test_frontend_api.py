@@ -1836,6 +1836,26 @@ def test_document_status_rows_summarize_document_workflow_and_errors():
     ]
 
 
+def test_document_status_rows_handle_malformed_chunks_total():
+    from app import frontend_api
+
+    rows = frontend_api.document_status_rows(
+        {"id": 13, "parse_status": "parsed", "index_status": "indexed", "chemistry_status": "extracted"},
+        {"index_status": "indexed", "total": ["3"]},
+    )
+
+    assert rows == [
+        {"field": "document_id", "value": 13},
+        {"field": "parse_status", "value": "parsed"},
+        {"field": "parse_error", "value": None},
+        {"field": "index_status", "value": "indexed"},
+        {"field": "index_error", "value": None},
+        {"field": "chunks_total", "value": 0},
+        {"field": "chemistry_status", "value": "extracted"},
+        {"field": "chemistry_error", "value": None},
+    ]
+
+
 def test_dataframe_display_rows_normalize_mixed_value_column_for_streamlit():
     from app import frontend_api
 
