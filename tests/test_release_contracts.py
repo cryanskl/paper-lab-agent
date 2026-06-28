@@ -2533,6 +2533,8 @@ def test_release_check_validates_release_artifact_bundle():
     assert "release-manifest.json" in release_check
     assert "demo-summary.json" in release_check
     assert "openapi.json" in release_check
+    assert 'package.get("artifact_dir") != str(output_dir.resolve())' in release_check
+    assert 'package.get("package_path") != str(package_path.resolve())' in release_check
     assert 'package.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]' in release_check
     assert 'package.get("service") != "paper-lab-agent"' in release_check
     assert 'package.get("version") != "0.1.0"' in release_check
@@ -2556,6 +2558,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package.get("demo_reaction_set_verified_by") != "prepare-demo-data"' in release_check
     assert 'not package.get("demo_reaction_set_verified_at")' in release_check
     assert 'package_validation.get("demo_ready") is not True' in release_check
+    assert 'package_validation.get("package_path") != str(package_path.resolve())' in release_check
     assert 'package_validation.get("service") != "paper-lab-agent"' in release_check
     assert 'package_validation.get("version") != "0.1.0"' in release_check
     assert 'package_validation.get("demo_export_formats") != ["json", "txt", "bolsig"]' in release_check

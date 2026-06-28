@@ -458,6 +458,8 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     if (
         package.get("ok") is not True
         or package.get("artifact_count") != 3
+        or package.get("artifact_dir") != str(output_dir.resolve())
+        or package.get("package_path") != str(package_path.resolve())
         or package.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]
         or package.get("service") != "paper-lab-agent"
         or package.get("version") != "0.1.0"
@@ -496,6 +498,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     if (
         package_validation.get("ok") is not True
         or package_validation.get("artifact_count") != 3
+        or package_validation.get("package_path") != str(package_path.resolve())
         or package_validation.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]
         or package_validation.get("service") != "paper-lab-agent"
         or package_validation.get("version") != "0.1.0"
