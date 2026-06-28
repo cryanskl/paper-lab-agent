@@ -849,6 +849,42 @@ def test_reaction_set_rows_label_export_state_and_review_progress():
     ]
 
 
+def test_reaction_set_rows_handle_malformed_counts_and_export_state():
+    from app import frontend_api
+
+    rows = frontend_api.reaction_set_rows(
+        [
+            {
+                "id": 4,
+                "document_id": 9,
+                "name": "Malformed extraction",
+                "status": "pending",
+                "reaction_count": ["4"],
+                "verified_count": "2",
+                "unverified_count": ["2"],
+                "export_ready": "yes",
+            }
+        ]
+    )
+
+    assert rows == [
+        {
+            "id": 4,
+            "document_id": 9,
+            "name": "Malformed extraction",
+            "status": "pending",
+            "reaction_count": 0,
+            "verified_count": 0,
+            "unverified_count": 0,
+            "export_ready": False,
+            "export_state": "empty",
+            "review_progress": "0/0 verified",
+            "verified_by": None,
+            "verified_at": None,
+        }
+    ]
+
+
 def test_reaction_set_option_label_summarizes_review_and_export_state():
     from app import frontend_api
 

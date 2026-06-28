@@ -147,6 +147,12 @@ def dataframe_display_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return display_rows
 
 
+def non_negative_int_or_zero(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return 0
+    return value
+
+
 def release_readiness_display_state(release_readiness: Any) -> dict[str, Any]:
     if not isinstance(release_readiness, dict):
         invalid_group = {"label": "release state:", "items": ["release_readiness:invalid"]}
@@ -841,10 +847,10 @@ def rag_source_option_label(source: dict[str, Any]) -> str:
 def reaction_set_rows(reaction_sets: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for item in reaction_sets:
-        reaction_count = int(item.get("reaction_count") or 0)
-        verified_count = int(item.get("verified_count") or 0)
-        unverified_count = int(item.get("unverified_count") or 0)
-        export_ready = bool(item.get("export_ready"))
+        reaction_count = non_negative_int_or_zero(item.get("reaction_count"))
+        verified_count = non_negative_int_or_zero(item.get("verified_count"))
+        unverified_count = non_negative_int_or_zero(item.get("unverified_count"))
+        export_ready = item.get("export_ready") if isinstance(item.get("export_ready"), bool) else False
         if reaction_count == 0:
             export_state = "empty"
         elif export_ready:
