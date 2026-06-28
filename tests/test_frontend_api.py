@@ -385,6 +385,22 @@ def test_runtime_status_rows_blocks_malformed_api_prefix():
     assert {"kind": "caption", "text": "API: ['api']"} not in rows
 
 
+def test_runtime_status_rows_blocks_malformed_version():
+    from app import frontend_api
+
+    rows = frontend_api.runtime_status_rows(
+        {
+            "api_prefix": "/api/v1",
+            "version": ["0.1.0"],
+            "scheduler_enabled": False,
+            "scheduler_jobs": [],
+        }
+    )
+
+    assert {"kind": "warning", "text": "version: invalid"} in rows
+    assert {"kind": "caption", "text": "version: ['0.1.0']"} not in rows
+
+
 def test_database_path_status_row_blocks_malformed_database_path():
     from app import frontend_api
 

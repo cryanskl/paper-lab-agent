@@ -247,7 +247,11 @@ def runtime_status_rows(runtime: Any) -> list[dict[str, str]]:
         rows.append({"kind": "caption", "text": f"API: {api_prefix}"})
     else:
         rows.append({"kind": "warning", "text": "api_prefix: invalid"})
-    rows.append({"kind": "caption", "text": f"version: {runtime.get('version') or '-'}"})
+    version = runtime.get("version")
+    if isinstance(version, str) and version.strip():
+        rows.append({"kind": "caption", "text": f"version: {version}"})
+    else:
+        rows.append({"kind": "warning", "text": "version: invalid"})
     scheduler_enabled = runtime.get("scheduler_enabled")
     if isinstance(scheduler_enabled, bool):
         rows.append({"kind": "caption", "text": f"scheduler_enabled: {scheduler_enabled}"})
