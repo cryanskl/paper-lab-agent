@@ -401,6 +401,18 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     file_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     demo_summary = json.loads(demo_summary_path.read_text(encoding="utf-8"))
     openapi = json.loads(openapi_path.read_text(encoding="utf-8"))
+    expected_preflight_warning_codes = ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]
+
+    def valid_preflight_evidence(payload):
+        details = payload.get("preflight_warning_details") or []
+        detail_codes = [warning.get("code") for warning in details if isinstance(warning, dict)]
+        return (
+            payload.get("preflight_ok") is True
+            and payload.get("preflight_warning_count") == 3
+            and payload.get("preflight_warning_codes") == expected_preflight_warning_codes
+            and detail_codes == expected_preflight_warning_codes
+        )
+
     if manifest != file_manifest:
         print("release_check failed: release-manifest.json differs from stdout manifest", file=sys.stderr)
         raise SystemExit(1)
@@ -422,6 +434,9 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         raise SystemExit(1)
     if manifest.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]:
         print(f"release_check failed: release manifest artifact_names={manifest.get('artifact_names')!r}", file=sys.stderr)
+        raise SystemExit(1)
+    if not valid_preflight_evidence(manifest):
+        print(f"release_check failed: release manifest preflight evidence={manifest!r}", file=sys.stderr)
         raise SystemExit(1)
     if manifest.get("demo_ready") is not True or demo_summary.get("ready") is not True:
         print("release_check failed: release handoff demo summary is not ready", file=sys.stderr)
@@ -453,6 +468,9 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     validation = json.loads(validate_result.stdout)
     if validation.get("ok") is not True:
         print(f"release_check failed: release artifact validation={validation!r}", file=sys.stderr)
+        raise SystemExit(1)
+    if not valid_preflight_evidence(validation):
+        print(f"release_check failed: release artifact validation preflight evidence={validation!r}", file=sys.stderr)
         raise SystemExit(1)
     source = validation.get("source") or {}
     if not source.get("git_commit") or not source.get("git_branch"):
@@ -509,6 +527,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}
         or package.get("demo_export_audit_summary_formats") != ["json", "txt", "bolsig"]
         or package.get("source") != source
+        or not valid_preflight_evidence(package)
         or package.get("demo_counts", {}).get("documents") != 1
         or package.get("demo_counts", {}).get("reaction_audits") != 1
         or package.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
@@ -548,6 +567,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package_validation.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}
         or package_validation.get("demo_export_audit_summary_formats") != ["json", "txt", "bolsig"]
         or package_validation.get("source") != package.get("source")
+        or not valid_preflight_evidence(package_validation)
         or package_validation.get("demo_counts", {}).get("documents") != 1
         or package_validation.get("demo_counts", {}).get("reaction_audits") != 1
         or package_validation.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
@@ -598,6 +618,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or handoff.get("demo_export_formats") != ["json", "txt", "bolsig"]
         or handoff.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}
         or handoff.get("demo_export_audit_summary_formats") != ["json", "txt", "bolsig"]
+        or not valid_preflight_evidence(handoff)
         or handoff.get("demo_counts", {}).get("documents") != 1
         or handoff.get("demo_counts", {}).get("reaction_audits") != 1
         or handoff.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"

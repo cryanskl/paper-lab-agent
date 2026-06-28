@@ -98,6 +98,10 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
     demo_export_audit_summary_formats: list[str] = []
     demo_reaction_set_verified_by = None
     demo_reaction_set_verified_at = None
+    preflight_ok = None
+    preflight_warning_count = None
+    preflight_warning_codes: list[str] = []
+    preflight_warning_details: list[dict[str, Any]] = []
     package_sha256 = None
 
     if not package_path.exists():
@@ -186,6 +190,10 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
                     demo_export_audit_summary_formats = validation.get("demo_export_audit_summary_formats") or []
                     demo_reaction_set_verified_by = validation.get("demo_reaction_set_verified_by")
                     demo_reaction_set_verified_at = validation.get("demo_reaction_set_verified_at")
+                    preflight_ok = validation.get("preflight_ok")
+                    preflight_warning_count = validation.get("preflight_warning_count")
+                    preflight_warning_codes = validation.get("preflight_warning_codes") or []
+                    preflight_warning_details = validation.get("preflight_warning_details") or []
                     issues.extend(validation.get("issues") or [])
     except zipfile.BadZipFile as exc:
         issues.append(f"release package invalid zip: {exc}")
@@ -211,6 +219,10 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
         "demo_export_audit_summary_formats": demo_export_audit_summary_formats,
         "demo_reaction_set_verified_by": demo_reaction_set_verified_by,
         "demo_reaction_set_verified_at": demo_reaction_set_verified_at,
+        "preflight_ok": preflight_ok,
+        "preflight_warning_count": preflight_warning_count,
+        "preflight_warning_codes": preflight_warning_codes,
+        "preflight_warning_details": preflight_warning_details,
         "issues": issues,
     }
 

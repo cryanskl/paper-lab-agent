@@ -2694,6 +2694,8 @@ def test_release_check_validates_release_artifact_bundle():
     assert "openapi.json" in release_check
     assert 'manifest.get("artifact_count") != 3' in release_check
     assert 'manifest.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]' in release_check
+    assert 'expected_preflight_warning_codes = ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]' in release_check
+    assert 'not valid_preflight_evidence(manifest)' in release_check
     assert 'package.get("artifact_dir") != str(output_dir.resolve())' in release_check
     assert 'package.get("package_path") != str(package_path.resolve())' in release_check
     assert 'package.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]' in release_check
@@ -2718,6 +2720,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'not valid_release_checksums(package.get("checksums") or {})' in release_check
     assert 'package.get("demo_reaction_set_verified_by") != "prepare-demo-data"' in release_check
     assert 'not package.get("demo_reaction_set_verified_at")' in release_check
+    assert 'not valid_preflight_evidence(package)' in release_check
     assert 'package_validation.get("demo_ready") is not True' in release_check
     assert 'package_validation.get("package_path") != str(package_path.resolve())' in release_check
     assert 'package_validation.get("service") != "paper-lab-agent"' in release_check
@@ -2738,6 +2741,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'not valid_release_checksums(package_validation.get("checksums") or {})' in release_check
     assert 'package_validation.get("demo_reaction_set_verified_by") != "prepare-demo-data"' in release_check
     assert 'not package_validation.get("demo_reaction_set_verified_at")' in release_check
+    assert 'not valid_preflight_evidence(package_validation)' in release_check
     assert "release manifest version does not match OpenAPI version" in release_check
     assert "checksums" in release_check
     assert "git_dirty" in release_check
@@ -2750,6 +2754,8 @@ def test_release_check_validates_release_artifact_bundle():
     assert "artifact_names" in readme
     assert "reaction_set_verified_by" in readme
     assert "reaction_set_verified_at" in readme
+    assert "preflight_warning_codes" in readme
+    assert "preflight_warning_details" in readme
     assert "artifact 路径本身是否为目录" in readme
     assert "是否可读取" in readme
     assert "额外文件" in readme
@@ -2764,6 +2770,8 @@ def test_release_check_validates_release_artifact_bundle():
     assert "artifact_names" in checklist
     assert "reaction_set_verified_by" in checklist
     assert "reaction_set_verified_at" in checklist
+    assert "preflight_warning_codes" in checklist
+    assert "preflight_warning_details" in checklist
     assert "non-directory artifact path" in checklist
     assert "unreadable artifact paths" in checklist
     assert "unexpected extra files" in checklist
@@ -2788,6 +2796,7 @@ def test_release_check_validates_single_command_handoff_builder():
     assert 'handoff.get("artifact_dir") != str(output_dir.resolve())' in release_check
     assert 'handoff.get("package_path") != str(package_path.resolve())' in release_check
     assert 'handoff.get("artifact_count") != 3' in release_check
+    assert 'not valid_preflight_evidence(handoff)' in release_check
     assert 'handoff.get("package_sha256") != handoff.get("package_sha256", "").lower()' in release_check
     assert 'print(f"release_check failed: single-command release handoff={handoff!r}", file=sys.stderr)' in release_check
 
@@ -2968,6 +2977,14 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     assert manifest["source"]["git_commit"] == expected_commit
     assert manifest["source"]["git_branch"] == expected_branch
     assert manifest["source"]["git_dirty"] is expected_dirty
+    assert manifest["preflight_ok"] is True
+    assert manifest["preflight_warning_count"] == 3
+    assert manifest["preflight_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
+    assert [warning["code"] for warning in manifest["preflight_warning_details"]] == manifest["preflight_warning_codes"]
     assert set(manifest["checksums"]) == {"openapi.json", "demo-summary.json", "release-manifest.json"}
     assert all(
         len(value) == 64 and all(character in string.hexdigits for character in value)
@@ -3357,6 +3374,14 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
         text=True,
     ).stdout.strip()
     assert isinstance(payload["source"]["git_dirty"], bool)
+    assert payload["preflight_ok"] is True
+    assert payload["preflight_warning_count"] == 3
+    assert payload["preflight_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
+    assert [warning["code"] for warning in payload["preflight_warning_details"]] == payload["preflight_warning_codes"]
     assert payload["demo_ready"] is True
     assert payload["demo_export_formats"] == ["json", "txt", "bolsig"]
     assert payload["demo_export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
@@ -4344,6 +4369,13 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert payload["source"]["git_commit"]
     assert payload["service"] == "paper-lab-agent"
     assert payload["version"] == "0.1.0"
+    assert payload["preflight_ok"] is True
+    assert payload["preflight_warning_count"] == 3
+    assert payload["preflight_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
     assert payload["demo_ready"] is True
     assert payload["demo_export_formats"] == ["json", "txt", "bolsig"]
     assert payload["demo_export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
@@ -4405,6 +4437,16 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert all(len(value) == 64 for value in validate_payload["checksums"].values())
     assert validate_payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
     assert validate_payload["demo_reaction_set_verified_at"]
+    assert validate_payload["preflight_ok"] is True
+    assert validate_payload["preflight_warning_count"] == 3
+    assert validate_payload["preflight_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
+    assert [warning["code"] for warning in validate_payload["preflight_warning_details"]] == validate_payload[
+        "preflight_warning_codes"
+    ]
 
 
 def test_build_release_handoff_script_exports_validates_packages_and_revalidates(tmp_path):
@@ -4465,6 +4507,16 @@ def test_build_release_handoff_script_exports_validates_packages_and_revalidates
     assert payload["demo_export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
     assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
     assert payload["demo_reaction_set_verified_at"]
+    assert payload["preflight_ok"] is True
+    assert payload["preflight_warning_count"] == 3
+    assert payload["preflight_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
+    assert [warning["code"] for warning in payload["preflight_warning_details"]] == payload[
+        "preflight_warning_codes"
+    ]
     assert payload["stages"] == {
         "export": True,
         "validate_artifacts": True,

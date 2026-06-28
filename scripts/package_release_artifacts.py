@@ -370,6 +370,10 @@ def package_release_artifacts(
         "demo_export_audit_summary_formats": validation.get("demo_export_audit_summary_formats") or [],
         "demo_reaction_set_verified_by": validation.get("demo_reaction_set_verified_by"),
         "demo_reaction_set_verified_at": validation.get("demo_reaction_set_verified_at"),
+        "preflight_ok": validation.get("preflight_ok"),
+        "preflight_warning_count": validation.get("preflight_warning_count"),
+        "preflight_warning_codes": validation.get("preflight_warning_codes") or [],
+        "preflight_warning_details": validation.get("preflight_warning_details") or [],
         "issues": [],
     }
 

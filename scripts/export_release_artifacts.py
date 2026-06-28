@@ -15,6 +15,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app import __version__
+from scripts.doctor import run_checks, summary as doctor_summary
 from scripts.export_openapi import write_openapi
 from scripts.prepare_demo_data import prepare_demo_data
 from scripts.validate_release_artifacts import first_symlink_parent
@@ -77,6 +78,16 @@ def source_metadata() -> dict[str, Any]:
         "git_commit": git_value(["rev-parse", "HEAD"]),
         "git_branch": git_value(["branch", "--show-current"]),
         "git_dirty": git_dirty(),
+    }
+
+
+def preflight_summary() -> dict[str, Any]:
+    payload = doctor_summary(run_checks(ROOT))
+    return {
+        "ok": payload.get("ok") is True,
+        "warning_count": payload.get("warning_count") or 0,
+        "warning_codes": payload.get("warning_codes") or [],
+        "warning_details": payload.get("warning_details") or [],
     }
 
 
@@ -186,6 +197,7 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
             "issues": [f"Demo data preparation failed: {exc}"],
         }
     demo_summary = demo_payload["summary"]
+    preflight = preflight_summary()
     try:
         write_json(demo_summary_path, demo_summary, compact=compact)
     except OSError as exc:
@@ -214,6 +226,10 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
         "demo_export_audit_summary_formats": demo_summary.get("export_audit_summary_formats") or [],
         "demo_reaction_set_verified_by": demo_summary.get("reaction_set_verified_by"),
         "demo_reaction_set_verified_at": demo_summary.get("reaction_set_verified_at"),
+        "preflight_ok": preflight["ok"],
+        "preflight_warning_count": preflight["warning_count"],
+        "preflight_warning_codes": preflight["warning_codes"],
+        "preflight_warning_details": preflight["warning_details"],
         "openapi_path_count": len(json.loads(openapi_path.read_text(encoding="utf-8")).get("paths", {})),
         "source": source_metadata(),
         "checksums": {

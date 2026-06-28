@@ -127,6 +127,30 @@ def demo_workflow_status_issues(demo_summary: dict[str, Any]) -> list[str]:
     return []
 
 
+def list_of_strings(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) and item.strip() for item in value)
+
+
+def warning_details_codes(value: Any) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    codes = []
+    for item in value:
+        if not isinstance(item, dict):
+            return None
+        code = item.get("code")
+        capability = item.get("capability")
+        message = item.get("message")
+        if not isinstance(code, str) or not code.strip():
+            return None
+        if not isinstance(capability, str) or not capability.strip():
+            return None
+        if not isinstance(message, str) or not message.strip():
+            return None
+        codes.append(code)
+    return codes
+
+
 def is_iso8601_timestamp(value: Any) -> bool:
     if not isinstance(value, str) or not value.strip():
         return False
@@ -233,6 +257,8 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
     demo_export_audit_summary_formats = demo_summary.get("export_audit_summary_formats") or []
     demo_reaction_set_verified_by = demo_summary.get("reaction_set_verified_by")
     demo_reaction_set_verified_at = demo_summary.get("reaction_set_verified_at")
+    preflight_warning_codes = manifest.get("preflight_warning_codes")
+    preflight_warning_details = manifest.get("preflight_warning_details")
 
     if manifest:
         if manifest.get("service") != EXPECTED_SERVICE:
@@ -279,6 +305,24 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             issues.append(
                 "release manifest demo_reaction_set_verified_at mismatch: "
                 f"{manifest.get('demo_reaction_set_verified_at')!r}"
+            )
+        if manifest.get("preflight_ok") is not True:
+            issues.append("release manifest preflight_ok must be true")
+        if isinstance(manifest.get("preflight_warning_count"), bool) or not isinstance(manifest.get("preflight_warning_count"), int):
+            issues.append(
+                f"release manifest preflight_warning_count invalid: {manifest.get('preflight_warning_count')!r}"
+            )
+        if not list_of_strings(preflight_warning_codes):
+            issues.append(
+                f"release manifest preflight_warning_codes invalid: {preflight_warning_codes!r}"
+            )
+        detail_codes = warning_details_codes(preflight_warning_details)
+        if detail_codes is None:
+            issues.append("release manifest preflight_warning_details invalid")
+        elif list_of_strings(preflight_warning_codes) and detail_codes != preflight_warning_codes:
+            issues.append(
+                "release manifest preflight_warning_details codes mismatch: "
+                f"{detail_codes!r}"
             )
         if manifest.get("openapi_path_count") != openapi_path_count:
             issues.append(
@@ -362,6 +406,14 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
         or demo_reaction_set_verified_by,
         "demo_reaction_set_verified_at": manifest.get("demo_reaction_set_verified_at")
         or demo_reaction_set_verified_at,
+        "preflight_ok": manifest.get("preflight_ok"),
+        "preflight_warning_count": manifest.get("preflight_warning_count"),
+        "preflight_warning_codes": manifest.get("preflight_warning_codes")
+        if list_of_strings(manifest.get("preflight_warning_codes"))
+        else [],
+        "preflight_warning_details": manifest.get("preflight_warning_details")
+        if warning_details_codes(manifest.get("preflight_warning_details")) is not None
+        else [],
         "openapi_path_count": openapi_path_count,
         "checksums": manifest.get("checksums") if isinstance(manifest.get("checksums"), dict) else {},
         "issues": issues,
