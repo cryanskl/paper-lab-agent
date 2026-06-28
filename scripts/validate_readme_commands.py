@@ -523,7 +523,7 @@ def missing_command_targets_for_doc(repo: Path, doc_path: Path, label: str) -> l
 
 def missing_command_targets(repo: Path) -> list[str]:
     readme_path = repo / "README.md"
-    if not readme_path.exists():
+    if not readme_path.exists() and not readme_path.is_symlink():
         return ["README.md: missing"]
 
     issues: list[str] = []
