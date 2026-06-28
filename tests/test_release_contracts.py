@@ -2537,6 +2537,7 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert "读取 `.env`" in readme
     assert "外部能力配置 warning" in readme
     assert "`warning_count`" in readme
+    assert "release gate 会校验" in readme
     assert "`unsupported_embedding_model`" in readme
     assert "`unsupported_vector_db_backend`" in readme
     assert "python scripts/doctor.py --strict --compact" in checklist
@@ -2544,12 +2545,17 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert "reads `.env`" in checklist
     assert "external capability configuration warnings" in checklist
     assert "`warning_count`" in checklist
+    assert "release gate validates this doctor summary" in checklist
     assert "`unsupported_embedding_model`" in checklist
     assert "`unsupported_vector_db_backend`" in checklist
     assert "scripts/doctor.py" in release_check
     assert "RELEASE_HELP_SCRIPTS=(" in release_check
     assert '"${script}" --help' in release_check
     assert "scripts/doctor.py --strict --compact" in release_check
+    assert "DOCTOR_JSON=" in release_check
+    assert 'doctor.get("warning_count") != 3' in release_check
+    assert 'doctor.get("warning_codes") != ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]' in release_check
+    assert "release_check failed: doctor preflight summary" in release_check
 
 
 def test_release_check_compiles_application_package():

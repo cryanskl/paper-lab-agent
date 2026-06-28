@@ -26,7 +26,24 @@ RELEASE_HELP_SCRIPTS=("${RELEASE_SCRIPT_TARGETS[@]}")
 for script in "${RELEASE_HELP_SCRIPTS[@]}"; do
   "${PYTHON_CMD[@]}" "${script}" --help >/dev/null
 done
-"${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact
+DOCTOR_JSON="$("${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact)"
+printf '%s\n' "${DOCTOR_JSON}"
+DOCTOR_JSON="${DOCTOR_JSON}" "${PYTHON_CMD[@]}" - <<'PY'
+import json
+import os
+import sys
+
+doctor = json.loads(os.environ["DOCTOR_JSON"])
+if (
+    doctor.get("ok") is not True
+    or doctor.get("check_count") != 6
+    or doctor.get("issue_count") != 0
+    or doctor.get("warning_count") != 3
+    or doctor.get("warning_codes") != ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]
+):
+    print(f"release_check failed: doctor preflight summary={doctor!r}", file=sys.stderr)
+    raise SystemExit(1)
+PY
 "${PYTHON_CMD[@]}" scripts/validate_api_contract.py
 "${PYTHON_CMD[@]}" scripts/validate_bug_docs.py
 "${PYTHON_CMD[@]}" scripts/validate_docs_links.py

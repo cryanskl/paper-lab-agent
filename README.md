@@ -16,7 +16,7 @@ bash scripts/dev.sh
 ```
 
 服务启动时会自动用 `docs/schema.sql` 初始化 `data/plasma.db`。
-`scripts/doctor.py --compact` 会在启动服务前检查 Python 版本、关键项目文件、Python 依赖是否可导入、本地存储目录可创建和可写，以及外部能力配置 warning；它会读取 `.env` 中的本地路径配置，但已导出的环境变量仍优先，适合新机器快速预检。compact 输出里的 `warning_count` 和 `warning_codes` 用于提示 OpenAlex、Unpaywall、LLM 等可选外部能力是否未配置，也会提示 `unsupported_embedding_model`、`unsupported_vector_db_backend` 这类本地 RAG adapter 配置风险；这些 warning 不会阻断默认离线模式。发布、演示或交付前请使用 `python scripts/doctor.py --strict --compact`，让必需检查失败时返回非零退出码。
+`scripts/doctor.py --compact` 会在启动服务前检查 Python 版本、关键项目文件、Python 依赖是否可导入、本地存储目录可创建和可写，以及外部能力配置 warning；它会读取 `.env` 中的本地路径配置，但已导出的环境变量仍优先，适合新机器快速预检。compact 输出里的 `warning_count` 和 `warning_codes` 用于提示 OpenAlex、Unpaywall、LLM 等可选外部能力是否未配置，也会提示 `unsupported_embedding_model`、`unsupported_vector_db_backend` 这类本地 RAG adapter 配置风险；这些 warning 不会阻断默认离线模式。发布、演示或交付前请使用 `python scripts/doctor.py --strict --compact`，让必需检查失败时返回非零退出码；release gate 会校验默认离线 preflight 的 `warning_count` 和 `warning_codes`，防止预检摘要漂移。
 `scripts/dev.sh` 会等待 FastAPI `/api/v1/health` 和 Streamlit `/_stcore/health` 都可访问后再打印地址。
 如果只设置 `PAPER_LAB_DATA_DIR`，SQLite、PDF、TEI、翻译、导出和本地向量索引默认都会落在该目录下；需要拆分存储位置时再单独设置 `DATABASE_PATH`、`PAPER_LAB_PDF_DIR`、`VECTOR_DB_PATH` 等变量。
 
