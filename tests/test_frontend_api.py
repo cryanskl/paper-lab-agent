@@ -353,6 +353,24 @@ def test_runtime_status_rows_blocks_malformed_runtime_objects():
     assert {"kind": "warning", "text": "scheduler_jobs: invalid"} in nested_rows
 
 
+def test_database_path_status_row_blocks_malformed_database_path():
+    from app import frontend_api
+
+    assert frontend_api.database_path_status_row("/tmp/plasma.db") == {
+        "kind": "caption",
+        "text": "DB: /tmp/plasma.db",
+    }
+
+    assert frontend_api.database_path_status_row("") == {
+        "kind": "warning",
+        "text": "database_path: invalid",
+    }
+    assert frontend_api.database_path_status_row(False) == {
+        "kind": "warning",
+        "text": "database_path: invalid",
+    }
+
+
 def test_storage_health_caption_rows_include_parent_dirs_and_vector_json_state():
     from app import frontend_api
 

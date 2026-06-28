@@ -264,6 +264,12 @@ def runtime_status_rows(runtime: Any) -> list[dict[str, str]]:
     return rows
 
 
+def database_path_status_row(database_path: Any) -> dict[str, str]:
+    if not isinstance(database_path, str) or not database_path.strip():
+        return {"kind": "warning", "text": "database_path: invalid"}
+    return {"kind": "caption", "text": f"DB: {database_path}"}
+
+
 STORAGE_HEALTH_DISPLAY_KEYS = [
     "data_dir",
     "pdf_dir",

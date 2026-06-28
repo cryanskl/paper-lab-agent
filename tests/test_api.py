@@ -18033,6 +18033,21 @@ def test_streamlit_sidebar_exposes_runtime_status():
     assert "for job in scheduler_jobs:" not in runtime_section
 
 
+def test_streamlit_sidebar_uses_safe_database_path_status():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+
+    for required in [
+        "database_path_status_row",
+        'database_path_row = database_path_status_row(status.get("database_path"))',
+        'database_path_row["kind"] == "warning"',
+        'database_path_row["text"]',
+    ]:
+        assert required in sidebar_section
+    assert 'status["database_path"]' not in sidebar_section
+
+
 def test_streamlit_sidebar_uses_safe_system_count_metrics():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

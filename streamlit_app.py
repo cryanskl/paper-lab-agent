@@ -14,6 +14,7 @@ from app.frontend_api import (
     crawl_journal_option_label,
     crawl_journal_options,
     dataframe_display_rows,
+    database_path_status_row,
     demo_data_display_state,
     document_asset_downloads,
     document_chunk_rows,
@@ -151,7 +152,11 @@ with st.sidebar:
     st.subheader("API 文档")
     for label, url in api_docs_links(API_BASE).items():
         st.link_button(label, url)
-    st.caption(f"DB: {status['database_path']}")
+    database_path_row = database_path_status_row(status.get("database_path"))
+    if database_path_row["kind"] == "warning":
+        st.warning(database_path_row["text"])
+    else:
+        st.caption(database_path_row["text"])
     external_capabilities = status.get("external_capabilities", {})
     external_display = external_capabilities_display_state(external_capabilities)
     external_capabilities = external_display["capabilities"]
