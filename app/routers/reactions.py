@@ -196,6 +196,8 @@ def export(reaction_set_id: int, format: str = Query("json")) -> dict:
     except ValueError as exc:
         if str(exc).startswith("unsupported export format"):
             raise AppError(400, "unsupported_export_format", str(exc))
+        if str(exc) != "reaction set not found":
+            raise AppError(500, "reaction_export_failed", str(exc))
         raise AppError(404, "reaction_set_not_found", "Reaction set not found")
     except OSError as exc:
         raise AppError(500, "reaction_export_failed", str(exc))

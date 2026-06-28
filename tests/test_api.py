@@ -10271,6 +10271,36 @@ def test_reaction_export_text_formats_include_per_reaction_audit_summary(tmp_pat
     assert f"LAST_VERIFIED_AT: {audit['verified_at']}" in bolsig
 
 
+def test_reaction_export_malformed_reaction_json_returns_backend_error(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("malformed-export-reaction-json.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+    reaction_id = detail["reactions"][0]["id"]
+    assert client.put(
+        f"/api/v1/reactions/{reaction_id}/verify",
+        json={"verified": True, "verified_by": "chemist-a"},
+    ).status_code == 200
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        conn.execute("UPDATE reactions SET reactants=? WHERE id=?", ("not-json", reaction_id))
+
+    response = client.post(f"/api/v1/reaction-sets/{reaction_set['id']}/export?format=json")
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "reaction_export_failed"
+    assert "Expecting value" in payload["error"]["message"]
+
+
 def test_reaction_export_rejects_symlinked_output_file(tmp_path):
     make_client(tmp_path)
     import pytest
