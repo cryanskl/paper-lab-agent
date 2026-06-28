@@ -2610,6 +2610,24 @@ def test_release_check_validates_release_artifact_bundle():
     assert "--require-clean-source" in checklist
 
 
+def test_release_check_validates_single_command_handoff_builder():
+    repo = Path(__file__).resolve().parent.parent
+    release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert "scripts/build_release_handoff.py" in release_check
+    assert "handoff_result = subprocess.run(" in release_check
+    assert 'handoff.get("stage") != "complete"' in release_check
+    assert 'handoff.get("stages") != {' in release_check
+    assert '"export": True' in release_check
+    assert '"validate_artifacts": True' in release_check
+    assert '"package": True' in release_check
+    assert '"validate_package": True' in release_check
+    assert 'handoff.get("artifact_dir") != str(output_dir.resolve())' in release_check
+    assert 'handoff.get("package_path") != str(package_path.resolve())' in release_check
+    assert 'handoff.get("package_sha256") != handoff.get("package_sha256", "").lower()' in release_check
+    assert 'print(f"release_check failed: single-command release handoff={handoff!r}", file=sys.stderr)' in release_check
+
+
 def test_release_check_validates_prepare_demo_data_output_artifact():
     repo = Path(__file__).resolve().parent.parent
     release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")

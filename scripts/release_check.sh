@@ -522,7 +522,56 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     ):
         print(f"release_check failed: release package validation={package_validation!r}", file=sys.stderr)
         raise SystemExit(1)
-print(json.dumps(package, ensure_ascii=False))
+    handoff_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_release_handoff.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--package",
+            str(package_path),
+            "--compact",
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+    handoff = json.loads(handoff_result.stdout)
+    if (
+        handoff.get("ok") is not True
+        or handoff.get("stage") != "complete"
+        or handoff.get("stages") != {
+            "export": True,
+            "validate_artifacts": True,
+            "package": True,
+            "validate_package": True,
+        }
+        or handoff.get("artifact_dir") != str(output_dir.resolve())
+        or handoff.get("package_path") != str(package_path.resolve())
+        or handoff.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]
+        or handoff.get("service") != "paper-lab-agent"
+        or handoff.get("version") != "0.1.0"
+        or handoff.get("demo_ready") is not True
+        or handoff.get("demo_export_formats") != ["json", "txt", "bolsig"]
+        or handoff.get("demo_export_audit_entry_counts") != {"json": 1, "txt": 1, "bolsig": 1}
+        or handoff.get("demo_export_audit_summary_formats") != ["json", "txt", "bolsig"]
+        or handoff.get("demo_counts", {}).get("documents") != 1
+        or handoff.get("demo_counts", {}).get("reaction_audits") != 1
+        or handoff.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
+        or handoff.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"
+        or handoff.get("openapi_path_count") != 28
+        or not valid_sha256(handoff.get("package_sha256"))
+        or handoff.get("package_sha256") != handoff.get("package_sha256", "").lower()
+        or set((handoff.get("checksums") or {})) != {"openapi.json", "demo-summary.json", "release-manifest.json"}
+        or not valid_release_checksums(handoff.get("checksums") or {})
+        or handoff.get("demo_reaction_set_verified_by") != "prepare-demo-data"
+        or not handoff.get("demo_reaction_set_verified_at")
+        or handoff.get("issues") != []
+    ):
+        print(f"release_check failed: single-command release handoff={handoff!r}", file=sys.stderr)
+        raise SystemExit(1)
+print(json.dumps(handoff, ensure_ascii=False))
 PY
 )"
 printf '%s\n' "${RELEASE_ARTIFACTS_JSON}"
