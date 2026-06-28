@@ -295,6 +295,19 @@ def test_release_readiness_display_state_surfaces_ready_false_without_details():
     } in state["groups"]
 
 
+def test_release_readiness_display_state_blocks_malformed_readiness_object():
+    from app import frontend_api
+
+    state = frontend_api.release_readiness_display_state(["ready"])
+
+    assert state["ready"] is False
+    assert state["blockers"] == ["release_readiness:invalid"]
+    assert {
+        "label": "release state:",
+        "items": ["release_readiness:invalid"],
+    } in state["groups"]
+
+
 def test_storage_health_caption_rows_include_parent_dirs_and_vector_json_state():
     from app import frontend_api
 

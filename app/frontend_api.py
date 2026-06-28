@@ -147,7 +147,14 @@ def dataframe_display_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return display_rows
 
 
-def release_readiness_display_state(release_readiness: dict[str, Any]) -> dict[str, Any]:
+def release_readiness_display_state(release_readiness: Any) -> dict[str, Any]:
+    if not isinstance(release_readiness, dict):
+        invalid_group = {"label": "release state:", "items": ["release_readiness:invalid"]}
+        return {
+            "ready": False,
+            "blockers": ["release_readiness:invalid"],
+            "groups": [invalid_group],
+        }
     config_warning_codes = release_readiness_list_values(
         release_readiness.get("config_warning_codes"), invalid_label="invalid"
     )
