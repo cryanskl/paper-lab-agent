@@ -1239,6 +1239,33 @@ def test_reaction_set_review_state_derives_unverified_counts_and_export_gate():
     )
 
 
+def test_reaction_set_review_state_handles_malformed_counts_and_export_ready():
+    from app import frontend_api
+
+    reactions = [
+        {"id": 1, "reaction": "e + Ar -> e + Ar", "verified": True},
+        {"id": 2, "reaction": "e + Ar -> 2e + Ar+", "verified": False},
+    ]
+
+    state = frontend_api.reaction_set_review_state(
+        {
+            "status": "pending",
+            "reaction_count": ["2"],
+            "verified_count": "1",
+            "unverified_count": ["1"],
+            "export_ready": "yes",
+            "reactions": reactions,
+        }
+    )
+
+    assert state["reaction_count"] == 2
+    assert state["verified_count"] == 1
+    assert state["unverified_count"] == 1
+    assert state["export_ready"] is False
+    assert state["export_blocked"] is True
+    assert state["export_message"] == "未全复核不可导出：请先完成所有反应复核。"
+
+
 def test_reaction_audit_rows_flatten_field_changes_for_review():
     from app import frontend_api
 

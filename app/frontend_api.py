@@ -1033,7 +1033,13 @@ def reaction_export_download(payload: dict[str, Any]) -> Optional[dict[str, Any]
 
 
 def int_or_default(value: Any, default: int) -> int:
-    return default if value is None else int(value)
+    if isinstance(value, bool) or value is None:
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= 0 else default
 
 
 def reaction_set_review_state(detail: dict[str, Any]) -> dict[str, Any]:
@@ -1043,7 +1049,11 @@ def reaction_set_review_state(detail: dict[str, Any]) -> dict[str, Any]:
     verified_count = int_or_default(detail.get("verified_count"), reaction_count - len(unverified_reactions))
     unverified_count = int_or_default(detail.get("unverified_count"), len(unverified_reactions))
     export_ready_value = detail.get("export_ready")
-    export_ready = bool(export_ready_value) if export_ready_value is not None else reaction_count > 0 and unverified_count == 0
+    export_ready = (
+        export_ready_value
+        if isinstance(export_ready_value, bool)
+        else reaction_count > 0 and unverified_count == 0
+    )
     export_blocked = not export_ready
     if reaction_count == 0:
         export_message = "没有可导出的反应。"
