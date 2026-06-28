@@ -5906,6 +5906,29 @@ def test_system_status_reports_normalized_effective_vector_config(tmp_path, monk
     assert status["external_capabilities"]["vector_db_backend"] == "local-json"
 
 
+def test_system_status_reports_supported_adapter_warning_details(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv("EMBEDDING_MODEL", " experimental-vectors ")
+    monkeypatch.setenv("VECTOR_DB_BACKEND", " faiss ")
+
+    client = make_client(tmp_path)
+
+    status = client.get("/api/v1/system/status").json()
+    warnings = {warning["code"]: warning for warning in status["config_warnings"]}
+
+    assert warnings["unsupported_embedding_model"]["actual"] == "experimental-vectors"
+    assert warnings["unsupported_embedding_model"]["supported"] == ["local-hash"]
+    assert warnings["unsupported_vector_db_backend"]["actual"] == "faiss"
+    assert warnings["unsupported_vector_db_backend"]["supported"] == ["local-json"]
+    assert status["release_readiness"]["ready"] is False
+    assert status["release_readiness"]["config_warning_codes"] == [
+        "unsupported_embedding_model",
+        "unsupported_vector_db_backend",
+    ]
+
+
 def test_system_status_reports_translation_adapter(tmp_path, monkeypatch):
     monkeypatch.setenv("LLM_API_KEY", "")
     monkeypatch.setenv("LLM_MODEL", "gpt-diagnostic")

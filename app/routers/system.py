@@ -62,6 +62,8 @@ class ConfigWarningResponse(BaseModel):
     code: str
     capability: str
     message: str
+    actual: Optional[str] = None
+    supported: Optional[list[str]] = None
 
 
 class StoragePathsResponse(BaseModel):
@@ -280,19 +282,25 @@ def config_warnings(settings) -> list[dict]:
                 "message": "LLM_API_KEY is not configured; translation uses the local deterministic adapter.",
             }
         )
-    if normalize_embedding_model(settings.embedding_model) not in SUPPORTED_EMBEDDING_MODELS:
+    embedding_model = normalize_embedding_model(settings.embedding_model)
+    vector_db_backend = normalize_vector_db_backend(settings.vector_db_backend)
+    if embedding_model not in SUPPORTED_EMBEDDING_MODELS:
         warnings.append(
             {
                 "code": "unsupported_embedding_model",
                 "capability": "rag_indexing",
+                "actual": embedding_model,
+                "supported": sorted(SUPPORTED_EMBEDDING_MODELS),
                 "message": f"EMBEDDING_MODEL={settings.embedding_model} is not supported by the local adapter registry.",
             }
         )
-    if normalize_vector_db_backend(settings.vector_db_backend) not in SUPPORTED_VECTOR_DB_BACKENDS:
+    if vector_db_backend not in SUPPORTED_VECTOR_DB_BACKENDS:
         warnings.append(
             {
                 "code": "unsupported_vector_db_backend",
                 "capability": "rag_indexing",
+                "actual": vector_db_backend,
+                "supported": sorted(SUPPORTED_VECTOR_DB_BACKENDS),
                 "message": f"VECTOR_DB_BACKEND={settings.vector_db_backend} is not supported by the current vector store registry.",
             }
         )

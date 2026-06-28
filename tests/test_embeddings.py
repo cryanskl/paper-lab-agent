@@ -24,11 +24,11 @@ def test_embedding_adapter_rejects_unsupported_model():
 def test_config_warnings_report_unsupported_embedding_model():
     warnings = config_warnings(Settings(EMBEDDING_MODEL="text-embedding-3-small"))
 
-    assert {
-        "code": "unsupported_embedding_model",
-        "capability": "rag_indexing",
-        "message": "EMBEDDING_MODEL=text-embedding-3-small is not supported by the local adapter registry.",
-    } in warnings
+    warning = next(warning for warning in warnings if warning["code"] == "unsupported_embedding_model")
+    assert warning["capability"] == "rag_indexing"
+    assert warning["actual"] == "text-embedding-3-small"
+    assert warning["supported"] == ["local-hash"]
+    assert warning["message"] == "EMBEDDING_MODEL=text-embedding-3-small is not supported by the local adapter registry."
 
 
 def test_config_warnings_accept_supported_embedding_model_case_insensitively():
@@ -40,11 +40,11 @@ def test_config_warnings_accept_supported_embedding_model_case_insensitively():
 def test_config_warnings_report_unsupported_vector_db_backend():
     warnings = config_warnings(Settings(VECTOR_DB_BACKEND="faiss"))
 
-    assert {
-        "code": "unsupported_vector_db_backend",
-        "capability": "rag_indexing",
-        "message": "VECTOR_DB_BACKEND=faiss is not supported by the current vector store registry.",
-    } in warnings
+    warning = next(warning for warning in warnings if warning["code"] == "unsupported_vector_db_backend")
+    assert warning["capability"] == "rag_indexing"
+    assert warning["actual"] == "faiss"
+    assert warning["supported"] == ["local-json"]
+    assert warning["message"] == "VECTOR_DB_BACKEND=faiss is not supported by the current vector store registry."
 
 
 def test_config_warnings_accept_supported_vector_db_backend_case_insensitively():
