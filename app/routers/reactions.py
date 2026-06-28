@@ -172,7 +172,9 @@ def verify(reaction_id: int, body: VerifyIn) -> dict:
             cross_section_url=body.cross_section_url,
             clear_fields=clear_fields,
         )
-    except ValueError:
+    except ValueError as exc:
+        if str(exc) != "reaction not found":
+            raise AppError(500, "reaction_verify_failed", str(exc))
         raise AppError(404, "reaction_not_found", "Reaction not found")
     except Exception as exc:
         raise AppError(500, "reaction_verify_failed", str(exc))

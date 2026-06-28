@@ -10144,6 +10144,35 @@ def test_reaction_verify_backend_failure_returns_json_error(tmp_path, monkeypatc
     assert "audit database unavailable" in payload["error"]["message"]
 
 
+def test_reaction_verify_malformed_reaction_json_returns_backend_error(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("malformed-reaction-json.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+    reaction_id = detail["reactions"][0]["id"]
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        conn.execute("UPDATE reactions SET reactants=? WHERE id=?", ("not-json", reaction_id))
+
+    response = client.put(
+        f"/api/v1/reactions/{reaction_id}/verify",
+        json={"verified": True, "verified_by": "chemist-a"},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "reaction_verify_failed"
+    assert "Expecting value" in payload["error"]["message"]
+
+
 def test_reaction_export_bolsig_text_and_rejects_unknown_format(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
