@@ -241,10 +241,13 @@ def system_count_metric_rows(counts: Any) -> list[dict[str, Any]]:
 def runtime_status_rows(runtime: Any) -> list[dict[str, str]]:
     if not isinstance(runtime, dict):
         return [{"kind": "warning", "text": "runtime: invalid"}]
-    rows = [
-        {"kind": "caption", "text": f"API: {runtime.get('api_prefix') or '/api/v1'}"},
-        {"kind": "caption", "text": f"version: {runtime.get('version') or '-'}"},
-    ]
+    rows: list[dict[str, str]] = []
+    api_prefix = runtime.get("api_prefix")
+    if isinstance(api_prefix, str) and api_prefix.strip():
+        rows.append({"kind": "caption", "text": f"API: {api_prefix}"})
+    else:
+        rows.append({"kind": "warning", "text": "api_prefix: invalid"})
+    rows.append({"kind": "caption", "text": f"version: {runtime.get('version') or '-'}"})
     scheduler_enabled = runtime.get("scheduler_enabled")
     if isinstance(scheduler_enabled, bool):
         rows.append({"kind": "caption", "text": f"scheduler_enabled: {scheduler_enabled}"})
