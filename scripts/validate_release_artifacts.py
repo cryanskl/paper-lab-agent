@@ -312,6 +312,11 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             issues.append(
                 f"release manifest preflight_warning_count invalid: {manifest.get('preflight_warning_count')!r}"
             )
+        elif list_of_strings(preflight_warning_codes) and manifest.get("preflight_warning_count") != len(preflight_warning_codes):
+            issues.append(
+                "release manifest preflight_warning_count mismatch: "
+                f"{manifest.get('preflight_warning_count')!r}"
+            )
         if not list_of_strings(preflight_warning_codes):
             issues.append(
                 f"release manifest preflight_warning_codes invalid: {preflight_warning_codes!r}"
