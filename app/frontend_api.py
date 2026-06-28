@@ -593,6 +593,8 @@ def crawl_job_option_label(job: dict[str, Any]) -> str:
 def crawl_job_diagnostic_rows(job: dict[str, Any]) -> list[dict[str, Any]]:
     diagnostics = job.get("diagnostics") or {}
     journal = job.get("journal") or {}
+    keyword_terms = diagnostics.get("keyword_terms")
+    keyword_terms_label = ", ".join(keyword_terms) if isinstance(keyword_terms, list) else ""
     fields = [
         ("job_id", job.get("id") or job.get("job_id")),
         ("status", diagnostics.get("status") or job.get("status")),
@@ -600,14 +602,14 @@ def crawl_job_diagnostic_rows(job: dict[str, Any]) -> list[dict[str, Any]]:
         ("period", diagnostics.get("period") or job.get("period")),
         ("date_from", diagnostics.get("date_from") or job.get("date_from")),
         ("date_to", diagnostics.get("date_to") or job.get("date_to")),
-        ("papers_found", int(diagnostics.get("papers_found") or 0)),
-        ("papers_filtered", int(diagnostics.get("papers_filtered") or 0)),
-        ("papers_accepted", int(diagnostics.get("papers_accepted") or 0)),
-        ("papers_existing", int(diagnostics.get("papers_existing") or 0)),
-        ("papers_new", int(diagnostics.get("papers_new") or 0)),
+        ("papers_found", non_negative_int_or_zero(diagnostics.get("papers_found"))),
+        ("papers_filtered", non_negative_int_or_zero(diagnostics.get("papers_filtered"))),
+        ("papers_accepted", non_negative_int_or_zero(diagnostics.get("papers_accepted"))),
+        ("papers_existing", non_negative_int_or_zero(diagnostics.get("papers_existing"))),
+        ("papers_new", non_negative_int_or_zero(diagnostics.get("papers_new"))),
         ("outcome", diagnostics.get("outcome")),
         ("keyword_mode", diagnostics.get("keyword_mode")),
-        ("keyword_terms", ", ".join(diagnostics.get("keyword_terms") or [])),
+        ("keyword_terms", keyword_terms_label),
         ("error", diagnostics.get("error") or job.get("error")),
     ]
     return [{"field": field, "value": value} for field, value in fields]

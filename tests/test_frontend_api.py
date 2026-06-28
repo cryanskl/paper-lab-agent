@@ -1494,6 +1494,44 @@ def test_crawl_job_diagnostic_rows_flatten_job_detail_for_review():
     ]
 
 
+def test_crawl_job_diagnostic_rows_handle_malformed_counts():
+    from app import frontend_api
+
+    rows = frontend_api.crawl_job_diagnostic_rows(
+        {
+            "id": 43,
+            "journal_id": 7,
+            "status": "success",
+            "diagnostics": {
+                "papers_found": ["18"],
+                "papers_filtered": "10",
+                "papers_accepted": ["8"],
+                "papers_existing": "6",
+                "papers_new": ["2"],
+                "keyword_terms": {"term": "plasma"},
+            },
+        }
+    )
+
+    assert rows == [
+        {"field": "job_id", "value": 43},
+        {"field": "status", "value": "success"},
+        {"field": "journal", "value": 7},
+        {"field": "period", "value": None},
+        {"field": "date_from", "value": None},
+        {"field": "date_to", "value": None},
+        {"field": "papers_found", "value": 0},
+        {"field": "papers_filtered", "value": 0},
+        {"field": "papers_accepted", "value": 0},
+        {"field": "papers_existing", "value": 0},
+        {"field": "papers_new", "value": 0},
+        {"field": "outcome", "value": None},
+        {"field": "keyword_mode", "value": None},
+        {"field": "keyword_terms", "value": ""},
+        {"field": "error", "value": None},
+    ]
+
+
 def test_crawl_journal_options_label_whitelist_choices_for_manual_runs():
     from app import frontend_api
 
