@@ -159,11 +159,11 @@ def release_readiness_display_state(release_readiness: dict[str, Any]) -> dict[s
     groups = [
         {
             "label": "demo data missing:",
-            "items": [str(item) for item in release_readiness.get("demo_data_missing") or [] if str(item).strip()],
+            "items": release_readiness_list_values(release_readiness.get("demo_data_missing"), invalid_label="invalid"),
         },
         {
             "label": "failed workflows:",
-            "items": [str(item) for item in release_readiness.get("failed_workflows") or [] if str(item).strip()],
+            "items": release_readiness_list_values(release_readiness.get("failed_workflows"), invalid_label="invalid"),
         },
         {
             "label": "config warnings:",
@@ -171,7 +171,7 @@ def release_readiness_display_state(release_readiness: dict[str, Any]) -> dict[s
         },
         {
             "label": "storage errors:",
-            "items": [str(item) for item in release_readiness.get("storage_errors") or [] if str(item).strip()],
+            "items": release_readiness_list_values(release_readiness.get("storage_errors"), invalid_label="invalid"),
         },
     ]
     blockers = [item for group in groups for item in group["items"]]

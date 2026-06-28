@@ -232,6 +232,27 @@ def test_release_readiness_display_state_blocks_malformed_config_warning_codes()
     } in state["groups"]
 
 
+def test_release_readiness_display_state_blocks_malformed_demo_data_missing():
+    from app import frontend_api
+
+    state = frontend_api.release_readiness_display_state(
+        {
+            "ready": True,
+            "demo_data_missing": "documents>=1",
+            "failed_workflows": [],
+            "config_warning_codes": [],
+            "storage_errors": [],
+        }
+    )
+
+    assert state["ready"] is False
+    assert state["blockers"] == ["invalid"]
+    assert {
+        "label": "demo data missing:",
+        "items": ["invalid"],
+    } in state["groups"]
+
+
 def test_release_readiness_display_state_rejects_inconsistent_ready_payload():
     from app import frontend_api
 
