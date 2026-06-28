@@ -253,6 +253,10 @@ def filter_documents_by_status(documents: list[dict[str, Any]], filter_value: st
     return [document for document in documents if document.get(field) == expected]
 
 
+def document_filter_summary(total_count: int, filtered_count: int, filter_value: str) -> str:
+    return f"当前页匹配 {filtered_count}/{total_count} · 筛选: {filter_value}"
+
+
 def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for job in jobs:

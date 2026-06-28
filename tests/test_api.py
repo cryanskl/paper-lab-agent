@@ -15009,6 +15009,7 @@ def test_streamlit_chemistry_tab_filters_current_page_by_document_status():
     for required in [
         'chemistry_document_status_filter = st.selectbox("化学库文档状态筛选", document_status_filter_options(), key="chemistry-documents-status-filter")',
         "filtered_chemistry_documents = filter_documents_by_status(chemistry_documents, chemistry_document_status_filter)",
+        "document_filter_summary(len(chemistry_documents), len(filtered_chemistry_documents), chemistry_document_status_filter)",
         "if not chemistry_documents:",
         "elif not filtered_chemistry_documents:",
         "当前页没有匹配筛选状态的化学库文档。",
@@ -16884,6 +16885,7 @@ def test_streamlit_rag_tab_filters_current_page_by_document_status():
     for required in [
         'rag_document_status_filter = st.selectbox("RAG 文档状态筛选", document_status_filter_options(), key="rag-documents-status-filter")',
         "filtered_rag_documents = filter_documents_by_status(rag_documents, rag_document_status_filter)",
+        "document_filter_summary(len(rag_documents), len(filtered_rag_documents), rag_document_status_filter)",
         "if not rag_documents:",
         "elif not filtered_rag_documents:",
         "当前页没有匹配筛选状态的 RAG 文档。",
@@ -16985,6 +16987,7 @@ def test_streamlit_documents_tab_filters_current_page_by_status():
     for required in [
         'document_status_filter = st.selectbox("文档状态筛选", document_status_filter_options(), key="documents-status-filter")',
         "display_docs = filter_documents_by_status(docs, document_status_filter)",
+        "document_filter_summary(len(docs), len(display_docs), document_status_filter)",
         "elif not display_docs:",
         "暂无匹配文档，请调整文档状态筛选。",
         'selected = st.selectbox("文档", display_docs, format_func=document_option_label)',

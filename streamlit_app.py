@@ -16,6 +16,7 @@ from app.frontend_api import (
     document_asset_downloads,
     document_chunk_rows,
     document_chunk_option_label,
+    document_filter_summary,
     document_option_label,
     document_section_option_label,
     document_section_rows,
@@ -640,6 +641,7 @@ with documents_tab:
     )
     document_status_filter = st.selectbox("文档状态筛选", document_status_filter_options(), key="documents-status-filter")
     display_docs = filter_documents_by_status(docs, document_status_filter)
+    st.caption(document_filter_summary(len(docs), len(display_docs), document_status_filter))
     if not docs:
         st.info("暂无文档，请先上传 PDF。")
     elif not display_docs:
@@ -847,6 +849,7 @@ with rag_tab:
     )
     rag_document_status_filter = st.selectbox("RAG 文档状态筛选", document_status_filter_options(), key="rag-documents-status-filter")
     filtered_rag_documents = filter_documents_by_status(rag_documents, rag_document_status_filter)
+    st.caption(document_filter_summary(len(rag_documents), len(filtered_rag_documents), rag_document_status_filter))
     if not rag_documents:
         selected_rag_documents = []
         st.info("暂无可选文档，请先上传并索引文档。")
@@ -935,6 +938,7 @@ with chemistry_tab:
     )
     chemistry_document_status_filter = st.selectbox("化学库文档状态筛选", document_status_filter_options(), key="chemistry-documents-status-filter")
     filtered_chemistry_documents = filter_documents_by_status(chemistry_documents, chemistry_document_status_filter)
+    st.caption(document_filter_summary(len(chemistry_documents), len(filtered_chemistry_documents), chemistry_document_status_filter))
     if not chemistry_documents:
         st.info("暂无可选文档，请先上传并抽取化学库。")
         chemistry_document_id = st.number_input("手动 document_id", min_value=1, value=1)

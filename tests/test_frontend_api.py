@@ -1188,6 +1188,14 @@ def test_filter_documents_by_status_matches_selected_workflow_state():
     assert [document["id"] for document in frontend_api.filter_documents_by_status(documents, "抽取被拒绝")] == [5]
 
 
+def test_document_filter_summary_reports_current_page_match_count():
+    from app import frontend_api
+
+    summary = frontend_api.document_filter_summary(total_count=12, filtered_count=3, filter_value="解析失败")
+
+    assert summary == "当前页匹配 3/12 · 筛选: 解析失败"
+
+
 def test_document_option_label_surfaces_processing_states():
     from app import frontend_api
 
