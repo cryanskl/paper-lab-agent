@@ -731,6 +731,27 @@ def reaction_audit_rows(audit_log: list[dict[str, Any]]) -> list[dict[str, Any]]
     return rows
 
 
+def reaction_review_list_state(reactions: list[dict[str, Any]], *, only_unverified: bool = False) -> dict[str, Any]:
+    unverified_reactions = [reaction for reaction in reactions if not reaction.get("verified")]
+    if only_unverified:
+        display_reactions = unverified_reactions
+        hidden_verified_count = len(reactions) - len(unverified_reactions)
+        summary = f"当前显示未复核: {len(display_reactions)}/{len(reactions)} · 已隐藏已复核: {hidden_verified_count}"
+        mode = "unverified"
+    else:
+        display_reactions = reactions
+        summary = f"当前显示全部反应: {len(display_reactions)} · 未复核: {len(unverified_reactions)}"
+        mode = "all"
+    return {
+        "display_reactions": display_reactions,
+        "total_count": len(reactions),
+        "display_count": len(display_reactions),
+        "unverified_count": len(unverified_reactions),
+        "mode": mode,
+        "summary": summary,
+    }
+
+
 def reaction_review_rows(reactions: list[dict[str, Any]], *, only_unverified: bool = False) -> list[dict[str, Any]]:
     rows = []
     for reaction in reactions:

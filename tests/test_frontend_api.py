@@ -832,6 +832,47 @@ def test_reaction_audit_rows_flatten_field_changes_for_review():
     ]
 
 
+def test_reaction_review_list_state_summarizes_filtered_review_scope():
+    from app import frontend_api
+
+    reactions = [
+        {"id": 1, "reaction": "e + Ar -> e + Ar", "verified": True},
+        {"id": 2, "reaction": "e + Ar -> 2e + Ar+", "verified": False},
+        {"id": 3, "reaction": "Ar+ + e -> Ar", "verified": False},
+    ]
+
+    state = frontend_api.reaction_review_list_state(reactions, only_unverified=True)
+
+    assert state == {
+        "display_reactions": [reactions[1], reactions[2]],
+        "total_count": 3,
+        "display_count": 2,
+        "unverified_count": 2,
+        "mode": "unverified",
+        "summary": "当前显示未复核: 2/3 · 已隐藏已复核: 1",
+    }
+
+
+def test_reaction_review_list_state_summarizes_full_review_scope():
+    from app import frontend_api
+
+    reactions = [
+        {"id": 1, "reaction": "e + Ar -> e + Ar", "verified": True},
+        {"id": 2, "reaction": "e + Ar -> 2e + Ar+", "verified": False},
+    ]
+
+    state = frontend_api.reaction_review_list_state(reactions, only_unverified=False)
+
+    assert state == {
+        "display_reactions": reactions,
+        "total_count": 2,
+        "display_count": 2,
+        "unverified_count": 1,
+        "mode": "all",
+        "summary": "当前显示全部反应: 2 · 未复核: 1",
+    }
+
+
 def test_crawl_job_rows_summarize_diagnostics_and_workflow_state():
     from app import frontend_api
 

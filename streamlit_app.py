@@ -29,6 +29,7 @@ from app.frontend_api import (
     reaction_export_download,
     reaction_export_rows,
     reaction_review_form_state,
+    reaction_review_list_state,
     reaction_review_payload,
     reaction_review_rows,
     reaction_set_option_label,
@@ -986,6 +987,8 @@ with chemistry_tab:
         if review_state.get("source_note"):
             st.caption(f"source_note: {review_state['source_note']}")
         show_only_unverified = st.checkbox("只显示未复核", value=False, key="show_only_unverified")
+        review_list_state = reaction_review_list_state(reactions, only_unverified=show_only_unverified)
+        st.caption(review_list_state["summary"])
         if unverified_reactions:
             st.subheader("未复核反应")
             st.dataframe(reaction_review_rows(reactions, only_unverified=True), use_container_width=True)
@@ -1014,7 +1017,7 @@ with chemistry_tab:
                 else:
                     st.warning(f"导出文件不存在: {payload.get('output_path')}")
                 st.json(payload)
-        display_reactions = unverified_reactions if show_only_unverified else reactions
+        display_reactions = review_list_state["display_reactions"]
         for reaction in display_reactions:
             with st.container(border=True):
                 display_state = reaction_display_state(reaction)
