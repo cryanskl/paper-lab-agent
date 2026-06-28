@@ -157,6 +157,8 @@ def output_path_error(path: Path) -> str | None:
     symlink_parent = first_symlink_parent(path)
     if symlink_parent is not None:
         return f"output path parent is not a regular directory: {symlink_parent}"
+    if path.parent.exists() and not path.parent.is_dir():
+        return f"output path parent is not a regular directory: {path.parent}"
     if path.exists() and not path.is_file():
         return f"output path is not a regular file: {path}"
     return None
