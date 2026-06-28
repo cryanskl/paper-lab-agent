@@ -2611,6 +2611,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert "--require-clean-source" in readme
     assert "python scripts/package_release_artifacts.py --artifact-dir out/release --output out/paper-lab-agent-release.zip --compact" in readme
     assert "python scripts/validate_release_package.py --package out/paper-lab-agent-release.zip --compact" in readme
+    assert "artifact_count" in readme
     assert "artifact_names" in readme
     assert "reaction_set_verified_by" in readme
     assert "reaction_set_verified_at" in readme
@@ -2624,6 +2625,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert "python scripts/validate_release_artifacts.py --artifact-dir out/release --compact" in checklist
     assert "python scripts/package_release_artifacts.py --artifact-dir out/release --output out/paper-lab-agent-release.zip --compact" in checklist
     assert "python scripts/validate_release_package.py --package out/paper-lab-agent-release.zip --compact" in checklist
+    assert "artifact_count" in checklist
     assert "artifact_names" in checklist
     assert "reaction_set_verified_by" in checklist
     assert "reaction_set_verified_at" in checklist
@@ -2650,6 +2652,7 @@ def test_release_check_validates_single_command_handoff_builder():
     assert '"validate_package": True' in release_check
     assert 'handoff.get("artifact_dir") != str(output_dir.resolve())' in release_check
     assert 'handoff.get("package_path") != str(package_path.resolve())' in release_check
+    assert 'handoff.get("artifact_count") != 3' in release_check
     assert 'handoff.get("package_sha256") != handoff.get("package_sha256", "").lower()' in release_check
     assert 'print(f"release_check failed: single-command release handoff={handoff!r}", file=sys.stderr)' in release_check
 
@@ -4212,6 +4215,7 @@ def test_build_release_handoff_script_exports_validates_packages_and_revalidates
     assert payload["artifact_dir"] == str(artifact_dir.resolve())
     assert payload["package_path"] == str(package_path.resolve())
     assert payload["package_sha256"]
+    assert payload["artifact_count"] == 3
     assert payload["artifact_names"] == [
         "demo-summary.json",
         "openapi.json",

@@ -549,6 +549,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         }
         or handoff.get("artifact_dir") != str(output_dir.resolve())
         or handoff.get("package_path") != str(package_path.resolve())
+        or handoff.get("artifact_count") != 3
         or handoff.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]
         or handoff.get("service") != "paper-lab-agent"
         or handoff.get("version") != "0.1.0"
