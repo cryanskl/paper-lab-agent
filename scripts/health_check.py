@@ -659,7 +659,7 @@ def failed_workflow_errors(status: dict) -> list[str]:
     for workflow, counts in status_counts.items():
         if not isinstance(counts, dict):
             continue
-        for blocking_status in ("failed", "rejected"):
+        for blocking_status in ("failed", "rejected", "unknown"):
             count = counts.get(blocking_status)
             if isinstance(count, int) and not isinstance(count, bool) and count > 0:
                 errors.append(f"{workflow}.{blocking_status}={count}")
@@ -928,7 +928,7 @@ def main() -> int:
     parser.add_argument(
         "--require-no-failed-workflows",
         action="store_true",
-        help="Fail when workflow status counts include failed or rejected items",
+        help="Fail when workflow status counts include failed, rejected, or unknown items",
     )
     parser.add_argument("--require-no-config-warnings", action="store_true", help="Fail when system status reports configuration warnings")
     parser.add_argument("--require-demo-data", action="store_true", help="Fail when walking skeleton demo data is not loaded")
