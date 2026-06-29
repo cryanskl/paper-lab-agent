@@ -26,6 +26,7 @@ EXPECTED_ARTIFACTS = {
     "manifest": "release-manifest.json",
 }
 EXPECTED_ARTIFACT_NAMES = sorted(EXPECTED_ARTIFACTS.values())
+ACCEPTANCE_MATRIX_SOURCE = ROOT / "docs" / "release-acceptance-matrix.md"
 EXPECTED_EXPORT_FORMATS = ["json", "txt", "bolsig"]
 EXPECTED_DEMO_COUNT_MINIMUMS = {
     "documents": 1,
@@ -430,6 +431,13 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             issues.append("demo summary reaction_set_verified_at must be an ISO8601 timestamp")
 
     if acceptance_matrix:
+        try:
+            source_acceptance_matrix = ACCEPTANCE_MATRIX_SOURCE.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            issues.append(f"release acceptance matrix source unreadable: {exc}")
+            source_acceptance_matrix = ""
+        if source_acceptance_matrix and acceptance_matrix != source_acceptance_matrix:
+            issues.append("release acceptance matrix does not match docs/release-acceptance-matrix.md")
         for required_text in [
             "Release Acceptance Matrix",
             "docs/PRD_等离子体文献系统.md",

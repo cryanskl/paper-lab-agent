@@ -3651,6 +3651,75 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     assert payload["openapi_path_count"] == 28
 
 
+def test_validate_release_artifacts_rejects_acceptance_matrix_source_drift(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    validate_release_artifacts = load_validate_release_artifacts()
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    export_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert export_result.returncode == 0, export_result.stderr
+    matrix_path = output_dir / "release-acceptance-matrix.md"
+    matrix_path.write_text(
+        matrix_path.read_text(encoding="utf-8")
+        + "\nManual edit: ship without the documented release gate evidence.\n",
+        encoding="utf-8",
+    )
+    manifest_path = output_dir / "release-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["checksums"]["release-acceptance-matrix.md"] = validate_release_artifacts.sha256_file(matrix_path)
+    manifest["checksums"]["release-manifest.json"] = validate_release_artifacts.manifest_checksum(manifest)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
+
+    validate_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_artifacts.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert validate_result.returncode == 1
+    payload = json.loads(validate_result.stdout)
+    assert payload["ok"] is False
+    assert "release acceptance matrix does not match docs/release-acceptance-matrix.md" in payload["issues"]
+
+
 def test_validate_release_artifacts_rejects_preflight_warning_count_drift(tmp_path):
     import os
     import subprocess
