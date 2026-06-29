@@ -941,6 +941,7 @@ with chemistry_tab:
         st.error(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
         st.stop()
+    chemistry_documents_response = documents_response_state(chemistry_documents_response)
     chemistry_documents = chemistry_documents_response["items"]
     st.caption(
         f"chemistry documents page {chemistry_documents_response['page']} · "

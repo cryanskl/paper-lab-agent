@@ -16002,6 +16002,18 @@ def test_streamlit_chemistry_tab_exposes_document_pagination_controls():
         assert required in chemistry_section
 
 
+def test_streamlit_chemistry_tab_normalizes_document_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    assert "documents_response_state" in streamlit
+    assert "chemistry_documents_response = documents_response_state(chemistry_documents_response)" in chemistry_section
+    assert chemistry_section.index(
+        "chemistry_documents_response = documents_response_state(chemistry_documents_response)"
+    ) < chemistry_section.index('chemistry_documents = chemistry_documents_response["items"]')
+
+
 def test_streamlit_chemistry_documents_list_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
