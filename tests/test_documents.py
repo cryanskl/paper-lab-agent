@@ -234,6 +234,36 @@ def test_sections_from_tei_preserves_nested_table_notes_inside_table_figures():
     ]
 
 
+def test_sections_from_tei_uses_nested_table_title_inside_table_figures():
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <figure type="table">
+            <figDesc>Measured argon ionization data.</figDesc>
+            <table>
+              <head>Table 5</head>
+              <row><cell>Reaction</cell><cell>Rate</cell></row>
+              <row><cell>e + Ar -> Ar+</cell><cell>1.0e-13 cm3/s</cell></row>
+            </table>
+          </figure>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Table 5",
+            "content": "Measured argon ionization data. Reaction Rate e + Ar -> Ar+ 1.0e-13 cm3/s",
+            "section_type": "table",
+        }
+    ]
+
+
 def test_sections_from_tei_preserves_direct_body_and_div_notes():
     tei = """
     <TEI xmlns="http://www.tei-c.org/ns/1.0">
