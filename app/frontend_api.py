@@ -550,7 +550,9 @@ def workbench_status_cards(status: Any) -> list[dict[str, Any]]:
     return cards
 
 
-def _positive_unique_ints(values: list[int]) -> list[int]:
+def _positive_unique_ints(values: Any) -> list[int]:
+    if not isinstance(values, (list, tuple)):
+        return []
     output: list[int] = []
     for value in values:
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
@@ -560,11 +562,17 @@ def _positive_unique_ints(values: list[int]) -> list[int]:
     return output
 
 
-def rag_document_ids_for_scope(scope: str, selected_document_ids: list[int], typed_document_ids: list[int]) -> list[int]:
+def rag_document_ids_for_scope(
+    scope: str,
+    selected_document_ids: list[int],
+    typed_document_ids: list[int],
+) -> list[int]:
+    selected_ids = selected_document_ids if isinstance(selected_document_ids, list) else []
+    typed_ids = typed_document_ids if isinstance(typed_document_ids, list) else []
     if scope == "选中文档":
-        return _positive_unique_ints([*selected_document_ids, *typed_document_ids])
+        return _positive_unique_ints([*selected_ids, *typed_ids])
     if scope == "手动范围":
-        return _positive_unique_ints(typed_document_ids)
+        return _positive_unique_ints(typed_ids)
     return []
 
 
@@ -593,17 +601,18 @@ def _analysis_state(
 
 
 def document_analysis_steps(document: dict[str, Any], chunks: Optional[dict[str, Any]] = None) -> list[dict[str, Any]]:
-    chunks = chunks or {}
+    document_data = document if isinstance(document, dict) else {}
+    chunks_data = chunks if isinstance(chunks, dict) else {}
     parse = _analysis_state(
-        document.get("parse_status"),
+        document_data.get("parse_status"),
         done_values={"parsed"},
         active_values={"parsing"},
         empty_detail="尚未解析章节",
         done_detail="章节已解析",
         active_detail="正在解析章节",
-        error=document.get("parse_error"),
+        error=document_data.get("parse_error"),
     )
-    index_status = chunks.get("index_status") or document.get("index_status")
+    index_status = chunks_data.get("index_status") or document_data.get("index_status")
     index = _analysis_state(
         index_status,
         done_values={"indexed"},
@@ -611,16 +620,16 @@ def document_analysis_steps(document: dict[str, Any], chunks: Optional[dict[str,
         empty_detail="尚未建立可问答索引",
         done_detail="已写入知识库",
         active_detail="正在写入知识库",
-        error=chunks.get("index_error") or document.get("index_error"),
+        error=chunks_data.get("index_error") or document_data.get("index_error"),
     )
     chemistry = _analysis_state(
-        document.get("chemistry_status"),
+        document_data.get("chemistry_status"),
         done_values={"extracted"},
         active_values={"extracting"},
         empty_detail="尚未抽取反应集",
         done_detail="反应集已抽取",
         active_detail="正在抽取反应集",
-        error=document.get("chemistry_error"),
+        error=document_data.get("chemistry_error"),
     )
     translation_state = "neutral" if parse["state"] == "ok" else "warning"
     translation_detail = "解析后可生成或查看翻译" if parse["state"] == "ok" else "需要先解析章节"
@@ -656,19 +665,52 @@ def chemistry_deposition_summary(detail: dict[str, Any]) -> dict[str, Any]:
     review_state = reaction_set_review_state(detail)
     reaction_set_id = detail.get("id")
     document_id = detail.get("document_id")
+    document_obj = detail.get("document")
+    if not isinstance(document_obj, dict):
+        document_obj = {}
+    paper = detail.get("paper")
+    if not isinstance(paper, dict):
+        paper = document_obj.get("paper") if isinstance(document_obj.get("paper"), dict) else None
     title = detail.get("name") if isinstance(detail.get("name"), str) and detail.get("name").strip() else "Reaction set"
     status = detail.get("status") if isinstance(detail.get("status"), str) and detail.get("status").strip() else "unknown"
     gas_mixture = detail.get("gas_mixture") if isinstance(detail.get("gas_mixture"), str) and detail.get("gas_mixture").strip() else "-"
     lxcat_db = detail.get("lxcat_db") if isinstance(detail.get("lxcat_db"), str) and detail.get("lxcat_db").strip() else "-"
+    if document_id is None:
+        document_obj_id = document_obj.get("id")
+        if isinstance(document_obj_id, int) and not isinstance(document_obj_id, bool):
+            document_id = document_obj_id
+    paper_id = None
+    paper_title = None
+    if isinstance(paper, dict):
+        detail_paper_id = paper.get("id")
+        if isinstance(detail_paper_id, int) and not isinstance(detail_paper_id, bool):
+            paper_id = detail_paper_id
+        detail_paper_title = paper.get("title")
+        if isinstance(detail_paper_title, str) and detail_paper_title.strip():
+            paper_title = detail_paper_title.strip()
+    elif isinstance(detail.get("paper_id"), int) and not isinstance(detail.get("paper_id"), bool):
+        paper_id = detail.get("paper_id")
+    elif isinstance(detail.get("paper_title"), str) and detail.get("paper_title").strip():
+        paper_title = detail.get("paper_title").strip()
     reaction_count = review_state["reaction_count"]
     unverified_count = len(review_state["unverified_reactions"])
     verified_count = max(reaction_count - unverified_count, 0)
     export_ready = reaction_count > 0 and unverified_count == 0 and status == "verified"
     summary_parts = [
         f"反应集 #{reaction_set_id if reaction_set_id is not None else '-'}",
+    ]
+    if document_id is not None and isinstance(document_id, int) and not isinstance(document_id, bool):
+        summary_parts.append(f"document #{document_id}")
+    if paper_id is not None:
+        summary_parts.append(f"paper #{paper_id}")
+    if paper_title:
+        summary_parts.append(paper_title)
+    summary_parts.extend(
+        [
         f"{reaction_count} 条反应",
         f"{unverified_count} 条待复核",
-    ]
+        ]
+    )
     if gas_mixture != "-":
         summary_parts.append(gas_mixture)
     if lxcat_db != "-":

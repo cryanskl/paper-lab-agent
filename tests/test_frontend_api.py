@@ -3479,6 +3479,16 @@ def test_rag_document_ids_for_scope_defaults_to_whole_knowledge_base():
     assert frontend_api.rag_document_ids_for_scope("未知", [7], [8]) == []
 
 
+def test_rag_document_ids_for_scope_ignores_malformed_inputs():
+    from app import frontend_api
+
+    assert frontend_api.rag_document_ids_for_scope("选中文档", "bad", [8]) == [8]
+    assert frontend_api.rag_document_ids_for_scope("手动范围", [7], "bad") == []
+    assert frontend_api.rag_document_ids_for_scope("选中文档", None, None) == []
+    assert frontend_api.rag_document_ids_for_scope("手动范围", None, None) == []
+    assert frontend_api.rag_document_ids_for_scope("未知", None, None) == []
+
+
 def test_document_analysis_steps_group_existing_pdf_operations():
     from app import frontend_api
 
@@ -3499,6 +3509,19 @@ def test_document_analysis_steps_group_existing_pdf_operations():
         {"key": "index", "label": "写入知识库", "status": "not_indexed", "state": "warning", "detail": "尚未建立可问答索引"},
         {"key": "translation", "label": "翻译预览", "status": "available_after_parse", "state": "neutral", "detail": "解析后可生成或查看翻译"},
         {"key": "chemistry", "label": "沉淀化学库", "status": "extracted", "state": "ok", "detail": "反应集已抽取"},
+    ]
+
+
+def test_document_analysis_steps_recover_from_malformed_payload():
+    from app import frontend_api
+
+    steps = frontend_api.document_analysis_steps("bad-document", "bad-chunks")
+
+    assert steps == [
+        {"key": "parse", "label": "解析章节", "status": "unknown", "state": "warning", "detail": "尚未解析章节"},
+        {"key": "index", "label": "写入知识库", "status": "unknown", "state": "warning", "detail": "尚未建立可问答索引"},
+        {"key": "translation", "label": "翻译预览", "status": "blocked_until_parse", "state": "warning", "detail": "需要先解析章节"},
+        {"key": "chemistry", "label": "沉淀化学库", "status": "unknown", "state": "warning", "detail": "尚未抽取反应集"},
     ]
 
 
@@ -3531,5 +3554,24 @@ def test_chemistry_deposition_summary_counts_review_state():
         "export_ready": False,
         "gas_mixture": "O2 / Ar",
         "lxcat_db": "Biagi",
-        "summary": "反应集 #4 · 2 条反应 · 1 条待复核 · O2 / Ar · LXCat: Biagi",
+        "summary": "反应集 #4 · document #2 · 2 条反应 · 1 条待复核 · O2 / Ar · LXCat: Biagi",
     }
+
+
+def test_chemistry_deposition_summary_includes_nested_paper_context():
+    from app import frontend_api
+
+    summary = frontend_api.chemistry_deposition_summary(
+        {
+            "id": 8,
+            "document_id": 3,
+            "status": "verified",
+            "name": "Nested paper reaction set",
+            "reactions": [],
+            "paper": {"id": 21, "title": "Nested title"},
+            "document": {"paper": {"id": 22, "title": "Nested via document.paper"}},
+            "lxcat_db": "Phelps",
+        }
+    )
+
+    assert summary["summary"] == "反应集 #8 · document #3 · paper #21 · Nested title · 0 条反应 · 0 条待复核 · LXCat: Phelps"
