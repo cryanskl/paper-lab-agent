@@ -17575,6 +17575,18 @@ def test_streamlit_document_sections_errors_show_payload_details():
         assert required in sections_load_section
 
 
+def test_streamlit_document_sections_normalizes_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    assert "paginated_response_state" in streamlit
+    assert "sections_response = paginated_response_state(sections_response, default_page_size=20)" in documents_section
+    assert documents_section.index(
+        "sections_response = paginated_response_state(sections_response, default_page_size=20)"
+    ) < documents_section.index('sections = sections_response["items"]')
+
+
 def test_streamlit_document_chunks_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

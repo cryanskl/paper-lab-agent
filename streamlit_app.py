@@ -759,6 +759,7 @@ with documents_tab:
             st.error(format_error_payload(exc.payload, exc.status_code))
             st.json(exc.payload)
             st.stop()
+        sections_response = paginated_response_state(sections_response, default_page_size=20)
         sections = sections_response["items"]
         try:
             chunks = api_get(
