@@ -6393,6 +6393,30 @@ def test_dev_script_documents_help_mode_without_starting_services():
         assert required in dev_script
 
 
+def test_start_script_documents_one_click_startup_contract():
+    repo = Path(__file__).resolve().parent.parent
+    start_script = repo / "start.sh"
+    start_text = start_script.read_text(encoding="utf-8")
+
+    assert start_script.exists()
+    assert start_script.stat().st_mode & stat.S_IXUSR
+    for required in [
+        "logs/run-",
+        "backend.log",
+        "frontend.log",
+        "startup.log",
+        "lsof -tiTCP",
+        "pip install -r requirements.txt",
+        "-m uvicorn app.main:app",
+        "-m streamlit run streamlit_app.py",
+        "/api/v1/health",
+        "/_stcore/health",
+        "DEV_EXIT_AFTER_READY",
+        "START_OPEN_BROWSER",
+    ]:
+        assert required in start_text
+
+
 def test_api_contract_documented_endpoints_exist_in_app():
     validate_api_contract = load_validate_api_contract()
     repo = Path(__file__).resolve().parent.parent

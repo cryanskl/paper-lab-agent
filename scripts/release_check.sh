@@ -18,6 +18,7 @@ OFFLINE_PREFLIGHT_ENV=(
 
 bash -n scripts/env.sh
 bash -n scripts/dev.sh
+bash -n start.sh
 git diff --check
 git diff --cached --check
 "${PYTHON_CMD[@]}" -m compileall -q app scripts tests streamlit_app.py

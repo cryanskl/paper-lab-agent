@@ -10641,6 +10641,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "rm -rf" not in release_text
     assert "bash -n scripts/env.sh" in release_text
     assert "bash -n scripts/dev.sh" in release_text
+    assert "bash -n start.sh" in release_text
     assert "-m py_compile" in release_text
     assert "find scripts -maxdepth 1 -type f -name '*.py' | sort" in release_text
     assert 'PY_COMPILE_TARGETS=("${RELEASE_SCRIPT_TARGETS[@]}" streamlit_app.py)' in release_text

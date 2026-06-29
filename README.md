@@ -6,6 +6,16 @@
 
 ## Quick Start
 
+一键启动（推荐给本机演示或日常点击启动）：
+
+```bash
+./start.sh
+```
+
+`start.sh` 会自动创建 `.env`（如果不存在）、创建或复用 `.venv`、安装 `requirements.txt` 里的后端和 Streamlit 前端依赖、检查并释放 FastAPI/Streamlit 端口、启动前后端、等待健康检查通过后打开前端网页。每次运行都会写入独立日志目录：`logs/run-YYYYMMDD-HHMMSS/startup.log`、`backend.log`、`frontend.log`。需要只验证启动不打开浏览器时可运行：`START_OPEN_BROWSER=false DEV_EXIT_AFTER_READY=true ./start.sh`。
+
+手动启动：
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
