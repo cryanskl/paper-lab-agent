@@ -152,13 +152,12 @@ def source_label(section: dict) -> str:
 
 
 def detect_lxcat_db(text: str) -> Optional[str]:
-    match = LXCAT_DB_RE.search(text)
-    if not match:
-        return None
-    candidate = match.group(1).strip(" .,:;")
-    if candidate.lower() in LXCAT_DB_STOPWORDS:
-        return None
-    return candidate
+    for match in LXCAT_DB_RE.finditer(text):
+        candidate = match.group(1).strip(" .,:;")
+        if candidate.lower() in LXCAT_DB_STOPWORDS:
+            continue
+        return candidate
+    return None
 
 
 def detect_gas_mixture(text: str) -> Optional[str]:
