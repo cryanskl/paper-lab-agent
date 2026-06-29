@@ -16057,6 +16057,18 @@ def test_streamlit_chemistry_tab_exposes_reaction_set_pagination_controls():
     assert 'st.selectbox(\n                "document_reaction_sets",\n                reaction_set_items,' not in chemistry_section
 
 
+def test_streamlit_chemistry_document_reaction_sets_normalizes_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    assert "paginated_response_state" in streamlit
+    assert "document_reaction_sets = paginated_response_state(document_reaction_sets, default_page_size=20)" in chemistry_section
+    assert chemistry_section.index(
+        "document_reaction_sets = paginated_response_state(document_reaction_sets, default_page_size=20)"
+    ) < chemistry_section.index('reaction_set_items = document_reaction_sets.get("items", [])')
+
+
 def test_streamlit_chemistry_audit_log_surfaces_field_changes():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

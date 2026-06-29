@@ -1006,6 +1006,7 @@ with chemistry_tab:
     selected_reaction_set_id = None
     document_reaction_sets = st.session_state.get("document_reaction_sets")
     if document_reaction_sets:
+        document_reaction_sets = paginated_response_state(document_reaction_sets, default_page_size=20)
         reaction_set_items = document_reaction_sets.get("items", [])
         st.caption(
             f"reaction sets page {document_reaction_sets['page']} · "
