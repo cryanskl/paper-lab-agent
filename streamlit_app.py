@@ -272,7 +272,192 @@ def render_knowledge_column(selected_document: Optional[dict[str, Any]]) -> None
         st.info("从左侧选择一个 PDF 后，这里会显示章节、翻译、索引和化学抽取状态。")
         return
     st.caption(document_option_label(selected_document))
-    st.dataframe(document_status_rows(selected_document), use_container_width=True)
+    try:
+        document_detail = api_get(f"/documents/{selected_document['id']}")
+    except FrontendApiError as exc:
+        st.warning(format_error_payload(exc.payload, exc.status_code))
+        with st.expander("Raw API response"):
+            st.json(exc.payload)
+        return
+
+    try:
+        chunks = api_get(f"/documents/{selected_document['id']}/chunks", page=1, page_size=20)
+        chunks = document_chunks_response_state(chunks)
+    except FrontendApiError as exc:
+        chunks = {
+            "items": [],
+            "total": 0,
+            "page": 1,
+            "page_size": 20,
+            "indexed": False,
+            "index_status": "not_indexed",
+            "index_error": format_error_payload(exc.payload, exc.status_code),
+        }
+
+    st.dataframe(document_analysis_steps(document_detail, chunks), use_container_width=True)
+    analysis_cols = st.columns(4)
+    if analysis_cols[0].button("解析章节", key=f"analysis-parse-{selected_document['id']}"):
+        status_code, parse_payload = api_post(f"/documents/{selected_document['id']}/parse")
+        if status_code < 400:
+            st.success("已创建解析任务")
+        else:
+            st.warning(format_error_payload(parse_payload, status_code))
+        with st.expander("Raw API response"):
+            st.json(parse_payload)
+    translation_target_lang = analysis_cols[1].text_input(
+        "翻译目标",
+        value="zh",
+        key=f"analysis-translation-target-{selected_document['id']}",
+    )
+    if analysis_cols[1].button("生成翻译", key=f"analysis-translate-{selected_document['id']}"):
+        status_code, translate_payload = api_post(
+            f"/documents/{selected_document['id']}/translate",
+            json={"target_lang": translation_target_lang},
+        )
+        if status_code < 400:
+            st.success("已创建翻译任务")
+        else:
+            st.warning(format_error_payload(translate_payload, status_code))
+        with st.expander("Raw API response"):
+            st.json(translate_payload)
+    if analysis_cols[2].button("写入知识库", key=f"analysis-index-{selected_document['id']}"):
+        status_code, index_payload = api_post(f"/documents/{selected_document['id']}/index")
+        if status_code < 400:
+            st.success("已创建索引任务")
+        else:
+            st.warning(format_error_payload(index_payload, status_code))
+        with st.expander("Raw API response"):
+            st.json(index_payload)
+    if analysis_cols[3].button("沉淀化学库", key=f"analysis-chemistry-{selected_document['id']}"):
+        status_code, extract_payload = api_post(f"/documents/{selected_document['id']}/extract-chemistry")
+        if status_code < 400:
+            st.success("已创建化学抽取任务")
+        else:
+            st.warning(format_error_payload(extract_payload, status_code))
+        with st.expander("Raw API response"):
+            st.json(extract_payload)
+
+    sections_page_col, sections_page_size_col = st.columns(2)
+    sections_page = sections_page_col.number_input(
+        "sections_page",
+        min_value=1,
+        value=1,
+        key=f"sections-page-{selected_document['id']}",
+    )
+    sections_page_size = sections_page_size_col.number_input(
+        "sections_page_size",
+        min_value=1,
+        max_value=100,
+        value=20,
+        key=f"sections-page-size-{selected_document['id']}",
+    )
+    chunks_page_col, chunks_page_size_col = st.columns(2)
+    chunks_page = chunks_page_col.number_input(
+        "chunks_page",
+        min_value=1,
+        value=1,
+        key=f"chunks-page-{selected_document['id']}",
+    )
+    chunks_page_size = chunks_page_size_col.number_input(
+        "chunks_page_size",
+        min_value=1,
+        max_value=100,
+        value=20,
+        key=f"chunks-page-size-{selected_document['id']}",
+    )
+    try:
+        sections_response = api_get(
+            f"/documents/{selected_document['id']}/sections",
+            page=int(sections_page),
+            page_size=int(sections_page_size),
+        )
+    except FrontendApiError as exc:
+        st.error(format_error_payload(exc.payload, exc.status_code))
+        st.json(exc.payload)
+        st.stop()
+    sections_response = paginated_response_state(sections_response, default_page_size=20)
+    sections = sections_response["items"]
+    try:
+        chunks = api_get(
+            f"/documents/{selected_document['id']}/chunks",
+            page=int(chunks_page),
+            page_size=int(chunks_page_size),
+        )
+    except FrontendApiError as exc:
+        st.error(format_error_payload(exc.payload, exc.status_code))
+        st.json(exc.payload)
+        st.stop()
+    chunks = document_chunks_response_state(chunks)
+    index_status = chunks.get("index_status") or ("indexed" if chunks["indexed"] else "not_indexed")
+    st.caption(f"index_status: {index_status} · chunks: {chunks['total']}")
+    st.dataframe(dataframe_display_rows(document_status_rows(document_detail, chunks)), use_container_width=True)
+    if chunks.get("index_error"):
+        st.warning(f"index_error: {chunks['index_error']}")
+    section_tab, translation_tab, chunks_tab = st.tabs(["章节", "翻译预览", "索引"])
+    with section_tab:
+        if sections:
+            section_preview = st.selectbox(
+                "section_preview",
+                sections,
+                format_func=document_section_option_label,
+            )
+            st.markdown(f"### {document_section_preview_title(section_preview)}")
+            st.write(document_section_preview_content(section_preview))
+        st.caption(
+            f"sections page {sections_response['page']} · "
+            f"page_size {sections_response['page_size']} · "
+            f"total {sections_response['total']}"
+        )
+        st.dataframe(document_section_rows(sections), use_container_width=True)
+    with translation_tab:
+        try:
+            translation_preview = api_get(f"/documents/{selected_document['id']}/translation")
+            st.caption(translation_preview.get("status"))
+            translation_text = ""
+            if translation_preview.get("status") == "failed":
+                translation_error = translation_preview.get("error") or "unknown error"
+                st.warning(f"translation failed: {translation_error}")
+                st.dataframe(translation_status_rows(translation_preview), use_container_width=True)
+                st.json(translation_preview)
+            elif translation_preview.get("output_path"):
+                translation_file = translation_download(translation_preview)
+                if translation_file:
+                    translation_text = translation_file["data"]
+                    st.dataframe(
+                        translation_status_rows(translation_preview, preview_text=translation_text),
+                        use_container_width=True,
+                    )
+                    st.download_button(
+                        translation_file["label"],
+                        data=translation_file["data"],
+                        file_name=translation_file["file_name"],
+                        mime=translation_file["mime"],
+                    )
+                    st.markdown(translation_text[:4000])
+                else:
+                    st.warning(f"翻译文件不存在: {translation_preview.get('output_path')}")
+                    st.dataframe(translation_status_rows(translation_preview), use_container_width=True)
+                    st.json(translation_preview)
+            else:
+                st.dataframe(translation_status_rows(translation_preview), use_container_width=True)
+                st.json(translation_preview)
+        except FrontendApiError as exc:
+            translation_preview = None
+            st.warning(format_error_payload(exc.payload, exc.status_code))
+            st.json(exc.payload)
+        except Exception as exc:
+            translation_preview = None
+            st.info(f"translation_preview unavailable: {exc}")
+    with chunks_tab:
+        if chunks["items"]:
+            chunk_preview = st.selectbox(
+                "chunk / vector_id",
+                chunks["items"],
+                format_func=document_chunk_option_label,
+            )
+            st.code(document_chunk_preview_text(chunk_preview))
+        st.caption(f"chunks page {chunks['page']} · page_size {chunks['page_size']} · total {chunks['total']}")
+        st.dataframe(document_chunk_rows(chunks["items"]), use_container_width=True)
 
 
 def render_chemistry_column(selected_document: Optional[dict[str, Any]]) -> None:
@@ -766,154 +951,6 @@ def render_documents_panel() -> Optional[dict[str, Any]]:
                 f'{linked_paper.get("journal_name") or "-"} · '
                 f'{linked_paper.get("published_date") or "-"}'
             )
-        c1, c2, c3, c4 = st.columns(4)
-        if c1.button("解析"):
-            status_code, parse_payload = api_post(f"/documents/{selected['id']}/parse")
-            if status_code < 400:
-                st.success("已创建解析任务")
-            else:
-                st.warning(format_error_payload(parse_payload, status_code))
-            st.json(parse_payload)
-        translation_target_lang = c2.text_input(
-            "target_lang",
-            value="zh",
-            key=f"translation-target-lang-{selected['id']}",
-        )
-        if c2.button("翻译"):
-            status_code, translate_payload = api_post(
-                f"/documents/{selected['id']}/translate",
-                json={"target_lang": translation_target_lang},
-            )
-            if status_code < 400:
-                st.success("已创建翻译任务")
-            else:
-                st.warning(format_error_payload(translate_payload, status_code))
-            st.json(translate_payload)
-        if c3.button("索引"):
-            status_code, index_payload = api_post(f"/documents/{selected['id']}/index")
-            if status_code < 400:
-                st.success("已创建索引任务")
-            else:
-                st.warning(format_error_payload(index_payload, status_code))
-            st.json(index_payload)
-        if c4.button("抽取"):
-            status_code, extract_payload = api_post(f"/documents/{selected['id']}/extract-chemistry")
-            if status_code < 400:
-                st.success("已创建化学抽取任务")
-            else:
-                st.warning(format_error_payload(extract_payload, status_code))
-            st.json(extract_payload)
-        sections_page_col, sections_page_size_col = st.columns(2)
-        sections_page = sections_page_col.number_input("sections_page", min_value=1, value=1, key=f"sections-page-{selected['id']}")
-        sections_page_size = sections_page_size_col.number_input(
-            "sections_page_size",
-            min_value=1,
-            max_value=100,
-            value=20,
-            key=f"sections-page-size-{selected['id']}",
-        )
-        chunks_page_col, chunks_page_size_col = st.columns(2)
-        chunks_page = chunks_page_col.number_input("chunks_page", min_value=1, value=1, key=f"chunks-page-{selected['id']}")
-        chunks_page_size = chunks_page_size_col.number_input(
-            "chunks_page_size",
-            min_value=1,
-            max_value=100,
-            value=20,
-            key=f"chunks-page-size-{selected['id']}",
-        )
-        try:
-            sections_response = api_get(
-                f"/documents/{selected['id']}/sections",
-                page=int(sections_page),
-                page_size=int(sections_page_size),
-            )
-        except FrontendApiError as exc:
-            st.error(format_error_payload(exc.payload, exc.status_code))
-            st.json(exc.payload)
-            st.stop()
-        sections_response = paginated_response_state(sections_response, default_page_size=20)
-        sections = sections_response["items"]
-        try:
-            chunks = api_get(
-                f"/documents/{selected['id']}/chunks",
-                page=int(chunks_page),
-                page_size=int(chunks_page_size),
-            )
-        except FrontendApiError as exc:
-            st.error(format_error_payload(exc.payload, exc.status_code))
-            st.json(exc.payload)
-            st.stop()
-        chunks = document_chunks_response_state(chunks)
-        index_status = chunks.get("index_status") or ("indexed" if chunks["indexed"] else "not_indexed")
-        st.caption(f"index_status: {index_status} · chunks: {chunks['total']}")
-        st.dataframe(dataframe_display_rows(document_status_rows(document_detail, chunks)), use_container_width=True)
-        if chunks.get("index_error"):
-            st.warning(f"index_error: {chunks['index_error']}")
-        section_tab, translation_tab, chunks_tab = st.tabs(["章节", "翻译预览", "索引"])
-        with section_tab:
-            if sections:
-                section_preview = st.selectbox(
-                    "section_preview",
-                    sections,
-                    format_func=document_section_option_label,
-                )
-                st.markdown(f"### {document_section_preview_title(section_preview)}")
-                st.write(document_section_preview_content(section_preview))
-            st.caption(
-                f"sections page {sections_response['page']} · "
-                f"page_size {sections_response['page_size']} · "
-                f"total {sections_response['total']}"
-            )
-            st.dataframe(document_section_rows(sections), use_container_width=True)
-        with translation_tab:
-            try:
-                translation_preview = api_get(f"/documents/{selected['id']}/translation")
-                st.caption(translation_preview.get("status"))
-                translation_text = ""
-                if translation_preview.get("status") == "failed":
-                    translation_error = translation_preview.get("error") or "unknown error"
-                    st.warning(f"translation failed: {translation_error}")
-                    st.dataframe(translation_status_rows(translation_preview), use_container_width=True)
-                    st.json(translation_preview)
-                elif translation_preview.get("output_path"):
-                    translation_file = translation_download(translation_preview)
-                    if translation_file:
-                        translation_text = translation_file["data"]
-                        st.dataframe(
-                            translation_status_rows(translation_preview, preview_text=translation_text),
-                            use_container_width=True,
-                        )
-                        st.download_button(
-                            translation_file["label"],
-                            data=translation_file["data"],
-                            file_name=translation_file["file_name"],
-                            mime=translation_file["mime"],
-                        )
-                        st.markdown(translation_text[:4000])
-                    else:
-                        st.warning(f"翻译文件不存在: {translation_preview.get('output_path')}")
-                        st.dataframe(translation_status_rows(translation_preview), use_container_width=True)
-                        st.json(translation_preview)
-                else:
-                    st.dataframe(translation_status_rows(translation_preview), use_container_width=True)
-                    st.json(translation_preview)
-            except FrontendApiError as exc:
-                translation_preview = None
-                st.warning(format_error_payload(exc.payload, exc.status_code))
-                st.json(exc.payload)
-            except Exception as exc:
-                translation_preview = None
-                st.info(f"translation_preview unavailable: {exc}")
-        with chunks_tab:
-            if chunks["items"]:
-                chunk_preview = st.selectbox(
-                    "chunk / vector_id",
-                    chunks["items"],
-                    format_func=document_chunk_option_label,
-                )
-                st.code(document_chunk_preview_text(chunk_preview))
-            st.caption(f"chunks page {chunks['page']} · page_size {chunks['page_size']} · total {chunks['total']}")
-            st.dataframe(document_chunk_rows(chunks["items"]), use_container_width=True)
 
     return selected_document_detail
 
@@ -944,26 +981,28 @@ def render_rag_panel(selected_document: Optional[dict[str, Any]] = None) -> None
     filtered_rag_documents = filter_documents_by_status(rag_documents, rag_document_status_filter)
     st.caption(document_filter_summary(len(rag_documents), len(filtered_rag_documents), rag_document_status_filter))
     if not rag_documents:
-        selected_rag_documents = []
         st.info("暂无可选文档，请先上传并索引文档。")
     elif not filtered_rag_documents:
-        selected_rag_documents = []
         st.info("当前页没有匹配筛选状态的 RAG 文档。")
-    else:
-        selected_rag_documents = st.multiselect(
-            "限定文档",
-            filtered_rag_documents,
-            format_func=document_option_label,
-            key="rag-document-select",
-        )
-    doc_ids = st.text_input("document_ids", value="")
+    scope_options = ["全部知识库", "选中文档", "手动范围"]
+    scope = st.radio(
+        "问答范围",
+        scope_options,
+        horizontal=True,
+        key="rag-scope",
+        help="默认查询整个已索引知识库；只有明确选择时才限定文档。",
+    )
+    selected_document_ids = []
+    if selected_document is not None and isinstance(selected_document.get("id"), int):
+        selected_document_ids = [int(selected_document["id"])]
+        st.caption(f"当前阅读上下文: document #{selected_document['id']}")
+    doc_ids = st.text_input("手动 document_ids", value="", help="仅在选择手动范围或选中文档时追加使用。")
     question = st.text_input("问题", value="plasma chemistry")
     top_k = st.number_input("top_k", min_value=1, max_value=20, value=6)
     if st.button("提问"):
         try:
-            selected_document_ids = [int(document["id"]) for document in selected_rag_documents]
             typed_document_ids = [int(part.strip()) for part in doc_ids.split(",") if part.strip()]
-            ids = list(dict.fromkeys(selected_document_ids + typed_document_ids))
+            ids = rag_document_ids_for_scope(scope, selected_document_ids, typed_document_ids)
             document_id_error = None
         except ValueError:
             ids = []
