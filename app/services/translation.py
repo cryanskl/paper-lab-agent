@@ -135,6 +135,16 @@ def assert_safe_translation_output_path(path) -> None:
         raise ValueError(f"translation output path is not a regular file: {path}")
 
 
+def translation_output_path(settings: Settings, document_id: int, target_lang: str, translation_id: int) -> Path:
+    slug = safe_target_lang_slug(target_lang)
+    base_path = settings.translation_dir / f"document-{document_id}-{slug}.md"
+    if base_path.is_symlink() or (base_path.exists() and not base_path.is_file()):
+        return base_path
+    if not base_path.exists():
+        return base_path
+    return settings.translation_dir / f"document-{document_id}-{slug}-{translation_id}.md"
+
+
 def create_translation_job(document_id: int, target_lang: str) -> dict:
     with get_conn() as conn:
         cursor = conn.execute(
@@ -190,7 +200,7 @@ def translate_document(document_id: int, target_lang: str, translation_id: Optio
                     *target_blocks,
                 ]
             )
-        out_path = settings.translation_dir / f"document-{document_id}-{safe_target_lang_slug(target_lang)}.md"
+        out_path = translation_output_path(settings, document_id, target_lang, translation_id)
         assert_safe_translation_output_path(out_path)
         out_path.write_text("\n".join(blocks), encoding="utf-8")
         with get_conn() as conn:

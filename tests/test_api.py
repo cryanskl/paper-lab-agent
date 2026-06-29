@@ -17386,6 +17386,42 @@ def test_translate_document_uses_filesystem_safe_target_lang_slug(tmp_path):
     assert output_path.exists()
 
 
+def test_translate_document_avoids_overwriting_colliding_target_lang_slugs(tmp_path):
+    make_client(tmp_path)
+    from app.db import get_conn
+    from app.services import translation as translation_service
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            (str(tmp_path / "target-collision.pdf"), "target-collision", "target-collision.pdf"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Body', 'Argon plasma text', 'body')
+            """,
+            (document_id,),
+        )
+
+    first = translation_service.translate_document(document_id, "zh!")
+    first_path = Path(first["output_path"])
+    first_path.write_text("first translation", encoding="utf-8")
+    second = translation_service.translate_document(document_id, "zh?")
+    second_path = Path(second["output_path"])
+
+    assert first["status"] == "done"
+    assert second["status"] == "done"
+    assert first_path.name == f"document-{document_id}-zh.md"
+    assert second_path.name != first_path.name
+    assert second_path.exists()
+    assert first_path.read_text(encoding="utf-8") == "first translation"
+
+
 def test_translate_document_rejects_symlinked_output_file(tmp_path):
     make_client(tmp_path)
     from app.db import get_conn
