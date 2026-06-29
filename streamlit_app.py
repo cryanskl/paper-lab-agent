@@ -850,6 +850,7 @@ with rag_tab:
         st.error(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
         st.stop()
+    rag_documents_response = documents_response_state(rag_documents_response)
     rag_documents = rag_documents_response["items"]
     st.caption(
         f"RAG documents page {rag_documents_response['page']} · "

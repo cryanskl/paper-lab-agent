@@ -17880,6 +17880,16 @@ def test_streamlit_rag_tab_exposes_document_pagination_controls():
         assert required in rag_section
 
 
+def test_streamlit_rag_tab_normalizes_document_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+
+    assert "documents_response_state" in streamlit
+    assert "rag_documents_response = documents_response_state(rag_documents_response)" in rag_section
+    assert rag_section.index("rag_documents_response = documents_response_state(rag_documents_response)") < rag_section.index('rag_documents = rag_documents_response["items"]')
+
+
 def test_streamlit_rag_documents_list_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
