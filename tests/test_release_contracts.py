@@ -5481,7 +5481,7 @@ def test_package_release_artifacts_rejects_output_ancestor_symlink(tmp_path):
     assert not (outside_dir / "nested" / "paper-lab-agent-release.zip").exists()
 
 
-def test_package_release_artifacts_reports_output_parent_not_directory(tmp_path):
+def test_package_release_artifacts_rejects_file_output_parent(tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     package_release_artifacts = load_package_release_artifacts()
     artifact_dir = tmp_path / "release"
@@ -5538,7 +5538,7 @@ def test_package_release_artifacts_reports_output_parent_not_directory(tmp_path)
     report = package_release_artifacts.package_release_artifacts(artifact_dir, output_path)
 
     assert report["ok"] is False
-    assert f"release package output parent is not a directory: {output_parent.resolve()}" in report["issues"]
+    assert f"release package output parent is not a regular directory: {output_parent.resolve()}" in report["issues"]
     assert output_parent.is_file()
 
 

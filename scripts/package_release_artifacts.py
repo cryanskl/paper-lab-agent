@@ -220,7 +220,7 @@ def package_release_artifacts(
             "demo_export_audit_summary_formats": [],
             "demo_reaction_set_verified_by": None,
             "demo_reaction_set_verified_at": None,
-            "issues": [f"release package output parent is not a directory: {output_path.parent}"],
+            "issues": [f"release package output parent is not a regular directory: {output_path.parent}"],
         }
     try:
         validation = validate_release_artifacts(artifact_dir, require_clean_source=require_clean_source)
