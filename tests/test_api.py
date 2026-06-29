@@ -18376,7 +18376,7 @@ def test_streamlit_search_filter_metadata_errors_show_payload_details():
     search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
 
     for required in [
-        'journals = paper_search_journal_options(api_get("/journals", active=True, page_size=100)["items"])',
+        'search_journals_response = api_get("/journals", active=True, page_size=100)',
         'categories = paper_category_options(api_get("/categories")["items"])',
         "except FrontendApiError as exc:",
         "st.error(format_error_payload(exc.payload, exc.status_code))",
@@ -18392,10 +18392,23 @@ def test_streamlit_search_journals_use_filtered_options():
     search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
 
     assert "paper_search_journal_options" in streamlit
-    assert 'journals = paper_search_journal_options(api_get("/journals", active=True, page_size=100)["items"])' in search_section
+    assert 'journals = paper_search_journal_options(search_journals_response["items"])' in search_section
     assert 'journals = api_get("/journals", active=True, page_size=100)["items"]' not in search_section
     assert 'journal_names = ["全部"] + [j["name"] for j in journals]' in search_section
     assert 'params["journal_id"] = next(j["id"] for j in journals if j["name"] == journal_choice)' in search_section
+
+
+def test_streamlit_search_tab_normalizes_journals_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    assert "paginated_response_state" in streamlit
+    assert 'search_journals_response = api_get("/journals", active=True, page_size=100)' in search_section
+    assert "search_journals_response = paginated_response_state(search_journals_response, default_page_size=100)" in search_section
+    assert search_section.index(
+        "search_journals_response = paginated_response_state(search_journals_response, default_page_size=100)"
+    ) < search_section.index('journals = paper_search_journal_options(search_journals_response["items"])')
 
 
 def test_streamlit_search_categories_use_filtered_options():
