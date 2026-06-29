@@ -232,7 +232,7 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
     artifact_dir = artifact_dir.resolve()
     issues: list[str] = []
     if artifact_dir.exists() and not artifact_dir.is_dir():
-        issues.append(f"release artifact directory is not a directory: {artifact_dir}")
+        issues.append(f"release artifact directory is not a regular directory: {artifact_dir}")
     elif artifact_dir.exists():
         unexpected_files = sorted(
             path.name

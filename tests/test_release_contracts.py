@@ -4551,14 +4551,14 @@ def test_validate_release_artifacts_reports_non_utf8_required_artifact(tmp_path)
     assert any(issue.startswith("OpenAPI artifact unreadable:") for issue in report["issues"])
 
 
-def test_validate_release_artifacts_reports_artifact_dir_not_directory(tmp_path):
+def test_validate_release_artifacts_rejects_file_artifact_dir(tmp_path):
     validate_release_artifacts = load_validate_release_artifacts()
     artifact_dir = tmp_path / "release"
     artifact_dir.write_text("not a directory", encoding="utf-8")
 
     report = validate_release_artifacts.validate_release_artifacts(artifact_dir)
 
-    assert f"release artifact directory is not a directory: {artifact_dir.resolve()}" in report["issues"]
+    assert f"release artifact directory is not a regular directory: {artifact_dir.resolve()}" in report["issues"]
 
 
 def test_validate_release_artifacts_script_rejects_tampered_artifact(tmp_path):
