@@ -15,6 +15,7 @@ REACTION_ARROWS = ("<->", "=>", "->", "＝＞", "－＞", "−>", "→", "⇌", 
 REACTION_RE = re.compile(rf"([{REACTION_SPECIES_CHARS}]+(?:{'|'.join(map(re.escape, REACTION_ARROWS))})[{REACTION_SPECIES_CHARS}]+)")
 SPECIES_SEPARATOR_RE = re.compile(r"\s*[+＋]\s*(?=[A-Za-z0-9Ａ-Ｚａ-ｚ０-９(\u0370-\u03ff\u2070-\u209f\u2212])")
 URL_RE = re.compile(r"https?://[^\s),;]+")
+URL_TRAILING_DELIMITERS = ".,]}>"
 LXCAT_DB_RE = re.compile(r"LXCat(?:\s+database)?(?:(?:\s*(?::|=|-)\s*)|\s+)([A-Za-z0-9_.-]+)", re.IGNORECASE)
 LXCAT_DB_STOPWORDS = {"cross", "cross-section", "section", "url", "database", "data"}
 GAS_FORMULA_PATTERN = r"(?:[A-ZＡ-Ｚ][a-zａ-ｚ]?[0-9０-９₀₁₂₃₄₅₆₇₈₉]*)+"
@@ -170,7 +171,7 @@ def detect_gas_mixture(text: str) -> Optional[str]:
 def mask_urls_for_reaction_matching(text: str) -> str:
     def replace(match: re.Match) -> str:
         raw_url = match.group(0)
-        url = raw_url.rstrip(".,")
+        url = raw_url.rstrip(URL_TRAILING_DELIMITERS)
         suffix = raw_url[len(url) :]
         return (" " * len(url)) + suffix
 
@@ -180,7 +181,7 @@ def mask_urls_for_reaction_matching(text: str) -> str:
 def detect_cross_section_url(text: str, start: Optional[int] = None, end: Optional[int] = None) -> Optional[str]:
     candidates = []
     for match in URL_RE.finditer(text):
-        url = match.group(0).rstrip(".,")
+        url = match.group(0).rstrip(URL_TRAILING_DELIMITERS)
         if "lxcat" in url.lower():
             if start is None or end is None:
                 return url

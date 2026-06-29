@@ -17186,6 +17186,26 @@ def test_extract_reactions_skips_generic_lxcat_label_before_real_database_name(t
     assert detail["reactions"][0]["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
 
 
+def test_extract_reactions_strips_lxcat_url_closing_bracket(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(
+        b"LXCat Biagi cross section [https://nl.lxcat.net/data/set/biagi]. "
+        b"The process is e + Ar -> e + e + Ar+ ."
+    )
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("lxcat-bracketed-url.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["reactions"][0]["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
+
+
 def test_extract_reactions_detects_colon_lxcat_database(tmp_path):
     client = make_client(tmp_path)
     content = pdf_bytes(
