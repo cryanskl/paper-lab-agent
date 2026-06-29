@@ -38,6 +38,7 @@ from app.frontend_api import (
     journal_items,
     journal_option_label,
     journal_table_rows,
+    paper_category_slugs,
     paper_category_option_label,
     paper_category_options,
     paper_search_journal_options,
@@ -308,7 +309,7 @@ with search_tab:
                     st.warning(format_error_payload(resolved_paper, status_code))
                     st.json(resolved_paper)
             category_options_by_slug = {category["slug"]: category for category in categories}
-            current_category_slugs = set(paper.get("categories") or [])
+            current_category_slugs = paper_category_slugs(paper)
             default_categories = [
                 category_options_by_slug[slug] for slug in current_category_slugs if slug in category_options_by_slug
             ]

@@ -574,6 +574,13 @@ def paper_category_options(categories: list[dict[str, Any]]) -> list[dict[str, A
     ]
 
 
+def paper_category_slugs(paper: dict[str, Any]) -> set[str]:
+    categories = paper.get("categories")
+    if not isinstance(categories, list):
+        return set()
+    return {category for category in categories if isinstance(category, str) and category.strip()}
+
+
 def paper_category_option_label(category: Any) -> str:
     if not isinstance(category, dict):
         return "category · category"

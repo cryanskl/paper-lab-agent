@@ -18392,6 +18392,16 @@ def test_streamlit_search_results_use_filtered_paper_items():
     assert 'for paper in papers["items"]:' not in search_section
 
 
+def test_streamlit_search_manual_category_defaults_use_filtered_slugs():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    assert "paper_category_slugs" in streamlit
+    assert "current_category_slugs = paper_category_slugs(paper)" in search_section
+    assert 'current_category_slugs = set(paper.get("categories") or [])' not in search_section
+
+
 def test_streamlit_search_tab_exposes_sort_control():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

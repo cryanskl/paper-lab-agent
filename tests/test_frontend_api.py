@@ -2189,6 +2189,15 @@ def test_paper_category_options_skip_malformed_items():
     ) == [valid_category]
 
 
+def test_paper_category_slugs_skip_malformed_categories():
+    from app import frontend_api
+
+    assert frontend_api.paper_category_slugs({"categories": True}) == set()
+    assert frontend_api.paper_category_slugs(
+        {"categories": ["chemistry", "", ["bad"], {"slug": "bad"}, "etching"]}
+    ) == {"chemistry", "etching"}
+
+
 def test_paper_category_option_label_handles_non_object_item():
     from app import frontend_api
 
