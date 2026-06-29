@@ -169,7 +169,7 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
                     f"release artifact output path is not a regular file: {path}"
                 )
             elif path.exists() and not path.is_file():
-                unsafe_artifact_path_issues.append(f"release artifact output path is not a file: {path}")
+                unsafe_artifact_path_issues.append(f"release artifact output path is not a regular file: {path}")
         if unsafe_artifact_path_issues:
             return {
                 "ok": False,

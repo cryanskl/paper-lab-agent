@@ -3459,7 +3459,7 @@ def test_export_release_artifacts_rejects_dirty_output_dir(tmp_path):
     assert not (output_dir / "openapi.json").exists()
 
 
-def test_export_release_artifacts_reports_expected_artifact_path_not_file(tmp_path):
+def test_export_release_artifacts_rejects_expected_artifact_directory_path(tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     output_dir = tmp_path / "release"
     openapi_path = output_dir / "openapi.json"
@@ -3469,7 +3469,7 @@ def test_export_release_artifacts_reports_expected_artifact_path_not_file(tmp_pa
     report = export_release_artifacts.export_release_artifacts(output_dir, compact=True)
 
     assert report["ok"] is False
-    assert f"release artifact output path is not a file: {openapi_path.resolve()}" in report["issues"]
+    assert f"release artifact output path is not a regular file: {openapi_path.resolve()}" in report["issues"]
     assert openapi_path.is_dir()
     assert not (output_dir / "demo-summary.json").exists()
 
