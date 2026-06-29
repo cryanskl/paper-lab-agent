@@ -198,6 +198,42 @@ def test_sections_from_tei_preserves_table_notes_with_rows():
     ]
 
 
+def test_sections_from_tei_preserves_nested_table_notes_inside_table_figures():
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <figure type="table">
+            <head>Table 4</head>
+            <figDesc>Cross section measurements.</figDesc>
+            <table>
+              <row><cell>Reaction</cell><cell>Source</cell></row>
+              <row><cell>e + Ar -> Ar+</cell><cell>LXCat original table</cell></row>
+              <note>Nested table note: values remain in source units.</note>
+            </table>
+          </figure>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Table 4",
+            "content": (
+                "Cross section measurements. "
+                "Reaction Source "
+                "e + Ar -> Ar+ LXCat original table "
+                "Nested table note: values remain in source units."
+            ),
+            "section_type": "table",
+        }
+    ]
+
+
 def test_sections_from_tei_preserves_direct_body_and_div_notes():
     tei = """
     <TEI xmlns="http://www.tei-c.org/ns/1.0">

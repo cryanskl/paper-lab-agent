@@ -343,6 +343,7 @@ def sections_from_tei(tei: str) -> list[dict]:
                 content_parts.append(text_content(caption))
             if nested_table is not None:
                 content_parts.extend(table_rows(nested_table))
+                content_parts.extend(child_notes(nested_table))
                 content_parts.extend(child_notes(figure))
             else:
                 fallback_content = content_without_children(figure, [head, label, caption])
