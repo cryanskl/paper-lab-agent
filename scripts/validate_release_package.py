@@ -203,6 +203,13 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             ]
             if symlink_names:
                 issues.append(f"release package contains symlink artifact entries: {symlink_names!r}")
+            non_file_names = [
+                info.filename
+                for info in archive.infolist()
+                if (stat.S_IFMT(info.external_attr >> 16) not in {0, stat.S_IFREG, stat.S_IFLNK})
+            ]
+            if non_file_names:
+                issues.append(f"release package contains non-file artifact entries: {non_file_names!r}")
 
             if not issues:
                 with tempfile.TemporaryDirectory(prefix="paper-lab-release-package-") as extract_dir:
