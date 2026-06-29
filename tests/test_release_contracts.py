@@ -5668,7 +5668,7 @@ def test_validate_release_package_script_rejects_tampered_zip_artifact(tmp_path)
     assert any("checksum mismatch: demo-summary.json" in issue for issue in payload["issues"])
 
 
-def test_validate_release_package_reports_package_path_not_file(tmp_path):
+def test_validate_release_package_rejects_directory_package_path(tmp_path):
     validate_release_package = load_validate_release_package()
     package_path = tmp_path / "paper-lab-agent-release.zip"
     package_path.mkdir()
@@ -5676,7 +5676,7 @@ def test_validate_release_package_reports_package_path_not_file(tmp_path):
     report = validate_release_package.validate_release_package(package_path)
 
     assert report["ok"] is False
-    assert f"release package is not a file: {package_path.resolve()}" in report["issues"]
+    assert f"release package is not a regular file: {package_path.resolve()}" in report["issues"]
 
 
 def test_validate_release_package_reports_zip_read_failure(monkeypatch, tmp_path):

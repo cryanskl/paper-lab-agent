@@ -130,7 +130,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
         }
 
     if not package_path.is_file():
-        issues.append(f"release package is not a file: {package_path}")
+        issues.append(f"release package is not a regular file: {package_path}")
         return {
             "ok": False,
             "package_path": str(package_path),
