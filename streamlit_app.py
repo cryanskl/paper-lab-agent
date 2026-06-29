@@ -365,6 +365,7 @@ def render_knowledge_column(selected_document: Optional[dict[str, Any]]) -> None
         value=20,
         key=f"chunks-page-size-{selected_document['id']}",
     )
+    sections_error: Optional[FrontendApiError] = None
     try:
         sections_response = api_get(
             f"/documents/{selected_document['id']}/sections",
@@ -372,11 +373,20 @@ def render_knowledge_column(selected_document: Optional[dict[str, Any]]) -> None
             page_size=int(sections_page_size),
         )
     except FrontendApiError as exc:
-        st.error(format_error_payload(exc.payload, exc.status_code))
-        st.json(exc.payload)
-        st.stop()
+        sections_error = exc
+        sections_response = {
+            "items": [],
+            "total": 0,
+            "page": int(sections_page),
+            "page_size": int(sections_page_size),
+        }
     sections_response = paginated_response_state(sections_response, default_page_size=20)
     sections = sections_response["items"]
+    if sections_error:
+        st.warning(format_error_payload(sections_error.payload, sections_error.status_code))
+        with st.expander("Raw API response"):
+            st.json(sections_error.payload)
+    chunks_error: Optional[FrontendApiError] = None
     try:
         chunks = api_get(
             f"/documents/{selected_document['id']}/chunks",
@@ -384,10 +394,21 @@ def render_knowledge_column(selected_document: Optional[dict[str, Any]]) -> None
             page_size=int(chunks_page_size),
         )
     except FrontendApiError as exc:
-        st.error(format_error_payload(exc.payload, exc.status_code))
-        st.json(exc.payload)
-        st.stop()
+        chunks_error = exc
+        chunks = {
+            "items": [],
+            "total": 0,
+            "page": int(chunks_page),
+            "page_size": int(chunks_page_size),
+            "indexed": False,
+            "index_status": "not_indexed",
+            "index_error": format_error_payload(exc.payload, exc.status_code),
+        }
     chunks = document_chunks_response_state(chunks)
+    if chunks_error:
+        st.warning(format_error_payload(chunks_error.payload, chunks_error.status_code))
+        with st.expander("Raw API response"):
+            st.json(chunks_error.payload)
     index_status = chunks.get("index_status") or ("indexed" if chunks["indexed"] else "not_indexed")
     st.caption(f"index_status: {index_status} · chunks: {chunks['total']}")
     st.dataframe(dataframe_display_rows(document_status_rows(document_detail, chunks)), use_container_width=True)

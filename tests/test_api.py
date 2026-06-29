@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+from typing import Optional
 
 
 def pdf_bytes(content: bytes) -> bytes:
@@ -160,6 +161,68 @@ def make_client(tmp_path):
     get_settings.cache_clear()
     init_db()
     return TestClient(app)
+
+
+def streamlit_source() -> str:
+    repo = Path(__file__).resolve().parent.parent
+    return (repo / "streamlit_app.py").read_text(encoding="utf-8")
+
+
+def streamlit_section(source: str, start_marker: str, end_marker: Optional[str] = None) -> str:
+    start = source.index(start_marker)
+    end = len(source) if end_marker is None else source.index(end_marker, start)
+    return source[start:end]
+
+
+def streamlit_documents_panel_section(source: str) -> str:
+    return streamlit_section(source, "def render_documents_panel() -> Optional[dict[str, Any]]:", "def render_rag_panel(")
+
+
+def streamlit_knowledge_column_section(source: str) -> str:
+    return streamlit_section(
+        source,
+        "def render_knowledge_column(selected_document: Optional[dict[str, Any]]) -> None:",
+        "def render_chemistry_column(selected_document: Optional[dict[str, Any]]) -> None:",
+    )
+
+
+def streamlit_rag_panel_section(source: str) -> str:
+    return streamlit_section(source, "def render_rag_panel(selected_document: Optional[dict[str, Any]] = None) -> None:", "def render_chemistry_panel(")
+
+
+def streamlit_chemistry_panel_section(source: str) -> str:
+    return streamlit_section(
+        source,
+        "def render_chemistry_panel(selected_document: Optional[dict[str, Any]] = None) -> None:",
+        'st.set_page_config(page_title="paper-lab-agent", layout="wide")',
+    )
+
+
+def streamlit_search_panel_section(source: str) -> str:
+    return streamlit_section(source, "def render_paper_search_panel() -> None:", "def render_config_panel() -> None:")
+
+
+def streamlit_system_panel_section(source: str) -> str:
+    return streamlit_section(source, "def render_system_maintenance(status: dict[str, Any]) -> None:", "def render_paper_search_panel() -> None:")
+
+
+def streamlit_load_status_section(source: str) -> str:
+    return streamlit_section(source, "def load_status_or_stop(*, check_external: bool = False) -> dict[str, Any]:", "def render_status_strip(status: dict[str, Any]) -> None:")
+
+
+def test_streamlit_workbench_uses_three_column_render_functions():
+    streamlit = streamlit_source()
+
+    for required in [
+        'left_col, middle_col, right_col = st.columns([0.28, 0.44, 0.28], gap="large")',
+        "render_library_intake_column()",
+        "render_knowledge_column(selected_document)",
+        "render_chemistry_column(selected_document)",
+    ]:
+        assert required in streamlit
+    assert "with documents_tab:" not in streamlit
+    assert "with rag_tab:" not in streamlit
+    assert "with chemistry_tab:" not in streamlit
 
 
 def test_crawl_service_strips_space_after_doi_prefix_for_dedupe():
@@ -15889,7 +15952,7 @@ def test_health_check_rejects_unexpected_api_prefix():
 def test_streamlit_chemistry_review_ui_exposes_review_fields():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
     for required in [
         "reaction_display_state(reaction)",
         "display_state",
@@ -15932,7 +15995,7 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
 def test_streamlit_sidebar_surfaces_release_readiness():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+    sidebar_section = streamlit_section(streamlit, "def render_system_maintenance(status: dict[str, Any]) -> None:", "def render_paper_search_panel()")
 
     for required in [
         "release_readiness",
@@ -15990,10 +16053,11 @@ def test_release_blocking_config_warning_codes_are_not_redeclared():
 def test_streamlit_sidebar_system_status_error_shows_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+    sidebar_section = streamlit_load_status_section(streamlit)
 
     for required in [
-        'status = api_get("/system/status")',
+        'api_get("/system/status", check_external=True)',
+        'api_get("/system/status")',
         "except FrontendApiError as exc:",
         "st.error(format_error_payload(exc.payload, exc.status_code))",
         "st.json(exc.payload)",
@@ -16005,7 +16069,7 @@ def test_streamlit_sidebar_system_status_error_shows_payload_details():
 def test_streamlit_chemistry_export_surfaces_file_and_metadata_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
 
     for required in [
         "reaction_export_download",
@@ -16021,7 +16085,7 @@ def test_streamlit_chemistry_export_surfaces_file_and_metadata_status():
 def test_streamlit_chemistry_tab_can_select_document_for_reaction_sets():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
 
     for required in [
         'chemistry_documents = chemistry_documents_response["items"]',
@@ -16040,7 +16104,7 @@ def test_streamlit_chemistry_tab_can_select_document_for_reaction_sets():
 def test_streamlit_chemistry_tab_filters_current_page_by_document_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
 
     for required in [
         'chemistry_document_status_filter = st.selectbox("化学库文档状态筛选", document_status_filter_options(), key="chemistry-documents-status-filter")',
@@ -16058,7 +16122,7 @@ def test_streamlit_chemistry_tab_filters_current_page_by_document_status():
 def test_streamlit_chemistry_tab_exposes_document_pagination_controls():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
 
     for required in [
         "chemistry_documents_page = chemistry_documents_page_col.number_input(",
@@ -16080,7 +16144,7 @@ def test_streamlit_chemistry_tab_exposes_document_pagination_controls():
 def test_streamlit_chemistry_tab_normalizes_document_response_envelope():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
 
     assert "documents_response_state" in streamlit
     assert "chemistry_documents_response = documents_response_state(chemistry_documents_response)" in chemistry_section
@@ -16092,7 +16156,7 @@ def test_streamlit_chemistry_tab_normalizes_document_response_envelope():
 def test_streamlit_chemistry_documents_list_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
 
     for required in [
         "chemistry_documents_response = api_get(",
@@ -16108,7 +16172,7 @@ def test_streamlit_chemistry_documents_list_errors_show_payload_details():
 def test_streamlit_chemistry_tab_exposes_reaction_set_pagination_controls():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
 
     for required in [
         "reaction_sets_page = reaction_sets_page_col.number_input(",
@@ -16135,7 +16199,7 @@ def test_streamlit_chemistry_tab_exposes_reaction_set_pagination_controls():
 def test_streamlit_chemistry_document_reaction_sets_normalizes_response_envelope():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
 
     assert "paginated_response_state" in streamlit
     assert "document_reaction_sets = paginated_response_state(document_reaction_sets, default_page_size=20)" in chemistry_section
@@ -16147,7 +16211,7 @@ def test_streamlit_chemistry_document_reaction_sets_normalizes_response_envelope
 def test_streamlit_chemistry_audit_log_surfaces_field_changes():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
 
     for required in [
         "reaction_audit_rows(reaction[\"audit_log\"])",
@@ -16160,7 +16224,7 @@ def test_streamlit_chemistry_audit_log_surfaces_field_changes():
 def test_streamlit_chemistry_review_surfaces_save_success_state():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
 
     for required in [
         'review_message = st.session_state.pop("reaction_review_message", None)',
@@ -16179,7 +16243,7 @@ def test_streamlit_chemistry_review_surfaces_save_success_state():
 def test_streamlit_chemistry_review_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
     review_save_section = chemistry_section[chemistry_section.index("status_code, result = api_put(") :]
 
     for required in [
@@ -16194,7 +16258,7 @@ def test_streamlit_chemistry_review_errors_show_payload_details():
 def test_streamlit_chemistry_export_offers_download():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
 
     for required in [
         "export_download = reaction_export_download(payload)",
@@ -16210,7 +16274,7 @@ def test_streamlit_chemistry_export_offers_download():
 def test_streamlit_chemistry_review_uses_controlled_type_options():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
 
     for required in [
         "reaction_review_form_state(reaction)",
@@ -16231,7 +16295,7 @@ def test_streamlit_chemistry_review_uses_controlled_type_options():
 def test_streamlit_chemistry_review_can_preserve_zero_threshold():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
 
     for required in [
         'include_threshold_ev = c3.checkbox(',
@@ -16250,7 +16314,7 @@ def test_streamlit_chemistry_review_can_preserve_zero_threshold():
 def test_streamlit_chemistry_export_blocks_empty_reaction_sets():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
 
     for required in [
         "reaction_set_review_state(detail)",
@@ -16266,7 +16330,7 @@ def test_streamlit_chemistry_export_blocks_empty_reaction_sets():
 def test_streamlit_chemistry_document_reaction_sets_show_empty_state():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
 
     assert "该文档暂无反应集。" in chemistry_section
 
@@ -16274,7 +16338,7 @@ def test_streamlit_chemistry_document_reaction_sets_show_empty_state():
 def test_streamlit_chemistry_tab_does_not_auto_load_missing_reaction_set():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
 
     for required in [
         'load_reaction_set = st.button("加载反应集")',
@@ -16289,7 +16353,7 @@ def test_streamlit_chemistry_api_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     helper_section = streamlit[: streamlit.index("st.set_page_config")]
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
 
     assert "FrontendApiError" in helper_section
     assert "except FrontendApiError as exc:" in chemistry_section
@@ -16301,7 +16365,10 @@ def test_streamlit_chemistry_api_errors_show_payload_details():
 def test_streamlit_startup_health_error_shows_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    startup_section = streamlit[streamlit.index("st.set_page_config") : streamlit.index("review_message =")]
+    startup_section = streamlit[
+        streamlit.index("def load_health_or_stop() -> dict[str, Any]:") :
+        streamlit.index('with st.expander("System and maintenance", expanded=False):')
+    ]
 
     assert "except FrontendApiError as exc:" in startup_section
     assert "st.error(format_error_payload(exc.payload, exc.status_code))" in startup_section
@@ -16312,11 +16379,14 @@ def test_streamlit_startup_health_error_shows_payload_details():
 def test_streamlit_startup_health_normalizes_success_payload():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    startup_section = streamlit[streamlit.index("st.set_page_config") : streamlit.index("review_message =")]
+    startup_section = streamlit[
+        streamlit.index("def load_health_or_stop() -> dict[str, Any]:") :
+        streamlit.index('with st.expander("System and maintenance", expanded=False):')
+    ]
 
     assert "health_display_state" in streamlit
     assert "health_display = health_display_state(health)" in startup_section
-    assert 'st.caption(health_display["caption"])' in startup_section
+    assert 'st.caption(f"{health_display[\'caption\']} · 三栏研究工作台")' in startup_section
     assert 'if health_display["warning"]:' in startup_section
     assert 'st.warning(health_display["warning"])' in startup_section
     assert 'health["service"]' not in startup_section
@@ -16326,8 +16396,8 @@ def test_streamlit_startup_health_normalizes_success_payload():
 def test_streamlit_high_frequency_actions_format_api_error_payloads():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
+    knowledge_section = streamlit_knowledge_column_section(streamlit)
 
     assert "format_error_payload" in streamlit
     for required in [
@@ -16346,7 +16416,7 @@ def test_streamlit_high_frequency_actions_format_api_error_payloads():
         "st.warning(extract_payload)",
     ]:
         assert old_warning not in search_section
-        assert old_warning not in documents_section
+        assert old_warning not in knowledge_section
 
 
 def test_streamlit_remaining_api_status_failures_format_error_payloads():
@@ -16398,7 +16468,7 @@ def test_streamlit_chemistry_export_errors_show_payload_details():
 def test_streamlit_chemistry_export_normalizes_success_payload():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
     export_success_section = chemistry_section[
         chemistry_section.index("else:", chemistry_section.index("elif status >= 400:")) :
         chemistry_section.index("st.dataframe(reaction_export_rows(payload)")
@@ -17760,15 +17830,22 @@ def test_extract_chemistry_unparsed_document_records_failed_status(tmp_path):
 def test_streamlit_documents_tab_exposes_preview_and_index_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    documents_section = streamlit_documents_panel_section(streamlit)
+    knowledge_section = streamlit_knowledge_column_section(streamlit)
+
+    for required in [
+        "document_option_label",
+        "parse_error",
+        "chemistry_status",
+        "chemistry_error",
+    ]:
+        assert required in documents_section
+
     for required in [
         "/chunks",
         "translation_preview",
         "index_status",
         "index_error",
-        "chemistry_status",
-        "chemistry_error",
-        "document_option_label",
         "dataframe_display_rows(document_status_rows(document_detail, chunks))",
         "section_preview",
         "format_func=document_section_option_label",
@@ -17776,29 +17853,30 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
         "document_section_preview_content(section_preview)",
         "format_func=document_chunk_option_label",
         "document_chunk_preview_text(chunk_preview)",
-        "parse_error",
         "vector_id",
+        'analysis-parse-',
+        'analysis-translate-',
+        'analysis-index-',
+        'analysis-chemistry-',
     ]:
-        assert required in documents_section
-    assert "format_func=lambda section" not in documents_section
-    assert "format_func=lambda chunk" not in documents_section
-    assert 'type=["pdf"]' in documents_section
-    assert 'type=["pdf", "txt"]' not in documents_section
+        assert required in knowledge_section
+    assert "format_func=lambda section" not in knowledge_section
+    assert "format_func=lambda chunk" not in knowledge_section
 
 
 def test_streamlit_documents_tab_preserves_api_index_status_values():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    knowledge_section = streamlit_knowledge_column_section(streamlit)
 
-    assert 'chunks.get("index_status")' in documents_section
-    assert 'if chunks["indexed"] else "not indexed"' not in documents_section
+    assert 'chunks.get("index_status")' in knowledge_section
+    assert 'if chunks["indexed"] else "not indexed"' not in knowledge_section
 
 
 def test_streamlit_documents_tab_offers_tei_xml_download():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    documents_section = streamlit_documents_panel_section(streamlit)
 
     for required in [
         "document_asset_downloads(document_detail)",
@@ -17816,7 +17894,7 @@ def test_streamlit_documents_tab_offers_tei_xml_download():
 def test_streamlit_documents_tab_offers_original_pdf_download():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    documents_section = streamlit_documents_panel_section(streamlit)
 
     for required in [
         "document_asset_downloads(document_detail)",
@@ -17834,10 +17912,11 @@ def test_streamlit_documents_tab_offers_original_pdf_download():
 def test_streamlit_documents_tab_exposes_section_and_chunk_pagination_controls():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    knowledge_section = streamlit_knowledge_column_section(streamlit)
 
     for required in [
-        'sections_page = sections_page_col.number_input("sections_page"',
+        'sections_page = sections_page_col.number_input(',
+        '"sections_page"',
         "sections_page_size = sections_page_size_col.number_input(",
         '"sections_page_size"',
         "sections_response = api_get(",
@@ -17847,7 +17926,8 @@ def test_streamlit_documents_tab_exposes_section_and_chunk_pagination_controls()
         "sections_response['page']",
         "sections_response['page_size']",
         "sections_response['total']",
-        'chunks_page = chunks_page_col.number_input("chunks_page"',
+        'chunks_page = chunks_page_col.number_input(',
+        '"chunks_page"',
         "chunks_page_size = chunks_page_size_col.number_input(",
         '"chunks_page_size"',
         "chunks = api_get(",
@@ -17857,57 +17937,47 @@ def test_streamlit_documents_tab_exposes_section_and_chunk_pagination_controls()
         "chunks['page_size']",
         "chunks['total']",
     ]:
-        assert required in documents_section
+        assert required in knowledge_section
 
 
 def test_streamlit_document_sections_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
-    sections_load_section = documents_section[
-        documents_section.index("sections_response = api_get(") :
-        documents_section.index('sections = sections_response["items"]')
-    ]
-
+    knowledge_section = streamlit_knowledge_column_section(streamlit)
     for required in [
         "sections_response = api_get(",
-        "except FrontendApiError as exc:",
-        "st.error(format_error_payload(exc.payload, exc.status_code))",
-        "st.json(exc.payload)",
-        "st.stop()",
+        "sections_error",
+        "st.warning(format_error_payload(sections_error.payload, sections_error.status_code))",
+        "st.json(sections_error.payload)",
     ]:
-        assert required in sections_load_section
+        assert required in knowledge_section
+    assert "st.stop()" not in knowledge_section
 
 
 def test_streamlit_document_sections_normalizes_response_envelope():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    knowledge_section = streamlit_knowledge_column_section(streamlit)
 
     assert "paginated_response_state" in streamlit
-    assert "sections_response = paginated_response_state(sections_response, default_page_size=20)" in documents_section
-    assert documents_section.index(
+    assert "sections_response = paginated_response_state(sections_response, default_page_size=20)" in knowledge_section
+    assert knowledge_section.index(
         "sections_response = paginated_response_state(sections_response, default_page_size=20)"
-    ) < documents_section.index('sections = sections_response["items"]')
+    ) < knowledge_section.index('sections = sections_response["items"]')
 
 
 def test_streamlit_document_chunks_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
-    chunks_load_section = documents_section[
-        documents_section.index("chunks = api_get(") :
-        documents_section.index("index_status = chunks.get")
-    ]
-
+    knowledge_section = streamlit_knowledge_column_section(streamlit)
     for required in [
         "chunks = api_get(",
-        "except FrontendApiError as exc:",
-        "st.error(format_error_payload(exc.payload, exc.status_code))",
-        "st.json(exc.payload)",
-        "st.stop()",
+        "chunks_error",
+        "st.warning(format_error_payload(chunks_error.payload, chunks_error.status_code))",
+        "st.json(chunks_error.payload)",
     ]:
-        assert required in chunks_load_section
+        assert required in knowledge_section
+    assert "st.stop()" not in knowledge_section
 
 
 def test_document_chunks_response_state_normalizes_malformed_envelope():
@@ -17932,11 +18002,11 @@ def test_document_chunks_response_state_normalizes_malformed_envelope():
 def test_streamlit_document_chunks_normalizes_response_envelope():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    knowledge_section = streamlit_knowledge_column_section(streamlit)
 
     assert "document_chunks_response_state" in streamlit
-    assert "chunks = document_chunks_response_state(chunks)" in documents_section
-    assert documents_section.index("chunks = document_chunks_response_state(chunks)") < documents_section.index(
+    assert "chunks = document_chunks_response_state(chunks)" in knowledge_section
+    assert knowledge_section.index("chunks = document_chunks_response_state(chunks)") < knowledge_section.index(
         "index_status = chunks.get"
     )
 
@@ -17944,27 +18014,27 @@ def test_streamlit_document_chunks_normalizes_response_envelope():
 def test_streamlit_document_parse_surfaces_success_and_error_states():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    knowledge_section = streamlit_knowledge_column_section(streamlit)
 
     for required in [
-        'status_code, parse_payload = api_post(f"/documents/{selected[\'id\']}/parse")',
+        'status_code, parse_payload = api_post(f"/documents/{selected_document[\'id\']}/parse")',
         "if status_code < 400:",
         "已创建解析任务",
         "else:",
         "st.warning(format_error_payload(parse_payload, status_code))",
         "st.json(parse_payload)",
     ]:
-        assert required in documents_section
+        assert required in knowledge_section
 
 
 def test_streamlit_document_translate_surfaces_success_and_error_states():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    knowledge_section = streamlit_knowledge_column_section(streamlit)
 
     for required in [
         "translation_target_lang",
-        'key=f"translation-target-lang-{selected[\'id\']}"',
+        'key=f"analysis-translation-target-{selected_document[\'id\']}"',
         'json={"target_lang": translation_target_lang}',
         "if status_code < 400:",
         "已创建翻译任务",
@@ -17972,45 +18042,45 @@ def test_streamlit_document_translate_surfaces_success_and_error_states():
         "st.warning(format_error_payload(translate_payload, status_code))",
         "st.json(translate_payload)",
     ]:
-        assert required in documents_section
+        assert required in knowledge_section
 
 
 def test_streamlit_document_index_surfaces_success_and_error_states():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    knowledge_section = streamlit_knowledge_column_section(streamlit)
 
     for required in [
-        'status_code, index_payload = api_post(f"/documents/{selected[\'id\']}/index")',
+        'status_code, index_payload = api_post(f"/documents/{selected_document[\'id\']}/index")',
         "if status_code < 400:",
         "已创建索引任务",
         "else:",
         "st.warning(format_error_payload(index_payload, status_code))",
         "st.json(index_payload)",
     ]:
-        assert required in documents_section
+        assert required in knowledge_section
 
 
 def test_streamlit_document_extract_surfaces_success_and_error_states():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    knowledge_section = streamlit_knowledge_column_section(streamlit)
 
     for required in [
-        'status_code, extract_payload = api_post(f"/documents/{selected[\'id\']}/extract-chemistry")',
+        'status_code, extract_payload = api_post(f"/documents/{selected_document[\'id\']}/extract-chemistry")',
         "if status_code < 400:",
         "已创建化学抽取任务",
         "else:",
         "st.warning(format_error_payload(extract_payload, status_code))",
         "st.json(extract_payload)",
     ]:
-        assert required in documents_section
+        assert required in knowledge_section
 
 
 def test_streamlit_documents_tab_shows_linked_paper_summary():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    documents_section = streamlit_documents_panel_section(streamlit)
 
     for required in [
         'linked_paper = document_detail.get("paper")',
@@ -18026,9 +18096,9 @@ def test_streamlit_documents_tab_shows_linked_paper_summary():
 def test_streamlit_translation_preview_shows_failed_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
-    translation_section = documents_section[
-        documents_section.index("with translation_tab:") : documents_section.index("with chunks_tab:")
+    knowledge_section = streamlit_knowledge_column_section(streamlit)
+    translation_section = knowledge_section[
+        knowledge_section.index("with translation_tab:") : knowledge_section.index("with chunks_tab:")
     ]
 
     for required in [
@@ -18043,9 +18113,9 @@ def test_streamlit_translation_preview_shows_failed_status():
 def test_streamlit_translation_preview_offers_download():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
-    translation_section = documents_section[
-        documents_section.index("with translation_tab:") : documents_section.index("with chunks_tab:")
+    knowledge_section = streamlit_knowledge_column_section(streamlit)
+    translation_section = knowledge_section[
+        knowledge_section.index("with translation_tab:") : knowledge_section.index("with chunks_tab:")
     ]
 
     for required in [
@@ -18064,13 +18134,13 @@ def test_streamlit_translation_preview_offers_download():
 def test_streamlit_translation_preview_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
-    translation_section = documents_section[
-        documents_section.index("with translation_tab:") : documents_section.index("with chunks_tab:")
+    knowledge_section = streamlit_knowledge_column_section(streamlit)
+    translation_section = knowledge_section[
+        knowledge_section.index("with translation_tab:") : knowledge_section.index("with chunks_tab:")
     ]
 
     for required in [
-        'translation_preview = api_get(f"/documents/{selected[\'id\']}/translation")',
+        'translation_preview = api_get(f"/documents/{selected_document[\'id\']}/translation")',
         "except FrontendApiError as exc:",
         "st.warning(format_error_payload(exc.payload, exc.status_code))",
         "st.json(exc.payload)",
@@ -18082,9 +18152,9 @@ def test_streamlit_translation_preview_errors_show_payload_details():
 def test_streamlit_translation_preview_warns_when_output_file_is_missing():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
-    translation_section = documents_section[
-        documents_section.index("with translation_tab:") : documents_section.index("with chunks_tab:")
+    knowledge_section = streamlit_knowledge_column_section(streamlit)
+    translation_section = knowledge_section[
+        knowledge_section.index("with translation_tab:") : knowledge_section.index("with chunks_tab:")
     ]
 
     for required in [
@@ -18098,7 +18168,7 @@ def test_streamlit_translation_preview_warns_when_output_file_is_missing():
 def test_streamlit_sidebar_warns_about_failed_workflow_counts():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+    sidebar_section = streamlit_section(streamlit, "def render_system_maintenance(status: dict[str, Any]) -> None:", "def render_paper_search_panel()")
 
     for required in [
         "failed_workflow_rows",
@@ -18113,7 +18183,7 @@ def test_streamlit_sidebar_warns_about_failed_workflow_counts():
 def test_streamlit_rag_tab_separates_answer_and_sources():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+    rag_section = streamlit_rag_panel_section(streamlit)
 
     for required in [
         "rag_payload",
@@ -18135,9 +18205,11 @@ def test_streamlit_rag_tab_separates_answer_and_sources():
 def test_streamlit_rag_tab_validates_document_ids_before_query():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+    rag_section = streamlit_rag_panel_section(streamlit)
 
     for required in [
+        "rag_document_ids_for_scope",
+        "scope = st.radio(",
         "document_id_error",
         "document_ids 只能包含整数",
         "try:",
@@ -18153,7 +18225,7 @@ def test_streamlit_rag_tab_validates_document_ids_before_query():
 def test_streamlit_rag_query_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+    rag_section = streamlit_rag_panel_section(streamlit)
     rag_query_section = rag_section[
         rag_section.index("status, rag_payload = api_post(") :
         rag_section.index("answer = rag_payload.get")
@@ -18172,7 +18244,7 @@ def test_streamlit_rag_query_errors_show_payload_details():
 def test_streamlit_rag_tab_exposes_top_k_control():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+    rag_section = streamlit_rag_panel_section(streamlit)
 
     for required in [
         'top_k = st.number_input("top_k"',
@@ -18187,26 +18259,30 @@ def test_streamlit_rag_tab_exposes_top_k_control():
 def test_streamlit_rag_tab_can_select_documents_for_query_scope():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+    rag_section = streamlit_rag_panel_section(streamlit)
 
     for required in [
         'rag_documents = rag_documents_response["items"]',
         "filtered_rag_documents = filter_documents_by_status(rag_documents, rag_document_status_filter)",
-        "selected_rag_documents = st.multiselect(",
-        "限定文档",
-        "format_func=document_option_label",
+        'scope_options = ["全部知识库", "选中文档", "手动范围"]',
+        'scope = st.radio(',
+        '"全部知识库"',
+        '"选中文档"',
+        '"手动范围"',
         "selected_document_ids",
-        "ids = list(dict.fromkeys(selected_document_ids + typed_document_ids))",
-        "暂无可选文档",
+        'st.caption(f"当前阅读上下文: document #{selected_document[\'id\']}")',
+        'doc_ids = st.text_input("手动 document_ids"',
+        "rag_document_ids_for_scope(scope, selected_document_ids, typed_document_ids)",
     ]:
         assert required in rag_section
-    assert "format_func=lambda document" not in rag_section
+    assert "selected_rag_documents = st.multiselect(" not in rag_section
+    assert "ids = list(dict.fromkeys(selected_document_ids + typed_document_ids))" not in rag_section
 
 
 def test_streamlit_rag_tab_filters_current_page_by_document_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+    rag_section = streamlit_rag_panel_section(streamlit)
 
     for required in [
         'rag_document_status_filter = st.selectbox("RAG 文档状态筛选", document_status_filter_options(), key="rag-documents-status-filter")',
@@ -18215,7 +18291,7 @@ def test_streamlit_rag_tab_filters_current_page_by_document_status():
         "if not rag_documents:",
         "elif not filtered_rag_documents:",
         "当前页没有匹配筛选状态的 RAG 文档。",
-        "filtered_rag_documents,",
+        'scope = st.radio(',
     ]:
         assert required in rag_section
     assert "            rag_documents,\n            format_func=document_option_label" not in rag_section
@@ -18224,7 +18300,7 @@ def test_streamlit_rag_tab_filters_current_page_by_document_status():
 def test_streamlit_rag_tab_exposes_document_pagination_controls():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+    rag_section = streamlit_rag_panel_section(streamlit)
 
     for required in [
         'rag_documents_page = rag_documents_page_col.number_input("rag_documents_page"',
@@ -18242,7 +18318,7 @@ def test_streamlit_rag_tab_exposes_document_pagination_controls():
 def test_streamlit_rag_tab_normalizes_document_response_envelope():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+    rag_section = streamlit_rag_panel_section(streamlit)
 
     assert "documents_response_state" in streamlit
     assert "rag_documents_response = documents_response_state(rag_documents_response)" in rag_section
@@ -18252,7 +18328,7 @@ def test_streamlit_rag_tab_normalizes_document_response_envelope():
 def test_streamlit_rag_documents_list_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+    rag_section = streamlit_rag_panel_section(streamlit)
 
     for required in [
         'rag_documents_response = api_get("/documents", page=int(rag_documents_page), page_size=int(rag_documents_page_size))',
@@ -18267,7 +18343,7 @@ def test_streamlit_rag_documents_list_errors_show_payload_details():
 def test_streamlit_document_upload_shows_duplicate_result():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    documents_section = streamlit_documents_panel_section(streamlit)
 
     for required in [
         '"document_duplicate"',
@@ -18281,7 +18357,7 @@ def test_streamlit_document_upload_shows_duplicate_result():
 def test_streamlit_document_upload_can_select_linked_paper():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    documents_section = streamlit_documents_panel_section(streamlit)
 
     for required in [
         'paper_upload_query = st.text_input("关联论文搜索"',
@@ -18300,7 +18376,7 @@ def test_streamlit_document_upload_can_select_linked_paper():
 def test_streamlit_document_upload_shows_error_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    documents_section = streamlit_documents_panel_section(streamlit)
     upload_error_section = documents_section[
         documents_section.index("else:\n            st.warning(format_error_payload(payload, status))") :
     ]
@@ -18311,7 +18387,7 @@ def test_streamlit_document_upload_shows_error_payload_details():
 def test_streamlit_document_upload_normalizes_success_payload():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    documents_section = streamlit_documents_panel_section(streamlit)
     upload_success_section = documents_section[
         documents_section.index("if status == 201:") : documents_section.index("elif status == 409")
     ]
@@ -18328,7 +18404,7 @@ def test_streamlit_document_upload_normalizes_success_payload():
 def test_streamlit_documents_tab_shows_empty_state():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    documents_section = streamlit_documents_panel_section(streamlit)
 
     assert "暂无文档，请先上传 PDF。" in documents_section
 
@@ -18336,7 +18412,7 @@ def test_streamlit_documents_tab_shows_empty_state():
 def test_streamlit_documents_tab_filters_current_page_by_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    documents_section = streamlit_documents_panel_section(streamlit)
 
     for required in [
         'document_status_filter = st.selectbox("文档状态筛选", document_status_filter_options(), key="documents-status-filter")',
@@ -18353,7 +18429,7 @@ def test_streamlit_documents_tab_filters_current_page_by_status():
 def test_streamlit_documents_list_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    documents_section = streamlit_documents_panel_section(streamlit)
 
     for required in [
         'documents_response = api_get("/documents", page=int(documents_page), page_size=int(documents_page_size))',
@@ -18368,7 +18444,7 @@ def test_streamlit_documents_list_errors_show_payload_details():
 def test_streamlit_document_detail_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    documents_section = streamlit_documents_panel_section(streamlit)
     detail_section = documents_section[
         documents_section.index('selected = st.selectbox("文档", display_docs, format_func=document_option_label)') :
         documents_section.index('if document_detail.get("parse_error"):')
@@ -18387,7 +18463,7 @@ def test_streamlit_document_detail_errors_show_payload_details():
 def test_streamlit_documents_tab_exposes_pagination_controls():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    documents_section = streamlit_documents_panel_section(streamlit)
 
     for required in [
         'documents_page = documents_page_col.number_input("documents_page"',
@@ -18405,7 +18481,7 @@ def test_streamlit_documents_tab_exposes_pagination_controls():
 def test_streamlit_documents_tab_normalizes_response_envelope():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    documents_section = streamlit_documents_panel_section(streamlit)
 
     assert "documents_response_state" in streamlit
     assert "documents_response = documents_response_state(documents_response)" in documents_section
@@ -18416,7 +18492,7 @@ def test_streamlit_sidebar_exposes_runtime_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     frontend = (repo / "app" / "frontend_api.py").read_text(encoding="utf-8")
-    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+    sidebar_section = streamlit_section(streamlit, "def render_system_maintenance(status: dict[str, Any]) -> None:", "def render_paper_search_panel()")
 
     for required in [
         "runtime",
@@ -18439,7 +18515,7 @@ def test_streamlit_sidebar_exposes_runtime_status():
 def test_streamlit_sidebar_uses_safe_database_path_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+    sidebar_section = streamlit_section(streamlit, "def render_system_maintenance(status: dict[str, Any]) -> None:", "def render_paper_search_panel()")
 
     for required in [
         "database_path_status_row",
@@ -18454,7 +18530,7 @@ def test_streamlit_sidebar_uses_safe_database_path_status():
 def test_streamlit_sidebar_uses_safe_system_count_metrics():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+    sidebar_section = streamlit_section(streamlit, "def render_system_maintenance(status: dict[str, Any]) -> None:", "def render_paper_search_panel()")
 
     for required in [
         "system_count_metric_rows",
@@ -18471,7 +18547,7 @@ def test_streamlit_sidebar_uses_safe_system_count_metrics():
 def test_streamlit_sidebar_exposes_external_capability_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+    sidebar_section = streamlit_section(streamlit, "def render_system_maintenance(status: dict[str, Any]) -> None:", "def render_paper_search_panel()")
 
     for required in [
         "外部能力",
@@ -18494,7 +18570,7 @@ def test_streamlit_sidebar_exposes_external_capability_status():
 def test_streamlit_sidebar_surfaces_config_warnings():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+    sidebar_section = streamlit_section(streamlit, "def render_system_maintenance(status: dict[str, Any]) -> None:", "def render_paper_search_panel()")
 
     for required in ["config_warnings", "config_warning_rows", "warning_rows = config_warning_rows(config_warnings)", "capability", "message"]:
         assert required in sidebar_section
@@ -18505,7 +18581,7 @@ def test_streamlit_sidebar_surfaces_config_warnings():
 def test_streamlit_sidebar_surfaces_storage_health():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+    sidebar_section = streamlit_section(streamlit, "def render_system_maintenance(status: dict[str, Any]) -> None:", "def render_paper_search_panel()")
 
     for required in [
         "存储健康",
@@ -18519,7 +18595,7 @@ def test_streamlit_sidebar_surfaces_workflow_status_counts():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     frontend = (repo / "app" / "frontend_api.py").read_text(encoding="utf-8")
-    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+    sidebar_section = streamlit_section(streamlit, "def render_system_maintenance(status: dict[str, Any]) -> None:", "def render_paper_search_panel()")
 
     for required in [
         "状态分布",
@@ -18540,7 +18616,7 @@ def test_streamlit_sidebar_surfaces_workflow_status_counts():
 def test_streamlit_sidebar_surfaces_demo_data_readiness():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+    sidebar_section = streamlit_section(streamlit, "def render_system_maintenance(status: dict[str, Any]) -> None:", "def render_paper_search_panel()")
 
     for required in [
         "演示数据",
@@ -18562,11 +18638,11 @@ def test_streamlit_sidebar_surfaces_demo_data_readiness():
 def test_streamlit_sidebar_can_check_grobid_live_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+    sidebar_section = streamlit_section(streamlit, "def render_system_maintenance(status: dict[str, Any]) -> None:", "def render_paper_search_panel()")
 
     for required in [
         "检查 GROBID",
-        'api_get("/system/status", check_external=True)',
+        'load_status_or_stop(check_external=True)',
         'grobid = external_display["grobid"]',
         "GROBID live",
         "status_code",
@@ -18581,7 +18657,7 @@ def test_streamlit_sidebar_can_check_grobid_live_status():
 def test_streamlit_sidebar_links_live_api_documentation():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+    sidebar_section = streamlit_section(streamlit, "def render_system_maintenance(status: dict[str, Any]) -> None:", "def render_paper_search_panel()")
 
     for required in [
         "api_docs_links",
@@ -18596,7 +18672,7 @@ def test_streamlit_sidebar_links_live_api_documentation():
 def test_streamlit_crawl_jobs_table_flattens_diagnostics():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     assert "crawl_job_rows" in streamlit
     assert "def flatten_crawl_job_rows" not in streamlit
@@ -18610,7 +18686,7 @@ def test_streamlit_crawl_jobs_table_flattens_diagnostics():
 def test_streamlit_crawl_job_detail_metrics_guard_malformed_diagnostics():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
     crawl_job_detail_section = search_section[
         search_section.index("if job_detail:") :
         search_section.index("st.dataframe(crawl_job_diagnostic_rows(job_detail), use_container_width=True)")
@@ -18624,7 +18700,7 @@ def test_streamlit_crawl_job_detail_metrics_guard_malformed_diagnostics():
 def test_streamlit_crawl_jobs_use_option_label_helper():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     assert "crawl_job_option_label" in streamlit
     assert "format_func=crawl_job_option_label" in search_section
@@ -18634,7 +18710,7 @@ def test_streamlit_crawl_jobs_use_option_label_helper():
 def test_streamlit_crawl_jobs_show_empty_state():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     assert "暂无抓取任务。" in search_section
 
@@ -18642,7 +18718,7 @@ def test_streamlit_crawl_jobs_show_empty_state():
 def test_streamlit_crawl_jobs_exposes_pagination_controls():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     for required in [
         'crawl_jobs_page = crawl_jobs_page_col.number_input("crawl_jobs_page"',
@@ -18661,7 +18737,7 @@ def test_streamlit_crawl_jobs_exposes_pagination_controls():
 def test_streamlit_crawl_jobs_normalize_response_envelope():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     assert "crawl_jobs_response_state" in streamlit
     assert "crawl_jobs_response = crawl_jobs_response_state(crawl_jobs_response)" in search_section
@@ -18671,7 +18747,7 @@ def test_streamlit_crawl_jobs_normalize_response_envelope():
 def test_streamlit_crawl_jobs_list_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
     crawl_jobs_section = search_section[
         search_section.index("crawl_jobs_page_col, crawl_jobs_page_size_col = st.columns(2)") :
         search_section.index('if not jobs:')
@@ -18690,7 +18766,7 @@ def test_streamlit_crawl_jobs_list_errors_show_payload_details():
 def test_streamlit_crawl_job_detail_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
     crawl_job_detail_section = search_section[
         search_section.index("selected_job = st.selectbox(") :
         search_section.index("st.dataframe(crawl_job_diagnostic_rows(job_detail), use_container_width=True)")
@@ -18709,7 +18785,7 @@ def test_streamlit_crawl_job_detail_errors_show_payload_details():
 def test_streamlit_crawl_run_surfaces_success_and_error_states():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     for required in [
         "crawl_journal_choice = crawl_col1.selectbox(",
@@ -18737,7 +18813,7 @@ def test_streamlit_crawl_run_surfaces_success_and_error_states():
 def test_streamlit_search_filter_metadata_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     for required in [
         'search_journals_response = api_get("/journals", active=True, page_size=100)',
@@ -18753,7 +18829,7 @@ def test_streamlit_search_filter_metadata_errors_show_payload_details():
 def test_streamlit_search_journals_use_filtered_options():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     assert "paper_search_journal_options" in streamlit
     assert 'journals = paper_search_journal_options(search_journals_response["items"])' in search_section
@@ -18765,7 +18841,7 @@ def test_streamlit_search_journals_use_filtered_options():
 def test_streamlit_search_tab_normalizes_journals_response_envelope():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     assert "paginated_response_state" in streamlit
     assert 'search_journals_response = api_get("/journals", active=True, page_size=100)' in search_section
@@ -18778,7 +18854,7 @@ def test_streamlit_search_tab_normalizes_journals_response_envelope():
 def test_streamlit_search_categories_use_filtered_options():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
     manual_category_section = search_section[
         search_section.index("category_options_by_slug") :
         search_section.index("links = []")
@@ -18794,7 +18870,7 @@ def test_streamlit_search_categories_use_filtered_options():
 def test_streamlit_search_tab_normalizes_categories_response_envelope():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     assert "paginated_response_state" in streamlit
     assert 'search_categories_response = api_get("/categories")' in search_section
@@ -18807,7 +18883,7 @@ def test_streamlit_search_tab_normalizes_categories_response_envelope():
 def test_streamlit_search_results_show_dedupe_strategy():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     assert "dedupe_strategy" in search_section
     assert "dedupe_strategy=" in search_section
@@ -18816,7 +18892,7 @@ def test_streamlit_search_results_show_dedupe_strategy():
 def test_streamlit_search_results_use_guarded_dedupe_label():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     assert "paper_search_dedupe_label" in streamlit
     assert "dedupe_label = paper_search_dedupe_label(paper)" in search_section
@@ -18826,7 +18902,7 @@ def test_streamlit_search_results_use_guarded_dedupe_label():
 def test_streamlit_search_results_use_guarded_abstract_preview():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     assert "paper_search_abstract_preview" in streamlit
     assert "st.write(paper_search_abstract_preview(paper))" in search_section
@@ -18836,7 +18912,7 @@ def test_streamlit_search_results_use_guarded_abstract_preview():
 def test_streamlit_search_results_use_filtered_paper_items():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     assert "paper_search_result_items" in streamlit
     assert 'display_papers = paper_search_result_items(papers["items"])' in search_section
@@ -18847,7 +18923,7 @@ def test_streamlit_search_results_use_filtered_paper_items():
 def test_streamlit_search_results_normalize_response_envelope():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     assert "paper_search_response_state" in streamlit
     assert "papers = paper_search_response_state(papers)" in search_section
@@ -18857,7 +18933,7 @@ def test_streamlit_search_results_normalize_response_envelope():
 def test_streamlit_search_manual_category_defaults_use_filtered_slugs():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     assert "paper_category_slugs" in streamlit
     assert "current_category_slugs = paper_category_slugs(paper)" in search_section
@@ -18867,7 +18943,7 @@ def test_streamlit_search_manual_category_defaults_use_filtered_slugs():
 def test_streamlit_search_tab_exposes_sort_control():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     for required in [
         'sort_choice = col7.selectbox("排序", ["date_desc", "relevance"])',
@@ -18879,7 +18955,7 @@ def test_streamlit_search_tab_exposes_sort_control():
 def test_streamlit_search_results_can_trigger_classification():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
     helper_section = streamlit[: streamlit.index("st.set_page_config")]
 
     for required in [
@@ -18897,7 +18973,7 @@ def test_streamlit_search_results_can_trigger_classification():
 def test_streamlit_search_classification_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
     classify_section = search_section[
         search_section.index('if st.button("触发分类"') :
         search_section.index('if st.button(\n                "重新解析 OA"')
@@ -18915,7 +18991,7 @@ def test_streamlit_search_classification_errors_show_payload_details():
 def test_streamlit_search_results_can_override_categories_manually():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     for required in [
         "人工覆盖分类",
@@ -18935,7 +19011,7 @@ def test_streamlit_search_results_can_override_categories_manually():
 def test_streamlit_search_manual_category_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
     manual_category_section = search_section[
         search_section.index('if st.button("保存人工分类"') :
         search_section.index("links = []")
@@ -18954,7 +19030,7 @@ def test_streamlit_search_manual_category_errors_show_payload_details():
 def test_streamlit_search_results_can_resolve_oa_manually():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     for required in [
         "重新解析 OA",
@@ -18971,7 +19047,7 @@ def test_streamlit_search_results_can_resolve_oa_manually():
 def test_streamlit_search_resolve_oa_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
     resolve_oa_section = search_section[
         search_section.index('if st.button(\n                "重新解析 OA"') :
         search_section.index("category_options_by_slug =")
@@ -18989,7 +19065,7 @@ def test_streamlit_search_resolve_oa_errors_show_payload_details():
 def test_streamlit_search_tab_handles_empty_results_and_api_errors():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     for required in [
         "search_error",
@@ -19011,7 +19087,7 @@ def test_streamlit_search_tab_handles_empty_results_and_api_errors():
 def test_streamlit_search_tab_exposes_year_filters():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     for required in [
         'number_input("year_from"',
@@ -19025,7 +19101,7 @@ def test_streamlit_search_tab_exposes_year_filters():
 def test_streamlit_search_tab_exposes_pagination_controls():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    search_section = streamlit_section(streamlit, "def render_paper_search_panel()", "def render_config_panel()")
 
     for required in [
         "search_page",
@@ -19051,7 +19127,7 @@ def test_streamlit_api_put_preserves_json_errors_for_callers():
     assert "if status_code < 400:" in journals_section
     assert "st.warning(format_error_payload(result, status_code))" in journals_section
 
-    reactions_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    reactions_section = streamlit_chemistry_panel_section(streamlit)
     assert "status_code, result = api_put(" in reactions_section
     assert "st.session_state[\"reaction_set_detail\"] = result" in reactions_section
     assert "st.warning(format_error_payload(result, status_code))" in reactions_section
@@ -19062,7 +19138,7 @@ def test_streamlit_config_tab_exposes_journal_and_category_management():
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     helper_section = streamlit[: streamlit.index("st.set_page_config")]
     assert "配置" in streamlit
-    config_section = streamlit[streamlit.index("with config_tab:") :]
+    config_section = streamlit_section(streamlit, "def render_config_panel()", "def render_documents_panel()")
     assert "def api_delete(path: str):" in helper_section
     for required in [
         "/journals",
@@ -19085,7 +19161,7 @@ def test_streamlit_config_tab_exposes_journal_and_category_management():
 def test_streamlit_config_tab_uses_journal_option_label_helper():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+    config_section = streamlit_section(streamlit, "def render_config_panel()", "def render_documents_panel()")
 
     assert "journal_option_label" in streamlit
     assert "format_func=journal_option_label" in config_section
@@ -19095,7 +19171,7 @@ def test_streamlit_config_tab_uses_journal_option_label_helper():
 def test_streamlit_config_tab_normalizes_journal_keywords_for_dataframe():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+    config_section = streamlit_section(streamlit, "def render_config_panel()", "def render_documents_panel()")
 
     for required in [
         "journal_table_rows",
@@ -19110,7 +19186,7 @@ def test_streamlit_config_tab_normalizes_journal_keywords_for_dataframe():
 def test_streamlit_config_tab_uses_filtered_journal_items():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+    config_section = streamlit_section(streamlit, "def render_config_panel()", "def render_documents_panel()")
 
     assert "journal_items" in streamlit
     assert 'journals_all = journal_items(journals_response["items"])' in config_section
@@ -19132,7 +19208,7 @@ def test_paginated_response_state_normalizes_malformed_envelope():
 def test_streamlit_config_tab_normalizes_journals_response_envelope():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+    config_section = streamlit_section(streamlit, "def render_config_panel()", "def render_documents_panel()")
 
     assert "paginated_response_state" in streamlit
     assert "journals_response = paginated_response_state(journals_response, default_page_size=100)" in config_section
@@ -19144,7 +19220,7 @@ def test_streamlit_config_tab_normalizes_journals_response_envelope():
 def test_streamlit_config_tab_normalizes_categories_response_envelope():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+    config_section = streamlit_section(streamlit, "def render_config_panel()", "def render_documents_panel()")
 
     assert "paginated_response_state" in streamlit
     assert "categories_response = paginated_response_state(categories_response, default_page_size=100)" in config_section
@@ -19156,7 +19232,7 @@ def test_streamlit_config_tab_normalizes_categories_response_envelope():
 def test_streamlit_config_metadata_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+    config_section = streamlit_section(streamlit, "def render_config_panel()", "def render_documents_panel()")
 
     for required in [
         'journals_response = api_get("/journals", page=int(config_journals_page), page_size=int(config_journals_page_size))',
@@ -19172,7 +19248,7 @@ def test_streamlit_config_metadata_errors_show_payload_details():
 def test_streamlit_config_tab_exposes_journal_pagination_controls():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+    config_section = streamlit_section(streamlit, "def render_config_panel()", "def render_documents_panel()")
 
     for required in [
         "config_journals_page = config_journals_page_col.number_input(",
@@ -19249,7 +19325,7 @@ def test_streamlit_config_create_category_normalizes_success_payload():
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     create_category_section = streamlit[
         streamlit.index('with st.form("create-category-form")') :
-        streamlit.index("with documents_tab:")
+        streamlit.index("def render_documents_panel()")
     ]
     create_response_offset = create_category_section.index('status_code, result = api_post("/categories"')
     create_success_section = create_category_section[
@@ -19275,7 +19351,7 @@ def test_streamlit_config_create_errors_show_payload_details():
     ]
     create_category_section = streamlit[
         streamlit.index('with st.form("create-category-form")') :
-        streamlit.index("with documents_tab:")
+        streamlit.index("def render_documents_panel()")
     ]
 
     for section, endpoint in [
@@ -19311,7 +19387,7 @@ def test_streamlit_config_update_delete_errors_show_payload_details():
 def test_streamlit_config_tab_uses_category_parent_option_label_helper():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+    config_section = streamlit_section(streamlit, "def render_config_panel()", "def render_documents_panel()")
 
     assert "category_parent_option_label" in streamlit
     assert "format_func=category_parent_option_label" in config_section
