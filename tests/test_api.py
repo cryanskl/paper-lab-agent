@@ -15977,7 +15977,9 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         "show_only_unverified",
         "reaction_review_list_state",
         'review_list_state["summary"]',
-        'display_reactions = review_list_state["display_reactions"]',
+        "display_reactions = sorted(",
+        'review_list_state["display_reactions"]',
+        'key=lambda item: (bool(item.get("verified")), item.get("id") or 0)',
         "export_blocked",
         "disabled=export_blocked",
         "reaction_set_review_state(detail)",
@@ -15990,6 +15992,26 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         "format={export_format}",
     ]:
         assert required in chemistry_section
+
+
+def test_streamlit_chemistry_selected_document_clears_stale_reaction_set_detail():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit_chemistry_panel_section(streamlit)
+
+    selected_document_load_section = chemistry_section[
+        chemistry_section.index(
+            'if selected_document_id is not None and st.session_state.get("loaded_chemistry_document_id") != selected_document_id:'
+        ) : chemistry_section.index("reaction_sets_page_col, reaction_sets_page_size_col = st.columns(2)")
+    ]
+
+    assert 'st.session_state["reaction_set_detail"] = None' in selected_document_load_section
+    assert selected_document_load_section.index('st.session_state["reaction_set_detail"] = None') < selected_document_load_section.index(
+        'st.session_state["document_reaction_sets"] = api_get('
+    )
+    assert selected_document_load_section.index('st.session_state["reaction_set_detail"] = None') < selected_document_load_section.index(
+        "except FrontendApiError as exc:"
+    )
 
 
 def test_streamlit_sidebar_surfaces_release_readiness():

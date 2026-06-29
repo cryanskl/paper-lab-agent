@@ -1119,6 +1119,7 @@ def render_chemistry_panel(selected_document: Optional[dict[str, Any]] = None) -
         st.caption(f"chemistry_document_id: {chemistry_document_id}")
 
     if selected_document_id is not None and st.session_state.get("loaded_chemistry_document_id") != selected_document_id:
+        st.session_state["reaction_set_detail"] = None
         try:
             st.session_state["document_reaction_sets"] = api_get(
                 f"/documents/{selected_document_id}/reaction-sets",
