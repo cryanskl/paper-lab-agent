@@ -1400,6 +1400,13 @@ def reaction_export_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"field": field, "value": value} for field, value in rows]
 
 
+def reaction_export_success_state(payload: Any) -> dict[str, Optional[str]]:
+    output_path = payload.get("output_path") if isinstance(payload, dict) else None
+    if isinstance(output_path, str) and output_path.strip():
+        return {"message": output_path, "warning": None}
+    return {"message": "export path unavailable", "warning": "reaction export response: invalid"}
+
+
 def reaction_export_download(payload: dict[str, Any]) -> Optional[dict[str, Any]]:
     output_path = payload.get("output_path")
     if not isinstance(output_path, str) or not output_path:

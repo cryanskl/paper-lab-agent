@@ -1201,6 +1201,25 @@ def test_reaction_export_rows_handle_malformed_counts():
     ]
 
 
+def test_reaction_export_success_state_blocks_malformed_success_payloads():
+    from app import frontend_api
+
+    assert frontend_api.reaction_export_success_state(
+        {"output_path": "/tmp/exports/reaction-set-3.json"}
+    ) == {
+        "message": "/tmp/exports/reaction-set-3.json",
+        "warning": None,
+    }
+    assert frontend_api.reaction_export_success_state({"output_path": ""}) == {
+        "message": "export path unavailable",
+        "warning": "reaction export response: invalid",
+    }
+    assert frontend_api.reaction_export_success_state(["export"]) == {
+        "message": "export path unavailable",
+        "warning": "reaction export response: invalid",
+    }
+
+
 def test_reaction_export_download_reads_text_file_for_streamlit_button(tmp_path):
     from app import frontend_api
 

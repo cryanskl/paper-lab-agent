@@ -16306,7 +16306,7 @@ def test_streamlit_chemistry_export_errors_show_payload_details():
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     export_section = streamlit[
         streamlit.index('if st.button("导出反应集"') :
-        streamlit.index('st.success(payload["output_path"]')
+        streamlit.index("else:", streamlit.index("elif status >= 400:"))
     ]
 
     for required in [
@@ -16318,6 +16318,24 @@ def test_streamlit_chemistry_export_errors_show_payload_details():
         "st.json(payload)",
     ]:
         assert required in export_section
+
+
+def test_streamlit_chemistry_export_normalizes_success_payload():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    export_success_section = chemistry_section[
+        chemistry_section.index("else:", chemistry_section.index("elif status >= 400:")) :
+        chemistry_section.index("st.dataframe(reaction_export_rows(payload)")
+    ]
+
+    assert "reaction_export_success_state" in streamlit
+    assert "export_success = reaction_export_success_state(payload)" in export_success_section
+    assert 'st.success(export_success["message"])' in export_success_section
+    assert 'if export_success["warning"]:' in export_success_section
+    assert 'st.warning(export_success["warning"])' in export_success_section
+    assert 'payload["output_path"]' not in export_success_section
+    assert "payload['output_path']" not in export_success_section
 
 
 def test_document_chunks_endpoint_reports_index_status(tmp_path):

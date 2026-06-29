@@ -62,6 +62,7 @@ from app.frontend_api import (
     reaction_display_state,
     reaction_export_download,
     reaction_export_rows,
+    reaction_export_success_state,
     reaction_review_form_state,
     reaction_review_list_state,
     reaction_review_payload,
@@ -1072,7 +1073,10 @@ with chemistry_tab:
                 st.error(format_error_payload(payload, status))
                 st.json(payload)
             else:
-                st.success(payload["output_path"])
+                export_success = reaction_export_success_state(payload)
+                st.success(export_success["message"])
+                if export_success["warning"]:
+                    st.warning(export_success["warning"])
                 st.dataframe(reaction_export_rows(payload), use_container_width=True)
                 export_download = reaction_export_download(payload)
                 if export_download:
