@@ -540,6 +540,19 @@ def paper_search_response_state(response: Any) -> dict[str, Any]:
     }
 
 
+def paginated_response_state(response: Any, *, default_page_size: int = 20) -> dict[str, Any]:
+    fallback_page_size = positive_int_or_default(default_page_size, 20)
+    if not isinstance(response, dict):
+        return {"items": [], "total": 0, "page": 1, "page_size": fallback_page_size}
+    items = response.get("items")
+    return {
+        "items": items if isinstance(items, list) else [],
+        "total": non_negative_int_or_zero(response.get("total")),
+        "page": positive_int_or_default(response.get("page"), 1),
+        "page_size": positive_int_or_default(response.get("page_size"), fallback_page_size),
+    }
+
+
 def paper_search_dedupe_label(paper: dict[str, Any]) -> str:
     doi = paper.get("doi")
     if isinstance(doi, str) and doi.strip():

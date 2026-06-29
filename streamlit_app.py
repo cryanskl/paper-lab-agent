@@ -40,6 +40,7 @@ from app.frontend_api import (
     journal_items,
     journal_option_label,
     journal_table_rows,
+    paginated_response_state,
     paper_category_slugs,
     paper_category_option_label,
     paper_category_options,
@@ -447,6 +448,7 @@ with config_tab:
         st.error(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
         st.stop()
+    journals_response = paginated_response_state(journals_response, default_page_size=100)
     journals_all = journal_items(journals_response["items"])
     categories_all = categories_response["items"]
 

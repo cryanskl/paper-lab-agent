@@ -18727,6 +18727,30 @@ def test_streamlit_config_tab_uses_filtered_journal_items():
     assert 'journals_all = journals_response["items"]' not in config_section
 
 
+def test_paginated_response_state_normalizes_malformed_envelope():
+    from app import frontend_api
+
+    assert hasattr(frontend_api, "paginated_response_state")
+    normalized = frontend_api.paginated_response_state(
+        {"items": "invalid", "total": -1, "page": 0, "page_size": False},
+        default_page_size=100,
+    )
+
+    assert normalized == {"items": [], "total": 0, "page": 1, "page_size": 100}
+
+
+def test_streamlit_config_tab_normalizes_journals_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+
+    assert "paginated_response_state" in streamlit
+    assert "journals_response = paginated_response_state(journals_response, default_page_size=100)" in config_section
+    assert config_section.index(
+        "journals_response = paginated_response_state(journals_response, default_page_size=100)"
+    ) < config_section.index('journals_all = journal_items(journals_response["items"])')
+
+
 def test_streamlit_config_metadata_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
