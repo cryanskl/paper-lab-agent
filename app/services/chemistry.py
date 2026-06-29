@@ -16,6 +16,7 @@ REACTION_RE = re.compile(rf"([{REACTION_SPECIES_CHARS}]+(?:{'|'.join(map(re.esca
 SPECIES_SEPARATOR_RE = re.compile(r"\s*[+＋]\s*(?=[A-Za-z0-9Ａ-Ｚａ-ｚ０-９(\u0370-\u03ff\u2070-\u209f\u2212])")
 URL_RE = re.compile(r"https?://[^\s),;]+")
 LXCAT_DB_RE = re.compile(r"LXCat(?:\s+database)?(?:(?:\s*(?::|=|-)\s*)|\s+)([A-Za-z0-9_.-]+)", re.IGNORECASE)
+LXCAT_DB_STOPWORDS = {"cross", "cross-section", "section", "url", "database", "data"}
 GAS_FORMULA_PATTERN = r"(?:[A-ZＡ-Ｚ][a-zａ-ｚ]?[0-9０-９₀₁₂₃₄₅₆₇₈₉]*)+"
 GAS_MIXTURE_RE = re.compile(rf"\b({GAS_FORMULA_PATTERN}(?:\s*[/／]\s*{GAS_FORMULA_PATTERN})+)\b")
 THRESHOLD_EV_RE = re.compile(
@@ -154,7 +155,10 @@ def detect_lxcat_db(text: str) -> Optional[str]:
     match = LXCAT_DB_RE.search(text)
     if not match:
         return None
-    return match.group(1).strip(" .,:;")
+    candidate = match.group(1).strip(" .,:;")
+    if candidate.lower() in LXCAT_DB_STOPWORDS:
+        return None
+    return candidate
 
 
 def detect_gas_mixture(text: str) -> Optional[str]:

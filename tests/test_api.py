@@ -17143,6 +17143,27 @@ def test_extract_reactions_detects_lxcat_database_and_url(tmp_path):
     assert reaction["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
 
 
+def test_extract_reactions_does_not_treat_lxcat_database_label_as_name(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(
+        b"The LXCat database cross section URL is https://nl.lxcat.net/data/set/biagi. "
+        b"The process is e + Ar -> e + e + Ar+ ."
+    )
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("lxcat-generic-label.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["lxcat_db"] is None
+    assert detail["reactions"][0]["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
+
+
 def test_extract_reactions_detects_colon_lxcat_database(tmp_path):
     client = make_client(tmp_path)
     content = pdf_bytes(
