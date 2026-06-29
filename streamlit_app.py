@@ -41,6 +41,7 @@ from app.frontend_api import (
     paper_category_slugs,
     paper_category_option_label,
     paper_category_options,
+    paper_search_dedupe_label,
     paper_search_journal_options,
     paper_search_result_items,
     paper_upload_options,
@@ -279,11 +280,11 @@ with search_tab:
         with st.container(border=True):
             st.subheader(paper["title"])
             st.caption(f"{paper.get('journal_name') or '-'} · {paper.get('published_date') or '-'} · {paper.get('oa_status') or 'unknown'}")
-            dedupe_label = paper.get("doi") or (paper.get("dedupe_key") or "")[:24]
+            dedupe_label = paper_search_dedupe_label(paper)
             st.caption(
                 f"source={paper.get('source_api') or '-'} · "
                 f"dedupe_strategy={paper.get('dedupe_strategy') or '-'} · "
-                f"has_doi={paper.get('has_doi')} · key={dedupe_label or '-'}"
+                f"has_doi={paper.get('has_doi')} · key={dedupe_label}"
             )
             st.write((paper.get("abstract") or "")[:400])
             st.caption(f"分类结果: {format_category_summary(paper)}")

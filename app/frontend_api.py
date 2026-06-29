@@ -522,6 +522,16 @@ def paper_search_result_items(papers: list[dict[str, Any]]) -> list[dict[str, An
     ]
 
 
+def paper_search_dedupe_label(paper: dict[str, Any]) -> str:
+    doi = paper.get("doi")
+    if isinstance(doi, str) and doi.strip():
+        return doi
+    dedupe_key = paper.get("dedupe_key")
+    if isinstance(dedupe_key, str) and dedupe_key.strip():
+        return dedupe_key[:24]
+    return "-"
+
+
 def journal_table_rows(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for journal in journals:

@@ -2060,6 +2060,18 @@ def test_paper_search_result_items_skip_malformed_items():
     ) == [valid_paper]
 
 
+def test_paper_search_dedupe_label_handles_malformed_values():
+    from app import frontend_api
+
+    assert frontend_api.paper_search_dedupe_label({"doi": "10.1000/plasma"}) == "10.1000/plasma"
+    assert (
+        frontend_api.paper_search_dedupe_label({"dedupe_key": "no-doi-fingerprint-abcdef"})
+        == "no-doi-fingerprint-abcde"
+    )
+    assert frontend_api.paper_search_dedupe_label({"doi": 123, "dedupe_key": True}) == "-"
+    assert frontend_api.paper_search_dedupe_label({"doi": ["bad"], "dedupe_key": "fallback-key"}) == "fallback-key"
+
+
 def test_journal_table_rows_skip_malformed_items_and_format_keywords():
     from app import frontend_api
 
