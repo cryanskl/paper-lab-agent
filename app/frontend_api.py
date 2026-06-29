@@ -1,3 +1,5 @@
+import json
+import math
 from pathlib import Path
 from typing import Any, Optional
 
@@ -147,21 +149,46 @@ def dataframe_display_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return display_rows
 
 
-def release_readiness_display_state(release_readiness: dict[str, Any]) -> dict[str, Any]:
-    config_warning_codes = [
-        str(code) for code in release_readiness.get("config_warning_codes") or [] if str(code).strip()
-    ]
+def non_negative_int_or_zero(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return 0
+    return value
+
+
+def positive_int_or_default(value: Any, default: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        return default
+    return value
+
+
+def dict_or_empty(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def release_readiness_display_state(release_readiness: Any) -> dict[str, Any]:
+    if not isinstance(release_readiness, dict):
+        invalid_group = {"label": "release state:", "items": ["release_readiness:invalid"]}
+        return {
+            "ready": False,
+            "blockers": ["release_readiness:invalid"],
+            "groups": [invalid_group],
+        }
+    config_warning_codes = release_readiness_list_values(
+        release_readiness.get("config_warning_codes"), invalid_label="invalid"
+    )
     blocking_config_warnings = [
-        f"config_warning_codes:{code}" for code in config_warning_codes if code in RELEASE_BLOCKING_CONFIG_WARNING_CODES
+        f"config_warning_codes:{code}"
+        for code in config_warning_codes
+        if code == "invalid" or code in RELEASE_BLOCKING_CONFIG_WARNING_CODES
     ]
     groups = [
         {
             "label": "demo data missing:",
-            "items": [str(item) for item in release_readiness.get("demo_data_missing") or [] if str(item).strip()],
+            "items": release_readiness_list_values(release_readiness.get("demo_data_missing"), invalid_label="invalid"),
         },
         {
             "label": "failed workflows:",
-            "items": [str(item) for item in release_readiness.get("failed_workflows") or [] if str(item).strip()],
+            "items": release_readiness_list_values(release_readiness.get("failed_workflows"), invalid_label="invalid"),
         },
         {
             "label": "config warnings:",
@@ -169,15 +196,125 @@ def release_readiness_display_state(release_readiness: dict[str, Any]) -> dict[s
         },
         {
             "label": "storage errors:",
-            "items": [str(item) for item in release_readiness.get("storage_errors") or [] if str(item).strip()],
+            "items": release_readiness_list_values(release_readiness.get("storage_errors"), invalid_label="invalid"),
         },
     ]
     blockers = [item for group in groups for item in group["items"]]
+    if not blockers and release_readiness.get("ready") is not True:
+        groups.append({"label": "release state:", "items": ["ready=false"]})
+        blockers = ["ready=false"]
     return {
         "ready": release_readiness.get("ready") is True and not blockers,
         "blockers": blockers,
         "groups": groups,
     }
+
+
+def release_readiness_list_values(value: Any, invalid_label: Optional[str] = None) -> list[str]:
+    if not isinstance(value, list):
+        return [invalid_label] if invalid_label is not None else []
+    values: list[str] = []
+    invalid = False
+    for item in value:
+        if isinstance(item, str) and item.strip():
+            values.append(item)
+        else:
+            invalid = True
+    if invalid and invalid_label is not None:
+        values.append(invalid_label)
+    return values
+
+
+def demo_data_display_state(demo_data: Any) -> dict[str, Any]:
+    if not isinstance(demo_data, dict):
+        return {"ready": False, "missing": ["demo_data:invalid"]}
+    missing = release_readiness_list_values(demo_data.get("missing"), invalid_label="invalid")
+    if missing:
+        return {"ready": False, "missing": missing}
+    if demo_data.get("ready") is True:
+        return {"ready": True, "missing": []}
+    return {"ready": False, "missing": ["ready=false"]}
+
+
+def health_display_state(health: Any) -> dict[str, Optional[str]]:
+    if not isinstance(health, dict):
+        return {"caption": "service:invalid · status:invalid", "warning": "health: invalid"}
+    service = health.get("service")
+    status = health.get("status")
+    service_label = service.strip() if isinstance(service, str) and service.strip() else "service:invalid"
+    status_label = status.strip() if isinstance(status, str) and status.strip() else "status:invalid"
+    warning = None if service_label == service and status_label == status else "health: invalid"
+    return {"caption": f"{service_label} · {status_label}", "warning": warning}
+
+
+SYSTEM_COUNT_METRICS = [
+    ("期刊", "journals"),
+    ("论文", "papers"),
+    ("文档", "documents"),
+]
+
+
+def system_count_metric_rows(counts: Any) -> list[dict[str, Any]]:
+    if not isinstance(counts, dict):
+        return [{"label": "系统计数", "value": "invalid", "warning": "counts: invalid"}]
+    rows: list[dict[str, Any]] = []
+    for label, key in SYSTEM_COUNT_METRICS:
+        value = counts.get(key)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            rows.append({"label": label, "value": "invalid", "warning": f"counts.{key}: invalid"})
+            continue
+        rows.append({"label": label, "value": value, "warning": None})
+    return rows
+
+
+def runtime_status_rows(runtime: Any) -> list[dict[str, str]]:
+    if not isinstance(runtime, dict):
+        return [{"kind": "warning", "text": "runtime: invalid"}]
+    rows: list[dict[str, str]] = []
+    api_prefix = runtime.get("api_prefix")
+    if isinstance(api_prefix, str) and api_prefix.strip():
+        rows.append({"kind": "caption", "text": f"API: {api_prefix}"})
+    else:
+        rows.append({"kind": "warning", "text": "api_prefix: invalid"})
+    version = runtime.get("version")
+    if isinstance(version, str) and version.strip():
+        rows.append({"kind": "caption", "text": f"version: {version}"})
+    else:
+        rows.append({"kind": "warning", "text": "version: invalid"})
+    scheduler_enabled = runtime.get("scheduler_enabled")
+    if isinstance(scheduler_enabled, bool):
+        rows.append({"kind": "caption", "text": f"scheduler_enabled: {scheduler_enabled}"})
+    else:
+        rows.append({"kind": "warning", "text": "scheduler_enabled: invalid"})
+    scheduler_jobs = runtime.get("scheduler_jobs") or []
+    if not isinstance(scheduler_jobs, list):
+        return [*rows, {"kind": "warning", "text": "scheduler_jobs: invalid"}]
+    if scheduler_jobs:
+        rows.append({"kind": "caption", "text": "scheduler_jobs:"})
+    for job in scheduler_jobs:
+        if not isinstance(job, dict):
+            rows.append({"kind": "warning", "text": "scheduler_jobs: invalid"})
+            continue
+        period = job.get("period")
+        job_id = job.get("id")
+        schedule = job.get("schedule")
+        timezone = job.get("timezone")
+        if not all(isinstance(value, str) and value.strip() for value in (period, job_id, schedule, timezone)):
+            rows.append({"kind": "warning", "text": "scheduler_jobs: invalid"})
+            continue
+        rows.append(
+            {
+                "kind": "caption",
+                "text": f"- {period} · {job_id} · {schedule} {timezone}",
+            }
+        )
+    return rows
+
+
+def database_path_status_row(database_path: Any) -> dict[str, str]:
+    if not isinstance(database_path, str) or not database_path.strip():
+        return {"kind": "warning", "text": "database_path: invalid"}
+    return {"kind": "caption", "text": f"DB: {database_path}"}
 
 
 STORAGE_HEALTH_DISPLAY_KEYS = [
@@ -193,10 +330,32 @@ STORAGE_HEALTH_DISPLAY_KEYS = [
 ]
 
 
-def storage_health_caption_rows(storage_health: dict[str, Any]) -> list[dict[str, str]]:
+def storage_health_caption_rows(storage_health: Any) -> list[dict[str, str]]:
+    if not isinstance(storage_health, dict):
+        return [{"kind": "warning", "text": "storage_health: invalid"}]
     rows = []
     for key in STORAGE_HEALTH_DISPLAY_KEYS:
-        health_entry = storage_health.get(key) or {}
+        raw_health_entry = storage_health.get(key)
+        health_entry = raw_health_entry or {}
+        if not isinstance(health_entry, dict):
+            rows.append({"kind": "warning", "text": f"{key}: invalid"})
+            health_entry = {}
+        elif raw_health_entry is not None:
+            path = health_entry.get("path")
+            exists = health_entry.get("exists")
+            writable = health_entry.get("writable")
+            error = health_entry.get("error")
+            valid_json = health_entry.get("valid_json")
+            invalid_fields = (
+                (path is not None and not isinstance(path, str))
+                or (exists is not None and not isinstance(exists, bool))
+                or (writable is not None and not isinstance(writable, bool))
+                or (error is not None and not isinstance(error, str))
+                or (valid_json is not None and not isinstance(valid_json, bool))
+            )
+            if invalid_fields:
+                rows.append({"kind": "warning", "text": f"{key}: invalid"})
+                health_entry = {}
         exists_label = "exists" if health_entry.get("exists") else "missing"
         writable_label = "writable" if health_entry.get("writable") else "not writable"
         rows.append(
@@ -214,12 +373,119 @@ def storage_health_caption_rows(storage_health: dict[str, Any]) -> list[dict[str
     return rows
 
 
+def external_capabilities_display_state(external_capabilities: Any) -> dict[str, Any]:
+    if not isinstance(external_capabilities, dict):
+        return {
+            "capabilities": {},
+            "grobid": {},
+            "warnings": ["external_capabilities:invalid"],
+        }
+    warnings: list[str] = []
+    capabilities = dict(external_capabilities)
+    for key in ("openalex_mailto", "unpaywall_email", "llm_api_key"):
+        value = external_capabilities.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, bool):
+            capabilities[key] = False
+            warnings.append("external_capabilities:invalid")
+    for key in ("grobid_url", "translation_adapter", "llm_model", "embedding_model", "vector_db_backend"):
+        value = external_capabilities.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            capabilities[key] = ""
+            warnings.append("external_capabilities:invalid")
+    grobid = external_capabilities.get("grobid") or {}
+    if not isinstance(grobid, dict):
+        grobid = {}
+        warnings.append("grobid:invalid")
+    else:
+        url = grobid.get("url")
+        available = grobid.get("available")
+        status_code = grobid.get("status_code")
+        error = grobid.get("error")
+        invalid_grobid = (
+            (url is not None and not isinstance(url, str))
+            or (available is not None and not isinstance(available, bool))
+            or (status_code is not None and (isinstance(status_code, bool) or not isinstance(status_code, int)))
+            or (error is not None and not isinstance(error, str))
+        )
+        if invalid_grobid:
+            grobid = {}
+            warnings.append("grobid:invalid")
+    return {
+        "capabilities": capabilities,
+        "grobid": grobid,
+        "warnings": warnings,
+    }
+
+
+WORKFLOW_STATUS_COUNT_KEYS = [
+    "crawl_jobs",
+    "document_parse",
+    "document_index",
+    "document_chemistry",
+    "translations",
+    "reaction_sets",
+]
+
+
+def status_count_rows(status_counts: Any) -> list[dict[str, Any]]:
+    if not isinstance(status_counts, dict):
+        return [{"workflow": "status_counts", "status": "invalid", "count": 1}]
+    rows: list[dict[str, Any]] = []
+    for workflow in WORKFLOW_STATUS_COUNT_KEYS:
+        workflow_counts = status_counts.get(workflow) or {}
+        if not isinstance(workflow_counts, dict):
+            rows.append({"workflow": workflow, "status": "invalid", "count": 1})
+            continue
+        for state, count in workflow_counts.items():
+            if not isinstance(state, str) or not state.strip():
+                rows.append({"workflow": workflow, "status": "invalid", "count": 1})
+                continue
+            if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+                rows.append({"workflow": workflow, "status": "invalid", "count": 1})
+                continue
+            rows.append({"workflow": workflow, "status": state, "count": count})
+    return rows
+
+
+def config_warning_rows(config_warnings: Any) -> list[dict[str, str]]:
+    if not isinstance(config_warnings, list):
+        return [{"capability": "config_warnings", "message": "invalid"}]
+    rows: list[dict[str, str]] = []
+    for warning in config_warnings:
+        if not isinstance(warning, dict):
+            rows.append({"capability": "config_warnings", "message": "invalid"})
+            continue
+        raw_capability = warning.get("capability")
+        raw_message = warning.get("message") or warning.get("code") or "configuration warning"
+        if raw_capability is not None and (not isinstance(raw_capability, str) or not raw_capability.strip()):
+            rows.append({"capability": "config_warnings", "message": "invalid"})
+            continue
+        if not isinstance(raw_message, str) or not raw_message.strip():
+            rows.append({"capability": "config_warnings", "message": "invalid"})
+            continue
+        capability = raw_capability.strip() if isinstance(raw_capability, str) and raw_capability.strip() else "unknown"
+        rows.append({"capability": capability, "message": raw_message})
+    return rows
+
+
 def crawl_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     options = [{"label": "全部 active 期刊", "journal_id": None}]
     for journal in journals:
+        if not isinstance(journal, dict):
+            continue
+        journal_id = journal.get("id")
+        name = journal.get("name")
+        if isinstance(journal_id, bool) or not isinstance(journal_id, int):
+            continue
+        if not isinstance(name, str) or not name.strip():
+            continue
         issn_label = " / ".join(compact_parts([journal.get("issn_print"), journal.get("issn_electronic")]))
         suffix = f" · {issn_label}" if issn_label else ""
-        options.append({"label": f"#{journal['id']} · {journal['name']}{suffix}", "journal_id": journal["id"]})
+        options.append({"label": f"#{journal_id} · {name}{suffix}", "journal_id": journal_id})
     return options
 
 
@@ -228,22 +494,201 @@ def crawl_journal_option_label(option: dict[str, Any]) -> str:
 
 
 def journal_option_label(journal: dict[str, Any]) -> str:
-    return f"#{journal['id']} {journal.get('name') or 'Journal'} · active={bool(journal.get('active'))}"
+    journal_id = journal.get("id")
+    id_label = journal_id if isinstance(journal_id, int) and not isinstance(journal_id, bool) else "-"
+    name = journal.get("name")
+    name_label = name if isinstance(name, str) and name.strip() else "Journal"
+    active = journal.get("active")
+    active_label = active if isinstance(active, bool) else False
+    return f"#{id_label} {name_label} · active={active_label}"
 
 
-def category_parent_option_label(category: Optional[dict[str, Any]]) -> str:
+def journal_create_success_state(payload: Any) -> dict[str, Optional[str]]:
+    journal_id = payload.get("id") if isinstance(payload, dict) else None
+    if isinstance(journal_id, int) and not isinstance(journal_id, bool):
+        return {"message": f"journal #{journal_id}", "warning": None}
+    return {"message": "journal #unknown", "warning": "journal create response: invalid"}
+
+
+def category_create_success_state(payload: Any) -> dict[str, Optional[str]]:
+    category_id = payload.get("id") if isinstance(payload, dict) else None
+    if isinstance(category_id, int) and not isinstance(category_id, bool):
+        return {"message": f"category #{category_id}", "warning": None}
+    return {"message": "category #unknown", "warning": "category create response: invalid"}
+
+
+def paper_search_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        journal
+        for journal in journals
+        if isinstance(journal, dict)
+        and isinstance(journal.get("id"), int)
+        and not isinstance(journal.get("id"), bool)
+        and isinstance(journal.get("name"), str)
+        and journal.get("name", "").strip()
+    ]
+
+
+def journal_items(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        journal
+        for journal in journals
+        if isinstance(journal, dict)
+        and isinstance(journal.get("id"), int)
+        and not isinstance(journal.get("id"), bool)
+        and isinstance(journal.get("name"), str)
+        and journal.get("name", "").strip()
+    ]
+
+
+def paper_search_result_items(papers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        paper
+        for paper in papers
+        if isinstance(paper, dict)
+        and isinstance(paper.get("id"), int)
+        and not isinstance(paper.get("id"), bool)
+        and isinstance(paper.get("title"), str)
+        and paper.get("title", "").strip()
+    ]
+
+
+def paper_search_response_state(response: Any) -> dict[str, Any]:
+    if not isinstance(response, dict):
+        return {"items": [], "total": 0, "page": 1, "page_size": 20}
+    items = response.get("items")
+    return {
+        "items": items if isinstance(items, list) else [],
+        "total": non_negative_int_or_zero(response.get("total")),
+        "page": positive_int_or_default(response.get("page"), 1),
+        "page_size": positive_int_or_default(response.get("page_size"), 20),
+    }
+
+
+def paginated_response_state(response: Any, *, default_page_size: int = 20) -> dict[str, Any]:
+    fallback_page_size = positive_int_or_default(default_page_size, 20)
+    if not isinstance(response, dict):
+        return {"items": [], "total": 0, "page": 1, "page_size": fallback_page_size}
+    items = response.get("items")
+    return {
+        "items": items if isinstance(items, list) else [],
+        "total": non_negative_int_or_zero(response.get("total")),
+        "page": positive_int_or_default(response.get("page"), 1),
+        "page_size": positive_int_or_default(response.get("page_size"), fallback_page_size),
+    }
+
+
+def paper_search_dedupe_label(paper: dict[str, Any]) -> str:
+    doi = paper.get("doi")
+    if isinstance(doi, str) and doi.strip():
+        return doi
+    dedupe_key = paper.get("dedupe_key")
+    if isinstance(dedupe_key, str) and dedupe_key.strip():
+        return dedupe_key[:24]
+    return "-"
+
+
+def paper_search_abstract_preview(paper: dict[str, Any]) -> str:
+    abstract = paper.get("abstract")
+    if not isinstance(abstract, str):
+        return ""
+    return abstract[:400]
+
+
+def journal_table_rows(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for journal in journals:
+        if not isinstance(journal, dict):
+            continue
+        keywords = journal.get("keywords")
+        rows.append(
+            {
+                **journal,
+                "keywords": json.dumps(keywords, ensure_ascii=False) if isinstance(keywords, (dict, list)) else keywords,
+            }
+        )
+    return rows
+
+
+def category_parent_options(categories: list[dict[str, Any]]) -> list[Optional[dict[str, Any]]]:
+    return [
+        None,
+        *[
+            category
+            for category in categories
+            if isinstance(category, dict)
+            and isinstance(category.get("id"), int)
+            and not isinstance(category.get("id"), bool)
+        ],
+    ]
+
+
+def category_parent_option_label(category: Any) -> str:
     if category is None:
         return "无"
-    return f"#{category['id']} {category.get('slug') or 'category'}"
+    if not isinstance(category, dict):
+        return "#- category"
+    category_id = category.get("id")
+    id_label = category_id if isinstance(category_id, int) and not isinstance(category_id, bool) else "-"
+    slug = category.get("slug")
+    slug_label = slug if isinstance(slug, str) and slug.strip() else "category"
+    return f"#{id_label} {slug_label}"
 
 
-def paper_category_option_label(category: dict[str, Any]) -> str:
+def paper_category_options(categories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        category
+        for category in categories
+        if isinstance(category, dict)
+        and isinstance(category.get("id"), int)
+        and not isinstance(category.get("id"), bool)
+        and isinstance(category.get("slug"), str)
+        and category.get("slug", "").strip()
+    ]
+
+
+def paper_category_slugs(paper: dict[str, Any]) -> set[str]:
+    categories = paper.get("categories")
+    if not isinstance(categories, list):
+        return set()
+    return {category for category in categories if isinstance(category, str) and category.strip()}
+
+
+def paper_category_option_label(category: Any) -> str:
+    if not isinstance(category, dict):
+        return "category · category"
     return f"{category.get('slug') or 'category'} · {category.get('name') or 'category'}"
+
+
+def format_category_summary(paper: dict[str, Any]) -> str:
+    details = paper.get("category_details") or []
+    if isinstance(details, list):
+        labels = []
+        for category in details:
+            if not isinstance(category, dict):
+                continue
+            confidence = category.get("confidence")
+            confidence_label = f"{confidence:.2f}" if isinstance(confidence, (int, float)) and not isinstance(confidence, bool) else "-"
+            slug = category.get("slug")
+            slug_label = slug if isinstance(slug, str) and slug.strip() else "category"
+            method = category.get("method")
+            method_label = method if isinstance(method, str) and method.strip() else "-"
+            labels.append(f"{slug_label} · {method_label} · {confidence_label}")
+        if labels:
+            return ", ".join(labels)
+    categories = paper.get("categories") or []
+    if isinstance(categories, list):
+        labels = [category for category in categories if isinstance(category, str) and category.strip()]
+        if labels:
+            return ", ".join(labels)
+    return "-"
 
 
 def paper_upload_option_label(paper: Optional[dict[str, Any]]) -> str:
     if paper is None:
         return "不关联论文"
+    if not isinstance(paper, dict):
+        return "#- · Untitled · DOI: - · - · -"
     return (
         f"#{paper.get('id')} · {paper.get('title') or 'Untitled'} · "
         f"DOI: {paper.get('doi') or '-'} · "
@@ -252,12 +697,32 @@ def paper_upload_option_label(paper: Optional[dict[str, Any]]) -> str:
     )
 
 
+def paper_upload_options(papers: list[dict[str, Any]]) -> list[Optional[dict[str, Any]]]:
+    return [
+        None,
+        *[
+            paper
+            for paper in papers
+            if isinstance(paper, dict)
+            and isinstance(paper.get("id"), int)
+            and not isinstance(paper.get("id"), bool)
+        ],
+    ]
+
+
 def paper_upload_query_params(query: Optional[str]) -> dict[str, Any]:
     params: dict[str, Any] = {"page": 1, "page_size": 100}
     normalized = (query or "").strip()
     if normalized:
         params["q"] = normalized
     return params
+
+
+def document_upload_success_state(payload: Any) -> dict[str, Optional[str]]:
+    document_id = payload.get("id") if isinstance(payload, dict) else None
+    if isinstance(document_id, int) and not isinstance(document_id, bool):
+        return {"message": f"document #{document_id}", "warning": None}
+    return {"message": "document #unknown", "warning": "document upload response: invalid"}
 
 
 DOCUMENT_STATUS_FILTERS: dict[str, Optional[tuple[str, str]]] = {
@@ -280,27 +745,72 @@ def document_status_filter_options() -> list[str]:
 
 
 def filter_documents_by_status(documents: list[dict[str, Any]], filter_value: str) -> list[dict[str, Any]]:
+    valid_documents = [
+        document
+        for document in documents
+        if isinstance(document, dict)
+        and isinstance(document.get("id"), int)
+        and not isinstance(document.get("id"), bool)
+    ]
     condition = DOCUMENT_STATUS_FILTERS.get(filter_value)
     if condition is None:
-        return list(documents)
+        return valid_documents
     field, expected = condition
-    return [document for document in documents if document.get(field) == expected]
+    return [document for document in valid_documents if document.get(field) == expected]
+
+
+def documents_response_state(response: Any) -> dict[str, Any]:
+    if not isinstance(response, dict):
+        return {"items": [], "total": 0, "page": 1, "page_size": 20}
+    items = response.get("items")
+    return {
+        "items": items if isinstance(items, list) else [],
+        "total": non_negative_int_or_zero(response.get("total")),
+        "page": positive_int_or_default(response.get("page"), 1),
+        "page_size": positive_int_or_default(response.get("page_size"), 20),
+    }
 
 
 def document_filter_summary(total_count: int, filtered_count: int, filter_value: str) -> str:
     return f"当前页匹配 {filtered_count}/{total_count} · 筛选: {filter_value}"
 
 
+def crawl_job_items(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        job
+        for job in jobs
+        if isinstance(job, dict)
+        and isinstance(job.get("id"), int)
+        and not isinstance(job.get("id"), bool)
+    ]
+
+
+def crawl_jobs_response_state(response: Any) -> dict[str, Any]:
+    if not isinstance(response, dict):
+        return {"items": [], "total": 0, "page": 1, "page_size": 20}
+    items = response.get("items")
+    return {
+        "items": items if isinstance(items, list) else [],
+        "total": non_negative_int_or_zero(response.get("total")),
+        "page": positive_int_or_default(response.get("page"), 1),
+        "page_size": positive_int_or_default(response.get("page_size"), 20),
+    }
+
+
 def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for job in jobs:
-        diagnostics = job.get("diagnostics") or {}
-        journal = job.get("journal") or {}
+        diagnostics = dict_or_empty(job.get("diagnostics"))
+        journal = dict_or_empty(job.get("journal"))
         status = diagnostics.get("status") or job.get("status")
         error = diagnostics.get("error") or job.get("error")
-        found = int(diagnostics.get("papers_found") or 0)
-        accepted = int(diagnostics.get("papers_accepted") or 0)
-        new = int(diagnostics.get("papers_new") or 0)
+        found = non_negative_int_or_zero(diagnostics.get("papers_found"))
+        filtered = non_negative_int_or_zero(diagnostics.get("papers_filtered"))
+        accepted = non_negative_int_or_zero(diagnostics.get("papers_accepted"))
+        existing = non_negative_int_or_zero(diagnostics.get("papers_existing"))
+        new = non_negative_int_or_zero(diagnostics.get("papers_new"))
+        keyword_terms = diagnostics.get("keyword_terms")
+        keyword_terms_label = ", ".join(keyword_terms) if isinstance(keyword_terms, list) else ""
         rows.append(
             {
                 "id": job.get("id") or job.get("job_id"),
@@ -311,14 +821,14 @@ def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "date_from": diagnostics.get("date_from") or job.get("date_from"),
                 "date_to": diagnostics.get("date_to") or job.get("date_to"),
                 "found": found,
-                "filtered": int(diagnostics.get("papers_filtered") or 0),
+                "filtered": filtered,
                 "accepted": accepted,
-                "existing": int(diagnostics.get("papers_existing") or 0),
+                "existing": existing,
                 "new": new,
                 "progress_summary": f"{found} found / {accepted} accepted / {new} new",
                 "outcome": diagnostics.get("outcome"),
                 "keyword_mode": diagnostics.get("keyword_mode"),
-                "keyword_terms": ", ".join(diagnostics.get("keyword_terms") or []),
+                "keyword_terms": keyword_terms_label,
                 "error": error,
             }
         )
@@ -334,8 +844,10 @@ def crawl_job_option_label(job: dict[str, Any]) -> str:
 
 
 def crawl_job_diagnostic_rows(job: dict[str, Any]) -> list[dict[str, Any]]:
-    diagnostics = job.get("diagnostics") or {}
-    journal = job.get("journal") or {}
+    diagnostics = dict_or_empty(job.get("diagnostics"))
+    journal = dict_or_empty(job.get("journal"))
+    keyword_terms = diagnostics.get("keyword_terms")
+    keyword_terms_label = ", ".join(keyword_terms) if isinstance(keyword_terms, list) else ""
     fields = [
         ("job_id", job.get("id") or job.get("job_id")),
         ("status", diagnostics.get("status") or job.get("status")),
@@ -343,20 +855,22 @@ def crawl_job_diagnostic_rows(job: dict[str, Any]) -> list[dict[str, Any]]:
         ("period", diagnostics.get("period") or job.get("period")),
         ("date_from", diagnostics.get("date_from") or job.get("date_from")),
         ("date_to", diagnostics.get("date_to") or job.get("date_to")),
-        ("papers_found", int(diagnostics.get("papers_found") or 0)),
-        ("papers_filtered", int(diagnostics.get("papers_filtered") or 0)),
-        ("papers_accepted", int(diagnostics.get("papers_accepted") or 0)),
-        ("papers_existing", int(diagnostics.get("papers_existing") or 0)),
-        ("papers_new", int(diagnostics.get("papers_new") or 0)),
+        ("papers_found", non_negative_int_or_zero(diagnostics.get("papers_found"))),
+        ("papers_filtered", non_negative_int_or_zero(diagnostics.get("papers_filtered"))),
+        ("papers_accepted", non_negative_int_or_zero(diagnostics.get("papers_accepted"))),
+        ("papers_existing", non_negative_int_or_zero(diagnostics.get("papers_existing"))),
+        ("papers_new", non_negative_int_or_zero(diagnostics.get("papers_new"))),
         ("outcome", diagnostics.get("outcome")),
         ("keyword_mode", diagnostics.get("keyword_mode")),
-        ("keyword_terms", ", ".join(diagnostics.get("keyword_terms") or [])),
+        ("keyword_terms", keyword_terms_label),
         ("error", diagnostics.get("error") or job.get("error")),
     ]
     return [{"field": field, "value": value} for field, value in fields]
 
 
-def document_option_label(document: dict[str, Any]) -> str:
+def document_option_label(document: Any) -> str:
+    if not isinstance(document, dict):
+        return "#- · document · parse=unknown · index=unknown · chemistry=unknown"
     file_path = str(document.get("file_path") or "")
     file_name = document.get("original_name") or file_path.rsplit("/", 1)[-1] or "document"
     paper = document.get("paper") if isinstance(document.get("paper"), dict) else {}
@@ -386,11 +900,29 @@ def document_status_rows(document: dict[str, Any], chunks: Optional[dict[str, An
         ("parse_error", document.get("parse_error")),
         ("index_status", index_status),
         ("index_error", index_error),
-        ("chunks_total", int(chunks.get("total") or 0)),
+        ("chunks_total", non_negative_int_or_zero(chunks.get("total"))),
         ("chemistry_status", document.get("chemistry_status") or "unknown"),
         ("chemistry_error", document.get("chemistry_error")),
     ]
     return [{"field": field, "value": value} for field, value in rows]
+
+
+def document_chunks_response_state(response: Any) -> dict[str, Any]:
+    normalized = paginated_response_state(response, default_page_size=20)
+    if not isinstance(response, dict):
+        response = {}
+    indexed = response.get("indexed")
+    indexed = indexed if isinstance(indexed, bool) else False
+    index_status = response.get("index_status")
+    if not isinstance(index_status, str) or not index_status.strip():
+        index_status = "indexed" if indexed else "not_indexed"
+    index_error = response.get("index_error")
+    return {
+        **normalized,
+        "indexed": indexed,
+        "index_status": index_status,
+        "index_error": index_error if isinstance(index_error, str) else None,
+    }
 
 
 def document_asset_downloads(document: dict[str, Any]) -> list[dict[str, Any]]:
@@ -429,10 +961,32 @@ def document_asset_downloads(document: dict[str, Any]) -> list[dict[str, Any]]:
 def document_section_rows(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for section in sections:
+        if not isinstance(section, dict):
+            rows.append(
+                {
+                    "id": None,
+                    "document_id": None,
+                    "seq": None,
+                    "section_type": "invalid",
+                    "title": None,
+                    "section_location": "invalid",
+                    "content_preview": "invalid",
+                    "content_chars": 0,
+                }
+            )
+            continue
         section_id = section.get("id")
         section_seq = section.get("seq")
         section_ref = section_seq if section_seq is not None else section_id
-        content = section.get("content") or ""
+        raw_content = section.get("content")
+        content = raw_content if isinstance(raw_content, str) else ""
+        content_is_valid = raw_content is None or isinstance(raw_content, str)
+        content_preview = (
+            summarize_text(content, limit=160)
+            if content_is_valid
+            else "invalid"
+        )
+        content_chars = len(content) if content_is_valid else 0
         section_location = " · ".join(
             compact_parts(
                 [
@@ -450,31 +1004,48 @@ def document_section_rows(sections: list[dict[str, Any]]) -> list[dict[str, Any]
                 "section_type": section.get("section_type"),
                 "title": section.get("title"),
                 "section_location": section_location or "-",
-                "content_preview": summarize_text(content, limit=160),
-                "content_chars": len(content),
+                "content_preview": content_preview,
+                "content_chars": content_chars,
             }
         )
     return rows
 
 
-def document_section_option_label(section: dict[str, Any]) -> str:
+def document_section_option_label(section: Any) -> str:
+    if not isinstance(section, dict):
+        return "invalid. Section"
     section_ref = section.get("seq") if section.get("seq") is not None else section.get("id")
     label = section.get("title") or section.get("section_type") or "section"
     return f"{section_ref}. {label}"
 
 
+def document_section_preview_title(section: Any) -> str:
+    if not isinstance(section, dict):
+        return "Section"
+    title = section.get("title")
+    return title if isinstance(title, str) and title.strip() else "Section"
+
+
+def document_section_preview_content(section: Any) -> str:
+    if not isinstance(section, dict):
+        return ""
+    content = section.get("content")
+    return content if isinstance(content, str) else ""
+
+
 def translation_status_rows(
     translation: dict[str, Any], *, preview_text: Optional[str] = None
 ) -> list[dict[str, Any]]:
-    preview = preview_text or ""
+    preview_is_valid = preview_text is None or isinstance(preview_text, str)
+    preview = preview_text if isinstance(preview_text, str) else ""
     rows = [
         ("document_id", translation.get("document_id")),
         ("status", translation.get("status") or "unknown"),
         ("target_lang", translation.get("target_lang")),
         ("output_path", translation.get("output_path")),
         ("error", translation.get("error")),
-        ("preview_chars", len(preview)),
-        ("preview", summarize_text(preview, limit=160)),
+        ("preview_chars", len(preview) if preview_is_valid else 0),
+        ("preview", summarize_text(preview, limit=160) if preview_is_valid else "invalid"),
     ]
     return [{"field": field, "value": value} for field, value in rows]
 
@@ -502,10 +1073,27 @@ def translation_download(translation: dict[str, Any]) -> Optional[dict[str, Any]
 def document_chunk_rows(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for chunk in chunks:
+        if not isinstance(chunk, dict):
+            rows.append(
+                {
+                    "id": None,
+                    "document_id": None,
+                    "section_id": None,
+                    "section_seq": None,
+                    "section_title": None,
+                    "vector_id": None,
+                    "chunk_location": "invalid",
+                    "text_preview": "invalid",
+                    "text_chars": 0,
+                }
+            )
+            continue
         section_id = chunk.get("section_id")
         section_seq = chunk.get("section_seq")
         section_ref = section_seq if section_seq is not None else section_id
-        text = chunk.get("text") or ""
+        raw_text = chunk.get("text")
+        text = raw_text if isinstance(raw_text, str) else ""
+        text_is_valid = raw_text is None or isinstance(raw_text, str)
         chunk_location = " · ".join(
             compact_parts(
                 [
@@ -524,21 +1112,49 @@ def document_chunk_rows(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "section_title": chunk.get("section_title"),
                 "vector_id": chunk.get("vector_id"),
                 "chunk_location": chunk_location or "-",
-                "text_preview": summarize_text(text, limit=160),
-                "text_chars": len(text),
+                "text_preview": summarize_text(text, limit=160) if text_is_valid else "invalid",
+                "text_chars": len(text) if text_is_valid else 0,
             }
         )
     return rows
 
 
 def document_chunk_option_label(chunk: dict[str, Any]) -> str:
+    if not isinstance(chunk, dict):
+        return "invalid · -"
     chunk_ref = chunk.get("vector_id") or chunk.get("id")
     return f"{chunk_ref} · {chunk.get('section_title') or '-'}"
+
+
+def document_chunk_preview_text(chunk: Any) -> str:
+    if not isinstance(chunk, dict):
+        return ""
+    text = chunk.get("text")
+    return text if isinstance(text, str) else ""
 
 
 def rag_source_rows(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for source in sources:
+        if not isinstance(source, dict):
+            rows.append(
+                {
+                    "citation": "[invalid]",
+                    "source_location": "invalid",
+                    "document_id": None,
+                    "paper_id": None,
+                    "paper_title": None,
+                    "section_id": None,
+                    "section_seq": None,
+                    "section_title": None,
+                    "section_type": None,
+                    "source_excerpt": None,
+                    "chunk_id": None,
+                    "vector_id": None,
+                    "score": None,
+                }
+            )
+            continue
         paper_id = source.get("paper_id")
         document_id = source.get("document_id")
         section_seq = source.get("section_seq")
@@ -586,18 +1202,45 @@ def rag_source_rows(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
-def rag_source_option_label(source: dict[str, Any]) -> str:
+def rag_source_option_label(source: Any) -> str:
+    if not isinstance(source, dict):
+        return "引用来源"
     label = " · ".join(compact_parts([source.get("citation"), source.get("source_location")]))
     return label or "引用来源"
+
+
+def rag_source_preview_excerpt(source: Any) -> str:
+    if not isinstance(source, dict):
+        return ""
+    excerpt = source.get("source_excerpt")
+    return excerpt if isinstance(excerpt, str) else ""
 
 
 def reaction_set_rows(reaction_sets: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for item in reaction_sets:
-        reaction_count = int(item.get("reaction_count") or 0)
-        verified_count = int(item.get("verified_count") or 0)
-        unverified_count = int(item.get("unverified_count") or 0)
-        export_ready = bool(item.get("export_ready"))
+        if not isinstance(item, dict):
+            rows.append(
+                {
+                    "id": None,
+                    "document_id": None,
+                    "name": "Reaction set",
+                    "status": "invalid",
+                    "reaction_count": 0,
+                    "verified_count": 0,
+                    "unverified_count": 0,
+                    "export_ready": False,
+                    "export_state": "empty",
+                    "review_progress": "0/0 verified",
+                    "verified_by": None,
+                    "verified_at": None,
+                }
+            )
+            continue
+        reaction_count = non_negative_int_or_zero(item.get("reaction_count"))
+        verified_count = non_negative_int_or_zero(item.get("verified_count"))
+        unverified_count = non_negative_int_or_zero(item.get("unverified_count"))
+        export_ready = item.get("export_ready") if isinstance(item.get("export_ready"), bool) else False
         if reaction_count == 0:
             export_state = "empty"
         elif export_ready:
@@ -647,12 +1290,37 @@ def reaction_display_state(reaction: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def reaction_set_option_label(item: dict[str, Any]) -> str:
-    document_part = f"doc {item.get('document_id')} · " if item.get("document_id") is not None else ""
+def reaction_set_options(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        item
+        for item in items
+        if isinstance(item, dict)
+        and isinstance(item.get("id"), int)
+        and not isinstance(item.get("id"), bool)
+    ]
+
+
+def reaction_set_option_label(item: Any) -> str:
+    if not isinstance(item, dict):
+        return "#- · unknown · export_ready False · 未复核 0 · Reaction set"
+    item_id = item.get("id")
+    id_label = item_id if isinstance(item_id, int) and not isinstance(item_id, bool) else "-"
+    document_id = item.get("document_id")
+    document_part = f"doc {document_id} · " if isinstance(document_id, int) and not isinstance(document_id, bool) else ""
+    status = item.get("status")
+    status_label = status if isinstance(status, str) and status.strip() else "unknown"
+    export_ready = item.get("export_ready")
+    export_ready_label = export_ready if isinstance(export_ready, bool) else False
+    unverified_count = item.get("unverified_count")
+    unverified_count_label = (
+        unverified_count if isinstance(unverified_count, int) and not isinstance(unverified_count, bool) else 0
+    )
+    name = item.get("name")
+    name_label = name if isinstance(name, str) and name.strip() else "Reaction set"
     return (
-        f"#{item['id']} · {document_part}{item.get('status') or 'unknown'} · "
-        f"export_ready {bool(item.get('export_ready'))} · "
-        f"未复核 {item.get('unverified_count', 0)} · {item.get('name') or 'Reaction set'}"
+        f"#{id_label} · {document_part}{status_label} · "
+        f"export_ready {export_ready_label} · "
+        f"未复核 {unverified_count_label} · {name_label}"
     )
 
 
@@ -676,11 +1344,22 @@ def normalized_option_value(value: Any) -> str:
     return "" if normalized == "unknown" else normalized
 
 
+def finite_float_or_none(value: Any) -> Optional[float]:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
 def reaction_review_form_state(reaction: dict[str, Any]) -> dict[str, Any]:
     reaction_type_value = normalized_option_value(reaction.get("reaction_type"))
     rate_type_value = normalized_option_value(reaction.get("rate_type"))
-    include_threshold_ev = reaction.get("threshold_ev") is not None
-    threshold_ev_value = float(reaction["threshold_ev"]) if include_threshold_ev else 0.0
+    threshold_ev = finite_float_or_none(reaction.get("threshold_ev"))
+    include_threshold_ev = threshold_ev is not None
+    threshold_ev_value = threshold_ev if include_threshold_ev else 0.0
     return {
         "reaction_type_options": REACTION_TYPE_OPTIONS,
         "rate_type_options": RATE_TYPE_OPTIONS,
@@ -721,8 +1400,8 @@ def reaction_review_payload(
 
 def reaction_export_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     export_format = payload.get("format") or "unknown"
-    reaction_count = int(payload.get("reaction_count") or 0)
-    audit_entry_count = int(payload.get("audit_entry_count") or 0)
+    reaction_count = non_negative_int_or_zero(payload.get("reaction_count"))
+    audit_entry_count = non_negative_int_or_zero(payload.get("audit_entry_count"))
     rows = [
         ("reaction_set_id", payload.get("reaction_set_id")),
         ("format", export_format),
@@ -733,6 +1412,13 @@ def reaction_export_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
         ("download_label", f"{export_format} · {reaction_count} reactions · {audit_entry_count} audit entries"),
     ]
     return [{"field": field, "value": value} for field, value in rows]
+
+
+def reaction_export_success_state(payload: Any) -> dict[str, Optional[str]]:
+    output_path = payload.get("output_path") if isinstance(payload, dict) else None
+    if isinstance(output_path, str) and output_path.strip():
+        return {"message": output_path, "warning": None}
+    return {"message": "export path unavailable", "warning": "reaction export response: invalid"}
 
 
 def reaction_export_download(payload: dict[str, Any]) -> Optional[dict[str, Any]]:
@@ -761,17 +1447,39 @@ def reaction_export_download(payload: dict[str, Any]) -> Optional[dict[str, Any]
 
 
 def int_or_default(value: Any, default: int) -> int:
-    return default if value is None else int(value)
+    if isinstance(value, bool) or value is None:
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= 0 else default
+
+
+def reaction_items(reactions: Any) -> list[dict[str, Any]]:
+    if not isinstance(reactions, list):
+        return []
+    return [
+        reaction
+        for reaction in reactions
+        if isinstance(reaction, dict)
+        and isinstance(reaction.get("id"), int)
+        and not isinstance(reaction.get("id"), bool)
+    ]
 
 
 def reaction_set_review_state(detail: dict[str, Any]) -> dict[str, Any]:
-    reactions = detail.get("reactions") or []
+    reactions = reaction_items(detail.get("reactions"))
     unverified_reactions = [reaction for reaction in reactions if not reaction.get("verified")]
     reaction_count = int_or_default(detail.get("reaction_count"), len(reactions))
     verified_count = int_or_default(detail.get("verified_count"), reaction_count - len(unverified_reactions))
     unverified_count = int_or_default(detail.get("unverified_count"), len(unverified_reactions))
     export_ready_value = detail.get("export_ready")
-    export_ready = bool(export_ready_value) if export_ready_value is not None else reaction_count > 0 and unverified_count == 0
+    export_ready = (
+        export_ready_value
+        if isinstance(export_ready_value, bool)
+        else reaction_count > 0 and unverified_count == 0
+    )
     export_blocked = not export_ready
     if reaction_count == 0:
         export_message = "没有可导出的反应。"
@@ -807,7 +1515,33 @@ def reaction_set_review_state(detail: dict[str, Any]) -> dict[str, Any]:
 def reaction_audit_rows(audit_log: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for audit in audit_log:
+        if not isinstance(audit, dict):
+            rows.append(
+                {
+                    "audit_id": None,
+                    "reaction_id": None,
+                    "field": "invalid",
+                    "before": "",
+                    "after": "",
+                    "verified_by": None,
+                    "verified_at": None,
+                }
+            )
+            continue
         field_changes = audit.get("field_changes") or {}
+        if not isinstance(field_changes, dict):
+            rows.append(
+                {
+                    "audit_id": audit.get("id"),
+                    "reaction_id": audit.get("reaction_id"),
+                    "field": "field_changes",
+                    "before": "invalid",
+                    "after": "invalid",
+                    "verified_by": audit.get("verified_by"),
+                    "verified_at": audit.get("verified_at"),
+                }
+            )
+            continue
         if not field_changes:
             rows.append(
                 {
@@ -822,6 +1556,19 @@ def reaction_audit_rows(audit_log: list[dict[str, Any]]) -> list[dict[str, Any]]
             )
             continue
         for field, change in field_changes.items():
+            if not isinstance(change, dict):
+                rows.append(
+                    {
+                        "audit_id": audit.get("id"),
+                        "reaction_id": audit.get("reaction_id"),
+                        "field": field,
+                        "before": "invalid",
+                        "after": "invalid",
+                        "verified_by": audit.get("verified_by"),
+                        "verified_at": audit.get("verified_at"),
+                    }
+                )
+                continue
             rows.append(
                 {
                     "audit_id": audit.get("id"),
@@ -843,6 +1590,7 @@ def audit_cell_text(value: Any) -> str:
 
 
 def reaction_review_list_state(reactions: list[dict[str, Any]], *, only_unverified: bool = False) -> dict[str, Any]:
+    reactions = reaction_items(reactions)
     unverified_reactions = [reaction for reaction in reactions if not reaction.get("verified")]
     if only_unverified:
         display_reactions = unverified_reactions
@@ -865,7 +1613,7 @@ def reaction_review_list_state(reactions: list[dict[str, Any]], *, only_unverifi
 
 def reaction_review_rows(reactions: list[dict[str, Any]], *, only_unverified: bool = False) -> list[dict[str, Any]]:
     rows = []
-    for reaction in reactions:
+    for reaction in reaction_items(reactions):
         verified = bool(reaction.get("verified"))
         if only_unverified and verified:
             continue

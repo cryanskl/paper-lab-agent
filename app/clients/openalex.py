@@ -36,6 +36,7 @@ class OpenAlexClient:
         issn = unicodedata.normalize("NFKC", issn).strip()
         if not issn:
             return []
+        max_pages = max(1, max_pages)
         filters = [
             f"locations.source.issn:{issn}",
             f"from_publication_date:{date_from}",

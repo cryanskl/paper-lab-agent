@@ -2210,7 +2210,7 @@ def test_rag_query_accepts_normalizable_vector_db_backend_metadata(tmp_path):
     client = make_client(tmp_path)
 
     from app.db import get_conn
-    from app.services.rag import local_hash_embedding
+    from app.services.rag import local_hash_embedding, parse_vector_store_json
 
     with get_conn() as conn:
         document_id = conn.execute(
@@ -2262,6 +2262,8 @@ def test_rag_query_accepts_normalizable_vector_db_backend_metadata(tmp_path):
     payload = response.json()
     assert payload["sources"]
     assert payload["sources"][0]["vector_id"] == "legacy-backend-vector"
+    parsed = parse_vector_store_json(json.dumps(vector_record))
+    assert parsed["legacy-backend-vector"]["vector_db_backend"] == "local-json"
 
 
 def test_rag_query_invalid_vector_chunk_id_returns_clear_error(tmp_path):
@@ -2685,6 +2687,48 @@ def test_prepare_demo_data_script_rejects_symlinked_output_parent(tmp_path):
     assert not (outside_dir / "demo-summary.json").exists()
 
 
+def test_prepare_demo_data_script_rejects_file_output_parent(tmp_path):
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(tmp_path / "data")
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+    file_parent = tmp_path / "out"
+    file_parent.write_text("not a directory", encoding="utf-8")
+    output_path = file_parent / "demo-summary.json"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/prepare_demo_data.py",
+            "--summary-only",
+            "--compact",
+            "--output",
+            str(output_path),
+        ],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert f"prepare_demo_data failed: output path parent is not a regular directory: {file_parent}" in result.stderr
+    assert file_parent.read_text(encoding="utf-8") == "not a directory"
+    assert not (tmp_path / "data").exists()
+
+
 def test_smoke_check_covers_translation_and_chemistry_chain():
     from scripts.smoke_check import run_smoke
 
@@ -2729,6 +2773,28 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["runtime_version"] == "0.1.0"
     assert result["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert result["config_warning_count"] == 3
+    assert result["config_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
+    assert result["config_warning_details"] == [
+        {
+            "code": "missing_openalex_mailto",
+            "capability": "openalex_crawl",
+            "message": "OPENALEX_MAILTO is not configured; local offline mode still works, but production crawl diagnostics are weaker.",
+        },
+        {
+            "code": "missing_unpaywall_email",
+            "capability": "oa_lookup",
+            "message": "UNPAYWALL_EMAIL is not configured; OA link enrichment may fail against the public API.",
+        },
+        {
+            "code": "missing_llm_api_key",
+            "capability": "llm_translation",
+            "message": "LLM_API_KEY is not configured; translation uses the local deterministic adapter.",
+        },
+    ]
     assert result["release_readiness"]["ready"] is True
     assert result["release_readiness"]["demo_data_missing"] == []
     assert result["release_readiness"]["failed_workflows"] == []
@@ -2738,6 +2804,35 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
         "missing_llm_api_key",
     ]
     assert result["release_readiness"]["storage_errors"] == []
+
+
+def test_smoke_check_configure_runtime_clears_optional_external_env(tmp_path, monkeypatch):
+    from scripts.smoke_check import configure_runtime
+
+    monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
+    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+
+    configure_runtime(tmp_path)
+
+    assert os.environ["OPENALEX_MAILTO"] == ""
+    assert os.environ["UNPAYWALL_EMAIL"] == ""
+    assert os.environ["LLM_API_KEY"] == ""
+
+
+def test_smoke_check_restores_external_env_after_run(monkeypatch):
+    from scripts.smoke_check import run_smoke
+
+    monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
+    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+
+    result = run_smoke()
+
+    assert result["config_warning_count"] == 3
+    assert os.environ["OPENALEX_MAILTO"] == "lab@example.test"
+    assert os.environ["UNPAYWALL_EMAIL"] == "lab@example.test"
+    assert os.environ["LLM_API_KEY"] == "sk-test"
 
 
 def test_smoke_check_script_outputs_json():
@@ -2784,6 +2879,12 @@ def test_smoke_check_script_outputs_json():
     assert payload["runtime_version"] == "0.1.0"
     assert payload["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert payload["config_warning_count"] == 3
+    assert payload["config_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
+    assert [warning["code"] for warning in payload["config_warning_details"]] == payload["config_warning_codes"]
     assert payload["release_readiness"]["ready"] is True
     assert payload["release_readiness"]["config_warning_codes"] == [
         "missing_openalex_mailto",
@@ -4719,6 +4820,78 @@ def test_crawl_job_records_diagnostic_when_openalex_empty_uses_crossref(tmp_path
     assert stored_job["papers_new"] == 1
     assert "OpenAlex returned no works; used Crossref fallback" in stored_job["error"]
     assert paper["source_api"] == "crossref"
+
+
+def test_crawl_job_failure_reports_openalex_and_crossref_errors(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import crawl as crawl_service
+
+    class FailingOpenAlexClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def works_by_issn(self, *args, **kwargs):
+            raise RuntimeError("OpenAlex temporary outage")
+
+    class FailingCrossrefClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def works_by_issn(self, *args, **kwargs):
+            raise RuntimeError("Crossref 503")
+
+    monkeypatch.setattr(crawl_service, "OpenAlexClient", FailingOpenAlexClient)
+    monkeypatch.setattr(crawl_service, "CrossrefClient", FailingCrossrefClient)
+
+    job = crawl_service.create_jobs([2], "manual", "2026-01-01", "2026-01-31")[0]
+    import asyncio
+
+    asyncio.run(crawl_service.run_crawl_job(job["job_id"], 2, "2026-01-01", "2026-01-31"))
+
+    with get_conn() as conn:
+        stored_job = conn.execute("SELECT * FROM crawl_jobs WHERE id=?", (job["job_id"],)).fetchone()
+
+    assert stored_job["status"] == "failed"
+    assert "OpenAlex failed: OpenAlex temporary outage" in stored_job["error"]
+    assert "Crossref failed: Crossref 503" in stored_job["error"]
+
+
+def test_crawl_job_failure_reports_openalex_empty_and_crossref_error(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import crawl as crawl_service
+
+    class EmptyOpenAlexClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def works_by_issn(self, *args, **kwargs):
+            return []
+
+    class FailingCrossrefClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def works_by_issn(self, *args, **kwargs):
+            raise RuntimeError("Crossref 503")
+
+    monkeypatch.setattr(crawl_service, "OpenAlexClient", EmptyOpenAlexClient)
+    monkeypatch.setattr(crawl_service, "CrossrefClient", FailingCrossrefClient)
+
+    job = crawl_service.create_jobs([2], "manual", "2026-01-01", "2026-01-31")[0]
+    import asyncio
+
+    asyncio.run(crawl_service.run_crawl_job(job["job_id"], 2, "2026-01-01", "2026-01-31"))
+
+    with get_conn() as conn:
+        stored_job = conn.execute("SELECT * FROM crawl_jobs WHERE id=?", (job["job_id"],)).fetchone()
+
+    assert stored_job["status"] == "failed"
+    assert "OpenAlex returned no works" in stored_job["error"]
+    assert "Crossref failed: Crossref 503" in stored_job["error"]
 
 
 def test_crawl_job_passes_unpaywall_retry_and_timeout_settings(tmp_path, monkeypatch):
@@ -10045,6 +10218,61 @@ def test_reaction_verify_backend_failure_returns_json_error(tmp_path, monkeypatc
     assert "audit database unavailable" in payload["error"]["message"]
 
 
+def test_reaction_verify_malformed_reaction_json_returns_backend_error(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("malformed-reaction-json.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+    reaction_id = detail["reactions"][0]["id"]
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        conn.execute("UPDATE reactions SET reactants=? WHERE id=?", ("not-json", reaction_id))
+
+    response = client.put(
+        f"/api/v1/reactions/{reaction_id}/verify",
+        json={"verified": True, "verified_by": "chemist-a"},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "reaction_verify_failed"
+    assert "Expecting value" in payload["error"]["message"]
+
+
+def test_reaction_set_detail_malformed_reaction_json_returns_backend_error(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("malformed-reaction-detail-json.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+    reaction_id = detail["reactions"][0]["id"]
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        conn.execute("UPDATE reactions SET reactants=? WHERE id=?", ("not-json", reaction_id))
+
+    response = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}")
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "reaction_set_detail_failed"
+    assert "Expecting value" in payload["error"]["message"]
+
+
 def test_reaction_export_bolsig_text_and_rejects_unknown_format(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
@@ -10143,6 +10371,36 @@ def test_reaction_export_text_formats_include_per_reaction_audit_summary(tmp_pat
     assert f"LAST_VERIFIED_AT: {audit['verified_at']}" in bolsig
 
 
+def test_reaction_export_malformed_reaction_json_returns_backend_error(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("malformed-export-reaction-json.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+    reaction_id = detail["reactions"][0]["id"]
+    assert client.put(
+        f"/api/v1/reactions/{reaction_id}/verify",
+        json={"verified": True, "verified_by": "chemist-a"},
+    ).status_code == 200
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        conn.execute("UPDATE reactions SET reactants=? WHERE id=?", ("not-json", reaction_id))
+
+    response = client.post(f"/api/v1/reaction-sets/{reaction_set['id']}/export?format=json")
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["error"]["code"] == "reaction_export_failed"
+    assert "Expecting value" in payload["error"]["message"]
+
+
 def test_reaction_export_rejects_symlinked_output_file(tmp_path):
     make_client(tmp_path)
     import pytest
@@ -10233,6 +10491,62 @@ def test_reaction_export_rejects_empty_reaction_set(tmp_path):
 
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "reaction_set_unverified"
+
+
+def test_doctor_compact_summary_includes_warning_details():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "doctor.py"
+    spec = importlib.util.spec_from_file_location("doctor_script_warning_details", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+
+    compact = doctor.summary(
+        {
+            "ok": True,
+            "repo": str(repo),
+            "checks": [
+                {
+                    "name": "external_config",
+                    "status": "pass",
+                    "warnings": [
+                        {
+                            "code": "missing_llm_api_key",
+                            "capability": "llm_translation",
+                            "message": "LLM_API_KEY is not configured.",
+                        },
+                        {
+                            "code": "unsupported_vector_db_backend",
+                            "capability": "rag_indexing",
+                            "actual": "faiss",
+                            "supported": ["local-json"],
+                            "message": "VECTOR_DB_BACKEND=faiss is not supported.",
+                        },
+                    ],
+                    "issues": [],
+                }
+            ],
+        }
+    )
+
+    assert compact["warning_codes"] == ["missing_llm_api_key", "unsupported_vector_db_backend"]
+    assert compact["warning_details"] == [
+        {
+            "code": "missing_llm_api_key",
+            "capability": "llm_translation",
+            "message": "LLM_API_KEY is not configured.",
+        },
+        {
+            "code": "unsupported_vector_db_backend",
+            "capability": "rag_indexing",
+            "actual": "faiss",
+            "supported": ["local-json"],
+            "message": "VECTOR_DB_BACKEND=faiss is not supported.",
+        },
+    ]
 
 
 def test_reaction_export_write_failure_returns_json_error(tmp_path, monkeypatch):
@@ -10327,6 +10641,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "rm -rf" not in release_text
     assert "bash -n scripts/env.sh" in release_text
     assert "bash -n scripts/dev.sh" in release_text
+    assert "bash -n start.sh" in release_text
     assert "-m py_compile" in release_text
     assert "find scripts -maxdepth 1 -type f -name '*.py' | sort" in release_text
     assert 'PY_COMPILE_TARGETS=("${RELEASE_SCRIPT_TARGETS[@]}" streamlit_app.py)' in release_text
@@ -10363,8 +10678,10 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "runtime_version" in release_text
     assert "scheduler_job_ids" in release_text
     assert "config_warning_count" in release_text
+    assert "warning_details" in release_text
     assert "release_readiness" in release_text
     assert "config_warning_codes" in release_text
+    assert "config_warning_details" in release_text
     assert "missing_openalex_mailto" in release_text
     assert "crawl_job_status" in release_text
     assert "crawled_papers" in release_text
@@ -10432,6 +10749,8 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert '"/api/v1/system/status"' in smoke_text
     assert "runtime_version" in smoke_text
     assert "config_warning_count" in smoke_text
+    assert "config_warning_codes" in smoke_text
+    assert "config_warning_details" in smoke_text
     assert ci_workflow.exists()
     ci_text = ci_workflow.read_text(encoding="utf-8")
     assert "bash scripts/release_check.sh" in ci_text
@@ -10447,7 +10766,9 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "`release_readiness`",
         "`demo_data_missing`",
         "`failed_workflows`",
+        "`warning_details`",
         "`config_warning_codes`",
+        "`config_warning_details`",
         "`storage_errors`",
         "`translation_adapter`",
         "`llm_model`",
@@ -10672,6 +10993,7 @@ def test_health_check_cli_help_runs_with_app_imports():
 
     assert result.returncode == 0
     assert "usage:" in result.stdout
+    assert "FastAPI base URL; may include /api/v1" in result.stdout
     assert "ModuleNotFoundError" not in result.stderr
 
 
@@ -10770,6 +11092,35 @@ def test_env_loader_rejects_symlinked_env_parent(tmp_path):
 
     assert result.returncode == 1
     assert "env file parent is not a regular directory: linked" in result.stderr
+
+
+def test_env_loader_rejects_file_env_parent(tmp_path):
+    import subprocess
+
+    repo = Path(__file__).resolve().parent.parent
+    env_script = repo / "scripts" / "env.sh"
+    file_parent = tmp_path / "not-dir"
+    file_parent.write_text("not a directory", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                "set -euo pipefail; "
+                f"source {env_script}; "
+                "load_env_file_if_unset not-dir/.env"
+            ),
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "env file parent is not a regular directory: not-dir" in result.stderr
+    assert file_parent.read_text(encoding="utf-8") == "not a directory"
 
 
 def test_dev_api_base_url_tracks_runtime_port_override(tmp_path):
@@ -11274,6 +11625,124 @@ def test_system_release_readiness_blocks_rejected_chemistry_workflows(tmp_path, 
         "document_chemistry.rejected=1",
         "reaction_sets.rejected=1",
     ]
+    assert payload["release_readiness"]["ready"] is False
+
+
+def test_system_release_readiness_blocks_unknown_workflow_statuses(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
+    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+    monkeypatch.setenv("EMBEDDING_MODEL", "local-hash")
+    monkeypatch.setenv("VECTOR_DB_BACKEND", "local-json")
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    vector_path = tmp_path / "vector-index.json"
+    vector_path.write_text("{}", encoding="utf-8")
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (
+                file_path, file_hash, original_name,
+                parse_status, index_status, chemistry_status
+            ) VALUES (?, ?, ?, NULL, 'indexed', 'extracted')
+            """,
+            (str(tmp_path / "unknown-status.pdf"), "unknown-status", "unknown-status.pdf"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Body', 'e + Ar -> e + e + Ar+', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, vector_id, embedded)
+            VALUES (?, ?, 1, 'e + Ar -> e + e + Ar+', 'unknown-status-vector', 1)
+            """,
+            (document_id, section_id),
+        )
+        reaction_set_id = conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, status)
+            VALUES (?, 'Verified set', 'verified')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO reactions (reaction_set_id, reaction, verified)
+            VALUES (?, 'e + Ar -> e + e + Ar+', 1)
+            """,
+            (reaction_set_id,),
+        )
+
+    payload = client.get("/api/v1/system/status").json()
+
+    assert payload["status_counts"]["document_parse"]["unknown"] == 1
+    assert payload["release_readiness"]["failed_workflows"] == ["document_parse.unknown=1"]
+    assert payload["release_readiness"]["ready"] is False
+
+
+def test_system_release_readiness_blocks_blank_workflow_statuses(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
+    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+    monkeypatch.setenv("EMBEDDING_MODEL", "local-hash")
+    monkeypatch.setenv("VECTOR_DB_BACKEND", "local-json")
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    vector_path = tmp_path / "vector-index.json"
+    vector_path.write_text("{}", encoding="utf-8")
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (
+                file_path, file_hash, original_name,
+                parse_status, index_status, chemistry_status
+            ) VALUES (?, ?, ?, '   ', 'indexed', 'extracted')
+            """,
+            (str(tmp_path / "blank-status.pdf"), "blank-status", "blank-status.pdf"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Body', 'e + Ar -> e + e + Ar+', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, vector_id, embedded)
+            VALUES (?, ?, 1, 'e + Ar -> e + e + Ar+', 'blank-status-vector', 1)
+            """,
+            (document_id, section_id),
+        )
+        reaction_set_id = conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, status)
+            VALUES (?, 'Verified set', 'verified')
+            """,
+            (document_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO reactions (reaction_set_id, reaction, verified)
+            VALUES (?, 'e + Ar -> e + e + Ar+', 1)
+            """,
+            (reaction_set_id,),
+        )
+
+    payload = client.get("/api/v1/system/status").json()
+
+    assert payload["status_counts"]["document_parse"]["unknown"] == 1
+    assert payload["release_readiness"]["failed_workflows"] == ["document_parse.unknown=1"]
     assert payload["release_readiness"]["ready"] is False
 
 
@@ -12724,6 +13193,60 @@ def test_health_check_rejects_invalid_config_warning_shape():
     assert "1" in joined
 
 
+def test_health_check_allows_null_optional_config_warning_details():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_config_warning_null_details", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    errors = health_check.validate_system_status(
+        {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [
+                {
+                    "code": "missing_llm_api_key",
+                    "capability": "llm_translation",
+                    "message": "LLM_API_KEY is not configured.",
+                    "actual": None,
+                    "supported": None,
+                }
+            ],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
+            "status_counts": health_check_status_counts(),
+        }
+    )
+
+    assert errors == []
+
+
 def test_health_check_rejects_invalid_config_warning_detail_shape():
     import importlib.util
 
@@ -13455,6 +13978,60 @@ def test_health_check_require_no_failed_workflows_fails_on_rejected_status_count
     assert "document_chemistry.rejected=1" in captured.err
 
 
+def test_health_check_require_no_failed_workflows_fails_on_unknown_status_counts(monkeypatch, capsys):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_require_no_unknown_workflows", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
+            "status_counts": health_check_status_counts(document_parse={"unknown": 1}),
+        }
+
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(sys, "argv", ["health_check.py", "--base-url", "http://api.test", "--require-no-failed-workflows"])
+
+    assert health_check.main() == 1
+    captured = capsys.readouterr()
+    assert "failed workflows present" in captured.err
+    assert "document_parse.unknown=1" in captured.err
+
+
 def test_health_check_outputs_config_warnings(monkeypatch, capsys):
     import importlib.util
     import json
@@ -13796,6 +14373,75 @@ def test_health_check_rejects_symlinked_output_parent(monkeypatch, capsys, tmp_p
     assert not (outside_dir / "health-summary.json").exists()
 
 
+def test_health_check_rejects_file_output_parent(monkeypatch, capsys, tmp_path):
+    import importlib.util
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_file_output_parent", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    def fake_fetch_json(url: str, timeout: float) -> dict:
+        if url.endswith("/api/v1/health"):
+            return {"status": "ok", "service": "paper-lab-agent"}
+        return {
+            "database_path": "/tmp/plasma.db",
+            "runtime": health_check_runtime(),
+            "config_warnings": [],
+            "storage": {
+                "data_dir": "/tmp/data",
+                "pdf_dir": "/tmp/data/pdfs",
+                "tei_dir": "/tmp/data/tei",
+                "translation_dir": "/tmp/data/translations",
+                "export_dir": "/tmp/data/exports",
+                "vector_db_path": "/tmp/data/vector-index.json",
+            },
+            "storage_health": health_check_storage_health(),
+            "external_capabilities": {
+                "openalex_mailto": True,
+                "unpaywall_email": True,
+                "grobid_url": "http://127.0.0.1:8070",
+                "grobid": {"url": "http://127.0.0.1:8070", "available": None, "status_code": None, "error": None},
+                "llm_api_key": False,
+                "translation_adapter": "local-echo",
+                "llm_model": "gpt-4o-mini",
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+            },
+            "counts": health_check_counts(),
+            "demo_data": health_check_demo_data(),
+            "release_readiness": health_check_release_readiness(),
+            "status_counts": health_check_status_counts(),
+        }
+
+    file_parent = tmp_path / "out"
+    file_parent.write_text("not a directory", encoding="utf-8")
+    output_path = file_parent / "health-summary.json"
+    monkeypatch.setattr(health_check, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "health_check.py",
+            "--base-url",
+            "http://api.test",
+            "--summary-only",
+            "--compact",
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    assert health_check.main() == 1
+    captured = capsys.readouterr()
+    assert f"health_check failed: output path parent is not a regular directory: {file_parent}" in captured.err
+    assert file_parent.read_text(encoding="utf-8") == "not a directory"
+
+
 def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
     import importlib.util
     import json
@@ -13884,6 +14530,13 @@ def test_health_check_summary_only_outputs_release_status(monkeypatch, capsys):
         "config_warning_count": 1,
         "config_ready": False,
         "config_warning_codes": ["missing_llm_api_key"],
+        "config_warning_details": [
+            {
+                "code": "missing_llm_api_key",
+                "capability": "llm_translation",
+                "message": "LLM_API_KEY is not configured.",
+            }
+        ],
         "storage_writable": True,
         "storage_errors": [],
         "storage_health": {
@@ -13945,7 +14598,41 @@ def test_health_check_summary_only_reports_release_ready_when_gates_are_clean():
     assert summary["failed_workflows"] == []
     assert summary["config_ready"] is True
     assert summary["config_warning_codes"] == []
+    assert summary["config_warning_details"] == []
     assert summary["storage_errors"] == []
+
+
+def test_health_check_summary_blocks_malformed_fallback_workflow_counts():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_summary_malformed_workflows", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [],
+        "storage_health": health_check_storage_health(),
+        "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+        "demo_data": {
+            "ready": True,
+            "requirements": {"papers": 1},
+            "missing": [],
+            "counts": {"papers": 1},
+        },
+        "status_counts": health_check_status_counts(document_parse=[]),
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
+    assert summary["release_ready"] is False
+    assert summary["release_blockers"] == ["failed_workflows:document_parse"]
+    assert summary["workflows_ok"] is False
+    assert summary["failed_workflows"] == ["document_parse"]
 
 
 def test_health_check_summary_prefers_api_release_readiness():
@@ -13996,6 +14683,126 @@ def test_health_check_summary_prefers_api_release_readiness():
     assert summary["config_warning_codes"] == ["missing_llm_api_key"]
     assert summary["storage_writable"] is False
     assert summary["storage_errors"] == ["pdf_dir.writable"]
+
+
+def test_health_check_summary_blocks_malformed_api_release_readiness_lists():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_api_readiness_malformed_lists", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [],
+        "storage_health": health_check_storage_health(),
+        "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+        "demo_data": {
+            "ready": True,
+            "requirements": {"papers": 1},
+            "missing": [],
+            "counts": {"papers": 1},
+        },
+        "status_counts": health_check_status_counts(),
+        "release_readiness": {
+            "ready": True,
+            "demo_data_missing": [],
+            "failed_workflows": "document_parse.failed=1",
+            "config_warning_codes": [],
+            "storage_errors": [],
+        },
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
+    assert summary["release_ready"] is False
+    assert summary["release_blockers"] == ["failed_workflows:invalid"]
+    assert summary["workflows_ok"] is False
+    assert summary["failed_workflows"] == ["invalid"]
+
+
+def test_health_check_summary_blocks_malformed_api_config_warning_codes():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_api_readiness_malformed_warnings", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [],
+        "storage_health": health_check_storage_health(),
+        "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+        "demo_data": {
+            "ready": True,
+            "requirements": {"papers": 1},
+            "missing": [],
+            "counts": {"papers": 1},
+        },
+        "status_counts": health_check_status_counts(),
+        "release_readiness": {
+            "ready": True,
+            "demo_data_missing": [],
+            "failed_workflows": [],
+            "config_warning_codes": "unsupported_vector_db_backend",
+            "storage_errors": [],
+        },
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
+    assert summary["release_ready"] is False
+    assert summary["release_blockers"] == ["config_warning_codes:invalid"]
+    assert summary["config_ready"] is False
+    assert summary["config_warning_codes"] == ["invalid"]
+
+
+def test_health_check_summary_blocks_invalid_api_config_warning_code_items():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_api_readiness_invalid_warning_items", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [],
+        "storage_health": health_check_storage_health(),
+        "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+        "demo_data": {
+            "ready": True,
+            "requirements": {"papers": 1},
+            "missing": [],
+            "counts": {"papers": 1},
+        },
+        "status_counts": health_check_status_counts(),
+        "release_readiness": {
+            "ready": True,
+            "demo_data_missing": [],
+            "failed_workflows": [],
+            "config_warning_codes": [False],
+            "storage_errors": [],
+        },
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
+    assert summary["release_ready"] is False
+    assert summary["release_blockers"] == ["config_warning_codes:invalid"]
+    assert summary["config_ready"] is False
+    assert summary["config_warning_codes"] == ["invalid"]
 
 
 def test_health_check_summary_rejects_inconsistent_api_release_readiness():
@@ -14076,6 +14883,56 @@ def test_health_check_summary_surfaces_blocking_config_warnings():
     assert summary["release_blockers"] == ["config_warning_codes:unsupported_vector_db_backend"]
     assert summary["config_warning_codes"] == ["missing_llm_api_key", "unsupported_vector_db_backend"]
     assert summary["config_ready"] is False
+
+
+def test_health_check_summary_includes_config_warning_details():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_config_warning_details", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    status = {
+        "runtime": health_check_runtime(version="0.1.0"),
+        "config_warnings": [
+            {
+                "code": "unsupported_vector_db_backend",
+                "capability": "rag_indexing",
+                "message": "VECTOR_DB_BACKEND=faiss is not supported.",
+                "actual": "faiss",
+                "supported": ["local-json"],
+            }
+        ],
+        "storage_health": health_check_storage_health(),
+        "counts": health_check_counts(documents=1, sections=1, chunks=1, reaction_sets=1, reactions=1),
+        "demo_data": {
+            "ready": True,
+            "requirements": {"papers": 1},
+            "missing": [],
+            "counts": {"papers": 1},
+        },
+        "status_counts": health_check_status_counts(),
+        "release_readiness": health_check_release_readiness(
+            ready=False,
+            config_warning_codes=["unsupported_vector_db_backend"],
+        ),
+    }
+
+    summary = health_check.health_summary({"status": "ok", "service": "paper-lab-agent"}, status)
+
+    assert summary["config_warning_details"] == [
+        {
+            "code": "unsupported_vector_db_backend",
+            "capability": "rag_indexing",
+            "message": "VECTOR_DB_BACKEND=faiss is not supported.",
+            "actual": "faiss",
+            "supported": ["local-json"],
+        }
+    ]
 
 
 def test_health_check_validates_release_readiness_shape():
@@ -14963,6 +15820,27 @@ def test_health_check_env_loader_rejects_symlinked_env_file(monkeypatch, tmp_pat
     assert "API_BASE_URL" not in os.environ
 
 
+def test_health_check_env_loader_rejects_file_env_parent(monkeypatch, tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "health_check.py"
+    spec = importlib.util.spec_from_file_location("health_check_script_env_file_parent", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    health_check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(health_check)
+
+    file_parent = tmp_path / "not-dir"
+    file_parent.write_text("not a directory", encoding="utf-8")
+    env_file = file_parent / ".env"
+    monkeypatch.delenv("API_BASE_URL", raising=False)
+
+    assert health_check.load_env_file(env_file) == f"env file parent is not a regular directory: {file_parent}"
+    assert "API_BASE_URL" not in os.environ
+    assert file_parent.read_text(encoding="utf-8") == "not a directory"
+
+
 def test_health_check_rejects_unexpected_api_prefix():
     import importlib.util
 
@@ -15199,6 +16077,18 @@ def test_streamlit_chemistry_tab_exposes_document_pagination_controls():
         assert required in chemistry_section
 
 
+def test_streamlit_chemistry_tab_normalizes_document_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    assert "documents_response_state" in streamlit
+    assert "chemistry_documents_response = documents_response_state(chemistry_documents_response)" in chemistry_section
+    assert chemistry_section.index(
+        "chemistry_documents_response = documents_response_state(chemistry_documents_response)"
+    ) < chemistry_section.index('chemistry_documents = chemistry_documents_response["items"]')
+
+
 def test_streamlit_chemistry_documents_list_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
@@ -15233,11 +16123,25 @@ def test_streamlit_chemistry_tab_exposes_reaction_set_pagination_controls():
         "document_reaction_sets['page_size']",
         "document_reaction_sets['total']",
         "reaction_set_rows",
+        "reaction_set_options(reaction_set_items)",
         "reaction_set_option_label",
         "format_func=reaction_set_option_label",
         "st.dataframe(reaction_set_rows",
     ]:
         assert required in chemistry_section
+    assert 'st.selectbox(\n                "document_reaction_sets",\n                reaction_set_items,' not in chemistry_section
+
+
+def test_streamlit_chemistry_document_reaction_sets_normalizes_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+
+    assert "paginated_response_state" in streamlit
+    assert "document_reaction_sets = paginated_response_state(document_reaction_sets, default_page_size=20)" in chemistry_section
+    assert chemistry_section.index(
+        "document_reaction_sets = paginated_response_state(document_reaction_sets, default_page_size=20)"
+    ) < chemistry_section.index('reaction_set_items = document_reaction_sets.get("items", [])')
 
 
 def test_streamlit_chemistry_audit_log_surfaces_field_changes():
@@ -15405,6 +16309,20 @@ def test_streamlit_startup_health_error_shows_payload_details():
     assert 'st.error(f"API unavailable: {exc}")' not in startup_section
 
 
+def test_streamlit_startup_health_normalizes_success_payload():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    startup_section = streamlit[streamlit.index("st.set_page_config") : streamlit.index("review_message =")]
+
+    assert "health_display_state" in streamlit
+    assert "health_display = health_display_state(health)" in startup_section
+    assert 'st.caption(health_display["caption"])' in startup_section
+    assert 'if health_display["warning"]:' in startup_section
+    assert 'st.warning(health_display["warning"])' in startup_section
+    assert 'health["service"]' not in startup_section
+    assert 'health["status"]' not in startup_section
+
+
 def test_streamlit_high_frequency_actions_format_api_error_payloads():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
@@ -15463,7 +16381,7 @@ def test_streamlit_chemistry_export_errors_show_payload_details():
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     export_section = streamlit[
         streamlit.index('if st.button("导出反应集"') :
-        streamlit.index('st.success(payload["output_path"]')
+        streamlit.index("else:", streamlit.index("elif status >= 400:"))
     ]
 
     for required in [
@@ -15475,6 +16393,24 @@ def test_streamlit_chemistry_export_errors_show_payload_details():
         "st.json(payload)",
     ]:
         assert required in export_section
+
+
+def test_streamlit_chemistry_export_normalizes_success_payload():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    chemistry_section = streamlit[streamlit.index("with chemistry_tab:") :]
+    export_success_section = chemistry_section[
+        chemistry_section.index("else:", chemistry_section.index("elif status >= 400:")) :
+        chemistry_section.index("st.dataframe(reaction_export_rows(payload)")
+    ]
+
+    assert "reaction_export_success_state" in streamlit
+    assert "export_success = reaction_export_success_state(payload)" in export_success_section
+    assert 'st.success(export_success["message"])' in export_success_section
+    assert 'if export_success["warning"]:' in export_success_section
+    assert 'st.warning(export_success["warning"])' in export_success_section
+    assert 'payload["output_path"]' not in export_success_section
+    assert "payload['output_path']" not in export_success_section
 
 
 def test_document_chunks_endpoint_reports_index_status(tmp_path):
@@ -16208,6 +17144,155 @@ def test_extract_reactions_detects_lxcat_database_and_url(tmp_path):
     assert reaction["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
 
 
+def test_extract_reactions_does_not_treat_lxcat_database_label_as_name(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(
+        b"The LXCat database cross section URL is https://nl.lxcat.net/data/set/biagi. "
+        b"The process is e + Ar -> e + e + Ar+ ."
+    )
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("lxcat-generic-label.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["lxcat_db"] is None
+    assert detail["reactions"][0]["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
+
+
+def test_extract_reactions_skips_generic_lxcat_label_before_real_database_name(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(
+        b"The LXCat database cross section URL is https://nl.lxcat.net/data/set/biagi. "
+        b"The data source is LXCat Biagi database. "
+        b"The process is e + Ar -> e + e + Ar+ ."
+    )
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("lxcat-generic-before-name.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["lxcat_db"] == "Biagi"
+    assert detail["reactions"][0]["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
+
+
+def test_extract_reactions_strips_lxcat_url_closing_bracket(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(
+        b"LXCat Biagi cross section [https://nl.lxcat.net/data/set/biagi]. "
+        b"The process is e + Ar -> e + e + Ar+ ."
+    )
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("lxcat-bracketed-url.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["reactions"][0]["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
+
+
+def test_extract_reactions_strips_lxcat_url_closing_quote(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(
+        b'LXCat Biagi cross section "https://nl.lxcat.net/data/set/biagi". '
+        b"The process is e + Ar -> e + e + Ar+ ."
+    )
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("lxcat-quoted-url.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["reactions"][0]["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
+
+
+def test_extract_reactions_strips_lxcat_url_closing_curly_quote(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(
+        (
+            "LXCat Biagi cross section “https://nl.lxcat.net/data/set/biagi”. "
+            "The process is e + Ar -> e + e + Ar+ ."
+        ).encode("utf-8")
+    )
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("lxcat-curly-quoted-url.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["reactions"][0]["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
+
+
+def test_extract_reactions_strips_lxcat_url_fullwidth_closing_punctuation(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(
+        (
+            "LXCat Biagi cross section （https://nl.lxcat.net/data/set/biagi）。 "
+            "The process is e + Ar -> e + e + Ar+ ."
+        ).encode("utf-8")
+    )
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("lxcat-fullwidth-url.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["reactions"][0]["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
+
+
+def test_extract_reactions_strips_lxcat_url_fullwidth_separator(tmp_path):
+    client = make_client(tmp_path)
+    content = pdf_bytes(
+        (
+            "LXCat Biagi cross section https://nl.lxcat.net/data/set/biagi， "
+            "The process is e + Ar -> e + e + Ar+ ."
+        ).encode("utf-8")
+    )
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("lxcat-fullwidth-separator-url.pdf", content, "application/pdf")},
+    )
+    document_id = response.json()["id"]
+    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+    assert client.post(f"/api/v1/documents/{document_id}/extract-chemistry").status_code == 202
+
+    reaction_set = client.get(f"/api/v1/documents/{document_id}/reaction-sets").json()["items"][0]
+    detail = client.get(f"/api/v1/reaction-sets/{reaction_set['id']}").json()
+
+    assert detail["reactions"][0]["cross_section_url"] == "https://nl.lxcat.net/data/set/biagi"
+
+
 def test_extract_reactions_detects_colon_lxcat_database(tmp_path):
     client = make_client(tmp_path)
     content = pdf_bytes(
@@ -16453,6 +17538,42 @@ def test_translate_document_uses_filesystem_safe_target_lang_slug(tmp_path):
     assert output_path.exists()
 
 
+def test_translate_document_avoids_overwriting_colliding_target_lang_slugs(tmp_path):
+    make_client(tmp_path)
+    from app.db import get_conn
+    from app.services import translation as translation_service
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            (str(tmp_path / "target-collision.pdf"), "target-collision", "target-collision.pdf"),
+        )
+        document_id = cursor.lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Body', 'Argon plasma text', 'body')
+            """,
+            (document_id,),
+        )
+
+    first = translation_service.translate_document(document_id, "zh!")
+    first_path = Path(first["output_path"])
+    first_path.write_text("first translation", encoding="utf-8")
+    second = translation_service.translate_document(document_id, "zh?")
+    second_path = Path(second["output_path"])
+
+    assert first["status"] == "done"
+    assert second["status"] == "done"
+    assert first_path.name == f"document-{document_id}-zh.md"
+    assert second_path.name != first_path.name
+    assert second_path.exists()
+    assert first_path.read_text(encoding="utf-8") == "first translation"
+
+
 def test_translate_document_rejects_symlinked_output_file(tmp_path):
     make_client(tmp_path)
     from app.db import get_conn
@@ -16651,7 +17772,10 @@ def test_streamlit_documents_tab_exposes_preview_and_index_status():
         "dataframe_display_rows(document_status_rows(document_detail, chunks))",
         "section_preview",
         "format_func=document_section_option_label",
+        "document_section_preview_title(section_preview)",
+        "document_section_preview_content(section_preview)",
         "format_func=document_chunk_option_label",
+        "document_chunk_preview_text(chunk_preview)",
         "parse_error",
         "vector_id",
     ]:
@@ -16755,6 +17879,18 @@ def test_streamlit_document_sections_errors_show_payload_details():
         assert required in sections_load_section
 
 
+def test_streamlit_document_sections_normalizes_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    assert "paginated_response_state" in streamlit
+    assert "sections_response = paginated_response_state(sections_response, default_page_size=20)" in documents_section
+    assert documents_section.index(
+        "sections_response = paginated_response_state(sections_response, default_page_size=20)"
+    ) < documents_section.index('sections = sections_response["items"]')
+
+
 def test_streamlit_document_chunks_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
@@ -16772,6 +17908,37 @@ def test_streamlit_document_chunks_errors_show_payload_details():
         "st.stop()",
     ]:
         assert required in chunks_load_section
+
+
+def test_document_chunks_response_state_normalizes_malformed_envelope():
+    from app import frontend_api
+
+    assert hasattr(frontend_api, "document_chunks_response_state")
+    normalized = frontend_api.document_chunks_response_state(
+        {"items": "invalid", "total": -3, "page": 0, "page_size": None, "indexed": "yes", "index_error": 3}
+    )
+
+    assert normalized == {
+        "items": [],
+        "total": 0,
+        "page": 1,
+        "page_size": 20,
+        "indexed": False,
+        "index_status": "not_indexed",
+        "index_error": None,
+    }
+
+
+def test_streamlit_document_chunks_normalizes_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    assert "document_chunks_response_state" in streamlit
+    assert "chunks = document_chunks_response_state(chunks)" in documents_section
+    assert documents_section.index("chunks = document_chunks_response_state(chunks)") < documents_section.index(
+        "index_status = chunks.get"
+    )
 
 
 def test_streamlit_document_parse_surfaces_success_and_error_states():
@@ -16957,10 +18124,11 @@ def test_streamlit_rag_tab_separates_answer_and_sources():
         "st.dataframe(sources",
         "format_func=rag_source_option_label",
         "source_excerpt",
-        'source_preview.get("source_excerpt")',
-        "st.code(source_preview.get(\"source_excerpt\")",
+        "rag_source_preview_excerpt(source_preview)",
+        "st.code(source_excerpt)",
     ]:
         assert required in rag_section
+    assert 'source_preview.get("source_excerpt")' not in rag_section
     assert "format_func=lambda source" not in rag_section
 
 
@@ -17071,6 +18239,16 @@ def test_streamlit_rag_tab_exposes_document_pagination_controls():
         assert required in rag_section
 
 
+def test_streamlit_rag_tab_normalizes_document_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    rag_section = streamlit[streamlit.index("with rag_tab:") : streamlit.index("with chemistry_tab:")]
+
+    assert "documents_response_state" in streamlit
+    assert "rag_documents_response = documents_response_state(rag_documents_response)" in rag_section
+    assert rag_section.index("rag_documents_response = documents_response_state(rag_documents_response)") < rag_section.index('rag_documents = rag_documents_response["items"]')
+
+
 def test_streamlit_rag_documents_list_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
@@ -17109,12 +18287,13 @@ def test_streamlit_document_upload_can_select_linked_paper():
         'paper_upload_query = st.text_input("关联论文搜索"',
         "paper_upload_query_params(paper_upload_query)",
         'paper_upload_papers = api_get("/papers", **paper_upload_query_params(paper_upload_query))',
-        'paper_upload_options = [None] + paper_upload_papers.get("items", [])',
+        'paper_upload_options(paper_upload_papers.get("items", []))',
         'selected_upload_paper = st.selectbox(',
         "format_func=paper_upload_option_label",
         'data = {"paper_id": str(selected_upload_paper["id"])} if selected_upload_paper else {}',
     ]:
         assert required in documents_section
+    assert 'paper_upload_options = [None] + paper_upload_papers.get("items", [])' not in documents_section
     assert 'paper_id = st.number_input("paper_id"' not in documents_section
 
 
@@ -17127,6 +18306,23 @@ def test_streamlit_document_upload_shows_error_payload_details():
     ]
 
     assert "st.json(payload)" in upload_error_section
+
+
+def test_streamlit_document_upload_normalizes_success_payload():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    upload_success_section = documents_section[
+        documents_section.index("if status == 201:") : documents_section.index("elif status == 409")
+    ]
+
+    assert "document_upload_success_state" in streamlit
+    assert "upload_success = document_upload_success_state(payload)" in upload_success_section
+    assert 'st.success(upload_success["message"])' in upload_success_section
+    assert 'if upload_success["warning"]:' in upload_success_section
+    assert 'st.warning(upload_success["warning"])' in upload_success_section
+    assert "payload['id']" not in upload_success_section
+    assert 'payload["id"]' not in upload_success_section
 
 
 def test_streamlit_documents_tab_shows_empty_state():
@@ -17206,13 +18402,70 @@ def test_streamlit_documents_tab_exposes_pagination_controls():
         assert required in documents_section
 
 
+def test_streamlit_documents_tab_normalizes_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    assert "documents_response_state" in streamlit
+    assert "documents_response = documents_response_state(documents_response)" in documents_section
+    assert documents_section.index("documents_response = documents_response_state(documents_response)") < documents_section.index('docs = documents_response["items"]')
+
+
 def test_streamlit_sidebar_exposes_runtime_status():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    frontend = (repo / "app" / "frontend_api.py").read_text(encoding="utf-8")
+    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+
+    for required in [
+        "runtime",
+        "runtime_status_rows",
+        "runtime_rows = runtime_status_rows(status.get(\"runtime\"))",
+    ]:
+        assert required in sidebar_section
+    for required in [
+        "scheduler_enabled",
+        "scheduler_jobs",
+        "api_prefix",
+        "version",
+    ]:
+        assert required in frontend
+    runtime_section = sidebar_section[sidebar_section.index("runtime_rows = runtime_status_rows") : sidebar_section.index("st.subheader(\"API 文档\")")]
+    assert "runtime.get(" not in runtime_section
+    assert "for job in scheduler_jobs:" not in runtime_section
+
+
+def test_streamlit_sidebar_uses_safe_database_path_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
 
-    for required in ["runtime", "scheduler_enabled", "scheduler_jobs", "api_prefix", "version"]:
+    for required in [
+        "database_path_status_row",
+        'database_path_row = database_path_status_row(status.get("database_path"))',
+        'database_path_row["kind"] == "warning"',
+        'database_path_row["text"]',
+    ]:
         assert required in sidebar_section
+    assert 'status["database_path"]' not in sidebar_section
+
+
+def test_streamlit_sidebar_uses_safe_system_count_metrics():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
+
+    for required in [
+        "system_count_metric_rows",
+        'system_count_metric_rows(status.get("counts"))',
+        'st.metric(row["label"], row["value"])',
+        'row.get("warning")',
+    ]:
+        assert required in sidebar_section
+    assert 'status["counts"]["journals"]' not in sidebar_section
+    assert 'status["counts"]["papers"]' not in sidebar_section
+    assert 'status["counts"]["documents"]' not in sidebar_section
 
 
 def test_streamlit_sidebar_exposes_external_capability_status():
@@ -17223,6 +18476,9 @@ def test_streamlit_sidebar_exposes_external_capability_status():
     for required in [
         "外部能力",
         "external_capabilities",
+        "external_capabilities_display_state",
+        "external_display",
+        'external_display["warnings"]',
         "openalex_mailto",
         "unpaywall_email",
         "grobid_url",
@@ -17240,8 +18496,10 @@ def test_streamlit_sidebar_surfaces_config_warnings():
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
 
-    for required in ["config_warnings", "capability", "message"]:
+    for required in ["config_warnings", "config_warning_rows", "warning_rows = config_warning_rows(config_warnings)", "capability", "message"]:
         assert required in sidebar_section
+    config_section = sidebar_section[sidebar_section.index("config_warnings = status.get") :]
+    assert "for warning in config_warnings:" not in config_section
 
 
 def test_streamlit_sidebar_surfaces_storage_health():
@@ -17260,21 +18518,23 @@ def test_streamlit_sidebar_surfaces_storage_health():
 def test_streamlit_sidebar_surfaces_workflow_status_counts():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    frontend = (repo / "app" / "frontend_api.py").read_text(encoding="utf-8")
     sidebar_section = streamlit[streamlit.index("with st.sidebar:") : streamlit.index("with search_tab:")]
 
     for required in [
         "状态分布",
         "status_counts",
-        "crawl_jobs",
-        "document_parse",
-        "document_index",
-        "document_chemistry",
-        "translations",
-        "reaction_sets",
         "status_count_rows",
-        "st.dataframe(status_count_rows",
+        "workflow_status_count_rows = status_count_rows(status_counts)",
+        "st.dataframe(workflow_status_count_rows",
     ]:
         assert required in sidebar_section
+    for workflow in ["crawl_jobs", "document_parse", "document_index", "document_chemistry", "translations", "reaction_sets"]:
+        assert workflow in frontend
+    status_counts_section = sidebar_section[
+        sidebar_section.index("status_counts = status.get") : sidebar_section.index("config_warnings = status.get")
+    ]
+    assert "(status_counts.get(workflow) or {}).items()" not in status_counts_section
 
 
 def test_streamlit_sidebar_surfaces_demo_data_readiness():
@@ -17285,11 +18545,18 @@ def test_streamlit_sidebar_surfaces_demo_data_readiness():
     for required in [
         "演示数据",
         "demo_data",
-        'demo_data.get("ready")',
-        'demo_data.get("missing")',
+        "demo_data_display_state",
+        'demo_display = demo_data_display_state(demo_data)',
+        'demo_display["ready"]',
+        'demo_display["missing"]',
         "prepare_demo_data.py",
     ]:
         assert required in sidebar_section
+    demo_section = sidebar_section[
+        sidebar_section.index("demo_data = status.get") : sidebar_section.index("runtime_rows = runtime_status_rows")
+    ]
+    assert 'demo_data.get("ready")' not in demo_section
+    assert 'demo_data.get("missing")' not in demo_section
 
 
 def test_streamlit_sidebar_can_check_grobid_live_status():
@@ -17300,7 +18567,7 @@ def test_streamlit_sidebar_can_check_grobid_live_status():
     for required in [
         "检查 GROBID",
         'api_get("/system/status", check_external=True)',
-        "grobid = external_capabilities.get(\"grobid\") or {}",
+        'grobid = external_display["grobid"]',
         "GROBID live",
         "status_code",
         "error",
@@ -17340,6 +18607,20 @@ def test_streamlit_crawl_jobs_table_flattens_diagnostics():
     assert "st.dataframe(crawl_job_diagnostic_rows(job_detail), use_container_width=True)" in search_section
 
 
+def test_streamlit_crawl_job_detail_metrics_guard_malformed_diagnostics():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+    crawl_job_detail_section = search_section[
+        search_section.index("if job_detail:") :
+        search_section.index("st.dataframe(crawl_job_diagnostic_rows(job_detail), use_container_width=True)")
+    ]
+
+    assert "dict_or_empty" in streamlit
+    assert 'diagnostics = dict_or_empty(job_detail.get("diagnostics"))' in crawl_job_detail_section
+    assert 'diagnostics = job_detail.get("diagnostics", {})' not in crawl_job_detail_section
+
+
 def test_streamlit_crawl_jobs_use_option_label_helper():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
@@ -17368,12 +18649,23 @@ def test_streamlit_crawl_jobs_exposes_pagination_controls():
         "crawl_jobs_page_size = crawl_jobs_page_size_col.number_input(",
         '"crawl_jobs_page_size"',
         'crawl_jobs_response = api_get("/crawl/jobs", page=int(crawl_jobs_page), page_size=int(crawl_jobs_page_size))',
-        'jobs = crawl_jobs_response["items"]',
+        'jobs = crawl_job_items(crawl_jobs_response["items"])',
         "crawl_jobs_response['page']",
         "crawl_jobs_response['page_size']",
         "crawl_jobs_response['total']",
     ]:
         assert required in search_section
+    assert 'jobs = crawl_jobs_response["items"]' not in search_section
+
+
+def test_streamlit_crawl_jobs_normalize_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+
+    assert "crawl_jobs_response_state" in streamlit
+    assert "crawl_jobs_response = crawl_jobs_response_state(crawl_jobs_response)" in search_section
+    assert search_section.index("crawl_jobs_response = crawl_jobs_response_state(crawl_jobs_response)") < search_section.index("jobs = crawl_job_items")
 
 
 def test_streamlit_crawl_jobs_list_errors_show_payload_details():
@@ -17448,14 +18740,68 @@ def test_streamlit_search_filter_metadata_errors_show_payload_details():
     search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
 
     for required in [
-        'journals = api_get("/journals", active=True, page_size=100)["items"]',
-        'categories = api_get("/categories")["items"]',
+        'search_journals_response = api_get("/journals", active=True, page_size=100)',
+        'search_categories_response = api_get("/categories")',
         "except FrontendApiError as exc:",
         "st.error(format_error_payload(exc.payload, exc.status_code))",
         "st.json(exc.payload)",
         "st.stop()",
     ]:
         assert required in search_section
+
+
+def test_streamlit_search_journals_use_filtered_options():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    assert "paper_search_journal_options" in streamlit
+    assert 'journals = paper_search_journal_options(search_journals_response["items"])' in search_section
+    assert 'journals = api_get("/journals", active=True, page_size=100)["items"]' not in search_section
+    assert 'journal_names = ["全部"] + [j["name"] for j in journals]' in search_section
+    assert 'params["journal_id"] = next(j["id"] for j in journals if j["name"] == journal_choice)' in search_section
+
+
+def test_streamlit_search_tab_normalizes_journals_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    assert "paginated_response_state" in streamlit
+    assert 'search_journals_response = api_get("/journals", active=True, page_size=100)' in search_section
+    assert "search_journals_response = paginated_response_state(search_journals_response, default_page_size=100)" in search_section
+    assert search_section.index(
+        "search_journals_response = paginated_response_state(search_journals_response, default_page_size=100)"
+    ) < search_section.index('journals = paper_search_journal_options(search_journals_response["items"])')
+
+
+def test_streamlit_search_categories_use_filtered_options():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    manual_category_section = search_section[
+        search_section.index("category_options_by_slug") :
+        search_section.index("links = []")
+    ]
+
+    assert "paper_category_options" in streamlit
+    assert 'categories = paper_category_options(search_categories_response["items"])' in search_section
+    assert 'categories = api_get("/categories")["items"]' not in search_section
+    assert "category_options_by_slug = {category[\"slug\"]: category for category in categories}" in manual_category_section
+    assert 'categories,' in manual_category_section
+
+
+def test_streamlit_search_tab_normalizes_categories_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    assert "paginated_response_state" in streamlit
+    assert 'search_categories_response = api_get("/categories")' in search_section
+    assert "search_categories_response = paginated_response_state(search_categories_response, default_page_size=20)" in search_section
+    assert search_section.index(
+        "search_categories_response = paginated_response_state(search_categories_response, default_page_size=20)"
+    ) < search_section.index('categories = paper_category_options(search_categories_response["items"])')
 
 
 def test_streamlit_search_results_show_dedupe_strategy():
@@ -17465,6 +18811,57 @@ def test_streamlit_search_results_show_dedupe_strategy():
 
     assert "dedupe_strategy" in search_section
     assert "dedupe_strategy=" in search_section
+
+
+def test_streamlit_search_results_use_guarded_dedupe_label():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    assert "paper_search_dedupe_label" in streamlit
+    assert "dedupe_label = paper_search_dedupe_label(paper)" in search_section
+    assert '(paper.get("dedupe_key") or "")[:24]' not in search_section
+
+
+def test_streamlit_search_results_use_guarded_abstract_preview():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    assert "paper_search_abstract_preview" in streamlit
+    assert "st.write(paper_search_abstract_preview(paper))" in search_section
+    assert 'st.write((paper.get("abstract") or "")[:400])' not in search_section
+
+
+def test_streamlit_search_results_use_filtered_paper_items():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    assert "paper_search_result_items" in streamlit
+    assert 'display_papers = paper_search_result_items(papers["items"])' in search_section
+    assert 'for paper in display_papers:' in search_section
+    assert 'for paper in papers["items"]:' not in search_section
+
+
+def test_streamlit_search_results_normalize_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    assert "paper_search_response_state" in streamlit
+    assert "papers = paper_search_response_state(papers)" in search_section
+    assert search_section.index("papers = paper_search_response_state(papers)") < search_section.index('st.metric("结果"')
+
+
+def test_streamlit_search_manual_category_defaults_use_filtered_slugs():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    assert "paper_category_slugs" in streamlit
+    assert "current_category_slugs = paper_category_slugs(paper)" in search_section
+    assert 'current_category_slugs = set(paper.get("categories") or [])' not in search_section
 
 
 def test_streamlit_search_tab_exposes_sort_control():
@@ -17483,6 +18880,7 @@ def test_streamlit_search_results_can_trigger_classification():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
     search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+    helper_section = streamlit[: streamlit.index("st.set_page_config")]
 
     for required in [
         "分类结果",
@@ -17492,6 +18890,8 @@ def test_streamlit_search_results_can_trigger_classification():
         'key=f"classify-paper-{paper[\'id\']}"',
     ]:
         assert required in search_section
+    assert "format_category_summary" in helper_section
+    assert "def format_category_summary" not in streamlit
 
 
 def test_streamlit_search_classification_errors_show_payload_details():
@@ -17698,11 +19098,59 @@ def test_streamlit_config_tab_normalizes_journal_keywords_for_dataframe():
     config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
 
     for required in [
+        "journal_table_rows",
         "journals_table",
-        'json.dumps(journal.get("keywords"), ensure_ascii=False)',
+        "journals_table = journal_table_rows(journals_all)",
         "st.dataframe(journals_table, use_container_width=True)",
     ]:
         assert required in config_section
+    assert "**journal" not in config_section
+
+
+def test_streamlit_config_tab_uses_filtered_journal_items():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+
+    assert "journal_items" in streamlit
+    assert 'journals_all = journal_items(journals_response["items"])' in config_section
+    assert 'journals_all = journals_response["items"]' not in config_section
+
+
+def test_paginated_response_state_normalizes_malformed_envelope():
+    from app import frontend_api
+
+    assert hasattr(frontend_api, "paginated_response_state")
+    normalized = frontend_api.paginated_response_state(
+        {"items": "invalid", "total": -1, "page": 0, "page_size": False},
+        default_page_size=100,
+    )
+
+    assert normalized == {"items": [], "total": 0, "page": 1, "page_size": 100}
+
+
+def test_streamlit_config_tab_normalizes_journals_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+
+    assert "paginated_response_state" in streamlit
+    assert "journals_response = paginated_response_state(journals_response, default_page_size=100)" in config_section
+    assert config_section.index(
+        "journals_response = paginated_response_state(journals_response, default_page_size=100)"
+    ) < config_section.index('journals_all = journal_items(journals_response["items"])')
+
+
+def test_streamlit_config_tab_normalizes_categories_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    config_section = streamlit[streamlit.index("with config_tab:") : streamlit.index("with documents_tab:")]
+
+    assert "paginated_response_state" in streamlit
+    assert "categories_response = paginated_response_state(categories_response, default_page_size=100)" in config_section
+    assert config_section.index(
+        "categories_response = paginated_response_state(categories_response, default_page_size=100)"
+    ) < config_section.index('categories_all = categories_response["items"]')
 
 
 def test_streamlit_config_metadata_errors_show_payload_details():
@@ -17749,11 +19197,15 @@ def test_streamlit_config_tab_can_update_journal_year_range():
         "edit_year_to",
         'selected_journal.get("year_from")',
         'selected_journal.get("year_to")',
+        'value=int_or_default(selected_journal.get("year_from"), 1990)',
+        'value=int_or_default(selected_journal.get("year_to"), 0)',
         '"year_from": int(edit_year_from)',
         '"year_to": int(edit_year_to) if edit_year_to else None',
         "year_from must be less than or equal to year_to",
     ]:
         assert required in journals_section
+    assert 'value=int(selected_journal.get("year_from") or 1990)' not in journals_section
+    assert 'value=int(selected_journal.get("year_to") or 0)' not in journals_section
 
 
 def test_streamlit_config_tab_can_create_journal_with_year_to():
@@ -17768,6 +19220,50 @@ def test_streamlit_config_tab_can_create_journal_with_year_to():
         "year_from must be less than or equal to year_to",
     ]:
         assert required in create_section
+
+
+def test_streamlit_config_create_journal_normalizes_success_payload():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    create_journal_section = streamlit[
+        streamlit.index('with st.form("create-journal-form")') :
+        streamlit.index("if journals_all:")
+    ]
+    create_response_offset = create_journal_section.index('status_code, result = api_post("/journals"')
+    create_success_section = create_journal_section[
+        create_journal_section.index("if status_code == 201:", create_response_offset) :
+        create_journal_section.index("else:", create_response_offset)
+    ]
+
+    assert "journal_create_success_state" in streamlit
+    assert "journal_success = journal_create_success_state(result)" in create_success_section
+    assert 'st.success(journal_success["message"])' in create_success_section
+    assert 'if journal_success["warning"]:' in create_success_section
+    assert 'st.warning(journal_success["warning"])' in create_success_section
+    assert "result['id']" not in create_success_section
+    assert 'result["id"]' not in create_success_section
+
+
+def test_streamlit_config_create_category_normalizes_success_payload():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    create_category_section = streamlit[
+        streamlit.index('with st.form("create-category-form")') :
+        streamlit.index("with documents_tab:")
+    ]
+    create_response_offset = create_category_section.index('status_code, result = api_post("/categories"')
+    create_success_section = create_category_section[
+        create_category_section.index("if status_code == 201:", create_response_offset) :
+        create_category_section.index("else:", create_response_offset)
+    ]
+
+    assert "category_create_success_state" in streamlit
+    assert "category_success = category_create_success_state(result)" in create_success_section
+    assert 'st.success(category_success["message"])' in create_success_section
+    assert 'if category_success["warning"]:' in create_success_section
+    assert 'st.warning(category_success["warning"])' in create_success_section
+    assert "result['id']" not in create_success_section
+    assert 'result["id"]' not in create_success_section
 
 
 def test_streamlit_config_create_errors_show_payload_details():
@@ -17820,3 +19316,16 @@ def test_streamlit_config_tab_uses_category_parent_option_label_helper():
     assert "category_parent_option_label" in streamlit
     assert "format_func=category_parent_option_label" in config_section
     assert "format_func=lambda category" not in config_section
+
+
+def test_streamlit_config_category_parent_options_skip_malformed_items():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    create_category_section = streamlit[
+        streamlit.index('with st.form("create-category-form")') :
+        streamlit.index("create_category = st.form_submit_button")
+    ]
+
+    assert "category_parent_options" in streamlit
+    assert "parent_options = category_parent_options(categories_all)" in create_category_section
+    assert "parent_options = [None] + categories_all" not in create_category_section

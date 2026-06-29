@@ -150,7 +150,10 @@ def get_reaction_set(reaction_set_id: int) -> dict:
         row = conn.execute("SELECT * FROM reaction_sets WHERE id=?", (reaction_set_id,)).fetchone()
         if not row:
             raise AppError(404, "reaction_set_not_found", "Reaction set not found")
-        return reaction_set_detail(dict_from_row(row), conn)
+        try:
+            return reaction_set_detail(dict_from_row(row), conn)
+        except Exception as exc:
+            raise AppError(500, "reaction_set_detail_failed", str(exc))
 
 
 @router.put("/reactions/{reaction_id}/verify", response_model=ReactionSetDetailResponse)
@@ -172,7 +175,9 @@ def verify(reaction_id: int, body: VerifyIn) -> dict:
             cross_section_url=body.cross_section_url,
             clear_fields=clear_fields,
         )
-    except ValueError:
+    except ValueError as exc:
+        if str(exc) != "reaction not found":
+            raise AppError(500, "reaction_verify_failed", str(exc))
         raise AppError(404, "reaction_not_found", "Reaction not found")
     except Exception as exc:
         raise AppError(500, "reaction_verify_failed", str(exc))
@@ -194,6 +199,8 @@ def export(reaction_set_id: int, format: str = Query("json")) -> dict:
     except ValueError as exc:
         if str(exc).startswith("unsupported export format"):
             raise AppError(400, "unsupported_export_format", str(exc))
+        if str(exc) != "reaction set not found":
+            raise AppError(500, "reaction_export_failed", str(exc))
         raise AppError(404, "reaction_set_not_found", "Reaction set not found")
     except OSError as exc:
         raise AppError(500, "reaction_export_failed", str(exc))

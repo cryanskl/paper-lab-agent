@@ -21,7 +21,7 @@ def doc_files(repo: Path) -> list[Path]:
     docs_dir = repo / "docs"
     if docs_dir.exists():
         candidates.extend(sorted(docs_dir.rglob("*.md")))
-    return [path for path in candidates if path.exists()]
+    return [path for path in candidates if path.exists() or path.is_symlink()]
 
 
 def clean_link_target(target: str) -> str:
@@ -61,12 +61,19 @@ def resolve_target_path(repo: Path, source: Path, target: str) -> Path | None:
     if target_path.is_absolute():
         return target_path if target_path.exists() else None
 
-    candidates = [
+    candidates = target_candidate_paths(repo, source, target)
+    return next((candidate for candidate in candidates if candidate.exists()), None)
+
+
+def target_candidate_paths(repo: Path, source: Path, target: str) -> list[Path]:
+    target_path = Path(target)
+    if target_path.is_absolute():
+        return [target_path]
+    return [
         source.parent / target_path,
         repo / target_path,
         repo / "docs" / target_path,
     ]
-    return next((candidate for candidate in candidates if candidate.exists()), None)
 
 
 def target_exists(repo: Path, source: Path, target: str) -> bool:
@@ -126,10 +133,35 @@ def first_symlink_parent(path: Path) -> Path | None:
     return None
 
 
+def first_non_directory_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if parent.exists() and not parent.is_dir():
+            return parent
+    return None
+
+
+def first_irregular_target_parent(repo: Path, source: Path, target: str) -> Path | None:
+    for candidate in target_candidate_paths(repo, source, target):
+        symlink_parent = first_symlink_parent(candidate)
+        if symlink_parent is not None:
+            return symlink_parent
+        non_directory_parent = first_non_directory_parent(candidate)
+        if non_directory_parent is not None:
+            return non_directory_parent
+    return None
+
+
 def broken_doc_links(repo: Path) -> list[str]:
     repo = repo.resolve()
     issues: list[str] = []
-    for path in doc_files(repo):
+    paths = doc_files(repo)
+    docs_dir = repo / "docs"
+    docs_dir_issue = (
+        (docs_dir.exists() or docs_dir.is_symlink())
+        and (docs_dir.is_symlink() or not docs_dir.is_dir())
+        and not any(path.is_relative_to(docs_dir) for path in paths)
+    )
+    for path in paths:
         label = path.relative_to(repo).as_posix()
         if first_symlink_parent(path) is not None:
             issues.append(f"{label}: doc source parent is not a regular directory")
@@ -152,6 +184,9 @@ def broken_doc_links(repo: Path) -> list[str]:
                 continue
             target_path = path if not target and fragment else resolve_target_path(repo, path, target)
             if target_path is None:
+                if first_irregular_target_parent(repo, path, target) is not None:
+                    issues.append(f"{label}: link target parent is not a regular directory {target}")
+                    continue
                 issues.append(f"{label}: missing link target {target}")
                 continue
             if not is_within_repo(repo, target_path):
@@ -177,6 +212,9 @@ def broken_doc_links(repo: Path) -> list[str]:
                 continue
             target_path = resolve_target_path(repo, path, target)
             if target_path is None:
+                if first_irregular_target_parent(repo, path, target) is not None:
+                    issues.append(f"{label}: reference target parent is not a regular directory {target}")
+                    continue
                 issues.append(f"{label}: missing reference target {target}")
                 continue
             if not is_within_repo(repo, target_path):
@@ -187,6 +225,14 @@ def broken_doc_links(repo: Path) -> list[str]:
                 continue
             if target_path.is_symlink() or not target_path.is_file():
                 issues.append(f"{label}: reference target is not a regular file {target}")
+
+    if docs_dir_issue and not any(
+        issue.startswith("docs:")
+        or issue.startswith("docs/")
+        or " docs/" in issue
+        for issue in issues
+    ):
+        issues.append("docs: doc source directory is not a regular directory")
 
     return issues
 

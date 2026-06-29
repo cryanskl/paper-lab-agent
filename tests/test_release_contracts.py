@@ -1,6 +1,7 @@
 import json
 import re
 import string
+import stat
 import zipfile
 from pathlib import Path
 
@@ -329,6 +330,26 @@ def test_env_example_validator_rejects_symlinked_env_example(tmp_path):
     assert "env example is not a regular file: .env.example" in result.stderr
 
 
+def test_env_example_validator_rejects_broken_symlinked_env_example(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_env_example.py"
+    (tmp_path / ".env.example").symlink_to(tmp_path / "missing.env.example")
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), ".env.example"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "env example is not a regular file: .env.example" in result.stderr
+
+
 def test_env_example_validator_rejects_symlinked_env_example_parent(tmp_path):
     import subprocess
     import sys
@@ -351,6 +372,28 @@ def test_env_example_validator_rejects_symlinked_env_example_parent(tmp_path):
 
     assert result.returncode == 1
     assert f"env example parent is not a regular directory: {linked_root}" in result.stderr
+
+
+def test_env_example_validator_rejects_file_env_example_parent(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_env_example.py"
+    file_parent = tmp_path / "not-dir"
+    file_parent.write_text("not a directory", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), str(file_parent / ".env.example")],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert f"env example parent is not a regular directory: {file_parent}" in result.stderr
+    assert file_parent.read_text(encoding="utf-8") == "not a directory"
 
 
 def test_env_example_validator_reports_unreadable_env_example(tmp_path):
@@ -1233,6 +1276,26 @@ def test_bug_doc_validator_rejects_symlinked_bug_dir(tmp_path):
     assert issues == ["docs/bug: bug directory is not a regular directory"]
 
 
+def test_bug_doc_validator_rejects_broken_symlinked_bug_dir(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_bug_docs.py"
+    spec = importlib.util.spec_from_file_location("validate_bug_docs_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_bug_docs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_bug_docs)
+
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "bug").symlink_to(tmp_path / "missing-bug", target_is_directory=True)
+
+    issues = validate_bug_docs.bug_doc_issues(tmp_path)
+
+    assert issues == ["docs/bug: bug directory is not a regular directory"]
+
+
 def test_bug_doc_validator_rejects_symlinked_bug_parent(tmp_path):
     import importlib.util
 
@@ -1255,6 +1318,26 @@ def test_bug_doc_validator_rejects_symlinked_bug_parent(tmp_path):
     assert issues == ["docs/bug: bug directory parent is not a regular directory"]
 
 
+def test_bug_doc_validator_rejects_file_bug_parent(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_bug_docs.py"
+    spec = importlib.util.spec_from_file_location("validate_bug_docs_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_bug_docs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_bug_docs)
+
+    docs_path = tmp_path / "docs"
+    docs_path.write_text("not a directory", encoding="utf-8")
+
+    issues = validate_bug_docs.bug_doc_issues(tmp_path)
+
+    assert issues == ["docs/bug: bug directory parent is not a regular directory"]
+    assert docs_path.read_text(encoding="utf-8") == "not a directory"
+
+
 def test_bug_doc_validator_rejects_symlinked_readme(tmp_path):
     import importlib.util
 
@@ -1271,6 +1354,26 @@ def test_bug_doc_validator_rejects_symlinked_readme(tmp_path):
     outside_readme = tmp_path / "outside-readme.md"
     outside_readme.write_text("# Outside bug policy\n", encoding="utf-8")
     (bug_dir / "README.md").symlink_to(outside_readme)
+
+    issues = validate_bug_docs.bug_doc_issues(tmp_path)
+
+    assert "docs/bug/README.md: bug docs README is not a regular file" in issues
+
+
+def test_bug_doc_validator_rejects_broken_symlinked_readme(tmp_path):
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_bug_docs.py"
+    spec = importlib.util.spec_from_file_location("validate_bug_docs_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    validate_bug_docs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validate_bug_docs)
+
+    bug_dir = tmp_path / "docs" / "bug"
+    bug_dir.mkdir(parents=True)
+    (bug_dir / "README.md").symlink_to(tmp_path / "missing-readme.md")
 
     issues = validate_bug_docs.bug_doc_issues(tmp_path)
 
@@ -1389,6 +1492,17 @@ def test_release_hygiene_validator_rejects_symlinked_ci_workflow(tmp_path):
     assert missing == ["ci_workflow_not_regular_file"]
 
 
+def test_release_hygiene_validator_rejects_broken_symlinked_ci_workflow(tmp_path):
+    validate_release_hygiene = load_validate_release_hygiene()
+    workflow_dir = tmp_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "ci.yml").symlink_to(tmp_path / "missing-ci.yml")
+
+    missing = validate_release_hygiene.missing_required_ci_release_gate(tmp_path)
+
+    assert missing == ["ci_workflow_not_regular_file"]
+
+
 def test_release_hygiene_validator_reports_unreadable_ci_workflow(tmp_path):
     validate_release_hygiene = load_validate_release_hygiene()
     workflow_dir = tmp_path / ".github" / "workflows"
@@ -1455,6 +1569,17 @@ def test_release_hygiene_validator_rejects_symlinked_ci_workflow_ancestor(tmp_pa
     missing = validate_release_hygiene.missing_required_ci_release_gate(tmp_path)
 
     assert missing == ["ci_workflow_parent_not_regular_directory"]
+
+
+def test_release_hygiene_validator_rejects_file_ci_workflow_ancestor(tmp_path):
+    validate_release_hygiene = load_validate_release_hygiene()
+    github_path = tmp_path / ".github"
+    github_path.write_text("not a directory", encoding="utf-8")
+
+    missing = validate_release_hygiene.missing_required_ci_release_gate(tmp_path)
+
+    assert missing == ["ci_workflow_parent_not_regular_directory"]
+    assert github_path.read_text(encoding="utf-8") == "not a directory"
 
 
 def test_release_hygiene_validator_reports_missing_ci_release_gate(tmp_path):
@@ -1723,8 +1848,39 @@ def test_release_checklist_documents_publish_gates():
         assert required in checklist
 
 
+def test_release_acceptance_matrix_documents_prd_coverage():
+    repo = Path(__file__).resolve().parent.parent
+    readme = (repo / "README.md").read_text(encoding="utf-8")
+    checklist = (repo / "docs" / "release-checklist.md").read_text(encoding="utf-8")
+    matrix_path = repo / "docs" / "release-acceptance-matrix.md"
+
+    assert "[docs/release-acceptance-matrix.md](docs/release-acceptance-matrix.md)" in readme
+    assert "[Release Acceptance Matrix](release-acceptance-matrix.md)" in checklist
+    matrix = matrix_path.read_text(encoding="utf-8")
+    for required in [
+        "docs/PRD_等离子体文献系统.md",
+        "docs/接口设计文档.md",
+        "docs/schema.sql",
+        "阶段 0",
+        "阶段 1",
+        "阶段 2",
+        "阶段 3",
+        "阶段 4",
+        "bash scripts/release_check.sh",
+        "python scripts/prepare_demo_data.py --summary-only --compact",
+        "python scripts/health_check.py --require-release-ready",
+        "python scripts/health_check.py --require-frontend",
+        "python scripts/build_release_handoff.py --artifact-dir out/release --package out/paper-lab-agent-release.zip --compact",
+        "openapi.json",
+        "demo-summary.json",
+        "release-manifest.json",
+    ]:
+        assert required in matrix
+
+
 def test_release_checklist_documents_health_storage_details():
     repo = Path(__file__).resolve().parent.parent
+    readme = (repo / "README.md").read_text(encoding="utf-8")
     checklist = (repo / "docs" / "release-checklist.md").read_text(encoding="utf-8")
 
     for required in [
@@ -1733,6 +1889,14 @@ def test_release_checklist_documents_health_storage_details():
         "`vector_db_parent`",
         "first-run vector index creation",
     ]:
+        assert required in checklist
+    for required in [
+        "`config_warnings`",
+        "`actual`",
+        "`supported`",
+        "unsupported RAG adapter",
+    ]:
+        assert required in readme
         assert required in checklist
 
 
@@ -2574,9 +2738,29 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert "RELEASE_HELP_SCRIPTS=(" in release_check
     assert '"${script}" --help' in release_check
     assert "scripts/doctor.py --strict --compact" in release_check
+    assert "scripts/health_check.py" in release_check
+    assert "--require-release-ready" in release_check
+    assert "release_check failed: live health_check summary" in release_check
+    assert "uvicorn" in release_check
     assert "DOCTOR_JSON=" in release_check
     assert 'doctor.get("warning_count") != 3' in release_check
-    assert 'doctor.get("warning_codes") != ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]' in release_check
+    assert 'expected_doctor_warning_codes = ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]' in release_check
+    assert 'doctor.get("warning_codes") != expected_doctor_warning_codes' in release_check
+    assert 'doctor_warning_details = doctor.get("warning_details")' in release_check
+    assert "doctor_warning_detail_codes != expected_doctor_warning_codes" in release_check
+    assert "OFFLINE_PREFLIGHT_ENV=(" in release_check
+    assert '"-u" "OPENALEX_MAILTO"' in release_check
+    assert '"-u" "UNPAYWALL_EMAIL"' in release_check
+    assert '"-u" "LLM_API_KEY"' in release_check
+    assert 'DOCTOR_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact)"' in release_check
+    assert 'PREPARE_DEMO_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<\'PY\'' in release_check
+    assert 'RELEASE_ARTIFACTS_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<\'PY\'' in release_check
+    assert 'SMOKE_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" -m scripts.smoke_check)"' in release_check
+    assert 'env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" -m pytest -q' in release_check
+    assert "release gate runs default offline preflight with optional external env cleared" in readme
+    assert "default offline preflight with optional external env cleared" in checklist
+    assert "release gate also starts a live API with prepared demo data" in readme
+    assert "live API with prepared demo data" in checklist
     assert "release_check failed: doctor preflight summary" in release_check
     assert "ConfigWarningResponse" in release_check
     assert "release_check failed: OpenAPI ConfigWarningResponse missing fields" in release_check
@@ -2680,11 +2864,14 @@ def test_release_check_validates_release_artifact_bundle():
     assert "release-manifest.json" in release_check
     assert "demo-summary.json" in release_check
     assert "openapi.json" in release_check
-    assert 'manifest.get("artifact_count") != 3' in release_check
-    assert 'manifest.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]' in release_check
+    assert "release-acceptance-matrix.md" in release_check
+    assert 'manifest.get("artifact_count") != len(expected_artifact_names)' in release_check
+    assert 'manifest.get("artifact_names") != expected_artifact_names' in release_check
+    assert 'expected_preflight_warning_codes = ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]' in release_check
+    assert 'not valid_preflight_evidence(manifest)' in release_check
     assert 'package.get("artifact_dir") != str(output_dir.resolve())' in release_check
     assert 'package.get("package_path") != str(package_path.resolve())' in release_check
-    assert 'package.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]' in release_check
+    assert 'package.get("artifact_names") != expected_artifact_names' in release_check
     assert 'package.get("service") != "paper-lab-agent"' in release_check
     assert 'package.get("version") != "0.1.0"' in release_check
     assert 'package.get("demo_ready") is not True' in release_check
@@ -2698,7 +2885,8 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"' in release_check
     assert 'package.get("openapi_path_count") != 28' in release_check
     assert 'not valid_sha256(package.get("package_sha256"))' in release_check
-    assert 'set((package.get("checksums") or {})) != {"openapi.json", "demo-summary.json", "release-manifest.json"}' in release_check
+    assert "expected_checksum_names = set(expected_artifact_names)" in release_check
+    assert 'set((package.get("checksums") or {})) != expected_checksum_names' in release_check
     assert "def valid_sha256(value):" in release_check
     assert 'all(char in "0123456789abcdef" for char in value)' in release_check
     assert "def valid_release_checksums(checksums):" in release_check
@@ -2706,6 +2894,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'not valid_release_checksums(package.get("checksums") or {})' in release_check
     assert 'package.get("demo_reaction_set_verified_by") != "prepare-demo-data"' in release_check
     assert 'not package.get("demo_reaction_set_verified_at")' in release_check
+    assert 'not valid_preflight_evidence(package)' in release_check
     assert 'package_validation.get("demo_ready") is not True' in release_check
     assert 'package_validation.get("package_path") != str(package_path.resolve())' in release_check
     assert 'package_validation.get("service") != "paper-lab-agent"' in release_check
@@ -2721,11 +2910,12 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package_validation.get("openapi_path_count") != 28' in release_check
     assert 'not valid_sha256(package_validation.get("package_sha256"))' in release_check
     assert 'package_validation.get("package_sha256") != package.get("package_sha256")' in release_check
-    assert 'set((package_validation.get("checksums") or {})) != {"openapi.json", "demo-summary.json", "release-manifest.json"}' in release_check
+    assert 'set((package_validation.get("checksums") or {})) != expected_checksum_names' in release_check
     assert 'package_validation.get("checksums") != package.get("checksums")' in release_check
     assert 'not valid_release_checksums(package_validation.get("checksums") or {})' in release_check
     assert 'package_validation.get("demo_reaction_set_verified_by") != "prepare-demo-data"' in release_check
     assert 'not package_validation.get("demo_reaction_set_verified_at")' in release_check
+    assert 'not valid_preflight_evidence(package_validation)' in release_check
     assert "release manifest version does not match OpenAPI version" in release_check
     assert "checksums" in release_check
     assert "git_dirty" in release_check
@@ -2738,10 +2928,14 @@ def test_release_check_validates_release_artifact_bundle():
     assert "artifact_names" in readme
     assert "reaction_set_verified_by" in readme
     assert "reaction_set_verified_at" in readme
+    assert "preflight_warning_codes" in readme
+    assert "preflight_warning_details" in readme
     assert "artifact 路径本身是否为目录" in readme
     assert "是否可读取" in readme
     assert "额外文件" in readme
+    assert "与 `docs/release-acceptance-matrix.md` 逐字一致" in readme
     assert "zip 输出路径必须放在 artifact 目录外" in readme
+    assert "zip 内 artifact 条目是否为普通文件" in readme
     assert "system` tag metadata" in readme
     assert "ErrorResponse` schema" in readme
     assert "python scripts/export_release_artifacts.py --output-dir out/release --compact" in checklist
@@ -2752,10 +2946,14 @@ def test_release_check_validates_release_artifact_bundle():
     assert "artifact_names" in checklist
     assert "reaction_set_verified_by" in checklist
     assert "reaction_set_verified_at" in checklist
+    assert "preflight_warning_codes" in checklist
+    assert "preflight_warning_details" in checklist
     assert "non-directory artifact path" in checklist
     assert "unreadable artifact paths" in checklist
     assert "unexpected extra files" in checklist
+    assert "matches the source `docs/release-acceptance-matrix.md` byte-for-byte" in checklist
     assert "outside the artifact directory" in checklist
+    assert "non-file artifact entries" in checklist
     assert "system` tag metadata" in checklist
     assert "ErrorResponse` schema" in checklist
     assert "--require-clean-source" in checklist
@@ -2775,7 +2973,8 @@ def test_release_check_validates_single_command_handoff_builder():
     assert '"validate_package": True' in release_check
     assert 'handoff.get("artifact_dir") != str(output_dir.resolve())' in release_check
     assert 'handoff.get("package_path") != str(package_path.resolve())' in release_check
-    assert 'handoff.get("artifact_count") != 3' in release_check
+    assert 'handoff.get("artifact_count") != len(expected_artifact_names)' in release_check
+    assert 'not valid_preflight_evidence(handoff)' in release_check
     assert 'handoff.get("package_sha256") != handoff.get("package_sha256", "").lower()' in release_check
     assert 'print(f"release_check failed: single-command release handoff={handoff!r}", file=sys.stderr)' in release_check
 
@@ -2881,6 +3080,28 @@ def test_export_openapi_script_rejects_symlinked_output_parent(tmp_path):
     assert not (outside_dir / "openapi.json").exists()
 
 
+def test_export_openapi_script_rejects_file_output_parent(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    file_parent = tmp_path / "out"
+    file_parent.write_text("not a directory", encoding="utf-8")
+    output_path = file_parent / "openapi.json"
+
+    result = subprocess.run(
+        [sys.executable, "scripts/export_openapi.py", "--output", str(output_path), "--compact"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert f"export_openapi failed: output path parent is not a regular directory: {file_parent}" in result.stderr
+    assert file_parent.read_text(encoding="utf-8") == "not a directory"
+
+
 def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     import os
     import subprocess
@@ -2922,14 +3143,21 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     manifest = json.loads((output_dir / "release-manifest.json").read_text(encoding="utf-8"))
     demo_summary = json.loads((output_dir / "demo-summary.json").read_text(encoding="utf-8"))
     openapi = json.loads((output_dir / "openapi.json").read_text(encoding="utf-8"))
+    acceptance_matrix = (output_dir / "release-acceptance-matrix.md").read_text(encoding="utf-8")
 
     assert stdout_manifest == manifest
     assert manifest["service"] == "paper-lab-agent"
     assert manifest["version"] == openapi["info"]["version"]
     assert manifest["artifacts"]["openapi"] == "openapi.json"
     assert manifest["artifacts"]["demo_summary"] == "demo-summary.json"
-    assert manifest["artifact_count"] == 3
-    assert manifest["artifact_names"] == ["demo-summary.json", "openapi.json", "release-manifest.json"]
+    assert manifest["artifacts"]["acceptance_matrix"] == "release-acceptance-matrix.md"
+    assert manifest["artifact_count"] == 4
+    assert manifest["artifact_names"] == [
+        "demo-summary.json",
+        "openapi.json",
+        "release-acceptance-matrix.md",
+        "release-manifest.json",
+    ]
     expected_commit = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=repo,
@@ -2956,7 +3184,20 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     assert manifest["source"]["git_commit"] == expected_commit
     assert manifest["source"]["git_branch"] == expected_branch
     assert manifest["source"]["git_dirty"] is expected_dirty
-    assert set(manifest["checksums"]) == {"openapi.json", "demo-summary.json", "release-manifest.json"}
+    assert manifest["preflight_ok"] is True
+    assert manifest["preflight_warning_count"] == 3
+    assert manifest["preflight_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
+    assert [warning["code"] for warning in manifest["preflight_warning_details"]] == manifest["preflight_warning_codes"]
+    assert set(manifest["checksums"]) == {
+        "openapi.json",
+        "demo-summary.json",
+        "release-acceptance-matrix.md",
+        "release-manifest.json",
+    }
     assert all(
         len(value) == 64 and all(character in string.hexdigits for character in value)
         for value in manifest["checksums"].values()
@@ -2979,6 +3220,8 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     assert manifest["demo_export_audit_summary_formats"] == demo_summary["export_audit_summary_formats"]
     assert manifest["demo_reaction_set_verified_by"] == demo_summary["reaction_set_verified_by"]
     assert manifest["demo_reaction_set_verified_at"] == demo_summary["reaction_set_verified_at"]
+    assert "Release Acceptance Matrix" in acceptance_matrix
+    assert "docs/PRD_等离子体文献系统.md" in acceptance_matrix
     assert "/api/v1/health" in openapi["paths"]
 
 
@@ -3075,7 +3318,8 @@ def test_export_release_artifacts_reports_prepare_demo_failure(monkeypatch, tmp_
     assert report["ok"] is False
     assert report["output_dir"] == str(output_dir.resolve())
     assert report["issues"] == ["Demo data preparation failed: fixture setup failed"]
-    assert (output_dir / "openapi.json").exists()
+    assert not (output_dir / "openapi.json").exists()
+    assert not (output_dir / "release-acceptance-matrix.md").exists()
     assert not (output_dir / "demo-summary.json").exists()
     assert not (output_dir / "release-manifest.json").exists()
 
@@ -3084,8 +3328,12 @@ def test_export_release_artifacts_removes_stale_outputs_on_prepare_demo_failure(
     export_release_artifacts = load_export_release_artifacts()
     output_dir = tmp_path / "release"
     output_dir.mkdir()
+    stale_openapi = output_dir / "openapi.json"
+    stale_acceptance_matrix = output_dir / "release-acceptance-matrix.md"
     stale_demo_summary = output_dir / "demo-summary.json"
     stale_manifest = output_dir / "release-manifest.json"
+    stale_openapi.write_text('{"openapi": "3.1.0"}\n', encoding="utf-8")
+    stale_acceptance_matrix.write_text("# stale acceptance matrix\n", encoding="utf-8")
     stale_demo_summary.write_text('{"ready": true}\n', encoding="utf-8")
     stale_manifest.write_text('{"service": "paper-lab-agent"}\n', encoding="utf-8")
 
@@ -3098,7 +3346,8 @@ def test_export_release_artifacts_removes_stale_outputs_on_prepare_demo_failure(
 
     assert report["ok"] is False
     assert report["issues"] == ["Demo data preparation failed: fixture setup failed"]
-    assert (output_dir / "openapi.json").exists()
+    assert not stale_openapi.exists()
+    assert not stale_acceptance_matrix.exists()
     assert not stale_demo_summary.exists()
     assert not stale_manifest.exists()
 
@@ -3182,6 +3431,25 @@ def test_export_release_artifacts_reports_output_dir_not_directory(tmp_path):
     assert "Traceback" not in result.stderr
 
 
+def test_export_release_artifacts_rejects_file_output_parent(tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    output_parent = tmp_path / "packages"
+    output_dir = output_parent / "release"
+    output_parent.write_text("not a directory", encoding="utf-8")
+
+    try:
+        report = export_release_artifacts.export_release_artifacts(output_dir, compact=True)
+    except NotADirectoryError as exc:
+        raise AssertionError(
+            "export_release_artifacts should report file output parents instead of raising"
+        ) from exc
+
+    assert report["ok"] is False
+    assert f"release artifact output directory parent is not a regular directory: {output_parent.resolve()}" in report["issues"]
+    assert output_parent.is_file()
+    assert not output_dir.exists()
+
+
 def test_export_release_artifacts_rejects_output_dir_symlink(tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     output_dir = tmp_path / "release"
@@ -3247,7 +3515,7 @@ def test_export_release_artifacts_rejects_dirty_output_dir(tmp_path):
     assert not (output_dir / "openapi.json").exists()
 
 
-def test_export_release_artifacts_reports_expected_artifact_path_not_file(tmp_path):
+def test_export_release_artifacts_rejects_expected_artifact_directory_path(tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     output_dir = tmp_path / "release"
     openapi_path = output_dir / "openapi.json"
@@ -3257,7 +3525,7 @@ def test_export_release_artifacts_reports_expected_artifact_path_not_file(tmp_pa
     report = export_release_artifacts.export_release_artifacts(output_dir, compact=True)
 
     assert report["ok"] is False
-    assert f"release artifact output path is not a file: {openapi_path.resolve()}" in report["issues"]
+    assert f"release artifact output path is not a regular file: {openapi_path.resolve()}" in report["issues"]
     assert openapi_path.is_dir()
     assert not (output_dir / "demo-summary.json").exists()
 
@@ -3276,6 +3544,22 @@ def test_export_release_artifacts_rejects_expected_artifact_symlink(tmp_path):
     assert report["ok"] is False
     assert f"release artifact output path is not a regular file: {output_dir.resolve() / 'openapi.json'}" in report["issues"]
     assert outside_path.read_text(encoding="utf-8") == "do not overwrite"
+    assert not (output_dir / "demo-summary.json").exists()
+
+
+def test_export_release_artifacts_rejects_broken_expected_artifact_symlink(tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    output_dir = tmp_path / "release"
+    openapi_path = output_dir / "openapi.json"
+    output_dir.mkdir()
+    openapi_path.symlink_to(tmp_path / "missing-openapi.json")
+
+    report = export_release_artifacts.export_release_artifacts(output_dir, compact=True)
+
+    assert report["ok"] is False
+    assert f"release artifact output path is not a regular file: {output_dir.resolve() / 'openapi.json'}" in report["issues"]
+    assert openapi_path.is_symlink()
+    assert not openapi_path.exists()
     assert not (output_dir / "demo-summary.json").exists()
 
 
@@ -3345,6 +3629,14 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
         text=True,
     ).stdout.strip()
     assert isinstance(payload["source"]["git_dirty"], bool)
+    assert payload["preflight_ok"] is True
+    assert payload["preflight_warning_count"] == 3
+    assert payload["preflight_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
+    assert [warning["code"] for warning in payload["preflight_warning_details"]] == payload["preflight_warning_codes"]
     assert payload["demo_ready"] is True
     assert payload["demo_export_formats"] == ["json", "txt", "bolsig"]
     assert payload["demo_export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
@@ -3361,6 +3653,208 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
     assert payload["demo_reaction_set_verified_at"]
     assert payload["openapi_path_count"] == 28
+
+
+def test_validate_release_artifacts_rejects_acceptance_matrix_source_drift(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    validate_release_artifacts = load_validate_release_artifacts()
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    export_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert export_result.returncode == 0, export_result.stderr
+    matrix_path = output_dir / "release-acceptance-matrix.md"
+    matrix_path.write_text(
+        matrix_path.read_text(encoding="utf-8")
+        + "\nManual edit: ship without the documented release gate evidence.\n",
+        encoding="utf-8",
+    )
+    manifest_path = output_dir / "release-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["checksums"]["release-acceptance-matrix.md"] = validate_release_artifacts.sha256_file(matrix_path)
+    manifest["checksums"]["release-manifest.json"] = validate_release_artifacts.manifest_checksum(manifest)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
+
+    validate_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_artifacts.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert validate_result.returncode == 1
+    payload = json.loads(validate_result.stdout)
+    assert payload["ok"] is False
+    assert "release acceptance matrix does not match docs/release-acceptance-matrix.md" in payload["issues"]
+
+
+def test_validate_release_artifacts_rejects_preflight_warning_count_drift(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    validate_release_artifacts = load_validate_release_artifacts()
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    export_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert export_result.returncode == 0, export_result.stderr
+    manifest_path = output_dir / "release-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["preflight_warning_count"] = len(manifest["preflight_warning_codes"]) - 1
+    manifest["checksums"]["release-manifest.json"] = validate_release_artifacts.manifest_checksum(manifest)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
+
+    validate_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_artifacts.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert validate_result.returncode == 1
+    payload = json.loads(validate_result.stdout)
+    assert payload["ok"] is False
+    assert (
+        "release manifest preflight_warning_count mismatch: "
+        f"{manifest['preflight_warning_count']!r}"
+    ) in payload["issues"]
+
+
+def test_validate_release_artifacts_rejects_duplicate_preflight_warning_codes(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    validate_release_artifacts = load_validate_release_artifacts()
+    repo = Path(__file__).resolve().parent.parent
+    output_dir = tmp_path / "release"
+    data_dir = tmp_path / "data"
+    env = os.environ.copy()
+    env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    for key in [
+        "DATABASE_PATH",
+        "PAPER_LAB_PDF_DIR",
+        "PAPER_LAB_TEI_DIR",
+        "PAPER_LAB_TRANSLATION_DIR",
+        "PAPER_LAB_EXPORT_DIR",
+        "VECTOR_DB_PATH",
+        "VECTOR_DB_BACKEND",
+    ]:
+        env.pop(key, None)
+
+    export_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_release_artifacts.py",
+            "--output-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert export_result.returncode == 0, export_result.stderr
+    manifest_path = output_dir / "release-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    duplicate_code = manifest["preflight_warning_codes"][0]
+    duplicate_detail = manifest["preflight_warning_details"][0]
+    manifest["preflight_warning_codes"] = [duplicate_code, duplicate_code]
+    manifest["preflight_warning_details"] = [duplicate_detail, duplicate_detail]
+    manifest["preflight_warning_count"] = 2
+    manifest["checksums"]["release-manifest.json"] = validate_release_artifacts.manifest_checksum(manifest)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
+
+    validate_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_release_artifacts.py",
+            "--artifact-dir",
+            str(output_dir),
+            "--compact",
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert validate_result.returncode == 1
+    payload = json.loads(validate_result.stdout)
+    assert payload["ok"] is False
+    assert f"release manifest preflight_warning_codes duplicate: {duplicate_code!r}" in payload["issues"]
 
 
 def test_validate_release_artifacts_rejects_artifact_dir_symlink(tmp_path):
@@ -3613,6 +4107,60 @@ def test_validate_release_artifacts_rejects_required_artifact_symlink(tmp_path):
     assert f"OpenAPI artifact is not a regular file: {openapi_path}" in report["issues"]
     assert openapi_path.is_symlink()
     assert outside_path.exists()
+
+
+def test_validate_release_artifacts_rejects_broken_required_artifact_symlink(tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    validate_release_artifacts = load_validate_release_artifacts()
+    artifact_dir = tmp_path / "release"
+    artifact_dir.mkdir()
+    openapi_path = artifact_dir / "openapi.json"
+    openapi_path.symlink_to(tmp_path / "missing-openapi.json")
+    demo_summary = {
+        "ready": True,
+        "export_formats": ["json", "txt", "bolsig"],
+        "export_audit_entry_counts": {"json": 1, "txt": 1, "bolsig": 1},
+        "reaction_set_verified_by": "prepare-demo-data",
+        "reaction_set_verified_at": "2026-06-26T13:40:00",
+    }
+    manifest = {
+        "service": "paper-lab-agent",
+        "version": "0.1.0",
+        "artifacts": {
+            "openapi": "openapi.json",
+            "demo_summary": "demo-summary.json",
+            "manifest": "release-manifest.json",
+        },
+        "demo_ready": True,
+        "demo_export_formats": ["json", "txt", "bolsig"],
+        "demo_export_audit_entry_counts": {"json": 1, "txt": 1, "bolsig": 1},
+        "demo_reaction_set_verified_by": "prepare-demo-data",
+        "demo_reaction_set_verified_at": "2026-06-26T13:40:00",
+        "openapi_path_count": 1,
+        "source": {
+            "git_commit": "a" * 40,
+            "git_branch": "phase/5-experiment-lab-artifacts",
+            "git_dirty": False,
+        },
+        "checksums": {
+            "openapi.json": "",
+            "demo-summary.json": "",
+            "release-manifest.json": "",
+        },
+    }
+    (artifact_dir / "demo-summary.json").write_text(json.dumps(demo_summary), encoding="utf-8")
+    manifest["checksums"]["demo-summary.json"] = export_release_artifacts.sha256_file(
+        artifact_dir / "demo-summary.json"
+    )
+    manifest["checksums"]["release-manifest.json"] = export_release_artifacts.manifest_checksum(manifest)
+    (artifact_dir / "release-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = validate_release_artifacts.validate_release_artifacts(artifact_dir)
+
+    assert report["ok"] is False
+    assert f"OpenAPI artifact is not a regular file: {openapi_path}" in report["issues"]
+    assert openapi_path.is_symlink()
+    assert not openapi_path.exists()
 
 
 def test_validate_release_artifacts_reports_manifest_audit_count_mismatch(tmp_path):
@@ -4050,17 +4598,18 @@ def test_validate_release_artifacts_rejects_unexpected_handoff_files(tmp_path):
     assert "release artifact directory contains unexpected files: ['old-demo-summary.json']" in report["issues"]
 
 
-def test_validate_release_artifacts_reports_unreadable_required_artifact(tmp_path):
+def test_validate_release_artifacts_rejects_directory_required_artifact(tmp_path):
     validate_release_artifacts = load_validate_release_artifacts()
     artifact_dir = tmp_path / "release"
     artifact_dir.mkdir()
-    (artifact_dir / "openapi.json").mkdir()
+    openapi_path = artifact_dir / "openapi.json"
+    openapi_path.mkdir()
     (artifact_dir / "demo-summary.json").write_text("{}", encoding="utf-8")
     (artifact_dir / "release-manifest.json").write_text("{}", encoding="utf-8")
 
     report = validate_release_artifacts.validate_release_artifacts(artifact_dir)
 
-    assert any(issue.startswith("OpenAPI artifact unreadable:") for issue in report["issues"])
+    assert f"OpenAPI artifact is not a regular file: {openapi_path}" in report["issues"]
 
 
 def test_validate_release_artifacts_reports_checksum_artifact_not_file(tmp_path):
@@ -4110,7 +4659,7 @@ def test_validate_release_artifacts_reports_checksum_artifact_not_file(tmp_path)
     report = validate_release_artifacts.validate_release_artifacts(artifact_dir)
 
     assert report["ok"] is False
-    assert any(issue.startswith("OpenAPI artifact unreadable:") for issue in report["issues"])
+    assert f"OpenAPI artifact is not a regular file: {openapi_path}" in report["issues"]
     assert f"checksum unavailable: openapi.json is not a file: {openapi_path.resolve()}" in report["issues"]
 
 
@@ -4127,14 +4676,14 @@ def test_validate_release_artifacts_reports_non_utf8_required_artifact(tmp_path)
     assert any(issue.startswith("OpenAPI artifact unreadable:") for issue in report["issues"])
 
 
-def test_validate_release_artifacts_reports_artifact_dir_not_directory(tmp_path):
+def test_validate_release_artifacts_rejects_file_artifact_dir(tmp_path):
     validate_release_artifacts = load_validate_release_artifacts()
     artifact_dir = tmp_path / "release"
     artifact_dir.write_text("not a directory", encoding="utf-8")
 
     report = validate_release_artifacts.validate_release_artifacts(artifact_dir)
 
-    assert f"release artifact directory is not a directory: {artifact_dir.resolve()}" in report["issues"]
+    assert f"release artifact directory is not a regular directory: {artifact_dir.resolve()}" in report["issues"]
 
 
 def test_validate_release_artifacts_script_rejects_tampered_artifact(tmp_path):
@@ -4320,18 +4869,28 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
 
     assert package_result.returncode == 0, package_result.stderr
     payload = json.loads(package_result.stdout)
-    assert payload["ok"] is True
-    assert payload["package_path"] == str(package_path)
-    assert payload["artifact_count"] == 3
-    assert payload["artifact_names"] == [
+    expected_artifact_names = [
         "demo-summary.json",
         "openapi.json",
+        "release-acceptance-matrix.md",
         "release-manifest.json",
     ]
+    expected_checksum_names = set(expected_artifact_names)
+    assert payload["ok"] is True
+    assert payload["package_path"] == str(package_path)
+    assert payload["artifact_count"] == 4
+    assert payload["artifact_names"] == expected_artifact_names
     assert len(payload["package_sha256"]) == 64
     assert payload["source"]["git_commit"]
     assert payload["service"] == "paper-lab-agent"
     assert payload["version"] == "0.1.0"
+    assert payload["preflight_ok"] is True
+    assert payload["preflight_warning_count"] == 3
+    assert payload["preflight_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
     assert payload["demo_ready"] is True
     assert payload["demo_export_formats"] == ["json", "txt", "bolsig"]
     assert payload["demo_export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
@@ -4341,17 +4900,13 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert payload["demo_workflow_statuses"]["parse_status"] == "parsed"
     assert payload["demo_workflow_statuses"]["reaction_set_status"] == "verified"
     assert payload["openapi_path_count"] == 28
-    assert set(payload["checksums"]) == {"openapi.json", "demo-summary.json", "release-manifest.json"}
+    assert set(payload["checksums"]) == expected_checksum_names
     assert all(len(value) == 64 for value in payload["checksums"].values())
     assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
     assert payload["demo_reaction_set_verified_at"]
     assert package_path.exists()
     with zipfile.ZipFile(package_path) as archive:
-        assert sorted(archive.namelist()) == [
-            "demo-summary.json",
-            "openapi.json",
-            "release-manifest.json",
-        ]
+        assert sorted(archive.namelist()) == expected_artifact_names
 
     validate_package_result = subprocess.run(
         [
@@ -4371,12 +4926,8 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     validate_payload = json.loads(validate_package_result.stdout)
     assert validate_payload["ok"] is True
     assert validate_payload["package_path"] == str(package_path)
-    assert validate_payload["artifact_count"] == 3
-    assert validate_payload["artifact_names"] == [
-        "demo-summary.json",
-        "openapi.json",
-        "release-manifest.json",
-    ]
+    assert validate_payload["artifact_count"] == 4
+    assert validate_payload["artifact_names"] == expected_artifact_names
     assert validate_payload["source"]["git_commit"]
     assert validate_payload["service"] == "paper-lab-agent"
     assert validate_payload["version"] == "0.1.0"
@@ -4389,10 +4940,20 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert validate_payload["demo_workflow_statuses"]["parse_status"] == "parsed"
     assert validate_payload["demo_workflow_statuses"]["reaction_set_status"] == "verified"
     assert validate_payload["openapi_path_count"] == 28
-    assert set(validate_payload["checksums"]) == {"openapi.json", "demo-summary.json", "release-manifest.json"}
+    assert set(validate_payload["checksums"]) == expected_checksum_names
     assert all(len(value) == 64 for value in validate_payload["checksums"].values())
     assert validate_payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
     assert validate_payload["demo_reaction_set_verified_at"]
+    assert validate_payload["preflight_ok"] is True
+    assert validate_payload["preflight_warning_count"] == 3
+    assert validate_payload["preflight_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
+    assert [warning["code"] for warning in validate_payload["preflight_warning_details"]] == validate_payload[
+        "preflight_warning_codes"
+    ]
 
 
 def test_build_release_handoff_script_exports_validates_packages_and_revalidates(tmp_path):
@@ -4436,23 +4997,35 @@ def test_build_release_handoff_script_exports_validates_packages_and_revalidates
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
+    expected_artifact_names = [
+        "demo-summary.json",
+        "openapi.json",
+        "release-acceptance-matrix.md",
+        "release-manifest.json",
+    ]
     assert payload["ok"] is True
     assert payload["stage"] == "complete"
     assert payload["artifact_dir"] == str(artifact_dir.resolve())
     assert payload["package_path"] == str(package_path.resolve())
     assert payload["package_sha256"]
-    assert payload["artifact_count"] == 3
-    assert payload["artifact_names"] == [
-        "demo-summary.json",
-        "openapi.json",
-        "release-manifest.json",
-    ]
+    assert payload["artifact_count"] == 4
+    assert payload["artifact_names"] == expected_artifact_names
     assert payload["source"]["git_commit"]
     assert payload["demo_ready"] is True
     assert payload["demo_export_formats"] == ["json", "txt", "bolsig"]
     assert payload["demo_export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
     assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
     assert payload["demo_reaction_set_verified_at"]
+    assert payload["preflight_ok"] is True
+    assert payload["preflight_warning_count"] == 3
+    assert payload["preflight_warning_codes"] == [
+        "missing_openalex_mailto",
+        "missing_unpaywall_email",
+        "missing_llm_api_key",
+    ]
+    assert [warning["code"] for warning in payload["preflight_warning_details"]] == payload[
+        "preflight_warning_codes"
+    ]
     assert payload["stages"] == {
         "export": True,
         "validate_artifacts": True,
@@ -4538,7 +5111,12 @@ def test_build_release_handoff_removes_package_on_package_validation_failure(mon
             "artifact_dir": str(output_dir),
             "package_path": str(output_path),
             "package_sha256": "a" * 64,
-            "artifact_names": ["demo-summary.json", "openapi.json", "release-manifest.json"],
+            "artifact_names": [
+                "demo-summary.json",
+                "openapi.json",
+                "release-acceptance-matrix.md",
+                "release-manifest.json",
+            ],
             "issues": [],
         }
 
@@ -4547,7 +5125,12 @@ def test_build_release_handoff_removes_package_on_package_validation_failure(mon
             "ok": False,
             "package_path": str(output_path),
             "package_sha256": "a" * 64,
-            "artifact_names": ["demo-summary.json", "openapi.json", "release-manifest.json"],
+            "artifact_names": [
+                "demo-summary.json",
+                "openapi.json",
+                "release-acceptance-matrix.md",
+                "release-manifest.json",
+            ],
             "issues": ["release package invalid zip: bad central directory"],
         }
 
@@ -4844,7 +5427,7 @@ def test_package_release_artifacts_rejects_artifact_dir_symlink_ancestor(tmp_pat
     assert not output_path.exists()
 
 
-def test_package_release_artifacts_reports_output_path_not_file(tmp_path):
+def test_package_release_artifacts_rejects_directory_output_path(tmp_path):
     package_release_artifacts = load_package_release_artifacts()
     artifact_dir = tmp_path / "invalid-release"
     output_path = tmp_path / "paper-lab-agent-release.zip"
@@ -4854,7 +5437,7 @@ def test_package_release_artifacts_reports_output_path_not_file(tmp_path):
     report = package_release_artifacts.package_release_artifacts(artifact_dir, output_path)
 
     assert report["ok"] is False
-    assert f"release package output is not a file: {output_path.resolve()}" in report["issues"]
+    assert f"release package output is not a regular file: {output_path.resolve()}" in report["issues"]
     assert output_path.is_dir()
 
 
@@ -5049,7 +5632,7 @@ def test_package_release_artifacts_rejects_output_ancestor_symlink(tmp_path):
     assert not (outside_dir / "nested" / "paper-lab-agent-release.zip").exists()
 
 
-def test_package_release_artifacts_reports_output_parent_not_directory(tmp_path):
+def test_package_release_artifacts_rejects_file_output_parent(tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     package_release_artifacts = load_package_release_artifacts()
     artifact_dir = tmp_path / "release"
@@ -5106,7 +5689,7 @@ def test_package_release_artifacts_reports_output_parent_not_directory(tmp_path)
     report = package_release_artifacts.package_release_artifacts(artifact_dir, output_path)
 
     assert report["ok"] is False
-    assert f"release package output parent is not a directory: {output_parent.resolve()}" in report["issues"]
+    assert f"release package output parent is not a regular directory: {output_parent.resolve()}" in report["issues"]
     assert output_parent.is_file()
 
 
@@ -5236,7 +5819,7 @@ def test_validate_release_package_script_rejects_tampered_zip_artifact(tmp_path)
     assert any("checksum mismatch: demo-summary.json" in issue for issue in payload["issues"])
 
 
-def test_validate_release_package_reports_package_path_not_file(tmp_path):
+def test_validate_release_package_rejects_directory_package_path(tmp_path):
     validate_release_package = load_validate_release_package()
     package_path = tmp_path / "paper-lab-agent-release.zip"
     package_path.mkdir()
@@ -5244,7 +5827,20 @@ def test_validate_release_package_reports_package_path_not_file(tmp_path):
     report = validate_release_package.validate_release_package(package_path)
 
     assert report["ok"] is False
-    assert f"release package is not a file: {package_path.resolve()}" in report["issues"]
+    assert f"release package is not a regular file: {package_path.resolve()}" in report["issues"]
+
+
+def test_validate_release_package_rejects_file_package_parent(tmp_path):
+    validate_release_package = load_validate_release_package()
+    package_parent = tmp_path / "packages"
+    package_path = package_parent / "paper-lab-agent-release.zip"
+    package_parent.write_text("not a directory", encoding="utf-8")
+
+    report = validate_release_package.validate_release_package(package_path)
+
+    assert report["ok"] is False
+    assert f"release package parent is not a regular directory: {package_parent.resolve()}" in report["issues"]
+    assert package_parent.is_file()
 
 
 def test_validate_release_package_reports_zip_read_failure(monkeypatch, tmp_path):
@@ -5499,6 +6095,54 @@ def test_validate_release_package_rejects_windows_rooted_artifact_name(tmp_path)
     assert "release package contains unsafe artifact names: ['\\\\evil.txt']" in report["issues"]
 
 
+def test_validate_release_package_rejects_symlink_artifact_entry(tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    validate_release_package = load_validate_release_package()
+    artifact_dir = tmp_path / "release"
+    package_path = tmp_path / "paper-lab-agent-release.zip"
+    export_report = export_release_artifacts.export_release_artifacts(artifact_dir, compact=True)
+    assert export_report["service"] == "paper-lab-agent"
+
+    with zipfile.ZipFile(package_path, mode="w") as archive:
+        for artifact_path in sorted(artifact_dir.iterdir()):
+            if artifact_path.name == "openapi.json":
+                info = zipfile.ZipInfo(artifact_path.name)
+                info.create_system = 3
+                info.external_attr = (stat.S_IFLNK | 0o777) << 16
+                archive.writestr(info, artifact_path.read_bytes())
+            else:
+                archive.write(artifact_path, arcname=artifact_path.name)
+
+    report = validate_release_package.validate_release_package(package_path)
+
+    assert report["ok"] is False
+    assert "release package contains symlink artifact entries: ['openapi.json']" in report["issues"]
+
+
+def test_validate_release_package_rejects_non_file_artifact_entry(tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    validate_release_package = load_validate_release_package()
+    artifact_dir = tmp_path / "release"
+    package_path = tmp_path / "paper-lab-agent-release.zip"
+    export_report = export_release_artifacts.export_release_artifacts(artifact_dir, compact=True)
+    assert export_report["service"] == "paper-lab-agent"
+
+    with zipfile.ZipFile(package_path, mode="w") as archive:
+        for artifact_path in sorted(artifact_dir.iterdir()):
+            if artifact_path.name == "openapi.json":
+                info = zipfile.ZipInfo(artifact_path.name)
+                info.create_system = 3
+                info.external_attr = (stat.S_IFIFO | 0o644) << 16
+                archive.writestr(info, artifact_path.read_bytes())
+            else:
+                archive.write(artifact_path, arcname=artifact_path.name)
+
+    report = validate_release_package.validate_release_package(package_path)
+
+    assert report["ok"] is False
+    assert "release package contains non-file artifact entries: ['openapi.json']" in report["issues"]
+
+
 def test_release_check_derives_expected_runtime_version_from_app_version():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
@@ -5666,12 +6310,13 @@ def test_release_check_requires_rate_type_smoke_metadata():
     assert '"verified_export_rate_type": "cross_section"' in release_text
 
 
-def test_release_check_rejects_failed_smoke_status_counts():
+def test_release_check_rejects_non_releasable_smoke_status_counts():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
 
-    assert "failed_statuses" in release_text
-    assert "smoke failed statuses present" in release_text
+    assert "blocking_statuses" in release_text
+    assert 'for blocking_status in ("failed", "rejected", "unknown"):' in release_text
+    assert "smoke workflow statuses not releasable" in release_text
 
 
 def test_smoke_check_requires_error_response_shape_for_negative_paths():
@@ -5746,6 +6391,30 @@ def test_dev_script_documents_help_mode_without_starting_services():
         "/redoc",
     ]:
         assert required in dev_script
+
+
+def test_start_script_documents_one_click_startup_contract():
+    repo = Path(__file__).resolve().parent.parent
+    start_script = repo / "start.sh"
+    start_text = start_script.read_text(encoding="utf-8")
+
+    assert start_script.exists()
+    assert start_script.stat().st_mode & stat.S_IXUSR
+    for required in [
+        "logs/run-",
+        "backend.log",
+        "frontend.log",
+        "startup.log",
+        "lsof -tiTCP",
+        "pip install -r requirements.txt",
+        "-m uvicorn app.main:app",
+        "-m streamlit run streamlit_app.py",
+        "/api/v1/health",
+        "/_stcore/health",
+        "DEV_EXIT_AFTER_READY",
+        "START_OPEN_BROWSER",
+    ]:
+        assert required in start_text
 
 
 def test_api_contract_documented_endpoints_exist_in_app():
@@ -5854,6 +6523,27 @@ def test_api_contract_validator_rejects_symlinked_contract_file(tmp_path):
     assert f"api contract file is not a regular file: {contract_path}" in result.stderr
 
 
+def test_api_contract_validator_rejects_broken_symlinked_contract_file(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_api_contract.py"
+    contract_path = tmp_path / "接口设计文档.md"
+    contract_path.symlink_to(tmp_path / "missing-api-contract.md")
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), str(contract_path)],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert f"api contract file is not a regular file: {contract_path}" in result.stderr
+
+
 def test_api_contract_validator_rejects_symlinked_contract_parent(tmp_path):
     import subprocess
     import sys
@@ -5878,6 +6568,29 @@ def test_api_contract_validator_rejects_symlinked_contract_parent(tmp_path):
 
     assert result.returncode == 1
     assert f"api contract file parent is not a regular directory: {docs_path}" in result.stderr
+
+
+def test_api_contract_validator_rejects_file_contract_parent(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_api_contract.py"
+    docs_path = tmp_path / "docs"
+    docs_path.write_text("not a directory", encoding="utf-8")
+    contract_path = docs_path / "接口设计文档.md"
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), str(contract_path)],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert f"api contract file parent is not a regular directory: {docs_path}" in result.stderr
+    assert docs_path.read_text(encoding="utf-8") == "not a directory"
 
 
 def test_api_contract_validator_reports_unreadable_contract_file(tmp_path):
@@ -8686,6 +9399,16 @@ def test_schema_validator_rejects_symlinked_schema_file(tmp_path):
     assert issues == [f"schema file is not a regular file: {schema_path}"]
 
 
+def test_schema_validator_rejects_broken_symlinked_schema_file(tmp_path):
+    validate_schema = load_validate_schema()
+    schema_path = tmp_path / "schema.sql"
+    schema_path.symlink_to(tmp_path / "missing-schema.sql")
+
+    issues = validate_schema.validate_schema(schema_path)
+
+    assert issues == [f"schema file is not a regular file: {schema_path}"]
+
+
 def test_schema_validator_rejects_symlinked_schema_parent(tmp_path):
     validate_schema = load_validate_schema()
     repo = Path(__file__).resolve().parent.parent
@@ -8700,6 +9423,18 @@ def test_schema_validator_rejects_symlinked_schema_parent(tmp_path):
     issues = validate_schema.validate_schema(schema_path)
 
     assert issues == [f"schema file parent is not a regular directory: {docs_path}"]
+
+
+def test_schema_validator_rejects_file_schema_parent(tmp_path):
+    validate_schema = load_validate_schema()
+    docs_path = tmp_path / "docs"
+    docs_path.write_text("not a directory", encoding="utf-8")
+    schema_path = docs_path / "schema.sql"
+
+    issues = validate_schema.validate_schema(schema_path)
+
+    assert issues == [f"schema file parent is not a regular directory: {docs_path}"]
+    assert docs_path.read_text(encoding="utf-8") == "not a directory"
 
 
 def test_schema_validator_reports_unreadable_schema_file(tmp_path):
@@ -8796,6 +9531,26 @@ def test_requirements_validator_rejects_symlinked_requirements_file(tmp_path):
     assert "requirements file is not a regular file: requirements.txt" in result.stderr
 
 
+def test_requirements_validator_rejects_broken_symlinked_requirements_file(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_requirements.py"
+    (tmp_path / "requirements.txt").symlink_to(tmp_path / "missing-requirements.txt")
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), "requirements.txt"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "requirements file is not a regular file: requirements.txt" in result.stderr
+
+
 def test_requirements_validator_rejects_symlinked_requirements_parent(tmp_path):
     import subprocess
     import sys
@@ -8818,6 +9573,28 @@ def test_requirements_validator_rejects_symlinked_requirements_parent(tmp_path):
 
     assert result.returncode == 1
     assert f"requirements file parent is not a regular directory: {linked_root}" in result.stderr
+
+
+def test_requirements_validator_rejects_file_requirements_parent(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    script_path = repo / "scripts" / "validate_requirements.py"
+    file_parent = tmp_path / "not-dir"
+    file_parent.write_text("not a directory", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), str(file_parent / "requirements.txt")],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert f"requirements file parent is not a regular directory: {file_parent}" in result.stderr
+    assert file_parent.read_text(encoding="utf-8") == "not a directory"
 
 
 def test_requirements_validator_reports_unreadable_requirements_file(tmp_path):
@@ -8977,6 +9754,37 @@ def test_requirements_validator_rejects_symlinked_python_source_root(tmp_path):
     assert "Traceback" not in result.stderr
 
 
+def test_requirements_validator_rejects_broken_symlinked_python_source_root(tmp_path):
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    (scripts_dir / "validate_requirements.py").write_text(
+        (repo / "scripts" / "validate_requirements.py").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (tmp_path / "app").symlink_to(tmp_path / "missing-app", target_is_directory=True)
+    (tmp_path / "requirements.txt").write_text(
+        (repo / "requirements.txt").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(scripts_dir / "validate_requirements.py"), "requirements.txt"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "python source root is not a regular directory:" in result.stderr
+    assert "app" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_requirements_validator_reports_imported_package_missing_from_requirements(tmp_path):
     validate_requirements = load_validate_requirements()
     source_dir = tmp_path / "app"
@@ -8995,7 +9803,7 @@ def test_requirements_validator_ignores_standard_library_imports(tmp_path):
     source_dir = tmp_path / "scripts"
     source_dir.mkdir()
     (source_dir / "uses_stdlib.py").write_text(
-        "import email.utils\nimport fnmatch\nimport importlib.util\nimport shlex\nimport subprocess\nimport unicodedata\nimport zipfile\n",
+        "import email.utils\nimport fnmatch\nimport importlib.util\nimport shlex\nimport stat\nimport subprocess\nimport unicodedata\nimport zipfile\n",
         encoding="utf-8",
     )
     requirements_path = tmp_path / "requirements.txt"
@@ -9054,6 +9862,15 @@ def test_docs_links_validator_rejects_symlinked_markdown_source(tmp_path):
     assert issues == ["README.md: doc source is not a regular file"]
 
 
+def test_docs_links_validator_rejects_broken_symlinked_markdown_source(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    (tmp_path / "README.md").symlink_to(tmp_path / "missing-readme.md")
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["README.md: doc source is not a regular file"]
+
+
 def test_docs_links_validator_reports_unreadable_markdown_source(tmp_path):
     validate_docs_links = load_validate_docs_links()
     (tmp_path / "README.md").write_bytes(b"\xff\xfe\x00bad-readme")
@@ -9073,6 +9890,28 @@ def test_docs_links_validator_rejects_symlinked_markdown_source_parent(tmp_path)
     issues = validate_docs_links.broken_doc_links(tmp_path)
 
     assert issues == ["docs/guide.md: doc source parent is not a regular directory"]
+
+
+def test_docs_links_validator_rejects_symlinked_empty_docs_dir(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    outside_docs = tmp_path / "outside-docs"
+    outside_docs.mkdir()
+    (tmp_path / "README.md").write_text("# Test\n", encoding="utf-8")
+    (tmp_path / "docs").symlink_to(outside_docs, target_is_directory=True)
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["docs: doc source directory is not a regular directory"]
+
+
+def test_docs_links_validator_rejects_broken_symlinked_docs_dir(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    (tmp_path / "README.md").write_text("# Test\n", encoding="utf-8")
+    (tmp_path / "docs").symlink_to(tmp_path / "missing-docs")
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["docs: doc source directory is not a regular directory"]
 
 
 def test_docs_links_validator_rejects_symlinked_markdown_link_target(tmp_path):
@@ -9095,6 +9934,16 @@ def test_docs_links_validator_rejects_symlinked_markdown_link_target_parent(tmp_
     real_docs_dir.mkdir()
     (real_docs_dir / "schema.sql").write_text("select 1;\n", encoding="utf-8")
     (tmp_path / "docs").symlink_to(real_docs_dir, target_is_directory=True)
+    (tmp_path / "README.md").write_text("[Schema](docs/schema.sql)\n", encoding="utf-8")
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["README.md: link target parent is not a regular directory docs/schema.sql"]
+
+
+def test_docs_links_validator_rejects_file_markdown_link_target_parent(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    (tmp_path / "docs").write_text("not a directory", encoding="utf-8")
     (tmp_path / "README.md").write_text("[Schema](docs/schema.sql)\n", encoding="utf-8")
 
     issues = validate_docs_links.broken_doc_links(tmp_path)
@@ -9275,6 +10124,15 @@ def test_readme_commands_validator_rejects_symlinked_readme(tmp_path):
     assert issues == ["README.md: command doc is not a regular file"]
 
 
+def test_readme_commands_validator_rejects_broken_symlinked_readme(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    (tmp_path / "README.md").symlink_to(tmp_path / "missing-readme.md")
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == ["README.md: command doc is not a regular file"]
+
+
 def test_readme_commands_validator_reports_unreadable_readme(tmp_path):
     validate_readme_commands = load_validate_readme_commands()
     (tmp_path / "README.md").write_bytes(b"\xff\xfe\x00bad-readme")
@@ -9426,6 +10284,16 @@ def test_readme_commands_validator_rejects_symlinked_script_target_parent(tmp_pa
     assert issues == ["README.md: command target parent is not a regular directory: scripts/tool.py"]
 
 
+def test_readme_commands_validator_rejects_file_script_target_parent(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    (tmp_path / "scripts").write_text("not a directory", encoding="utf-8")
+    (tmp_path / "README.md").write_text("```bash\npython scripts/tool.py\n```\n", encoding="utf-8")
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == ["README.md: command target parent is not a regular directory: scripts/tool.py"]
+
+
 def test_readme_commands_validator_reports_missing_scripts_module(tmp_path):
     validate_readme_commands = load_validate_readme_commands()
     (tmp_path / "README.md").write_text("```bash\npython -m scripts.missing_check\n```\n", encoding="utf-8")
@@ -9450,6 +10318,28 @@ def test_readme_commands_validator_checks_release_checklist_commands(tmp_path):
     assert issues == [
         "docs/release-checklist.md: command target missing: scripts/missing_release_gate.py"
     ]
+
+
+def test_readme_commands_validator_rejects_file_release_checklist_parent(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    (tmp_path / "README.md").write_text("# Test\n", encoding="utf-8")
+    (tmp_path / "docs").write_text("not a directory", encoding="utf-8")
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == ["docs/release-checklist.md: command doc parent is not a regular directory"]
+
+
+def test_readme_commands_validator_rejects_symlinked_missing_release_checklist_parent(tmp_path):
+    validate_readme_commands = load_validate_readme_commands()
+    outside_docs = tmp_path / "outside-docs"
+    outside_docs.mkdir()
+    (tmp_path / "README.md").write_text("# Test\n", encoding="utf-8")
+    (tmp_path / "docs").symlink_to(outside_docs, target_is_directory=True)
+
+    issues = validate_readme_commands.missing_command_targets(tmp_path)
+
+    assert issues == ["docs/release-checklist.md: command doc parent is not a regular directory"]
 
 
 def test_readme_commands_validator_reports_unknown_python_script_option(tmp_path):

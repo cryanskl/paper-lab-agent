@@ -22,9 +22,11 @@ EXPECTED_SERVICE = "paper-lab-agent"
 EXPECTED_ARTIFACTS = {
     "openapi": "openapi.json",
     "demo_summary": "demo-summary.json",
+    "acceptance_matrix": "release-acceptance-matrix.md",
     "manifest": "release-manifest.json",
 }
 EXPECTED_ARTIFACT_NAMES = sorted(EXPECTED_ARTIFACTS.values())
+ACCEPTANCE_MATRIX_SOURCE = ROOT / "docs" / "release-acceptance-matrix.md"
 EXPECTED_EXPORT_FORMATS = ["json", "txt", "bolsig"]
 EXPECTED_DEMO_COUNT_MINIMUMS = {
     "documents": 1,
@@ -54,10 +56,13 @@ def manifest_checksum(payload: dict[str, Any]) -> str:
 
 
 def read_json(path: Path, label: str, issues: list[str]) -> dict[str, Any]:
+    if path.is_symlink():
+        issues.append(f"{label} is not a regular file: {path}")
+        return {}
     if not path.exists():
         issues.append(f"{label} missing: {path}")
         return {}
-    if path.is_symlink():
+    if not path.is_file():
         issues.append(f"{label} is not a regular file: {path}")
         return {}
     try:
@@ -72,6 +77,23 @@ def read_json(path: Path, label: str, issues: list[str]) -> dict[str, Any]:
         issues.append(f"{label} must be a JSON object")
         return {}
     return payload
+
+
+def read_text_artifact(path: Path, label: str, issues: list[str]) -> str:
+    if path.is_symlink():
+        issues.append(f"{label} is not a regular file: {path}")
+        return ""
+    if not path.exists():
+        issues.append(f"{label} missing: {path}")
+        return ""
+    if not path.is_file():
+        issues.append(f"{label} is not a regular file: {path}")
+        return ""
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        issues.append(f"{label} unreadable: {exc}")
+        return ""
 
 
 def demo_audit_entry_count_issues(demo_summary: dict[str, Any]) -> list[str]:
@@ -125,6 +147,39 @@ def demo_workflow_status_issues(demo_summary: dict[str, Any]) -> list[str]:
     if statuses != EXPECTED_DEMO_WORKFLOW_STATUSES:
         return [f"demo summary workflow statuses mismatch: {statuses!r}"]
     return []
+
+
+def list_of_strings(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) and item.strip() for item in value)
+
+
+def first_duplicate_string(values: list[str]) -> str | None:
+    seen = set()
+    for value in values:
+        if value in seen:
+            return value
+        seen.add(value)
+    return None
+
+
+def warning_details_codes(value: Any) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    codes = []
+    for item in value:
+        if not isinstance(item, dict):
+            return None
+        code = item.get("code")
+        capability = item.get("capability")
+        message = item.get("message")
+        if not isinstance(code, str) or not code.strip():
+            return None
+        if not isinstance(capability, str) or not capability.strip():
+            return None
+        if not isinstance(message, str) or not message.strip():
+            return None
+        codes.append(code)
+    return codes
 
 
 def is_iso8601_timestamp(value: Any) -> bool:
@@ -196,7 +251,7 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
     artifact_dir = artifact_dir.resolve()
     issues: list[str] = []
     if artifact_dir.exists() and not artifact_dir.is_dir():
-        issues.append(f"release artifact directory is not a directory: {artifact_dir}")
+        issues.append(f"release artifact directory is not a regular directory: {artifact_dir}")
     elif artifact_dir.exists():
         unexpected_files = sorted(
             path.name
@@ -208,6 +263,11 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
     manifest = read_json(artifact_dir / EXPECTED_ARTIFACTS["manifest"], "release manifest", issues)
     openapi = read_json(artifact_dir / EXPECTED_ARTIFACTS["openapi"], "OpenAPI artifact", issues)
     demo_summary = read_json(artifact_dir / EXPECTED_ARTIFACTS["demo_summary"], "demo summary", issues)
+    acceptance_matrix = read_text_artifact(
+        artifact_dir / EXPECTED_ARTIFACTS["acceptance_matrix"],
+        "release acceptance matrix",
+        issues,
+    )
 
     paths = openapi.get("paths", {}) if isinstance(openapi.get("paths"), dict) else {}
     openapi_path_count = len(paths)
@@ -233,6 +293,8 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
     demo_export_audit_summary_formats = demo_summary.get("export_audit_summary_formats") or []
     demo_reaction_set_verified_by = demo_summary.get("reaction_set_verified_by")
     demo_reaction_set_verified_at = demo_summary.get("reaction_set_verified_at")
+    preflight_warning_codes = manifest.get("preflight_warning_codes")
+    preflight_warning_details = manifest.get("preflight_warning_details")
 
     if manifest:
         if manifest.get("service") != EXPECTED_SERVICE:
@@ -280,6 +342,33 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
                 "release manifest demo_reaction_set_verified_at mismatch: "
                 f"{manifest.get('demo_reaction_set_verified_at')!r}"
             )
+        if manifest.get("preflight_ok") is not True:
+            issues.append("release manifest preflight_ok must be true")
+        if isinstance(manifest.get("preflight_warning_count"), bool) or not isinstance(manifest.get("preflight_warning_count"), int):
+            issues.append(
+                f"release manifest preflight_warning_count invalid: {manifest.get('preflight_warning_count')!r}"
+            )
+        elif list_of_strings(preflight_warning_codes) and manifest.get("preflight_warning_count") != len(preflight_warning_codes):
+            issues.append(
+                "release manifest preflight_warning_count mismatch: "
+                f"{manifest.get('preflight_warning_count')!r}"
+            )
+        if not list_of_strings(preflight_warning_codes):
+            issues.append(
+                f"release manifest preflight_warning_codes invalid: {preflight_warning_codes!r}"
+            )
+        else:
+            duplicate_code = first_duplicate_string(preflight_warning_codes)
+            if duplicate_code is not None:
+                issues.append(f"release manifest preflight_warning_codes duplicate: {duplicate_code!r}")
+        detail_codes = warning_details_codes(preflight_warning_details)
+        if detail_codes is None:
+            issues.append("release manifest preflight_warning_details invalid")
+        elif list_of_strings(preflight_warning_codes) and detail_codes != preflight_warning_codes:
+            issues.append(
+                "release manifest preflight_warning_details codes mismatch: "
+                f"{detail_codes!r}"
+            )
         if manifest.get("openapi_path_count") != openapi_path_count:
             issues.append(
                 f"release manifest openapi_path_count mismatch: {manifest.get('openapi_path_count')!r}"
@@ -306,7 +395,7 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             expected_checksum_names = set(EXPECTED_ARTIFACTS.values())
             if set(checksums) != expected_checksum_names:
                 issues.append(f"release manifest checksums keys mismatch: {sorted(checksums)!r}")
-            for artifact_name in (EXPECTED_ARTIFACTS["openapi"], EXPECTED_ARTIFACTS["demo_summary"]):
+            for artifact_name in sorted(name for name in EXPECTED_ARTIFACTS.values() if name != EXPECTED_ARTIFACTS["manifest"]):
                 artifact_path = artifact_dir / artifact_name
                 if artifact_path.exists() and (artifact_path.is_symlink() or not artifact_path.is_file()):
                     issues.append(f"checksum unavailable: {artifact_name} is not a file: {artifact_path}")
@@ -341,6 +430,24 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
         elif not is_iso8601_timestamp(demo_reaction_set_verified_at):
             issues.append("demo summary reaction_set_verified_at must be an ISO8601 timestamp")
 
+    if acceptance_matrix:
+        try:
+            source_acceptance_matrix = ACCEPTANCE_MATRIX_SOURCE.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            issues.append(f"release acceptance matrix source unreadable: {exc}")
+            source_acceptance_matrix = ""
+        if source_acceptance_matrix and acceptance_matrix != source_acceptance_matrix:
+            issues.append("release acceptance matrix does not match docs/release-acceptance-matrix.md")
+        for required_text in [
+            "Release Acceptance Matrix",
+            "docs/PRD_等离子体文献系统.md",
+            "docs/接口设计文档.md",
+            "docs/schema.sql",
+            "bash scripts/release_check.sh",
+        ]:
+            if required_text not in acceptance_matrix:
+                issues.append(f"release acceptance matrix missing text: {required_text}")
+
     return {
         "ok": not issues,
         "artifact_dir": str(artifact_dir),
@@ -362,6 +469,14 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
         or demo_reaction_set_verified_by,
         "demo_reaction_set_verified_at": manifest.get("demo_reaction_set_verified_at")
         or demo_reaction_set_verified_at,
+        "preflight_ok": manifest.get("preflight_ok"),
+        "preflight_warning_count": manifest.get("preflight_warning_count"),
+        "preflight_warning_codes": manifest.get("preflight_warning_codes")
+        if list_of_strings(manifest.get("preflight_warning_codes"))
+        else [],
+        "preflight_warning_details": manifest.get("preflight_warning_details")
+        if warning_details_codes(manifest.get("preflight_warning_details")) is not None
+        else [],
         "openapi_path_count": openapi_path_count,
         "checksums": manifest.get("checksums") if isinstance(manifest.get("checksums"), dict) else {},
         "issues": issues,

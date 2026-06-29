@@ -218,9 +218,16 @@ async def fetch_metadata_works(settings, issn: str, date_from: str, date_to: str
     except Exception as exc:
         openalex_error = str(exc)
 
-    works = await CrossrefClient(settings.openalex_mailto, **client_options).works_by_issn(
-        issn, date_from, date_to, max_pages=settings.academic_api_max_pages
-    )
+    try:
+        works = await CrossrefClient(settings.openalex_mailto, **client_options).works_by_issn(
+            issn, date_from, date_to, max_pages=settings.academic_api_max_pages
+        )
+    except Exception as exc:
+        if openalex_error:
+            raise RuntimeError(f"OpenAlex failed: {openalex_error}; Crossref failed: {exc}") from exc
+        if openalex_empty:
+            raise RuntimeError(f"OpenAlex returned no works; Crossref failed: {exc}") from exc
+        raise
     if openalex_empty:
         return works, "OpenAlex returned no works; used Crossref fallback"
     if openalex_error:

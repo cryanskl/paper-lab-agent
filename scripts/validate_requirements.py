@@ -49,6 +49,7 @@ FALLBACK_STDLIB_MODULES = {
     "re",
     "shlex",
     "sqlite3",
+    "stat",
     "subprocess",
     "sys",
     "tempfile",
@@ -177,10 +178,11 @@ def missing_required_packages(path: Path = DEFAULT_REQUIREMENTS_PATH) -> list[st
 def non_regular_python_source_roots(paths: list[Path] = SOURCE_PATHS) -> list[str]:
     issues: list[str] = []
     for path in paths:
-        if not path.exists():
-            continue
         if path.is_symlink():
             issues.append(f"python source root is not a regular directory: {path}")
+            continue
+        if not path.exists():
+            continue
     return issues
 
 
@@ -222,18 +224,29 @@ def first_symlink_parent(path: Path) -> Path | None:
     return None
 
 
+def first_non_directory_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if parent.exists() and not parent.is_dir():
+            return parent
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate required package declarations in requirements.txt.")
     parser.add_argument("requirements_path", nargs="?", default=str(DEFAULT_REQUIREMENTS_PATH))
     args = parser.parse_args()
 
     requirements_path = Path(args.requirements_path)
-    if not requirements_path.exists():
-        print(f"requirements file not found: {requirements_path}", file=sys.stderr)
-        return 1
     symlink_parent = first_symlink_parent(requirements_path)
     if symlink_parent is not None:
         print(f"requirements file parent is not a regular directory: {symlink_parent}", file=sys.stderr)
+        return 1
+    non_directory_parent = first_non_directory_parent(requirements_path)
+    if non_directory_parent is not None:
+        print(f"requirements file parent is not a regular directory: {non_directory_parent}", file=sys.stderr)
+        return 1
+    if not requirements_path.exists() and not requirements_path.is_symlink():
+        print(f"requirements file not found: {requirements_path}", file=sys.stderr)
         return 1
     if requirements_path.is_symlink() or not requirements_path.is_file():
         print(f"requirements file is not a regular file: {requirements_path}", file=sys.stderr)

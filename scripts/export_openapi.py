@@ -24,6 +24,8 @@ def write_openapi(output_path: Path, *, compact: bool = False) -> str | None:
     symlink_parent = first_symlink_parent(output_path)
     if symlink_parent is not None:
         return f"output path parent is not a regular directory: {symlink_parent}"
+    if output_path.parent.exists() and not output_path.parent.is_dir():
+        return f"output path parent is not a regular directory: {output_path.parent}"
     if output_path.exists() and not output_path.is_file():
         return f"output path is not a regular file: {output_path}"
     try:

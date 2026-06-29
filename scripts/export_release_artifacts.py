@@ -15,13 +15,15 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app import __version__
+from scripts.doctor import run_checks, summary as doctor_summary
 from scripts.export_openapi import write_openapi
 from scripts.prepare_demo_data import prepare_demo_data
-from scripts.validate_release_artifacts import first_symlink_parent
+from scripts.validate_release_artifacts import EXPECTED_ARTIFACTS, first_symlink_parent
 
 
-EXPECTED_ARTIFACT_NAMES = {"openapi.json", "demo-summary.json", "release-manifest.json"}
+EXPECTED_ARTIFACT_NAMES = set(EXPECTED_ARTIFACTS.values())
 EXPECTED_ARTIFACT_NAME_LIST = sorted(EXPECTED_ARTIFACT_NAMES)
+ACCEPTANCE_MATRIX_SOURCE = ROOT / "docs" / "release-acceptance-matrix.md"
 DEMO_WORKFLOW_STATUS_KEYS = [
     "parse_status",
     "index_status",
@@ -80,6 +82,16 @@ def source_metadata() -> dict[str, Any]:
     }
 
 
+def preflight_summary() -> dict[str, Any]:
+    payload = doctor_summary(run_checks(ROOT))
+    return {
+        "ok": payload.get("ok") is True,
+        "warning_count": payload.get("warning_count") or 0,
+        "warning_codes": payload.get("warning_codes") or [],
+        "warning_details": payload.get("warning_details") or [],
+    }
+
+
 def demo_workflow_statuses(demo_summary: dict[str, Any]) -> dict[str, Any]:
     return {key: demo_summary.get(key) for key in DEMO_WORKFLOW_STATUS_KEYS}
 
@@ -123,6 +135,15 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
                 f"{symlink_parent}"
             ],
         }
+    if requested_output_dir.parent.exists() and not requested_output_dir.parent.is_dir():
+        return {
+            "ok": False,
+            "output_dir": str(requested_output_dir.absolute()),
+            "issues": [
+                "release artifact output directory parent is not a regular directory: "
+                f"{requested_output_dir.parent.resolve()}"
+            ],
+        }
     output_dir = output_dir.resolve()
     if output_dir.exists() and not output_dir.is_dir():
         return {
@@ -144,12 +165,12 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
             }
         unsafe_artifact_path_issues = []
         for path in sorted((output_dir / name for name in EXPECTED_ARTIFACT_NAMES), key=lambda item: item.name):
-            if path.exists() and path.is_symlink():
+            if path.is_symlink():
                 unsafe_artifact_path_issues.append(
                     f"release artifact output path is not a regular file: {path}"
                 )
             elif path.exists() and not path.is_file():
-                unsafe_artifact_path_issues.append(f"release artifact output path is not a file: {path}")
+                unsafe_artifact_path_issues.append(f"release artifact output path is not a regular file: {path}")
         if unsafe_artifact_path_issues:
             return {
                 "ok": False,
@@ -159,8 +180,10 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
     output_dir.mkdir(parents=True, exist_ok=True)
     openapi_path = output_dir / "openapi.json"
     demo_summary_path = output_dir / "demo-summary.json"
+    acceptance_matrix_path = output_dir / "release-acceptance-matrix.md"
     manifest_path = output_dir / "release-manifest.json"
-    for artifact_path in (openapi_path, demo_summary_path, manifest_path):
+    artifact_paths = (openapi_path, demo_summary_path, acceptance_matrix_path, manifest_path)
+    for artifact_path in artifact_paths:
         try:
             artifact_path.unlink(missing_ok=True)
         except OSError as exc:
@@ -178,18 +201,32 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
             "issues": [f"OpenAPI artifact write failed: {openapi_error}"],
         }
     try:
-        demo_payload = prepare_demo_data()
-    except Exception as exc:
+        acceptance_matrix_path.write_text(
+            ACCEPTANCE_MATRIX_SOURCE.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+    except (OSError, UnicodeDecodeError) as exc:
+        cleanup_error = remove_artifacts(artifact_paths)
         return {
             "ok": False,
             "output_dir": str(output_dir),
-            "issues": [f"Demo data preparation failed: {exc}"],
+            "issues": [cleanup_error or f"Acceptance matrix artifact write failed: {exc}"],
+        }
+    try:
+        demo_payload = prepare_demo_data()
+    except Exception as exc:
+        cleanup_error = remove_artifacts(artifact_paths)
+        return {
+            "ok": False,
+            "output_dir": str(output_dir),
+            "issues": [cleanup_error or f"Demo data preparation failed: {exc}"],
         }
     demo_summary = demo_payload["summary"]
+    preflight = preflight_summary()
     try:
         write_json(demo_summary_path, demo_summary, compact=compact)
     except OSError as exc:
-        cleanup_error = remove_artifacts((openapi_path, demo_summary_path, manifest_path))
+        cleanup_error = remove_artifacts(artifact_paths)
         return {
             "ok": False,
             "output_dir": str(output_dir),
@@ -202,6 +239,7 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
         "artifacts": {
             "openapi": openapi_path.name,
             "demo_summary": demo_summary_path.name,
+            "acceptance_matrix": acceptance_matrix_path.name,
             "manifest": manifest_path.name,
         },
         "artifact_count": len(EXPECTED_ARTIFACT_NAMES),
@@ -214,11 +252,16 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
         "demo_export_audit_summary_formats": demo_summary.get("export_audit_summary_formats") or [],
         "demo_reaction_set_verified_by": demo_summary.get("reaction_set_verified_by"),
         "demo_reaction_set_verified_at": demo_summary.get("reaction_set_verified_at"),
+        "preflight_ok": preflight["ok"],
+        "preflight_warning_count": preflight["warning_count"],
+        "preflight_warning_codes": preflight["warning_codes"],
+        "preflight_warning_details": preflight["warning_details"],
         "openapi_path_count": len(json.loads(openapi_path.read_text(encoding="utf-8")).get("paths", {})),
         "source": source_metadata(),
         "checksums": {
             openapi_path.name: sha256_file(openapi_path),
             demo_summary_path.name: sha256_file(demo_summary_path),
+            acceptance_matrix_path.name: sha256_file(acceptance_matrix_path),
             manifest_path.name: "",
         },
     }
@@ -226,7 +269,7 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
     try:
         write_json(manifest_path, manifest, compact=compact)
     except OSError as exc:
-        cleanup_error = remove_artifacts((openapi_path, demo_summary_path, manifest_path))
+        cleanup_error = remove_artifacts(artifact_paths)
         return {
             "ok": False,
             "output_dir": str(output_dir),

@@ -338,18 +338,28 @@ def sections_from_tei(tei: str) -> list[dict]:
         caption = find(figure, "tei:figDesc")
         if figure.get("type") == "table":
             nested_table = find(figure, ".//tei:table")
+            table_title_source = figure
+            if head is None and label is None and nested_table is not None:
+                table_title_source = nested_table
             content_parts = []
             if caption is not None:
                 content_parts.append(text_content(caption))
             if nested_table is not None:
+                direct_note_nodes = [child for child in list(figure) if local_name(child) == "note"]
+                extra_content = content_without_children(
+                    figure, [head, label, caption, nested_table, *direct_note_nodes]
+                )
+                if extra_content:
+                    content_parts.append(extra_content)
                 content_parts.extend(table_rows(nested_table))
+                content_parts.extend(child_notes(nested_table))
                 content_parts.extend(child_notes(figure))
             else:
                 fallback_content = content_without_children(figure, [head, label, caption])
                 if fallback_content:
                     content_parts.append(fallback_content)
             append_section(
-                title_from_head_or_label(figure, f"Table {len(sections) + 1}"),
+                title_from_head_or_label(table_title_source, f"Table {len(sections) + 1}"),
                 "\n".join(content_parts),
                 "table",
             )

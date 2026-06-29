@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import stat
 import sys
 import tempfile
 import zipfile
@@ -82,6 +83,32 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
                 f"{symlink_parent}"
             ],
         }
+    if requested_package_path.parent.exists() and not requested_package_path.parent.is_dir():
+        package_path = requested_package_path.absolute()
+        return {
+            "ok": False,
+            "package_path": str(package_path),
+            "package_sha256": None,
+            "artifact_count": 0,
+            "artifact_names": [],
+            "source": {},
+            "service": None,
+            "version": None,
+            "openapi_path_count": 0,
+            "checksums": {},
+            "demo_ready": None,
+            "demo_counts": {},
+            "demo_workflow_statuses": {},
+            "demo_export_formats": [],
+            "demo_export_audit_entry_counts": {},
+            "demo_export_audit_summary_formats": [],
+            "demo_reaction_set_verified_by": None,
+            "demo_reaction_set_verified_at": None,
+            "issues": [
+                "release package parent is not a regular directory: "
+                f"{requested_package_path.parent.resolve()}"
+            ],
+        }
     package_path = package_path.resolve()
     issues: list[str] = []
     artifact_names: list[str] = []
@@ -98,6 +125,10 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
     demo_export_audit_summary_formats: list[str] = []
     demo_reaction_set_verified_by = None
     demo_reaction_set_verified_at = None
+    preflight_ok = None
+    preflight_warning_count = None
+    preflight_warning_codes: list[str] = []
+    preflight_warning_details: list[dict[str, Any]] = []
     package_sha256 = None
 
     if not package_path.exists():
@@ -125,7 +156,7 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
         }
 
     if not package_path.is_file():
-        issues.append(f"release package is not a file: {package_path}")
+        issues.append(f"release package is not a regular file: {package_path}")
         return {
             "ok": False,
             "package_path": str(package_path),
@@ -165,6 +196,20 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
             ]
             if unsafe_names:
                 issues.append(f"release package contains unsafe artifact names: {unsafe_names!r}")
+            symlink_names = [
+                info.filename
+                for info in archive.infolist()
+                if stat.S_IFMT(info.external_attr >> 16) == stat.S_IFLNK
+            ]
+            if symlink_names:
+                issues.append(f"release package contains symlink artifact entries: {symlink_names!r}")
+            non_file_names = [
+                info.filename
+                for info in archive.infolist()
+                if (stat.S_IFMT(info.external_attr >> 16) not in {0, stat.S_IFREG, stat.S_IFLNK})
+            ]
+            if non_file_names:
+                issues.append(f"release package contains non-file artifact entries: {non_file_names!r}")
 
             if not issues:
                 with tempfile.TemporaryDirectory(prefix="paper-lab-release-package-") as extract_dir:
@@ -186,6 +231,10 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
                     demo_export_audit_summary_formats = validation.get("demo_export_audit_summary_formats") or []
                     demo_reaction_set_verified_by = validation.get("demo_reaction_set_verified_by")
                     demo_reaction_set_verified_at = validation.get("demo_reaction_set_verified_at")
+                    preflight_ok = validation.get("preflight_ok")
+                    preflight_warning_count = validation.get("preflight_warning_count")
+                    preflight_warning_codes = validation.get("preflight_warning_codes") or []
+                    preflight_warning_details = validation.get("preflight_warning_details") or []
                     issues.extend(validation.get("issues") or [])
     except zipfile.BadZipFile as exc:
         issues.append(f"release package invalid zip: {exc}")
@@ -211,6 +260,10 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
         "demo_export_audit_summary_formats": demo_export_audit_summary_formats,
         "demo_reaction_set_verified_by": demo_reaction_set_verified_by,
         "demo_reaction_set_verified_at": demo_reaction_set_verified_at,
+        "preflight_ok": preflight_ok,
+        "preflight_warning_count": preflight_warning_count,
+        "preflight_warning_codes": preflight_warning_codes,
+        "preflight_warning_details": preflight_warning_details,
         "issues": issues,
     }
 

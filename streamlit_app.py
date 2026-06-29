@@ -1,4 +1,3 @@
-import json
 import os
 
 import streamlit as st
@@ -6,45 +5,81 @@ import streamlit as st
 from app.frontend_api import (
     FrontendApiError,
     api_docs_links,
+    category_create_success_state,
     category_parent_option_label,
+    category_parent_options,
+    config_warning_rows,
     crawl_job_diagnostic_rows,
+    crawl_job_items,
     crawl_job_option_label,
     crawl_job_rows,
+    crawl_jobs_response_state,
     crawl_journal_option_label,
     crawl_journal_options,
     dataframe_display_rows,
+    database_path_status_row,
+    demo_data_display_state,
     document_asset_downloads,
     document_chunk_rows,
     document_chunk_option_label,
+    document_chunk_preview_text,
+    document_chunks_response_state,
     document_filter_summary,
     document_option_label,
+    document_upload_success_state,
+    documents_response_state,
     document_section_option_label,
+    document_section_preview_content,
+    document_section_preview_title,
     document_section_rows,
     document_status_filter_options,
     document_status_rows,
+    dict_or_empty,
+    external_capabilities_display_state,
     filter_documents_by_status,
+    format_category_summary,
     format_error_payload,
+    health_display_state,
+    int_or_default,
+    journal_create_success_state,
+    journal_items,
     journal_option_label,
+    journal_table_rows,
+    paginated_response_state,
+    paper_category_slugs,
     paper_category_option_label,
+    paper_category_options,
+    paper_search_abstract_preview,
+    paper_search_dedupe_label,
+    paper_search_journal_options,
+    paper_search_response_state,
+    paper_search_result_items,
+    paper_upload_options,
     paper_upload_query_params,
     paper_upload_option_label,
     rag_source_option_label,
+    rag_source_preview_excerpt,
     rag_source_rows,
     reaction_audit_rows,
     reaction_display_state,
     reaction_export_download,
     reaction_export_rows,
+    reaction_export_success_state,
     reaction_review_form_state,
     reaction_review_list_state,
     reaction_review_payload,
     reaction_review_rows,
     reaction_set_option_label,
+    reaction_set_options,
     reaction_set_review_state,
     reaction_set_rows,
     release_readiness_display_state,
     request_json,
     request_json_status,
+    runtime_status_rows,
     storage_health_caption_rows,
+    system_count_metric_rows,
+    status_count_rows,
     translation_download,
     translation_status_rows,
 )
@@ -69,24 +104,15 @@ def api_delete(path: str):
     return request_json_status("DELETE", API_BASE, path, timeout=20)
 
 
-def format_category_summary(paper: dict) -> str:
-    details = paper.get("category_details") or []
-    if details:
-        labels = []
-        for category in details:
-            confidence = category.get("confidence")
-            confidence_label = "-" if confidence is None else f"{confidence:.2f}"
-            labels.append(f"{category.get('slug')} · {category.get('method') or '-'} · {confidence_label}")
-        return ", ".join(labels)
-    return ", ".join(paper.get("categories") or []) or "-"
-
-
 st.set_page_config(page_title="paper-lab-agent", layout="wide")
 st.title("paper-lab-agent")
 
 try:
     health = api_get("/health")
-    st.caption(f"{health['service']} · {health['status']}")
+    health_display = health_display_state(health)
+    st.caption(health_display["caption"])
+    if health_display["warning"]:
+        st.warning(health_display["warning"])
 except FrontendApiError as exc:
     st.error(format_error_payload(exc.payload, exc.status_code))
     st.json(exc.payload)
@@ -108,9 +134,10 @@ with st.sidebar:
         st.error(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
         st.stop()
-    st.metric("期刊", status["counts"]["journals"])
-    st.metric("论文", status["counts"]["papers"])
-    st.metric("文档", status["counts"]["documents"])
+    for row in system_count_metric_rows(status.get("counts")):
+        st.metric(row["label"], row["value"])
+        if row.get("warning"):
+            st.warning(row["warning"])
     release_readiness = status.get("release_readiness") or {}
     st.subheader("发布就绪")
     release_display = release_readiness_display_state(release_readiness)
@@ -127,28 +154,34 @@ with st.sidebar:
                 st.caption(f"{group['label']} {', '.join(group['items'])}")
     demo_data = status.get("demo_data") or {}
     st.subheader("演示数据")
-    if demo_data.get("ready"):
+    demo_display = demo_data_display_state(demo_data)
+    if demo_display["ready"]:
         st.success("walking skeleton ready")
     else:
-        missing_demo_data = demo_data.get("missing") or []
+        missing_demo_data = demo_display["missing"]
         missing_label = ", ".join(missing_demo_data) if missing_demo_data else "unknown"
         st.warning(f"walking skeleton missing: {missing_label}")
         st.caption("run: python scripts/prepare_demo_data.py")
-    runtime = status.get("runtime", {})
-    st.caption(f"API: {runtime.get('api_prefix', '/api/v1')}")
-    st.caption(f"version: {runtime.get('version') or '-'}")
+    runtime_rows = runtime_status_rows(status.get("runtime"))
+    for row in runtime_rows:
+        if row["kind"] == "warning":
+            st.warning(row["text"])
+        else:
+            st.caption(row["text"])
     st.subheader("API 文档")
     for label, url in api_docs_links(API_BASE).items():
         st.link_button(label, url)
-    st.caption(f"scheduler_enabled: {runtime.get('scheduler_enabled', False)}")
-    scheduler_jobs = runtime.get("scheduler_jobs") or []
-    if scheduler_jobs:
-        st.caption("scheduler_jobs:")
-        for job in scheduler_jobs:
-            st.caption(f"- {job.get('period')} · {job.get('id')} · {job.get('schedule')} {job.get('timezone')}")
-    st.caption(f"DB: {status['database_path']}")
+    database_path_row = database_path_status_row(status.get("database_path"))
+    if database_path_row["kind"] == "warning":
+        st.warning(database_path_row["text"])
+    else:
+        st.caption(database_path_row["text"])
     external_capabilities = status.get("external_capabilities", {})
+    external_display = external_capabilities_display_state(external_capabilities)
+    external_capabilities = external_display["capabilities"]
     st.subheader("外部能力")
+    for warning in external_display["warnings"]:
+        st.warning(warning)
     st.caption(f"OpenAlex mailto: {'已配置' if external_capabilities.get('openalex_mailto') else '未配置'}")
     st.caption(f"Unpaywall email: {'已配置' if external_capabilities.get('unpaywall_email') else '未配置'}")
     st.caption(f"GROBID URL: {external_capabilities.get('grobid_url') or '-'}")
@@ -157,7 +190,7 @@ with st.sidebar:
     st.caption(f"LLM model: {external_capabilities.get('llm_model') or '-'}")
     st.caption(f"Embedding: {external_capabilities.get('embedding_model') or '-'}")
     st.caption(f"Vector DB: {external_capabilities.get('vector_db_backend') or '-'}")
-    grobid = external_capabilities.get("grobid") or {}
+    grobid = external_display["grobid"]
     grobid_available = grobid.get("available")
     if grobid_available is True:
         grobid_live = "可用"
@@ -181,14 +214,10 @@ with st.sidebar:
     status_counts = status.get("status_counts", {})
     if status_counts:
         st.subheader("状态分布")
-        status_count_rows = [
-            {"workflow": workflow, "status": state, "count": count}
-            for workflow in ["crawl_jobs", "document_parse", "document_index", "document_chemistry", "translations", "reaction_sets"]
-            for state, count in (status_counts.get(workflow) or {}).items()
-        ]
-        if status_count_rows:
-            st.dataframe(status_count_rows, use_container_width=True)
-            failed_workflow_rows = [row for row in status_count_rows if row["status"] == "failed" and row["count"]]
+        workflow_status_count_rows = status_count_rows(status_counts)
+        if workflow_status_count_rows:
+            st.dataframe(workflow_status_count_rows, use_container_width=True)
+            failed_workflow_rows = [row for row in workflow_status_count_rows if row["status"] == "failed" and row["count"]]
             if failed_workflow_rows:
                 failed_summary = ", ".join(
                     f"{row['workflow']}={row['count']}" for row in failed_workflow_rows
@@ -197,20 +226,23 @@ with st.sidebar:
     config_warnings = status.get("config_warnings") or []
     if config_warnings:
         st.subheader("配置提示")
-        for warning in config_warnings:
-            capability = warning.get("capability") or "unknown"
-            message = warning.get("message") or warning.get("code") or "configuration warning"
-            st.warning(f"{capability}: {message}")
+        warning_rows = config_warning_rows(config_warnings)
+        for warning in warning_rows:
+            st.warning(f"{warning['capability']}: {warning['message']}")
 
 with search_tab:
     st.caption("可先运行 `python scripts/import_fixtures.py` 导入离线样例。")
     try:
-        journals = api_get("/journals", active=True, page_size=100)["items"]
-        categories = api_get("/categories")["items"]
+        search_journals_response = api_get("/journals", active=True, page_size=100)
+        search_categories_response = api_get("/categories")
     except FrontendApiError as exc:
         st.error(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
         st.stop()
+    search_journals_response = paginated_response_state(search_journals_response, default_page_size=100)
+    search_categories_response = paginated_response_state(search_categories_response, default_page_size=20)
+    journals = paper_search_journal_options(search_journals_response["items"])
+    categories = paper_category_options(search_categories_response["items"])
     col1, col2, col3, col4, col5, col6, col7 = st.columns([2, 1, 1, 1, 1, 1, 1])
     q = col1.text_input("关键词", value="plasma")
     journal_names = ["全部"] + [j["name"] for j in journals]
@@ -257,21 +289,23 @@ with search_tab:
             st.caption("检索失败")
             st.warning(format_error_payload(exc.payload, exc.status_code))
             st.json(exc.payload)
+    papers = paper_search_response_state(papers)
     st.metric("结果", papers["total"])
     st.caption(f"page {papers['page']} · page_size {papers['page_size']}")
     if not search_error and papers["total"] == 0:
         st.info("没有检索结果。")
-    for paper in papers["items"]:
+    display_papers = paper_search_result_items(papers["items"])
+    for paper in display_papers:
         with st.container(border=True):
             st.subheader(paper["title"])
             st.caption(f"{paper.get('journal_name') or '-'} · {paper.get('published_date') or '-'} · {paper.get('oa_status') or 'unknown'}")
-            dedupe_label = paper.get("doi") or (paper.get("dedupe_key") or "")[:24]
+            dedupe_label = paper_search_dedupe_label(paper)
             st.caption(
                 f"source={paper.get('source_api') or '-'} · "
                 f"dedupe_strategy={paper.get('dedupe_strategy') or '-'} · "
-                f"has_doi={paper.get('has_doi')} · key={dedupe_label or '-'}"
+                f"has_doi={paper.get('has_doi')} · key={dedupe_label}"
             )
-            st.write((paper.get("abstract") or "")[:400])
+            st.write(paper_search_abstract_preview(paper))
             st.caption(f"分类结果: {format_category_summary(paper)}")
             if st.button("触发分类", key=f"classify-paper-{paper['id']}"):
                 status_code, classified_paper = api_post(f"/papers/{paper['id']}/classify")
@@ -295,7 +329,7 @@ with search_tab:
                     st.warning(format_error_payload(resolved_paper, status_code))
                     st.json(resolved_paper)
             category_options_by_slug = {category["slug"]: category for category in categories}
-            current_category_slugs = set(paper.get("categories") or [])
+            current_category_slugs = paper_category_slugs(paper)
             default_categories = [
                 category_options_by_slug[slug] for slug in current_category_slugs if slug in category_options_by_slug
             ]
@@ -370,7 +404,8 @@ with search_tab:
         st.error(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
         st.stop()
-    jobs = crawl_jobs_response["items"]
+    crawl_jobs_response = crawl_jobs_response_state(crawl_jobs_response)
+    jobs = crawl_job_items(crawl_jobs_response["items"])
     st.caption(
         f"crawl jobs page {crawl_jobs_response['page']} · "
         f"page_size {crawl_jobs_response['page_size']} · "
@@ -392,7 +427,7 @@ with search_tab:
             st.warning(format_error_payload(exc.payload, exc.status_code))
             st.json(exc.payload)
         if job_detail:
-            diagnostics = job_detail.get("diagnostics", {})
+            diagnostics = dict_or_empty(job_detail.get("diagnostics"))
             j1, j2, j3, j4 = st.columns(4)
             j1.metric("found", diagnostics.get("papers_found", 0))
             j2.metric("filtered", diagnostics.get("papers_filtered", 0))
@@ -426,7 +461,9 @@ with config_tab:
         st.error(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
         st.stop()
-    journals_all = journals_response["items"]
+    journals_response = paginated_response_state(journals_response, default_page_size=100)
+    categories_response = paginated_response_state(categories_response, default_page_size=100)
+    journals_all = journal_items(journals_response["items"])
     categories_all = categories_response["items"]
 
     st.subheader("期刊白名单")
@@ -435,15 +472,7 @@ with config_tab:
         f"page_size {journals_response['page_size']} · "
         f"total {journals_response['total']}"
     )
-    journals_table = [
-        {
-            **journal,
-            "keywords": json.dumps(journal.get("keywords"), ensure_ascii=False)
-            if isinstance(journal.get("keywords"), (dict, list))
-            else journal.get("keywords"),
-        }
-        for journal in journals_all
-    ]
+    journals_table = journal_table_rows(journals_all)
     st.dataframe(journals_table, use_container_width=True)
 
     with st.form("create-journal-form"):
@@ -480,7 +509,10 @@ with config_tab:
                 }
                 status_code, result = api_post("/journals", json=payload)
                 if status_code == 201:
-                    st.success(f"journal #{result['id']}")
+                    journal_success = journal_create_success_state(result)
+                    st.success(journal_success["message"])
+                    if journal_success["warning"]:
+                        st.warning(journal_success["warning"])
                     st.rerun()
                 else:
                     st.warning(format_error_payload(result, status_code))
@@ -498,14 +530,14 @@ with config_tab:
             "year_from",
             min_value=1900,
             max_value=2100,
-            value=int(selected_journal.get("year_from") or 1990),
+            value=int_or_default(selected_journal.get("year_from"), 1990),
             key=f"journal-year-from-{selected_journal['id']}",
         )
         edit_year_to = jy2.number_input(
             "year_to",
             min_value=0,
             max_value=2100,
-            value=int(selected_journal.get("year_to") or 0),
+            value=int_or_default(selected_journal.get("year_to"), 0),
             key=f"journal-year-to-{selected_journal['id']}",
         )
         edit_keywords_mode = st.selectbox(
@@ -558,7 +590,7 @@ with config_tab:
         category_name = c1.text_input("name", key="new-category-name")
         category_slug = c2.text_input("slug", key="new-category-slug")
         description = st.text_area("description", key="new-category-description")
-        parent_options = [None] + categories_all
+        parent_options = category_parent_options(categories_all)
         parent_choice = st.selectbox(
             "parent_id",
             parent_options,
@@ -575,7 +607,10 @@ with config_tab:
             }
             status_code, result = api_post("/categories", json=payload)
             if status_code == 201:
-                st.success(f"category #{result['id']}")
+                category_success = category_create_success_state(result)
+                st.success(category_success["message"])
+                if category_success["warning"]:
+                    st.warning(category_success["warning"])
                 st.rerun()
             else:
                 st.warning(format_error_payload(result, status_code))
@@ -590,10 +625,10 @@ with documents_tab:
         st.warning(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
         paper_upload_papers = {"items": []}
-    paper_upload_options = [None] + paper_upload_papers.get("items", [])
+    paper_upload_choices = paper_upload_options(paper_upload_papers.get("items", []))
     selected_upload_paper = st.selectbox(
         "关联论文",
-        paper_upload_options,
+        paper_upload_choices,
         format_func=paper_upload_option_label,
         key="document-upload-paper",
     )
@@ -602,7 +637,10 @@ with documents_tab:
         data = {"paper_id": str(selected_upload_paper["id"])} if selected_upload_paper else {}
         status, payload = api_post("/documents", files=files, data=data)
         if status == 201:
-            st.success(f"document #{payload['id']}")
+            upload_success = document_upload_success_state(payload)
+            st.success(upload_success["message"])
+            if upload_success["warning"]:
+                st.warning(upload_success["warning"])
         elif status == 409 and payload.get("error", {}).get("code") == "document_duplicate":
             duplicate_document = payload.get("document") or {}
             st.info(
@@ -628,6 +666,7 @@ with documents_tab:
         st.error(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
         st.stop()
+    documents_response = documents_response_state(documents_response)
     docs = documents_response["items"]
     st.caption(
         f"documents page {documents_response['page']} · "
@@ -738,6 +777,7 @@ with documents_tab:
             st.error(format_error_payload(exc.payload, exc.status_code))
             st.json(exc.payload)
             st.stop()
+        sections_response = paginated_response_state(sections_response, default_page_size=20)
         sections = sections_response["items"]
         try:
             chunks = api_get(
@@ -749,6 +789,7 @@ with documents_tab:
             st.error(format_error_payload(exc.payload, exc.status_code))
             st.json(exc.payload)
             st.stop()
+        chunks = document_chunks_response_state(chunks)
         index_status = chunks.get("index_status") or ("indexed" if chunks["indexed"] else "not_indexed")
         st.caption(f"index_status: {index_status} · chunks: {chunks['total']}")
         st.dataframe(dataframe_display_rows(document_status_rows(document_detail, chunks)), use_container_width=True)
@@ -762,8 +803,8 @@ with documents_tab:
                     sections,
                     format_func=document_section_option_label,
                 )
-                st.markdown(f"### {section_preview.get('title') or 'Section'}")
-                st.write(section_preview.get("content") or "")
+                st.markdown(f"### {document_section_preview_title(section_preview)}")
+                st.write(document_section_preview_content(section_preview))
             st.caption(
                 f"sections page {sections_response['page']} · "
                 f"page_size {sections_response['page_size']} · "
@@ -816,7 +857,7 @@ with documents_tab:
                     chunks["items"],
                     format_func=document_chunk_option_label,
                 )
-                st.code(chunk_preview.get("text") or "")
+                st.code(document_chunk_preview_text(chunk_preview))
             st.caption(f"chunks page {chunks['page']} · page_size {chunks['page_size']} · total {chunks['total']}")
             st.dataframe(document_chunk_rows(chunks["items"]), use_container_width=True)
 
@@ -836,6 +877,7 @@ with rag_tab:
         st.error(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
         st.stop()
+    rag_documents_response = documents_response_state(rag_documents_response)
     rag_documents = rag_documents_response["items"]
     st.caption(
         f"RAG documents page {rag_documents_response['page']} · "
@@ -892,8 +934,9 @@ with rag_tab:
                         sources,
                         format_func=rag_source_option_label,
                     )
-                    if source_preview.get("source_excerpt"):
-                        st.code(source_preview.get("source_excerpt"))
+                    source_excerpt = rag_source_preview_excerpt(source_preview)
+                    if source_excerpt:
+                        st.code(source_excerpt)
                     st.json(source_preview)
                 else:
                     st.info("没有可定位引用来源。")
@@ -925,6 +968,7 @@ with chemistry_tab:
         st.error(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
         st.stop()
+    chemistry_documents_response = documents_response_state(chemistry_documents_response)
     chemistry_documents = chemistry_documents_response["items"]
     st.caption(
         f"chemistry documents page {chemistry_documents_response['page']} · "
@@ -979,6 +1023,7 @@ with chemistry_tab:
     selected_reaction_set_id = None
     document_reaction_sets = st.session_state.get("document_reaction_sets")
     if document_reaction_sets:
+        document_reaction_sets = paginated_response_state(document_reaction_sets, default_page_size=20)
         reaction_set_items = document_reaction_sets.get("items", [])
         st.caption(
             f"reaction sets page {document_reaction_sets['page']} · "
@@ -986,12 +1031,13 @@ with chemistry_tab:
             f"total {document_reaction_sets['total']}"
         )
         st.dataframe(reaction_set_rows(reaction_set_items), use_container_width=True)
-        if not reaction_set_items:
+        reaction_set_choices = reaction_set_options(reaction_set_items)
+        if not reaction_set_choices:
             st.info("该文档暂无反应集。")
         else:
             selected_reaction_set = st.selectbox(
                 "document_reaction_sets",
-                reaction_set_items,
+                reaction_set_choices,
                 format_func=reaction_set_option_label,
             )
             selected_reaction_set_id = selected_reaction_set["id"]
@@ -1035,7 +1081,10 @@ with chemistry_tab:
                 st.error(format_error_payload(payload, status))
                 st.json(payload)
             else:
-                st.success(payload["output_path"])
+                export_success = reaction_export_success_state(payload)
+                st.success(export_success["message"])
+                if export_success["warning"]:
+                    st.warning(export_success["warning"])
                 st.dataframe(reaction_export_rows(payload), use_container_width=True)
                 export_download = reaction_export_download(payload)
                 if export_download:

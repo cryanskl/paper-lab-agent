@@ -456,7 +456,12 @@ def missing_python_script_options(repo: Path, readme_path: Path) -> list[str]:
 def command_doc_paths(repo: Path) -> list[tuple[Path, str]]:
     docs = [(repo / "README.md", "README.md")]
     release_checklist = repo / "docs" / "release-checklist.md"
-    if release_checklist.exists():
+    symlink_parent = first_symlink_parent(release_checklist)
+    if (
+        release_checklist.exists()
+        or (symlink_parent is not None and symlink_parent != repo)
+        or first_non_directory_parent(release_checklist) is not None
+    ):
         docs.append((release_checklist, "docs/release-checklist.md"))
     return docs
 
@@ -471,8 +476,17 @@ def first_symlink_parent(path: Path) -> Path | None:
     return None
 
 
+def first_non_directory_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if parent.exists() and not parent.is_dir():
+            return parent
+    return None
+
+
 def missing_command_targets_for_doc(repo: Path, doc_path: Path, label: str) -> list[str]:
     if first_symlink_parent(doc_path) is not None:
+        return [f"{label}: command doc parent is not a regular directory"]
+    if first_non_directory_parent(doc_path) is not None:
         return [f"{label}: command doc parent is not a regular directory"]
     if doc_path.is_symlink() or not doc_path.is_file():
         return [f"{label}: command doc is not a regular file"]
@@ -485,6 +499,9 @@ def missing_command_targets_for_doc(repo: Path, doc_path: Path, label: str) -> l
     for target in command_targets(doc_path):
         target_path = repo / target
         if not target_path.exists():
+            if first_non_directory_parent(target_path) is not None:
+                issues.append(f"{label}: command target parent is not a regular directory: {target}")
+                continue
             issues.append(f"{label}: command target missing: {target}")
             continue
         if not is_within_repo(repo, target_path):
@@ -506,7 +523,7 @@ def missing_command_targets_for_doc(repo: Path, doc_path: Path, label: str) -> l
 
 def missing_command_targets(repo: Path) -> list[str]:
     readme_path = repo / "README.md"
-    if not readme_path.exists():
+    if not readme_path.exists() and not readme_path.is_symlink():
         return ["README.md: missing"]
 
     issues: list[str] = []

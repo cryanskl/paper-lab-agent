@@ -160,6 +160,10 @@ def build_release_handoff(
         "demo_export_audit_summary_formats": package_validation.get("demo_export_audit_summary_formats") or [],
         "demo_reaction_set_verified_by": package_validation.get("demo_reaction_set_verified_by"),
         "demo_reaction_set_verified_at": package_validation.get("demo_reaction_set_verified_at"),
+        "preflight_ok": package_validation.get("preflight_ok"),
+        "preflight_warning_count": package_validation.get("preflight_warning_count"),
+        "preflight_warning_codes": package_validation.get("preflight_warning_codes") or [],
+        "preflight_warning_details": package_validation.get("preflight_warning_details") or [],
         "stages": stage_state(STAGE_ORDER),
         "issues": [],
     }

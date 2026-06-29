@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 import pytest
 
@@ -8,6 +10,36 @@ from app.clients.unpaywall import UnpaywallClient
 
 def json_response(payload: dict) -> httpx.Response:
     return httpx.Response(200, json=payload)
+
+
+def test_openalex_client_fetches_at_least_one_page_when_max_pages_is_zero():
+    seen_urls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_urls.append(str(request.url))
+        return json_response({"results": [], "meta": {"next_cursor": None}})
+
+    client = OpenAlexClient(transport=httpx.MockTransport(handler))
+
+    works = asyncio.run(client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=0))
+
+    assert works == []
+    assert len(seen_urls) == 1
+
+
+def test_crossref_client_fetches_at_least_one_page_when_max_pages_is_zero():
+    seen_urls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_urls.append(str(request.url))
+        return json_response({"message": {"items": [], "next-cursor": None}})
+
+    client = CrossrefClient(transport=httpx.MockTransport(handler))
+
+    works = asyncio.run(client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31", max_pages=0))
+
+    assert works == []
+    assert len(seen_urls) == 1
 
 
 def test_academic_clients_parse_retry_after_http_date():

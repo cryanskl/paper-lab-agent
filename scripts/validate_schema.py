@@ -317,13 +317,23 @@ def first_symlink_parent(path: Path) -> Path | None:
     return None
 
 
+def first_non_directory_parent(path: Path) -> Path | None:
+    for parent in path.parents:
+        if parent.exists() and not parent.is_dir():
+            return parent
+    return None
+
+
 def validate_schema(schema_path: Path = DEFAULT_SCHEMA_PATH) -> list[str]:
     issues: list[str] = []
-    if not schema_path.exists():
-        return [f"schema not found: {schema_path}"]
     symlink_parent = first_symlink_parent(schema_path)
     if symlink_parent is not None:
         return [f"schema file parent is not a regular directory: {symlink_parent}"]
+    non_directory_parent = first_non_directory_parent(schema_path)
+    if non_directory_parent is not None:
+        return [f"schema file parent is not a regular directory: {non_directory_parent}"]
+    if not schema_path.exists() and not schema_path.is_symlink():
+        return [f"schema not found: {schema_path}"]
     if schema_path.is_symlink() or not schema_path.is_file():
         return [f"schema file is not a regular file: {schema_path}"]
 

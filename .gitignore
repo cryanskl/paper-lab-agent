@@ -26,6 +26,7 @@ data/
 !.env.example
 
 # Logs and caches
+logs/
 *.log
 tsconfig.tsbuildinfo
 npm-debug.log*

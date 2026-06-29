@@ -198,6 +198,108 @@ def test_sections_from_tei_preserves_table_notes_with_rows():
     ]
 
 
+def test_sections_from_tei_preserves_nested_table_notes_inside_table_figures():
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <figure type="table">
+            <head>Table 4</head>
+            <figDesc>Cross section measurements.</figDesc>
+            <table>
+              <row><cell>Reaction</cell><cell>Source</cell></row>
+              <row><cell>e + Ar -> Ar+</cell><cell>LXCat original table</cell></row>
+              <note>Nested table note: values remain in source units.</note>
+            </table>
+          </figure>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Table 4",
+            "content": (
+                "Cross section measurements. "
+                "Reaction Source "
+                "e + Ar -> Ar+ LXCat original table "
+                "Nested table note: values remain in source units."
+            ),
+            "section_type": "table",
+        }
+    ]
+
+
+def test_sections_from_tei_uses_nested_table_title_inside_table_figures():
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <figure type="table">
+            <figDesc>Measured argon ionization data.</figDesc>
+            <table>
+              <head>Table 5</head>
+              <row><cell>Reaction</cell><cell>Rate</cell></row>
+              <row><cell>e + Ar -> Ar+</cell><cell>1.0e-13 cm3/s</cell></row>
+            </table>
+          </figure>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Table 5",
+            "content": "Measured argon ionization data. Reaction Rate e + Ar -> Ar+ 1.0e-13 cm3/s",
+            "section_type": "table",
+        }
+    ]
+
+
+def test_sections_from_tei_preserves_table_figure_extra_paragraphs_with_nested_tables():
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text>
+        <body>
+          <figure type="table">
+            <head>Table 6</head>
+            <figDesc>Measured argon ionization data.</figDesc>
+            <p>Only original source units are reported.</p>
+            <table>
+              <row><cell>Reaction</cell><cell>Rate</cell></row>
+              <row><cell>e + Ar -> Ar+</cell><cell>1.0e-13 cm3/s</cell></row>
+            </table>
+          </figure>
+        </body>
+      </text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections == [
+        {
+            "seq": 1,
+            "title": "Table 6",
+            "content": (
+                "Measured argon ionization data. "
+                "Only original source units are reported. "
+                "Reaction Rate "
+                "e + Ar -> Ar+ 1.0e-13 cm3/s"
+            ),
+            "section_type": "table",
+        }
+    ]
+
+
 def test_sections_from_tei_preserves_direct_body_and_div_notes():
     tei = """
     <TEI xmlns="http://www.tei-c.org/ns/1.0">

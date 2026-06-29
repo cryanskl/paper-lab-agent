@@ -178,8 +178,10 @@ def parse_vector_store_json(raw: str) -> dict:
         if vector_db_backend is not None:
             if not isinstance(vector_db_backend, str) or not vector_db_backend.strip():
                 raise ValueError(f"vector store record vector_db_backend must be a non-empty string: {vector_id}")
-            if normalize_vector_db_backend(vector_db_backend) not in SUPPORTED_VECTOR_DB_BACKENDS:
+            vector_db_backend = normalize_vector_db_backend(vector_db_backend)
+            if vector_db_backend not in SUPPORTED_VECTOR_DB_BACKENDS:
                 raise ValueError(f"vector store record vector_db_backend is unsupported: {vector_id}")
+            record["vector_db_backend"] = vector_db_backend
     return data
 
 

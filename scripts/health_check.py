@@ -152,6 +152,9 @@ def load_env_file(path: Path = Path(".env")) -> Optional[str]:
     symlink_parent = first_symlink_parent(path)
     if symlink_parent is not None:
         return f"env file parent is not a regular directory: {symlink_parent}"
+    for parent in path.parents:
+        if parent.exists() and not parent.is_dir():
+            return f"env file parent is not a regular directory: {parent}"
     if not path.exists():
         return None
     try:
@@ -185,6 +188,8 @@ def write_output_file(path: Path, rendered: str) -> Optional[str]:
     symlink_parent = first_symlink_parent(path)
     if symlink_parent is not None:
         return f"output path parent is not a regular directory: {symlink_parent}"
+    if path.parent.exists() and not path.parent.is_dir():
+        return f"output path parent is not a regular directory: {path.parent}"
     if path.exists() and not path.is_file():
         return f"output path is not a regular file: {path}"
     try:
@@ -347,9 +352,13 @@ def validate_system_status(status: dict) -> list[str]:
                 for key in sorted(CONFIG_WARNING_REQUIRED_KEYS & set(warning))
                 if not isinstance(warning[key], str) or not warning[key].strip()
             )
-            if "actual" in warning and (not isinstance(warning["actual"], str) or not warning["actual"].strip()):
+            if (
+                "actual" in warning
+                and warning["actual"] is not None
+                and (not isinstance(warning["actual"], str) or not warning["actual"].strip())
+            ):
                 invalid_warnings.append(f"{index}.actual")
-            if "supported" in warning:
+            if "supported" in warning and warning["supported"] is not None:
                 supported = warning["supported"]
                 if not isinstance(supported, list):
                     invalid_warnings.append(f"{index}.supported")
@@ -649,8 +658,9 @@ def failed_workflow_errors(status: dict) -> list[str]:
     errors: list[str] = []
     for workflow, counts in status_counts.items():
         if not isinstance(counts, dict):
+            errors.append(str(workflow))
             continue
-        for blocking_status in ("failed", "rejected"):
+        for blocking_status in ("failed", "rejected", "unknown"):
             count = counts.get(blocking_status)
             if isinstance(count, int) and not isinstance(count, bool) and count > 0:
                 errors.append(f"{workflow}.{blocking_status}={count}")
@@ -695,17 +705,26 @@ def api_release_readiness(status: dict) -> Optional[dict]:
         return None
     return {
         "ready": readiness.get("ready") is True,
-        "demo_data_missing": list_values(readiness.get("demo_data_missing")),
-        "failed_workflows": list_values(readiness.get("failed_workflows")),
-        "config_warning_codes": list_values(readiness.get("config_warning_codes")),
-        "storage_errors": list_values(readiness.get("storage_errors")),
+        "demo_data_missing": list_values(readiness.get("demo_data_missing"), invalid_label="invalid"),
+        "failed_workflows": list_values(readiness.get("failed_workflows"), invalid_label="invalid"),
+        "config_warning_codes": list_values(readiness.get("config_warning_codes"), invalid_label="invalid"),
+        "storage_errors": list_values(readiness.get("storage_errors"), invalid_label="invalid"),
     }
 
 
-def list_values(value) -> list[str]:
+def list_values(value, invalid_label: Optional[str] = None) -> list[str]:
     if not isinstance(value, list):
-        return []
-    return [str(item) for item in value if str(item).strip()]
+        return [invalid_label] if invalid_label is not None else []
+    values: list[str] = []
+    invalid = False
+    for item in value:
+        if isinstance(item, str) and item.strip():
+            values.append(item)
+        else:
+            invalid = True
+    if invalid and invalid_label is not None:
+        values.append(invalid_label)
+    return values
 
 
 def release_readiness_blockers(readiness: dict) -> list[str]:
@@ -715,7 +734,7 @@ def release_readiness_blockers(readiness: dict) -> list[str]:
     blockers.extend(
         f"config_warning_codes:{value}"
         for value in readiness.get("config_warning_codes", [])
-        if value in RELEASE_BLOCKING_CONFIG_WARNING_CODES
+        if value == "invalid" or value in RELEASE_BLOCKING_CONFIG_WARNING_CODES
     )
     if blockers:
         return blockers
@@ -748,6 +767,26 @@ def storage_health_summary(status: dict) -> dict:
         if compact_entry:
             summary[key] = compact_entry
     return summary
+
+
+def config_warning_details(config_warnings: list) -> list[dict]:
+    details = []
+    for warning in config_warnings:
+        if not isinstance(warning, dict):
+            continue
+        detail = {}
+        for key in ("code", "capability", "message", "actual"):
+            value = warning.get(key)
+            if isinstance(value, str) and value.strip():
+                detail[key] = value
+        supported = warning.get("supported")
+        if isinstance(supported, list):
+            values = [value for value in supported if isinstance(value, str) and value.strip()]
+            if values:
+                detail["supported"] = values
+        if {"code", "capability", "message"} <= set(detail):
+            details.append(detail)
+    return details
 
 
 def probe_blocker(prefix: str, detail: Optional[dict]) -> Optional[str]:
@@ -845,6 +884,7 @@ def health_summary(
         "config_warning_count": len(config_warning_codes),
         "config_ready": config_warning_codes == [],
         "config_warning_codes": config_warning_codes,
+        "config_warning_details": config_warning_details(config_warnings),
         "storage_writable": storage_errors == [],
         "storage_errors": storage_errors,
         "storage_health": storage_health_summary(safe_status),
@@ -886,7 +926,7 @@ def main() -> int:
         print(f"health_check failed: {env_error}", file=sys.stderr)
         return 1
     parser = argparse.ArgumentParser(description="Check paper-lab-agent API health.")
-    parser.add_argument("--base-url", default=default_base_url(), help="FastAPI base URL without /api/v1")
+    parser.add_argument("--base-url", default=default_base_url(), help="FastAPI base URL; may include /api/v1")
     parser.add_argument("--check-frontend", action="store_true", help="Also check Streamlit frontend health")
     parser.add_argument("--frontend-url", default=default_frontend_url(), help="Streamlit base URL")
     parser.add_argument("--require-frontend", action="store_true", help="Fail when Streamlit frontend is unavailable")
@@ -898,7 +938,7 @@ def main() -> int:
     parser.add_argument(
         "--require-no-failed-workflows",
         action="store_true",
-        help="Fail when workflow status counts include failed or rejected items",
+        help="Fail when workflow status counts include failed, rejected, or unknown items",
     )
     parser.add_argument("--require-no-config-warnings", action="store_true", help="Fail when system status reports configuration warnings")
     parser.add_argument("--require-demo-data", action="store_true", help="Fail when walking skeleton demo data is not loaded")
