@@ -4820,6 +4820,42 @@ def test_crawl_job_records_diagnostic_when_openalex_empty_uses_crossref(tmp_path
     assert paper["source_api"] == "crossref"
 
 
+def test_crawl_job_failure_reports_openalex_and_crossref_errors(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import crawl as crawl_service
+
+    class FailingOpenAlexClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def works_by_issn(self, *args, **kwargs):
+            raise RuntimeError("OpenAlex temporary outage")
+
+    class FailingCrossrefClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def works_by_issn(self, *args, **kwargs):
+            raise RuntimeError("Crossref 503")
+
+    monkeypatch.setattr(crawl_service, "OpenAlexClient", FailingOpenAlexClient)
+    monkeypatch.setattr(crawl_service, "CrossrefClient", FailingCrossrefClient)
+
+    job = crawl_service.create_jobs([2], "manual", "2026-01-01", "2026-01-31")[0]
+    import asyncio
+
+    asyncio.run(crawl_service.run_crawl_job(job["job_id"], 2, "2026-01-01", "2026-01-31"))
+
+    with get_conn() as conn:
+        stored_job = conn.execute("SELECT * FROM crawl_jobs WHERE id=?", (job["job_id"],)).fetchone()
+
+    assert stored_job["status"] == "failed"
+    assert "OpenAlex failed: OpenAlex temporary outage" in stored_job["error"]
+    assert "Crossref failed: Crossref 503" in stored_job["error"]
+
+
 def test_crawl_job_passes_unpaywall_retry_and_timeout_settings(tmp_path, monkeypatch):
     make_client(tmp_path)
 
