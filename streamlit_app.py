@@ -5,6 +5,7 @@ import streamlit as st
 from app.frontend_api import (
     FrontendApiError,
     api_docs_links,
+    category_create_success_state,
     category_parent_option_label,
     category_parent_options,
     config_warning_rows,
@@ -606,7 +607,10 @@ with config_tab:
             }
             status_code, result = api_post("/categories", json=payload)
             if status_code == 201:
-                st.success(f"category #{result['id']}")
+                category_success = category_create_success_state(result)
+                st.success(category_success["message"])
+                if category_success["warning"]:
+                    st.warning(category_success["warning"])
                 st.rerun()
             else:
                 st.warning(format_error_payload(result, status_code))

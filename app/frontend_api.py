@@ -510,6 +510,13 @@ def journal_create_success_state(payload: Any) -> dict[str, Optional[str]]:
     return {"message": "journal #unknown", "warning": "journal create response: invalid"}
 
 
+def category_create_success_state(payload: Any) -> dict[str, Optional[str]]:
+    category_id = payload.get("id") if isinstance(payload, dict) else None
+    if isinstance(category_id, int) and not isinstance(category_id, bool):
+        return {"message": f"category #{category_id}", "warning": None}
+    return {"message": "category #unknown", "warning": "category create response: invalid"}
+
+
 def paper_search_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         journal

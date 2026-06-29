@@ -18984,6 +18984,28 @@ def test_streamlit_config_create_journal_normalizes_success_payload():
     assert 'result["id"]' not in create_success_section
 
 
+def test_streamlit_config_create_category_normalizes_success_payload():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    create_category_section = streamlit[
+        streamlit.index('with st.form("create-category-form")') :
+        streamlit.index("with documents_tab:")
+    ]
+    create_response_offset = create_category_section.index('status_code, result = api_post("/categories"')
+    create_success_section = create_category_section[
+        create_category_section.index("if status_code == 201:", create_response_offset) :
+        create_category_section.index("else:", create_response_offset)
+    ]
+
+    assert "category_create_success_state" in streamlit
+    assert "category_success = category_create_success_state(result)" in create_success_section
+    assert 'st.success(category_success["message"])' in create_success_section
+    assert 'if category_success["warning"]:' in create_success_section
+    assert 'st.warning(category_success["warning"])' in create_success_section
+    assert "result['id']" not in create_success_section
+    assert 'result["id"]' not in create_success_section
+
+
 def test_streamlit_config_create_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

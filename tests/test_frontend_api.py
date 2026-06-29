@@ -2067,6 +2067,23 @@ def test_journal_create_success_state_blocks_malformed_success_payloads():
     }
 
 
+def test_category_create_success_state_blocks_malformed_success_payloads():
+    from app import frontend_api
+
+    assert frontend_api.category_create_success_state({"id": 3}) == {
+        "message": "category #3",
+        "warning": None,
+    }
+    assert frontend_api.category_create_success_state({"id": True}) == {
+        "message": "category #unknown",
+        "warning": "category create response: invalid",
+    }
+    assert frontend_api.category_create_success_state("category") == {
+        "message": "category #unknown",
+        "warning": "category create response: invalid",
+    }
+
+
 def test_paper_search_journal_options_skip_malformed_items():
     from app import frontend_api
 
