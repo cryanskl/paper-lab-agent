@@ -18030,6 +18030,23 @@ def test_streamlit_document_upload_shows_error_payload_details():
     assert "st.json(payload)" in upload_error_section
 
 
+def test_streamlit_document_upload_normalizes_success_payload():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+    upload_success_section = documents_section[
+        documents_section.index("if status == 201:") : documents_section.index("elif status == 409")
+    ]
+
+    assert "document_upload_success_state" in streamlit
+    assert "upload_success = document_upload_success_state(payload)" in upload_success_section
+    assert 'st.success(upload_success["message"])' in upload_success_section
+    assert 'if upload_success["warning"]:' in upload_success_section
+    assert 'st.warning(upload_success["warning"])' in upload_success_section
+    assert "payload['id']" not in upload_success_section
+    assert 'payload["id"]' not in upload_success_section
+
+
 def test_streamlit_documents_tab_shows_empty_state():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

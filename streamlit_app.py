@@ -25,6 +25,7 @@ from app.frontend_api import (
     document_chunks_response_state,
     document_filter_summary,
     document_option_label,
+    document_upload_success_state,
     documents_response_state,
     document_section_option_label,
     document_section_preview_content,
@@ -627,7 +628,10 @@ with documents_tab:
         data = {"paper_id": str(selected_upload_paper["id"])} if selected_upload_paper else {}
         status, payload = api_post("/documents", files=files, data=data)
         if status == 201:
-            st.success(f"document #{payload['id']}")
+            upload_success = document_upload_success_state(payload)
+            st.success(upload_success["message"])
+            if upload_success["warning"]:
+                st.warning(upload_success["warning"])
         elif status == 409 and payload.get("error", {}).get("code") == "document_duplicate":
             duplicate_document = payload.get("document") or {}
             st.info(

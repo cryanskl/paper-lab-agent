@@ -2383,6 +2383,23 @@ def test_paper_upload_query_params_omit_blank_search_text():
     assert params == {"page": 1, "page_size": 100}
 
 
+def test_document_upload_success_state_blocks_malformed_success_payloads():
+    from app import frontend_api
+
+    assert frontend_api.document_upload_success_state({"id": 12}) == {
+        "message": "document #12",
+        "warning": None,
+    }
+    assert frontend_api.document_upload_success_state({"id": True}) == {
+        "message": "document #unknown",
+        "warning": "document upload response: invalid",
+    }
+    assert frontend_api.document_upload_success_state(["document"]) == {
+        "message": "document #unknown",
+        "warning": "document upload response: invalid",
+    }
+
+
 def test_document_status_filter_options_cover_actionable_workflows():
     from app import frontend_api
 

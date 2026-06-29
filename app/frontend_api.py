@@ -704,6 +704,13 @@ def paper_upload_query_params(query: Optional[str]) -> dict[str, Any]:
     return params
 
 
+def document_upload_success_state(payload: Any) -> dict[str, Optional[str]]:
+    document_id = payload.get("id") if isinstance(payload, dict) else None
+    if isinstance(document_id, int) and not isinstance(document_id, bool):
+        return {"message": f"document #{document_id}", "warning": None}
+    return {"message": "document #unknown", "warning": "document upload response: invalid"}
+
+
 DOCUMENT_STATUS_FILTERS: dict[str, Optional[tuple[str, str]]] = {
     "全部": None,
     "待解析": ("parse_status", "uploaded"),
