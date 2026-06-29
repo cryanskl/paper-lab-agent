@@ -24,6 +24,7 @@ from app.frontend_api import (
     document_chunk_preview_text,
     document_filter_summary,
     document_option_label,
+    documents_response_state,
     document_section_option_label,
     document_section_preview_content,
     document_section_preview_title,
@@ -640,6 +641,7 @@ with documents_tab:
         st.error(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
         st.stop()
+    documents_response = documents_response_state(documents_response)
     docs = documents_response["items"]
     st.caption(
         f"documents page {documents_response['page']} · "

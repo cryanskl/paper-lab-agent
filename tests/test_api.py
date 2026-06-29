@@ -18016,6 +18016,16 @@ def test_streamlit_documents_tab_exposes_pagination_controls():
         assert required in documents_section
 
 
+def test_streamlit_documents_tab_normalizes_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    assert "documents_response_state" in streamlit
+    assert "documents_response = documents_response_state(documents_response)" in documents_section
+    assert documents_section.index("documents_response = documents_response_state(documents_response)") < documents_section.index('docs = documents_response["items"]')
+
+
 def test_streamlit_sidebar_exposes_runtime_status():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

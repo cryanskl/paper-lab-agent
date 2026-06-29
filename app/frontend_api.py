@@ -714,6 +714,18 @@ def filter_documents_by_status(documents: list[dict[str, Any]], filter_value: st
     return [document for document in valid_documents if document.get(field) == expected]
 
 
+def documents_response_state(response: Any) -> dict[str, Any]:
+    if not isinstance(response, dict):
+        return {"items": [], "total": 0, "page": 1, "page_size": 20}
+    items = response.get("items")
+    return {
+        "items": items if isinstance(items, list) else [],
+        "total": non_negative_int_or_zero(response.get("total")),
+        "page": positive_int_or_default(response.get("page"), 1),
+        "page_size": positive_int_or_default(response.get("page_size"), 20),
+    }
+
+
 def document_filter_summary(total_count: int, filtered_count: int, filter_value: str) -> str:
     return f"当前页匹配 {filtered_count}/{total_count} · 筛选: {filter_value}"
 

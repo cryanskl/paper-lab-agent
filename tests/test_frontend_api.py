@@ -2399,6 +2399,27 @@ def test_filter_documents_by_status_matches_selected_workflow_state():
     assert [document["id"] for document in frontend_api.filter_documents_by_status(documents, "抽取被拒绝")] == [5]
 
 
+def test_documents_response_state_handles_malformed_envelope():
+    from app import frontend_api
+
+    assert frontend_api.documents_response_state(
+        {"items": {"bad": "shape"}, "total": "3", "page": True, "page_size": 0}
+    ) == {"items": [], "total": 0, "page": 1, "page_size": 20}
+    assert frontend_api.documents_response_state(
+        {
+            "items": [{"id": 5, "original_name": "argon.pdf"}],
+            "total": 1,
+            "page": 4,
+            "page_size": 25,
+        }
+    ) == {
+        "items": [{"id": 5, "original_name": "argon.pdf"}],
+        "total": 1,
+        "page": 4,
+        "page_size": 25,
+    }
+
+
 def test_filter_documents_by_status_skips_malformed_documents():
     from app import frontend_api
 
