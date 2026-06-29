@@ -1060,6 +1060,11 @@ def render_rag_panel(selected_document: Optional[dict[str, Any]] = None) -> None
                     st.json(rag_payload)
 
 def render_chemistry_panel(selected_document: Optional[dict[str, Any]] = None) -> None:
+    selected_document_id = None
+    if selected_document is not None and isinstance(selected_document.get("id"), int):
+        selected_document_id = int(selected_document["id"])
+        st.caption(f"当前 PDF 沉淀: document #{selected_document_id}")
+
     chemistry_documents_page_col, chemistry_documents_page_size_col = st.columns(2)
     chemistry_documents_page = chemistry_documents_page_col.number_input(
         "chemistry_documents_page",
@@ -1094,7 +1099,9 @@ def render_chemistry_panel(selected_document: Optional[dict[str, Any]] = None) -
     chemistry_document_status_filter = st.selectbox("化学库文档状态筛选", document_status_filter_options(), key="chemistry-documents-status-filter")
     filtered_chemistry_documents = filter_documents_by_status(chemistry_documents, chemistry_document_status_filter)
     st.caption(document_filter_summary(len(chemistry_documents), len(filtered_chemistry_documents), chemistry_document_status_filter))
-    if not chemistry_documents:
+    if selected_document_id is not None:
+        chemistry_document_id = selected_document_id
+    elif not chemistry_documents:
         st.info("暂无可选文档，请先上传并抽取化学库。")
         chemistry_document_id = st.number_input("手动 document_id", min_value=1, value=1)
     elif not filtered_chemistry_documents:
@@ -1110,6 +1117,21 @@ def render_chemistry_panel(selected_document: Optional[dict[str, Any]] = None) -
         )
         chemistry_document_id = int(selected_chemistry_document["id"])
         st.caption(f"chemistry_document_id: {chemistry_document_id}")
+
+    if selected_document_id is not None and st.session_state.get("loaded_chemistry_document_id") != selected_document_id:
+        try:
+            st.session_state["document_reaction_sets"] = api_get(
+                f"/documents/{selected_document_id}/reaction-sets",
+                page=1,
+                page_size=20,
+            )
+            st.session_state["loaded_chemistry_document_id"] = selected_document_id
+        except FrontendApiError as exc:
+            st.warning(format_error_payload(exc.payload, exc.status_code))
+            with st.expander("Raw API response"):
+                st.json(exc.payload)
+            st.session_state["document_reaction_sets"] = None
+
     reaction_sets_page_col, reaction_sets_page_size_col = st.columns(2)
     reaction_sets_page = reaction_sets_page_col.number_input(
         "reaction_sets_page",
@@ -1172,6 +1194,16 @@ def render_chemistry_panel(selected_document: Optional[dict[str, Any]] = None) -
     detail = st.session_state.get("reaction_set_detail")
     if detail:
         review_state = reaction_set_review_state(detail)
+        deposition = chemistry_deposition_summary(detail)
+        st.caption(deposition["summary"])
+        d1, d2, d3 = st.columns(3)
+        d1.metric("反应", deposition["reaction_count"])
+        d2.metric("已复核", deposition["verified_count"])
+        d3.metric("待复核", deposition["unverified_count"])
+        if deposition["export_ready"]:
+            st.success("该反应集已通过复核，可以导出。")
+        else:
+            st.info("化学库已沉淀，完成复核后才能导出。")
         reactions = review_state["reactions"]
         unverified_reactions = review_state["unverified_reactions"]
         reaction_count = review_state["reaction_count"]
@@ -1213,7 +1245,10 @@ def render_chemistry_panel(selected_document: Optional[dict[str, Any]] = None) -
                 else:
                     st.warning(f"导出文件不存在: {payload.get('output_path')}")
                 st.json(payload)
-        display_reactions = review_list_state["display_reactions"]
+        display_reactions = sorted(
+            review_list_state["display_reactions"],
+            key=lambda item: (bool(item.get("verified")), item.get("id") or 0),
+        )
         for reaction in display_reactions:
             with st.container(border=True):
                 display_state = reaction_display_state(reaction)
