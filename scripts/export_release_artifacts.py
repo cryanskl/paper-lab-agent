@@ -215,10 +215,11 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
     try:
         demo_payload = prepare_demo_data()
     except Exception as exc:
+        cleanup_error = remove_artifacts(artifact_paths)
         return {
             "ok": False,
             "output_dir": str(output_dir),
-            "issues": [f"Demo data preparation failed: {exc}"],
+            "issues": [cleanup_error or f"Demo data preparation failed: {exc}"],
         }
     demo_summary = demo_payload["summary"]
     preflight = preflight_summary()

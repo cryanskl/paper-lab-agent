@@ -3314,7 +3314,8 @@ def test_export_release_artifacts_reports_prepare_demo_failure(monkeypatch, tmp_
     assert report["ok"] is False
     assert report["output_dir"] == str(output_dir.resolve())
     assert report["issues"] == ["Demo data preparation failed: fixture setup failed"]
-    assert (output_dir / "openapi.json").exists()
+    assert not (output_dir / "openapi.json").exists()
+    assert not (output_dir / "release-acceptance-matrix.md").exists()
     assert not (output_dir / "demo-summary.json").exists()
     assert not (output_dir / "release-manifest.json").exists()
 
@@ -3323,8 +3324,12 @@ def test_export_release_artifacts_removes_stale_outputs_on_prepare_demo_failure(
     export_release_artifacts = load_export_release_artifacts()
     output_dir = tmp_path / "release"
     output_dir.mkdir()
+    stale_openapi = output_dir / "openapi.json"
+    stale_acceptance_matrix = output_dir / "release-acceptance-matrix.md"
     stale_demo_summary = output_dir / "demo-summary.json"
     stale_manifest = output_dir / "release-manifest.json"
+    stale_openapi.write_text('{"openapi": "3.1.0"}\n', encoding="utf-8")
+    stale_acceptance_matrix.write_text("# stale acceptance matrix\n", encoding="utf-8")
     stale_demo_summary.write_text('{"ready": true}\n', encoding="utf-8")
     stale_manifest.write_text('{"service": "paper-lab-agent"}\n', encoding="utf-8")
 
@@ -3337,7 +3342,8 @@ def test_export_release_artifacts_removes_stale_outputs_on_prepare_demo_failure(
 
     assert report["ok"] is False
     assert report["issues"] == ["Demo data preparation failed: fixture setup failed"]
-    assert (output_dir / "openapi.json").exists()
+    assert not stale_openapi.exists()
+    assert not stale_acceptance_matrix.exists()
     assert not stale_demo_summary.exists()
     assert not stale_manifest.exists()
 
