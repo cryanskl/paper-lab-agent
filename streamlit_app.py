@@ -449,6 +449,7 @@ with config_tab:
         st.json(exc.payload)
         st.stop()
     journals_response = paginated_response_state(journals_response, default_page_size=100)
+    categories_response = paginated_response_state(categories_response, default_page_size=100)
     journals_all = journal_items(journals_response["items"])
     categories_all = categories_response["items"]
 
