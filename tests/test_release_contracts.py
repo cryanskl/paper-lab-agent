@@ -3375,6 +3375,25 @@ def test_export_release_artifacts_reports_output_dir_not_directory(tmp_path):
     assert "Traceback" not in result.stderr
 
 
+def test_export_release_artifacts_rejects_file_output_parent(tmp_path):
+    export_release_artifacts = load_export_release_artifacts()
+    output_parent = tmp_path / "packages"
+    output_dir = output_parent / "release"
+    output_parent.write_text("not a directory", encoding="utf-8")
+
+    try:
+        report = export_release_artifacts.export_release_artifacts(output_dir, compact=True)
+    except NotADirectoryError as exc:
+        raise AssertionError(
+            "export_release_artifacts should report file output parents instead of raising"
+        ) from exc
+
+    assert report["ok"] is False
+    assert f"release artifact output directory parent is not a regular directory: {output_parent.resolve()}" in report["issues"]
+    assert output_parent.is_file()
+    assert not output_dir.exists()
+
+
 def test_export_release_artifacts_rejects_output_dir_symlink(tmp_path):
     export_release_artifacts = load_export_release_artifacts()
     output_dir = tmp_path / "release"
