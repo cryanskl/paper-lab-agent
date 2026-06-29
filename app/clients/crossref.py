@@ -42,6 +42,7 @@ class CrossrefClient:
         issn = unicodedata.normalize("NFKC", issn).strip()
         if not issn:
             return []
+        max_pages = max(1, max_pages)
         headers = {}
         if self.mailto:
             headers["User-Agent"] = f"paper-lab-agent (mailto:{self.mailto})"
