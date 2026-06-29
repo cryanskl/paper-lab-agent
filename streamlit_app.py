@@ -6,6 +6,7 @@ import streamlit as st
 from app.frontend_api import (
     FrontendApiError,
     api_docs_links,
+    chemistry_deposition_summary,
     category_create_success_state,
     category_parent_option_label,
     category_parent_options,
@@ -25,6 +26,7 @@ from app.frontend_api import (
     document_chunk_option_label,
     document_chunk_preview_text,
     document_chunks_response_state,
+    document_analysis_steps,
     document_filter_summary,
     document_option_label,
     document_upload_success_state,
@@ -77,12 +79,14 @@ from app.frontend_api import (
     release_readiness_display_state,
     request_json,
     request_json_status,
+    rag_document_ids_for_scope,
     runtime_status_rows,
     storage_health_caption_rows,
     system_count_metric_rows,
     status_count_rows,
     translation_download,
     translation_status_rows,
+    workbench_status_cards,
 )
 
 
@@ -127,6 +131,27 @@ def load_status_or_stop(*, check_external: bool = False) -> dict[str, Any]:
         with st.expander("Raw API response"):
             st.json(exc.payload)
         st.stop()
+
+
+def render_status_strip(status: dict[str, Any]) -> None:
+    cards = workbench_status_cards(status)
+    if not cards:
+        st.warning("workbench status unavailable")
+        return
+    columns = st.columns(min(len(cards), 6))
+    for index, card in enumerate(cards):
+        column = columns[index % len(columns)]
+        state = card.get("state")
+        label = f"{card.get('group')} · {card.get('label')}"
+        value = card.get("value")
+        detail = card.get("detail")
+        column.metric(label, value)
+        if state == "warning":
+            column.caption(f"需关注: {detail}")
+        elif state == "active":
+            column.caption(f"进行中: {detail}")
+        else:
+            column.caption(str(detail or ""))
 
 
 def render_system_maintenance(status: dict[str, Any]) -> None:
@@ -228,6 +253,33 @@ def render_system_maintenance(status: dict[str, Any]) -> None:
         warning_rows = config_warning_rows(config_warnings)
         for warning in warning_rows:
             st.warning(f"{warning['capability']}: {warning['message']}")
+
+
+def render_library_intake_column() -> Optional[dict[str, Any]]:
+    st.subheader("资料库")
+    with st.expander("论文检索与抓取", expanded=True):
+        render_paper_search_panel()
+    with st.expander("PDF 队列与入库", expanded=True):
+        return render_documents_panel()
+
+
+def render_knowledge_column(selected_document: Optional[dict[str, Any]]) -> None:
+    st.subheader("知识库问答")
+    render_rag_panel(selected_document=selected_document)
+    st.divider()
+    st.subheader("文章分析")
+    if selected_document is None:
+        st.info("从左侧选择一个 PDF 后，这里会显示章节、翻译、索引和化学抽取状态。")
+        return
+    st.caption(document_option_label(selected_document))
+    st.dataframe(document_status_rows(selected_document), use_container_width=True)
+
+
+def render_chemistry_column(selected_document: Optional[dict[str, Any]]) -> None:
+    st.subheader("化学库沉淀")
+    if selected_document is None:
+        st.info("从左侧选择 PDF 后，这里会显示该文档沉淀出的反应集。")
+    render_chemistry_panel(selected_document=selected_document)
 
 def render_paper_search_panel() -> None:
     st.caption("可先运行 `python scripts/import_fixtures.py` 导入离线样例。")
@@ -332,7 +384,8 @@ def render_paper_search_panel() -> None:
             default_categories = [
                 category_options_by_slug[slug] for slug in current_category_slugs if slug in category_options_by_slug
             ]
-            with st.expander("人工覆盖分类"):
+            with st.container(border=True):
+                st.caption("人工覆盖分类")
                 selected_categories = st.multiselect(
                     "人工覆盖分类",
                     categories,
@@ -1184,26 +1237,26 @@ st.title("paper-lab-agent")
 
 health = load_health_or_stop()
 health_display = health_display_state(health)
-st.caption(health_display["caption"])
+st.caption(f"{health_display['caption']} · 三栏研究工作台")
 
 review_message = st.session_state.pop("reaction_review_message", None)
 if review_message:
     st.success(review_message)
 
 status = load_status_or_stop()
+render_status_strip(status)
 
-search_tab, config_tab, documents_tab, rag_tab, chemistry_tab = st.tabs(["检索", "配置", "文档", "问答", "化学库"])
-
-with search_tab:
-    render_paper_search_panel()
-with config_tab:
-    render_config_panel()
-with documents_tab:
-    selected_document = render_documents_panel()
-with rag_tab:
-    render_rag_panel(selected_document=None)
-with chemistry_tab:
-    render_chemistry_panel(selected_document=None)
+left_col, middle_col, right_col = st.columns([0.28, 0.44, 0.28], gap="large")
+with left_col:
+    selected_document = render_library_intake_column()
+with middle_col:
+    render_knowledge_column(selected_document)
+with right_col:
+    render_chemistry_column(selected_document)
 
 with st.expander("System and maintenance", expanded=False):
-    render_system_maintenance(status)
+    maintenance_tab, config_tab = st.tabs(["系统状态", "配置维护"])
+    with maintenance_tab:
+        render_system_maintenance(status)
+    with config_tab:
+        render_config_panel()
