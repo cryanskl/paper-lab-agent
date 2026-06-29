@@ -1,4 +1,5 @@
 import os
+from typing import Any, Optional
 
 import streamlit as st
 
@@ -104,36 +105,34 @@ def api_delete(path: str):
     return request_json_status("DELETE", API_BASE, path, timeout=20)
 
 
-st.set_page_config(page_title="paper-lab-agent", layout="wide")
-st.title("paper-lab-agent")
-
-try:
-    health = api_get("/health")
-    health_display = health_display_state(health)
-    st.caption(health_display["caption"])
-    if health_display["warning"]:
-        st.warning(health_display["warning"])
-except FrontendApiError as exc:
-    st.error(format_error_payload(exc.payload, exc.status_code))
-    st.json(exc.payload)
-    st.stop()
-
-review_message = st.session_state.pop("reaction_review_message", None)
-if review_message:
-    st.success(review_message)
-
-search_tab, config_tab, documents_tab, rag_tab, chemistry_tab = st.tabs(["检索", "配置", "文档", "问答", "化学库"])
-
-with st.sidebar:
-    st.subheader("系统")
+def load_health_or_stop() -> dict[str, Any]:
     try:
-        status = api_get("/system/status")
-        if st.button("检查 GROBID"):
-            status = api_get("/system/status", check_external=True)
+        health = api_get("/health")
+        health_display = health_display_state(health)
+        if health_display["warning"]:
+            st.warning(health_display["warning"])
+        return health
     except FrontendApiError as exc:
         st.error(format_error_payload(exc.payload, exc.status_code))
-        st.json(exc.payload)
+        with st.expander("Raw API response"):
+            st.json(exc.payload)
         st.stop()
+
+
+def load_status_or_stop(*, check_external: bool = False) -> dict[str, Any]:
+    try:
+        return api_get("/system/status", check_external=True) if check_external else api_get("/system/status")
+    except FrontendApiError as exc:
+        st.error(format_error_payload(exc.payload, exc.status_code))
+        with st.expander("Raw API response"):
+            st.json(exc.payload)
+        st.stop()
+
+
+def render_system_maintenance(status: dict[str, Any]) -> None:
+    st.subheader("系统")
+    if st.button("检查 GROBID", key="maintenance-check-grobid"):
+        status = load_status_or_stop(check_external=True)
     for row in system_count_metric_rows(status.get("counts")):
         st.metric(row["label"], row["value"])
         if row.get("warning"):
@@ -230,7 +229,7 @@ with st.sidebar:
         for warning in warning_rows:
             st.warning(f"{warning['capability']}: {warning['message']}")
 
-with search_tab:
+def render_paper_search_panel() -> None:
     st.caption("可先运行 `python scripts/import_fixtures.py` 导入离线样例。")
     try:
         search_journals_response = api_get("/journals", active=True, page_size=100)
@@ -439,7 +438,7 @@ with search_tab:
             st.dataframe(crawl_job_diagnostic_rows(job_detail), use_container_width=True)
             st.json(job_detail)
 
-with config_tab:
+def render_config_panel() -> None:
     config_journals_page_col, config_journals_page_size_col = st.columns(2)
     config_journals_page = config_journals_page_col.number_input(
         "config_journals_page",
@@ -616,7 +615,8 @@ with config_tab:
                 st.warning(format_error_payload(result, status_code))
                 st.json(result)
 
-with documents_tab:
+def render_documents_panel() -> Optional[dict[str, Any]]:
+    selected_document_detail: Optional[dict[str, Any]] = None
     uploaded = st.file_uploader("PDF", type=["pdf"])
     paper_upload_query = st.text_input("关联论文搜索", value="", key="document-upload-paper-query")
     try:
@@ -684,6 +684,7 @@ with documents_tab:
         selected = st.selectbox("文档", display_docs, format_func=document_option_label)
         try:
             document_detail = api_get(f"/documents/{selected['id']}")
+            selected_document_detail = document_detail
         except FrontendApiError as exc:
             st.error(format_error_payload(exc.payload, exc.status_code))
             st.json(exc.payload)
@@ -861,7 +862,9 @@ with documents_tab:
             st.caption(f"chunks page {chunks['page']} · page_size {chunks['page_size']} · total {chunks['total']}")
             st.dataframe(document_chunk_rows(chunks["items"]), use_container_width=True)
 
-with rag_tab:
+    return selected_document_detail
+
+def render_rag_panel(selected_document: Optional[dict[str, Any]] = None) -> None:
     rag_documents_page_col, rag_documents_page_size_col = st.columns(2)
     rag_documents_page = rag_documents_page_col.number_input("rag_documents_page", min_value=1, value=1, key="rag-documents-page")
     rag_documents_page_size = rag_documents_page_size_col.number_input(
@@ -943,7 +946,7 @@ with rag_tab:
                 with st.expander("raw RAG response"):
                     st.json(rag_payload)
 
-with chemistry_tab:
+def render_chemistry_panel(selected_document: Optional[dict[str, Any]] = None) -> None:
     chemistry_documents_page_col, chemistry_documents_page_size_col = st.columns(2)
     chemistry_documents_page = chemistry_documents_page_col.number_input(
         "chemistry_documents_page",
@@ -1174,3 +1177,33 @@ with chemistry_tab:
                     else:
                         st.warning(format_error_payload(result, status_code))
                         st.json(result)
+
+
+st.set_page_config(page_title="paper-lab-agent", layout="wide")
+st.title("paper-lab-agent")
+
+health = load_health_or_stop()
+health_display = health_display_state(health)
+st.caption(health_display["caption"])
+
+review_message = st.session_state.pop("reaction_review_message", None)
+if review_message:
+    st.success(review_message)
+
+status = load_status_or_stop()
+
+search_tab, config_tab, documents_tab, rag_tab, chemistry_tab = st.tabs(["检索", "配置", "文档", "问答", "化学库"])
+
+with search_tab:
+    render_paper_search_panel()
+with config_tab:
+    render_config_panel()
+with documents_tab:
+    selected_document = render_documents_panel()
+with rag_tab:
+    render_rag_panel(selected_document=None)
+with chemistry_tab:
+    render_chemistry_panel(selected_document=None)
+
+with st.expander("System and maintenance", expanded=False):
+    render_system_maintenance(status)
