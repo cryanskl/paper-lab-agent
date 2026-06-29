@@ -197,7 +197,7 @@ def package_release_artifacts(
             "demo_export_audit_summary_formats": [],
             "demo_reaction_set_verified_by": None,
             "demo_reaction_set_verified_at": None,
-            "issues": [f"release package output is not a file: {output_path}"],
+            "issues": [f"release package output is not a regular file: {output_path}"],
         }
     if output_path.parent.exists() and not output_path.parent.is_dir():
         return {

@@ -5276,7 +5276,7 @@ def test_package_release_artifacts_rejects_artifact_dir_symlink_ancestor(tmp_pat
     assert not output_path.exists()
 
 
-def test_package_release_artifacts_reports_output_path_not_file(tmp_path):
+def test_package_release_artifacts_rejects_directory_output_path(tmp_path):
     package_release_artifacts = load_package_release_artifacts()
     artifact_dir = tmp_path / "invalid-release"
     output_path = tmp_path / "paper-lab-agent-release.zip"
@@ -5286,7 +5286,7 @@ def test_package_release_artifacts_reports_output_path_not_file(tmp_path):
     report = package_release_artifacts.package_release_artifacts(artifact_dir, output_path)
 
     assert report["ok"] is False
-    assert f"release package output is not a file: {output_path.resolve()}" in report["issues"]
+    assert f"release package output is not a regular file: {output_path.resolve()}" in report["issues"]
     assert output_path.is_dir()
 
 
