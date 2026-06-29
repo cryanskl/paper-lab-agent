@@ -472,6 +472,222 @@ def config_warning_rows(config_warnings: Any) -> list[dict[str, str]]:
     return rows
 
 
+def _workbench_count_label(value: Any) -> str:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return "invalid"
+    return str(value)
+
+
+def _workbench_count_state(value: Any) -> str:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return "warning"
+    return "ok"
+
+
+def _workflow_count(status_counts: dict[str, Any], workflow: str, state: str) -> int:
+    workflow_counts = status_counts.get(workflow)
+    if not isinstance(workflow_counts, dict):
+        return 0
+    value = workflow_counts.get(state)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+
+def workbench_status_cards(status: Any) -> list[dict[str, Any]]:
+    if not isinstance(status, dict):
+        return [
+            {
+                "group": "系统",
+                "label": "状态",
+                "value": "invalid",
+                "state": "warning",
+                "detail": "system status payload is invalid",
+            }
+        ]
+
+    counts = status.get("counts") if isinstance(status.get("counts"), dict) else {}
+    status_counts = status.get("status_counts") if isinstance(status.get("status_counts"), dict) else {}
+    release_display = release_readiness_display_state(status.get("release_readiness") or {})
+    config_warnings = status.get("config_warnings") if isinstance(status.get("config_warnings"), list) else []
+    external_display = external_capabilities_display_state(status.get("external_capabilities") or {})
+    grobid = external_display.get("grobid") or {}
+
+    parse_failed = _workflow_count(status_counts, "document_parse", "failed")
+    index_failed = _workflow_count(status_counts, "document_index", "failed")
+    chemistry_failed = _workflow_count(status_counts, "document_chemistry", "failed")
+    failure_count = parse_failed + index_failed + chemistry_failed
+    pending_reaction_sets = _workflow_count(status_counts, "reaction_sets", "pending")
+
+    grobid_available = grobid.get("available")
+    if grobid_available is True:
+        grobid_value = "可用"
+        grobid_state = "ok"
+        grobid_detail = str(grobid.get("url") or "checked")
+    elif grobid_available is False:
+        grobid_value = "不可用"
+        grobid_state = "warning"
+        grobid_detail = str(grobid.get("error") or "checked unavailable")
+    else:
+        grobid_value = "未检查"
+        grobid_state = "neutral"
+        grobid_detail = str(grobid.get("url") or "not checked")
+
+    release_ready = release_display.get("ready") is True
+    cards = [
+        {"group": "知识库", "label": "论文", "value": _workbench_count_label(counts.get("papers")), "state": _workbench_count_state(counts.get("papers")), "detail": "本地论文元数据"},
+        {"group": "知识库", "label": "PDF", "value": _workbench_count_label(counts.get("documents")), "state": _workbench_count_state(counts.get("documents")), "detail": "已导入文档"},
+        {"group": "知识库", "label": "Chunks", "value": _workbench_count_label(counts.get("chunks")), "state": _workbench_count_state(counts.get("chunks")), "detail": "可检索片段"},
+        {"group": "PDF 分析", "label": "已解析", "value": str(_workflow_count(status_counts, "document_parse", "parsed")), "state": "ok", "detail": "parsed"},
+        {"group": "PDF 分析", "label": "已索引", "value": str(_workflow_count(status_counts, "document_index", "indexed")), "state": "ok", "detail": "indexed"},
+        {"group": "PDF 分析", "label": "化学抽取", "value": str(_workflow_count(status_counts, "document_chemistry", "extracted")), "state": "ok", "detail": "extracted"},
+        {"group": "PDF 分析", "label": "失败", "value": str(failure_count), "state": "warning" if failure_count else "ok", "detail": "parse/index/chemistry failed"},
+        {"group": "化学库", "label": "反应集", "value": _workbench_count_label(counts.get("reaction_sets")), "state": _workbench_count_state(counts.get("reaction_sets")), "detail": "reaction sets"},
+        {"group": "化学库", "label": "反应", "value": _workbench_count_label(counts.get("reactions")), "state": _workbench_count_state(counts.get("reactions")), "detail": "extracted reactions"},
+        {"group": "化学库", "label": "待复核", "value": str(pending_reaction_sets), "state": "warning" if pending_reaction_sets else "ok", "detail": "pending reaction sets"},
+        {"group": "系统", "label": "发布状态", "value": "ready" if release_ready else "blocked", "state": "ok" if release_ready else "warning", "detail": "release ready" if release_ready else ", ".join(release_display.get("blockers") or ["ready=false"])},
+        {"group": "系统", "label": "配置提示", "value": str(len(config_warnings)), "state": "warning" if config_warnings else "ok", "detail": "non-blocking warnings" if config_warnings else "configured"},
+        {"group": "系统", "label": "GROBID", "value": grobid_value, "state": grobid_state, "detail": grobid_detail},
+    ]
+    return cards
+
+
+def _positive_unique_ints(values: list[int]) -> list[int]:
+    output: list[int] = []
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            continue
+        if value not in output:
+            output.append(value)
+    return output
+
+
+def rag_document_ids_for_scope(scope: str, selected_document_ids: list[int], typed_document_ids: list[int]) -> list[int]:
+    if scope == "选中文档":
+        return _positive_unique_ints([*selected_document_ids, *typed_document_ids])
+    if scope == "手动范围":
+        return _positive_unique_ints(typed_document_ids)
+    return []
+
+
+def _analysis_state(
+    status: Any,
+    *,
+    done_values: set[str],
+    active_values: set[str],
+    empty_detail: str,
+    done_detail: str,
+    active_detail: str,
+    error: Any = None,
+) -> dict[str, str]:
+    normalized = status if isinstance(status, str) and status.strip() else "unknown"
+    if normalized == "failed" or normalized == "rejected":
+        return {
+            "status": normalized,
+            "state": "warning",
+            "detail": str(error or f"{normalized}"),
+        }
+    if normalized in done_values:
+        return {"status": normalized, "state": "ok", "detail": done_detail}
+    if normalized in active_values:
+        return {"status": normalized, "state": "active", "detail": active_detail}
+    return {"status": normalized, "state": "warning", "detail": empty_detail}
+
+
+def document_analysis_steps(document: dict[str, Any], chunks: Optional[dict[str, Any]] = None) -> list[dict[str, Any]]:
+    chunks = chunks or {}
+    parse = _analysis_state(
+        document.get("parse_status"),
+        done_values={"parsed"},
+        active_values={"parsing"},
+        empty_detail="尚未解析章节",
+        done_detail="章节已解析",
+        active_detail="正在解析章节",
+        error=document.get("parse_error"),
+    )
+    index_status = chunks.get("index_status") or document.get("index_status")
+    index = _analysis_state(
+        index_status,
+        done_values={"indexed"},
+        active_values={"indexing"},
+        empty_detail="尚未建立可问答索引",
+        done_detail="已写入知识库",
+        active_detail="正在写入知识库",
+        error=chunks.get("index_error") or document.get("index_error"),
+    )
+    chemistry = _analysis_state(
+        document.get("chemistry_status"),
+        done_values={"extracted"},
+        active_values={"extracting"},
+        empty_detail="尚未抽取反应集",
+        done_detail="反应集已抽取",
+        active_detail="正在抽取反应集",
+        error=document.get("chemistry_error"),
+    )
+    translation_state = "neutral" if parse["state"] == "ok" else "warning"
+    translation_detail = "解析后可生成或查看翻译" if parse["state"] == "ok" else "需要先解析章节"
+    return [
+        {"key": "parse", "label": "解析章节", **parse},
+        {"key": "index", "label": "写入知识库", **index},
+        {
+            "key": "translation",
+            "label": "翻译预览",
+            "status": "available_after_parse" if parse["state"] == "ok" else "blocked_until_parse",
+            "state": translation_state,
+            "detail": translation_detail,
+        },
+        {"key": "chemistry", "label": "沉淀化学库", **chemistry},
+    ]
+
+
+def chemistry_deposition_summary(detail: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(detail, dict):
+        return {
+            "reaction_set_id": None,
+            "document_id": None,
+            "title": "Reaction set",
+            "status": "invalid",
+            "reaction_count": 0,
+            "verified_count": 0,
+            "unverified_count": 0,
+            "export_ready": False,
+            "gas_mixture": "-",
+            "lxcat_db": "-",
+            "summary": "反应集无效",
+        }
+    review_state = reaction_set_review_state(detail)
+    reaction_set_id = detail.get("id")
+    document_id = detail.get("document_id")
+    title = detail.get("name") if isinstance(detail.get("name"), str) and detail.get("name").strip() else "Reaction set"
+    status = detail.get("status") if isinstance(detail.get("status"), str) and detail.get("status").strip() else "unknown"
+    gas_mixture = detail.get("gas_mixture") if isinstance(detail.get("gas_mixture"), str) and detail.get("gas_mixture").strip() else "-"
+    lxcat_db = detail.get("lxcat_db") if isinstance(detail.get("lxcat_db"), str) and detail.get("lxcat_db").strip() else "-"
+    reaction_count = review_state["reaction_count"]
+    unverified_count = len(review_state["unverified_reactions"])
+    verified_count = max(reaction_count - unverified_count, 0)
+    export_ready = reaction_count > 0 and unverified_count == 0 and status == "verified"
+    summary_parts = [
+        f"反应集 #{reaction_set_id if reaction_set_id is not None else '-'}",
+        f"{reaction_count} 条反应",
+        f"{unverified_count} 条待复核",
+    ]
+    if gas_mixture != "-":
+        summary_parts.append(gas_mixture)
+    if lxcat_db != "-":
+        summary_parts.append(f"LXCat: {lxcat_db}")
+    return {
+        "reaction_set_id": reaction_set_id,
+        "document_id": document_id,
+        "title": title,
+        "status": status,
+        "reaction_count": reaction_count,
+        "verified_count": verified_count,
+        "unverified_count": unverified_count,
+        "export_ready": export_ready,
+        "gas_mixture": gas_mixture,
+        "lxcat_db": lxcat_db,
+        "summary": " · ".join(summary_parts),
+    }
+
+
 def crawl_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     options = [{"label": "全部 active 期刊", "journal_id": None}]
     for journal in journals:

@@ -3403,3 +3403,133 @@ def test_api_docs_links_preserve_custom_api_base_without_version_prefix():
         "Swagger UI": "https://paper-lab.example.test/custom-api/docs",
         "ReDoc": "https://paper-lab.example.test/custom-api/redoc",
     }
+
+
+def test_workbench_status_cards_summarize_research_workbench_state():
+    from app import frontend_api
+
+    cards = frontend_api.workbench_status_cards(
+        {
+            "counts": {
+                "papers": 12,
+                "documents": 3,
+                "chunks": 41,
+                "reaction_sets": 2,
+                "reactions": 9,
+            },
+            "status_counts": {
+                "document_parse": {"parsed": 2, "failed": 1},
+                "document_index": {"indexed": 2},
+                "document_chemistry": {"extracted": 1, "failed": 1},
+                "reaction_sets": {"pending": 1, "verified": 1},
+            },
+            "release_readiness": {
+                "ready": True,
+                "demo_data_missing": [],
+                "failed_workflows": [],
+                "config_warning_codes": ["missing_llm_api_key"],
+                "storage_errors": [],
+            },
+            "config_warnings": [
+                {"capability": "llm_translation", "message": "LLM_API_KEY is not configured."}
+            ],
+            "external_capabilities": {
+                "grobid": {"available": False, "error": "connection refused"}
+            },
+        }
+    )
+
+    assert cards == [
+        {"group": "知识库", "label": "论文", "value": "12", "state": "ok", "detail": "本地论文元数据"},
+        {"group": "知识库", "label": "PDF", "value": "3", "state": "ok", "detail": "已导入文档"},
+        {"group": "知识库", "label": "Chunks", "value": "41", "state": "ok", "detail": "可检索片段"},
+        {"group": "PDF 分析", "label": "已解析", "value": "2", "state": "ok", "detail": "parsed"},
+        {"group": "PDF 分析", "label": "已索引", "value": "2", "state": "ok", "detail": "indexed"},
+        {"group": "PDF 分析", "label": "化学抽取", "value": "1", "state": "ok", "detail": "extracted"},
+        {"group": "PDF 分析", "label": "失败", "value": "2", "state": "warning", "detail": "parse/index/chemistry failed"},
+        {"group": "化学库", "label": "反应集", "value": "2", "state": "ok", "detail": "reaction sets"},
+        {"group": "化学库", "label": "反应", "value": "9", "state": "ok", "detail": "extracted reactions"},
+        {"group": "化学库", "label": "待复核", "value": "1", "state": "warning", "detail": "pending reaction sets"},
+        {"group": "系统", "label": "发布状态", "value": "ready", "state": "ok", "detail": "release ready"},
+        {"group": "系统", "label": "配置提示", "value": "1", "state": "warning", "detail": "non-blocking warnings"},
+        {"group": "系统", "label": "GROBID", "value": "不可用", "state": "warning", "detail": "connection refused"},
+    ]
+
+
+def test_workbench_status_cards_reject_malformed_status_payload():
+    from app import frontend_api
+
+    cards = frontend_api.workbench_status_cards(["status"])
+
+    assert cards[0] == {
+        "group": "系统",
+        "label": "状态",
+        "value": "invalid",
+        "state": "warning",
+        "detail": "system status payload is invalid",
+    }
+
+
+def test_rag_document_ids_for_scope_defaults_to_whole_knowledge_base():
+    from app import frontend_api
+
+    assert frontend_api.rag_document_ids_for_scope("全部知识库", [7], [8]) == []
+    assert frontend_api.rag_document_ids_for_scope("选中文档", [7], [8, 7]) == [7, 8]
+    assert frontend_api.rag_document_ids_for_scope("手动范围", [7], [8, 9]) == [8, 9]
+    assert frontend_api.rag_document_ids_for_scope("未知", [7], [8]) == []
+
+
+def test_document_analysis_steps_group_existing_pdf_operations():
+    from app import frontend_api
+
+    steps = frontend_api.document_analysis_steps(
+        {
+            "parse_status": "parsed",
+            "index_status": "not_indexed",
+            "chemistry_status": "extracted",
+            "parse_error": None,
+            "index_error": None,
+            "chemistry_error": None,
+        },
+        {"total": 5, "index_status": "not_indexed"},
+    )
+
+    assert steps == [
+        {"key": "parse", "label": "解析章节", "status": "parsed", "state": "ok", "detail": "章节已解析"},
+        {"key": "index", "label": "写入知识库", "status": "not_indexed", "state": "warning", "detail": "尚未建立可问答索引"},
+        {"key": "translation", "label": "翻译预览", "status": "available_after_parse", "state": "neutral", "detail": "解析后可生成或查看翻译"},
+        {"key": "chemistry", "label": "沉淀化学库", "status": "extracted", "state": "ok", "detail": "反应集已抽取"},
+    ]
+
+
+def test_chemistry_deposition_summary_counts_review_state():
+    from app import frontend_api
+
+    summary = frontend_api.chemistry_deposition_summary(
+        {
+            "id": 4,
+            "document_id": 2,
+            "status": "pending",
+            "name": "Extracted reaction set",
+            "gas_mixture": "O2 / Ar",
+            "lxcat_db": "Biagi",
+            "reactions": [
+                {"id": 1, "verified": True},
+                {"id": 2, "verified": False},
+            ],
+        }
+    )
+
+    assert summary == {
+        "reaction_set_id": 4,
+        "document_id": 2,
+        "title": "Extracted reaction set",
+        "status": "pending",
+        "reaction_count": 2,
+        "verified_count": 1,
+        "unverified_count": 1,
+        "export_ready": False,
+        "gas_mixture": "O2 / Ar",
+        "lxcat_db": "Biagi",
+        "summary": "反应集 #4 · 2 条反应 · 1 条待复核 · O2 / Ar · LXCat: Biagi",
+    }
