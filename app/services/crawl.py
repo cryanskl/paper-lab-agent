@@ -225,6 +225,8 @@ async def fetch_metadata_works(settings, issn: str, date_from: str, date_to: str
     except Exception as exc:
         if openalex_error:
             raise RuntimeError(f"OpenAlex failed: {openalex_error}; Crossref failed: {exc}") from exc
+        if openalex_empty:
+            raise RuntimeError(f"OpenAlex returned no works; Crossref failed: {exc}") from exc
         raise
     if openalex_empty:
         return works, "OpenAlex returned no works; used Crossref fallback"
