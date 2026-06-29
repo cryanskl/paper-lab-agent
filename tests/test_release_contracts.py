@@ -2933,6 +2933,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert "artifact 路径本身是否为目录" in readme
     assert "是否可读取" in readme
     assert "额外文件" in readme
+    assert "与 `docs/release-acceptance-matrix.md` 逐字一致" in readme
     assert "zip 输出路径必须放在 artifact 目录外" in readme
     assert "system` tag metadata" in readme
     assert "ErrorResponse` schema" in readme
@@ -2949,6 +2950,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert "non-directory artifact path" in checklist
     assert "unreadable artifact paths" in checklist
     assert "unexpected extra files" in checklist
+    assert "matches the source `docs/release-acceptance-matrix.md` byte-for-byte" in checklist
     assert "outside the artifact directory" in checklist
     assert "system` tag metadata" in checklist
     assert "ErrorResponse` schema" in checklist
