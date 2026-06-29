@@ -41,6 +41,7 @@ from app.frontend_api import (
     paper_category_slugs,
     paper_category_option_label,
     paper_category_options,
+    paper_search_abstract_preview,
     paper_search_dedupe_label,
     paper_search_journal_options,
     paper_search_result_items,
@@ -286,7 +287,7 @@ with search_tab:
                 f"dedupe_strategy={paper.get('dedupe_strategy') or '-'} · "
                 f"has_doi={paper.get('has_doi')} · key={dedupe_label}"
             )
-            st.write((paper.get("abstract") or "")[:400])
+            st.write(paper_search_abstract_preview(paper))
             st.caption(f"分类结果: {format_category_summary(paper)}")
             if st.button("触发分类", key=f"classify-paper-{paper['id']}"):
                 status_code, classified_paper = api_post(f"/papers/{paper['id']}/classify")

@@ -2072,6 +2072,15 @@ def test_paper_search_dedupe_label_handles_malformed_values():
     assert frontend_api.paper_search_dedupe_label({"doi": ["bad"], "dedupe_key": "fallback-key"}) == "fallback-key"
 
 
+def test_paper_search_abstract_preview_handles_malformed_values():
+    from app import frontend_api
+
+    assert frontend_api.paper_search_abstract_preview({"abstract": "x" * 405}) == "x" * 400
+    assert frontend_api.paper_search_abstract_preview({"abstract": None}) == ""
+    assert frontend_api.paper_search_abstract_preview({"abstract": True}) == ""
+    assert frontend_api.paper_search_abstract_preview({"abstract": ["bad"]}) == ""
+
+
 def test_journal_table_rows_skip_malformed_items_and_format_keywords():
     from app import frontend_api
 

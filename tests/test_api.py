@@ -18391,6 +18391,16 @@ def test_streamlit_search_results_use_guarded_dedupe_label():
     assert '(paper.get("dedupe_key") or "")[:24]' not in search_section
 
 
+def test_streamlit_search_results_use_guarded_abstract_preview():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    assert "paper_search_abstract_preview" in streamlit
+    assert "st.write(paper_search_abstract_preview(paper))" in search_section
+    assert 'st.write((paper.get("abstract") or "")[:400])' not in search_section
+
+
 def test_streamlit_search_results_use_filtered_paper_items():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

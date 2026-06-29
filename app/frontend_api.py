@@ -532,6 +532,13 @@ def paper_search_dedupe_label(paper: dict[str, Any]) -> str:
     return "-"
 
 
+def paper_search_abstract_preview(paper: dict[str, Any]) -> str:
+    abstract = paper.get("abstract")
+    if not isinstance(abstract, str):
+        return ""
+    return abstract[:400]
+
+
 def journal_table_rows(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for journal in journals:
