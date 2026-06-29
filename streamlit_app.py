@@ -12,6 +12,7 @@ from app.frontend_api import (
     crawl_job_items,
     crawl_job_option_label,
     crawl_job_rows,
+    crawl_jobs_response_state,
     crawl_journal_option_label,
     crawl_journal_options,
     dataframe_display_rows,
@@ -388,6 +389,7 @@ with search_tab:
         st.error(format_error_payload(exc.payload, exc.status_code))
         st.json(exc.payload)
         st.stop()
+    crawl_jobs_response = crawl_jobs_response_state(crawl_jobs_response)
     jobs = crawl_job_items(crawl_jobs_response["items"])
     st.caption(
         f"crawl jobs page {crawl_jobs_response['page']} · "

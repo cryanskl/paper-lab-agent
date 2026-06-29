@@ -18262,6 +18262,16 @@ def test_streamlit_crawl_jobs_exposes_pagination_controls():
     assert 'jobs = crawl_jobs_response["items"]' not in search_section
 
 
+def test_streamlit_crawl_jobs_normalize_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("with config_tab:")]
+
+    assert "crawl_jobs_response_state" in streamlit
+    assert "crawl_jobs_response = crawl_jobs_response_state(crawl_jobs_response)" in search_section
+    assert search_section.index("crawl_jobs_response = crawl_jobs_response_state(crawl_jobs_response)") < search_section.index("jobs = crawl_job_items")
+
+
 def test_streamlit_crawl_jobs_list_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

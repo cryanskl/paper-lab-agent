@@ -2081,6 +2081,27 @@ def test_paper_search_response_state_handles_malformed_envelope():
     }
 
 
+def test_crawl_jobs_response_state_handles_malformed_envelope():
+    from app import frontend_api
+
+    assert frontend_api.crawl_jobs_response_state(
+        {"items": {"bad": "shape"}, "total": True, "page": 0, "page_size": "10"}
+    ) == {"items": [], "total": 0, "page": 1, "page_size": 20}
+    assert frontend_api.crawl_jobs_response_state(
+        {
+            "items": [{"id": 11, "status": "success"}],
+            "total": 1,
+            "page": 3,
+            "page_size": 5,
+        }
+    ) == {
+        "items": [{"id": 11, "status": "success"}],
+        "total": 1,
+        "page": 3,
+        "page_size": 5,
+    }
+
+
 def test_paper_search_dedupe_label_handles_malformed_values():
     from app import frontend_api
 

@@ -728,6 +728,18 @@ def crawl_job_items(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def crawl_jobs_response_state(response: Any) -> dict[str, Any]:
+    if not isinstance(response, dict):
+        return {"items": [], "total": 0, "page": 1, "page_size": 20}
+    items = response.get("items")
+    return {
+        "items": items if isinstance(items, list) else [],
+        "total": non_negative_int_or_zero(response.get("total")),
+        "page": positive_int_or_default(response.get("page"), 1),
+        "page_size": positive_int_or_default(response.get("page_size"), 20),
+    }
+
+
 def crawl_job_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for job in jobs:
