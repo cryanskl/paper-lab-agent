@@ -1848,6 +1848,36 @@ def test_release_checklist_documents_publish_gates():
         assert required in checklist
 
 
+def test_release_acceptance_matrix_documents_prd_coverage():
+    repo = Path(__file__).resolve().parent.parent
+    readme = (repo / "README.md").read_text(encoding="utf-8")
+    checklist = (repo / "docs" / "release-checklist.md").read_text(encoding="utf-8")
+    matrix_path = repo / "docs" / "release-acceptance-matrix.md"
+
+    assert "[docs/release-acceptance-matrix.md](docs/release-acceptance-matrix.md)" in readme
+    assert "[Release Acceptance Matrix](release-acceptance-matrix.md)" in checklist
+    matrix = matrix_path.read_text(encoding="utf-8")
+    for required in [
+        "docs/PRD_等离子体文献系统.md",
+        "docs/接口设计文档.md",
+        "docs/schema.sql",
+        "阶段 0",
+        "阶段 1",
+        "阶段 2",
+        "阶段 3",
+        "阶段 4",
+        "bash scripts/release_check.sh",
+        "python scripts/prepare_demo_data.py --summary-only --compact",
+        "python scripts/health_check.py --require-release-ready",
+        "python scripts/health_check.py --require-frontend",
+        "python scripts/build_release_handoff.py --artifact-dir out/release --package out/paper-lab-agent-release.zip --compact",
+        "openapi.json",
+        "demo-summary.json",
+        "release-manifest.json",
+    ]:
+        assert required in matrix
+
+
 def test_release_checklist_documents_health_storage_details():
     repo = Path(__file__).resolve().parent.parent
     readme = (repo / "README.md").read_text(encoding="utf-8")

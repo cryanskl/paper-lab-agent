@@ -167,3 +167,4 @@ CI 配置在 `.github/workflows/ci.yml`，默认跑同一条离线测试命令�
 ## Productization Roadmap
 
 成品化阶段见 [docs/productization-roadmap.md](docs/productization-roadmap.md)。
+发布验收矩阵见 [docs/release-acceptance-matrix.md](docs/release-acceptance-matrix.md)。

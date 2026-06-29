@@ -2,6 +2,8 @@
 
 Use this checklist before publishing, demoing, or handing off `paper-lab-agent`.
 
+For PRD-to-release coverage, use the [Release Acceptance Matrix](release-acceptance-matrix.md) alongside this checklist.
+
 ## 1. Local Gate
 
 Run the same offline release gate used by CI:
