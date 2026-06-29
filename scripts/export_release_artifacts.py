@@ -18,11 +18,12 @@ from app import __version__
 from scripts.doctor import run_checks, summary as doctor_summary
 from scripts.export_openapi import write_openapi
 from scripts.prepare_demo_data import prepare_demo_data
-from scripts.validate_release_artifacts import first_symlink_parent
+from scripts.validate_release_artifacts import EXPECTED_ARTIFACTS, first_symlink_parent
 
 
-EXPECTED_ARTIFACT_NAMES = {"openapi.json", "demo-summary.json", "release-manifest.json"}
+EXPECTED_ARTIFACT_NAMES = set(EXPECTED_ARTIFACTS.values())
 EXPECTED_ARTIFACT_NAME_LIST = sorted(EXPECTED_ARTIFACT_NAMES)
+ACCEPTANCE_MATRIX_SOURCE = ROOT / "docs" / "release-acceptance-matrix.md"
 DEMO_WORKFLOW_STATUS_KEYS = [
     "parse_status",
     "index_status",
@@ -179,8 +180,10 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
     output_dir.mkdir(parents=True, exist_ok=True)
     openapi_path = output_dir / "openapi.json"
     demo_summary_path = output_dir / "demo-summary.json"
+    acceptance_matrix_path = output_dir / "release-acceptance-matrix.md"
     manifest_path = output_dir / "release-manifest.json"
-    for artifact_path in (openapi_path, demo_summary_path, manifest_path):
+    artifact_paths = (openapi_path, demo_summary_path, acceptance_matrix_path, manifest_path)
+    for artifact_path in artifact_paths:
         try:
             artifact_path.unlink(missing_ok=True)
         except OSError as exc:
@@ -198,6 +201,18 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
             "issues": [f"OpenAPI artifact write failed: {openapi_error}"],
         }
     try:
+        acceptance_matrix_path.write_text(
+            ACCEPTANCE_MATRIX_SOURCE.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+    except (OSError, UnicodeDecodeError) as exc:
+        cleanup_error = remove_artifacts(artifact_paths)
+        return {
+            "ok": False,
+            "output_dir": str(output_dir),
+            "issues": [cleanup_error or f"Acceptance matrix artifact write failed: {exc}"],
+        }
+    try:
         demo_payload = prepare_demo_data()
     except Exception as exc:
         return {
@@ -210,7 +225,7 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
     try:
         write_json(demo_summary_path, demo_summary, compact=compact)
     except OSError as exc:
-        cleanup_error = remove_artifacts((openapi_path, demo_summary_path, manifest_path))
+        cleanup_error = remove_artifacts(artifact_paths)
         return {
             "ok": False,
             "output_dir": str(output_dir),
@@ -223,6 +238,7 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
         "artifacts": {
             "openapi": openapi_path.name,
             "demo_summary": demo_summary_path.name,
+            "acceptance_matrix": acceptance_matrix_path.name,
             "manifest": manifest_path.name,
         },
         "artifact_count": len(EXPECTED_ARTIFACT_NAMES),
@@ -244,6 +260,7 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
         "checksums": {
             openapi_path.name: sha256_file(openapi_path),
             demo_summary_path.name: sha256_file(demo_summary_path),
+            acceptance_matrix_path.name: sha256_file(acceptance_matrix_path),
             manifest_path.name: "",
         },
     }
@@ -251,7 +268,7 @@ def export_release_artifacts(output_dir: Path, *, compact: bool = False) -> dict
     try:
         write_json(manifest_path, manifest, compact=compact)
     except OSError as exc:
-        cleanup_error = remove_artifacts((openapi_path, demo_summary_path, manifest_path))
+        cleanup_error = remove_artifacts(artifact_paths)
         return {
             "ok": False,
             "output_dir": str(output_dir),

@@ -2864,13 +2864,14 @@ def test_release_check_validates_release_artifact_bundle():
     assert "release-manifest.json" in release_check
     assert "demo-summary.json" in release_check
     assert "openapi.json" in release_check
-    assert 'manifest.get("artifact_count") != 3' in release_check
-    assert 'manifest.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]' in release_check
+    assert "release-acceptance-matrix.md" in release_check
+    assert 'manifest.get("artifact_count") != len(expected_artifact_names)' in release_check
+    assert 'manifest.get("artifact_names") != expected_artifact_names' in release_check
     assert 'expected_preflight_warning_codes = ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]' in release_check
     assert 'not valid_preflight_evidence(manifest)' in release_check
     assert 'package.get("artifact_dir") != str(output_dir.resolve())' in release_check
     assert 'package.get("package_path") != str(package_path.resolve())' in release_check
-    assert 'package.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]' in release_check
+    assert 'package.get("artifact_names") != expected_artifact_names' in release_check
     assert 'package.get("service") != "paper-lab-agent"' in release_check
     assert 'package.get("version") != "0.1.0"' in release_check
     assert 'package.get("demo_ready") is not True' in release_check
@@ -2884,7 +2885,8 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"' in release_check
     assert 'package.get("openapi_path_count") != 28' in release_check
     assert 'not valid_sha256(package.get("package_sha256"))' in release_check
-    assert 'set((package.get("checksums") or {})) != {"openapi.json", "demo-summary.json", "release-manifest.json"}' in release_check
+    assert "expected_checksum_names = set(expected_artifact_names)" in release_check
+    assert 'set((package.get("checksums") or {})) != expected_checksum_names' in release_check
     assert "def valid_sha256(value):" in release_check
     assert 'all(char in "0123456789abcdef" for char in value)' in release_check
     assert "def valid_release_checksums(checksums):" in release_check
@@ -2908,7 +2910,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package_validation.get("openapi_path_count") != 28' in release_check
     assert 'not valid_sha256(package_validation.get("package_sha256"))' in release_check
     assert 'package_validation.get("package_sha256") != package.get("package_sha256")' in release_check
-    assert 'set((package_validation.get("checksums") or {})) != {"openapi.json", "demo-summary.json", "release-manifest.json"}' in release_check
+    assert 'set((package_validation.get("checksums") or {})) != expected_checksum_names' in release_check
     assert 'package_validation.get("checksums") != package.get("checksums")' in release_check
     assert 'not valid_release_checksums(package_validation.get("checksums") or {})' in release_check
     assert 'package_validation.get("demo_reaction_set_verified_by") != "prepare-demo-data"' in release_check
@@ -2967,7 +2969,7 @@ def test_release_check_validates_single_command_handoff_builder():
     assert '"validate_package": True' in release_check
     assert 'handoff.get("artifact_dir") != str(output_dir.resolve())' in release_check
     assert 'handoff.get("package_path") != str(package_path.resolve())' in release_check
-    assert 'handoff.get("artifact_count") != 3' in release_check
+    assert 'handoff.get("artifact_count") != len(expected_artifact_names)' in release_check
     assert 'not valid_preflight_evidence(handoff)' in release_check
     assert 'handoff.get("package_sha256") != handoff.get("package_sha256", "").lower()' in release_check
     assert 'print(f"release_check failed: single-command release handoff={handoff!r}", file=sys.stderr)' in release_check
@@ -3137,14 +3139,21 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     manifest = json.loads((output_dir / "release-manifest.json").read_text(encoding="utf-8"))
     demo_summary = json.loads((output_dir / "demo-summary.json").read_text(encoding="utf-8"))
     openapi = json.loads((output_dir / "openapi.json").read_text(encoding="utf-8"))
+    acceptance_matrix = (output_dir / "release-acceptance-matrix.md").read_text(encoding="utf-8")
 
     assert stdout_manifest == manifest
     assert manifest["service"] == "paper-lab-agent"
     assert manifest["version"] == openapi["info"]["version"]
     assert manifest["artifacts"]["openapi"] == "openapi.json"
     assert manifest["artifacts"]["demo_summary"] == "demo-summary.json"
-    assert manifest["artifact_count"] == 3
-    assert manifest["artifact_names"] == ["demo-summary.json", "openapi.json", "release-manifest.json"]
+    assert manifest["artifacts"]["acceptance_matrix"] == "release-acceptance-matrix.md"
+    assert manifest["artifact_count"] == 4
+    assert manifest["artifact_names"] == [
+        "demo-summary.json",
+        "openapi.json",
+        "release-acceptance-matrix.md",
+        "release-manifest.json",
+    ]
     expected_commit = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=repo,
@@ -3179,7 +3188,12 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
         "missing_llm_api_key",
     ]
     assert [warning["code"] for warning in manifest["preflight_warning_details"]] == manifest["preflight_warning_codes"]
-    assert set(manifest["checksums"]) == {"openapi.json", "demo-summary.json", "release-manifest.json"}
+    assert set(manifest["checksums"]) == {
+        "openapi.json",
+        "demo-summary.json",
+        "release-acceptance-matrix.md",
+        "release-manifest.json",
+    }
     assert all(
         len(value) == 64 and all(character in string.hexdigits for character in value)
         for value in manifest["checksums"].values()
@@ -3202,6 +3216,8 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     assert manifest["demo_export_audit_summary_formats"] == demo_summary["export_audit_summary_formats"]
     assert manifest["demo_reaction_set_verified_by"] == demo_summary["reaction_set_verified_by"]
     assert manifest["demo_reaction_set_verified_at"] == demo_summary["reaction_set_verified_at"]
+    assert "Release Acceptance Matrix" in acceptance_matrix
+    assert "docs/PRD_等离子体文献系统.md" in acceptance_matrix
     assert "/api/v1/health" in openapi["paths"]
 
 
@@ -4774,14 +4790,17 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
 
     assert package_result.returncode == 0, package_result.stderr
     payload = json.loads(package_result.stdout)
-    assert payload["ok"] is True
-    assert payload["package_path"] == str(package_path)
-    assert payload["artifact_count"] == 3
-    assert payload["artifact_names"] == [
+    expected_artifact_names = [
         "demo-summary.json",
         "openapi.json",
+        "release-acceptance-matrix.md",
         "release-manifest.json",
     ]
+    expected_checksum_names = set(expected_artifact_names)
+    assert payload["ok"] is True
+    assert payload["package_path"] == str(package_path)
+    assert payload["artifact_count"] == 4
+    assert payload["artifact_names"] == expected_artifact_names
     assert len(payload["package_sha256"]) == 64
     assert payload["source"]["git_commit"]
     assert payload["service"] == "paper-lab-agent"
@@ -4802,17 +4821,13 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert payload["demo_workflow_statuses"]["parse_status"] == "parsed"
     assert payload["demo_workflow_statuses"]["reaction_set_status"] == "verified"
     assert payload["openapi_path_count"] == 28
-    assert set(payload["checksums"]) == {"openapi.json", "demo-summary.json", "release-manifest.json"}
+    assert set(payload["checksums"]) == expected_checksum_names
     assert all(len(value) == 64 for value in payload["checksums"].values())
     assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
     assert payload["demo_reaction_set_verified_at"]
     assert package_path.exists()
     with zipfile.ZipFile(package_path) as archive:
-        assert sorted(archive.namelist()) == [
-            "demo-summary.json",
-            "openapi.json",
-            "release-manifest.json",
-        ]
+        assert sorted(archive.namelist()) == expected_artifact_names
 
     validate_package_result = subprocess.run(
         [
@@ -4832,12 +4847,8 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     validate_payload = json.loads(validate_package_result.stdout)
     assert validate_payload["ok"] is True
     assert validate_payload["package_path"] == str(package_path)
-    assert validate_payload["artifact_count"] == 3
-    assert validate_payload["artifact_names"] == [
-        "demo-summary.json",
-        "openapi.json",
-        "release-manifest.json",
-    ]
+    assert validate_payload["artifact_count"] == 4
+    assert validate_payload["artifact_names"] == expected_artifact_names
     assert validate_payload["source"]["git_commit"]
     assert validate_payload["service"] == "paper-lab-agent"
     assert validate_payload["version"] == "0.1.0"
@@ -4850,7 +4861,7 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert validate_payload["demo_workflow_statuses"]["parse_status"] == "parsed"
     assert validate_payload["demo_workflow_statuses"]["reaction_set_status"] == "verified"
     assert validate_payload["openapi_path_count"] == 28
-    assert set(validate_payload["checksums"]) == {"openapi.json", "demo-summary.json", "release-manifest.json"}
+    assert set(validate_payload["checksums"]) == expected_checksum_names
     assert all(len(value) == 64 for value in validate_payload["checksums"].values())
     assert validate_payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
     assert validate_payload["demo_reaction_set_verified_at"]
@@ -4907,17 +4918,19 @@ def test_build_release_handoff_script_exports_validates_packages_and_revalidates
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
+    expected_artifact_names = [
+        "demo-summary.json",
+        "openapi.json",
+        "release-acceptance-matrix.md",
+        "release-manifest.json",
+    ]
     assert payload["ok"] is True
     assert payload["stage"] == "complete"
     assert payload["artifact_dir"] == str(artifact_dir.resolve())
     assert payload["package_path"] == str(package_path.resolve())
     assert payload["package_sha256"]
-    assert payload["artifact_count"] == 3
-    assert payload["artifact_names"] == [
-        "demo-summary.json",
-        "openapi.json",
-        "release-manifest.json",
-    ]
+    assert payload["artifact_count"] == 4
+    assert payload["artifact_names"] == expected_artifact_names
     assert payload["source"]["git_commit"]
     assert payload["demo_ready"] is True
     assert payload["demo_export_formats"] == ["json", "txt", "bolsig"]
@@ -5019,7 +5032,12 @@ def test_build_release_handoff_removes_package_on_package_validation_failure(mon
             "artifact_dir": str(output_dir),
             "package_path": str(output_path),
             "package_sha256": "a" * 64,
-            "artifact_names": ["demo-summary.json", "openapi.json", "release-manifest.json"],
+            "artifact_names": [
+                "demo-summary.json",
+                "openapi.json",
+                "release-acceptance-matrix.md",
+                "release-manifest.json",
+            ],
             "issues": [],
         }
 
@@ -5028,7 +5046,12 @@ def test_build_release_handoff_removes_package_on_package_validation_failure(mon
             "ok": False,
             "package_path": str(output_path),
             "package_sha256": "a" * 64,
-            "artifact_names": ["demo-summary.json", "openapi.json", "release-manifest.json"],
+            "artifact_names": [
+                "demo-summary.json",
+                "openapi.json",
+                "release-acceptance-matrix.md",
+                "release-manifest.json",
+            ],
             "issues": ["release package invalid zip: bad central directory"],
         }
 

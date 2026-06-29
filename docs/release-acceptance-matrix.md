@@ -58,6 +58,7 @@ python scripts/build_release_handoff.py --artifact-dir out/release --package out
 
 - `openapi.json`
 - `demo-summary.json`
+- `release-acceptance-matrix.md`
 - `release-manifest.json`
 
 ## 发布判定

@@ -22,6 +22,7 @@ EXPECTED_SERVICE = "paper-lab-agent"
 EXPECTED_ARTIFACTS = {
     "openapi": "openapi.json",
     "demo_summary": "demo-summary.json",
+    "acceptance_matrix": "release-acceptance-matrix.md",
     "manifest": "release-manifest.json",
 }
 EXPECTED_ARTIFACT_NAMES = sorted(EXPECTED_ARTIFACTS.values())
@@ -75,6 +76,23 @@ def read_json(path: Path, label: str, issues: list[str]) -> dict[str, Any]:
         issues.append(f"{label} must be a JSON object")
         return {}
     return payload
+
+
+def read_text_artifact(path: Path, label: str, issues: list[str]) -> str:
+    if path.is_symlink():
+        issues.append(f"{label} is not a regular file: {path}")
+        return ""
+    if not path.exists():
+        issues.append(f"{label} missing: {path}")
+        return ""
+    if not path.is_file():
+        issues.append(f"{label} is not a regular file: {path}")
+        return ""
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        issues.append(f"{label} unreadable: {exc}")
+        return ""
 
 
 def demo_audit_entry_count_issues(demo_summary: dict[str, Any]) -> list[str]:
@@ -244,6 +262,11 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
     manifest = read_json(artifact_dir / EXPECTED_ARTIFACTS["manifest"], "release manifest", issues)
     openapi = read_json(artifact_dir / EXPECTED_ARTIFACTS["openapi"], "OpenAPI artifact", issues)
     demo_summary = read_json(artifact_dir / EXPECTED_ARTIFACTS["demo_summary"], "demo summary", issues)
+    acceptance_matrix = read_text_artifact(
+        artifact_dir / EXPECTED_ARTIFACTS["acceptance_matrix"],
+        "release acceptance matrix",
+        issues,
+    )
 
     paths = openapi.get("paths", {}) if isinstance(openapi.get("paths"), dict) else {}
     openapi_path_count = len(paths)
@@ -371,7 +394,7 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             expected_checksum_names = set(EXPECTED_ARTIFACTS.values())
             if set(checksums) != expected_checksum_names:
                 issues.append(f"release manifest checksums keys mismatch: {sorted(checksums)!r}")
-            for artifact_name in (EXPECTED_ARTIFACTS["openapi"], EXPECTED_ARTIFACTS["demo_summary"]):
+            for artifact_name in sorted(name for name in EXPECTED_ARTIFACTS.values() if name != EXPECTED_ARTIFACTS["manifest"]):
                 artifact_path = artifact_dir / artifact_name
                 if artifact_path.exists() and (artifact_path.is_symlink() or not artifact_path.is_file()):
                     issues.append(f"checksum unavailable: {artifact_name} is not a file: {artifact_path}")
@@ -405,6 +428,17 @@ def validate_release_artifacts(artifact_dir: Path, *, require_clean_source: bool
             issues.append("demo summary reaction_set_verified_at must be a non-empty string")
         elif not is_iso8601_timestamp(demo_reaction_set_verified_at):
             issues.append("demo summary reaction_set_verified_at must be an ISO8601 timestamp")
+
+    if acceptance_matrix:
+        for required_text in [
+            "Release Acceptance Matrix",
+            "docs/PRD_等离子体文献系统.md",
+            "docs/接口设计文档.md",
+            "docs/schema.sql",
+            "bash scripts/release_check.sh",
+        ]:
+            if required_text not in acceptance_matrix:
+                issues.append(f"release acceptance matrix missing text: {required_text}")
 
     return {
         "ok": not issues,

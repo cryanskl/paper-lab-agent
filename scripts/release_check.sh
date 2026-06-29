@@ -522,10 +522,25 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     manifest_path = output_dir / "release-manifest.json"
     demo_summary_path = output_dir / "demo-summary.json"
     openapi_path = output_dir / "openapi.json"
+    acceptance_matrix_path = output_dir / "release-acceptance-matrix.md"
     file_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     demo_summary = json.loads(demo_summary_path.read_text(encoding="utf-8"))
     openapi = json.loads(openapi_path.read_text(encoding="utf-8"))
+    acceptance_matrix = acceptance_matrix_path.read_text(encoding="utf-8")
     expected_preflight_warning_codes = ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]
+    expected_artifacts = {
+        "openapi": "openapi.json",
+        "demo_summary": "demo-summary.json",
+        "acceptance_matrix": "release-acceptance-matrix.md",
+        "manifest": "release-manifest.json",
+    }
+    expected_artifact_names = [
+        "demo-summary.json",
+        "openapi.json",
+        "release-acceptance-matrix.md",
+        "release-manifest.json",
+    ]
+    expected_checksum_names = set(expected_artifact_names)
 
     def valid_preflight_evidence(payload):
         details = payload.get("preflight_warning_details") or []
@@ -546,17 +561,13 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     if manifest.get("version") != openapi.get("info", {}).get("version"):
         print("release_check failed: release manifest version does not match OpenAPI version", file=sys.stderr)
         raise SystemExit(1)
-    if manifest.get("artifacts") != {
-        "openapi": "openapi.json",
-        "demo_summary": "demo-summary.json",
-        "manifest": "release-manifest.json",
-    }:
+    if manifest.get("artifacts") != expected_artifacts:
         print(f"release_check failed: release manifest artifacts={manifest.get('artifacts')!r}", file=sys.stderr)
         raise SystemExit(1)
-    if manifest.get("artifact_count") != 3:
+    if manifest.get("artifact_count") != len(expected_artifact_names):
         print(f"release_check failed: release manifest artifact_count={manifest.get('artifact_count')!r}", file=sys.stderr)
         raise SystemExit(1)
-    if manifest.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]:
+    if manifest.get("artifact_names") != expected_artifact_names:
         print(f"release_check failed: release manifest artifact_names={manifest.get('artifact_names')!r}", file=sys.stderr)
         raise SystemExit(1)
     if not valid_preflight_evidence(manifest):
@@ -577,6 +588,10 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     if "/api/v1/health" not in openapi.get("paths", {}):
         print("release_check failed: release handoff OpenAPI missing /api/v1/health", file=sys.stderr)
         raise SystemExit(1)
+    for required_text in ["Release Acceptance Matrix", "docs/PRD_等离子体文献系统.md", "docs/schema.sql"]:
+        if required_text not in acceptance_matrix:
+            print(f"release_check failed: release acceptance matrix missing {required_text!r}", file=sys.stderr)
+            raise SystemExit(1)
     validate_result = subprocess.run(
         [
             sys.executable,
@@ -604,10 +619,9 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         print(f"release_check failed: release artifact source.git_dirty={source.get('git_dirty')!r}", file=sys.stderr)
         raise SystemExit(1)
     checksums = validation.get("checksums") or {}
-    if sorted(checksums) != ["demo-summary.json", "openapi.json", "release-manifest.json"]:
+    if sorted(checksums) != expected_artifact_names:
         print(f"release_check failed: release artifact checksums={checksums!r}", file=sys.stderr)
         raise SystemExit(1)
-    expected_checksum_names = {"openapi.json", "demo-summary.json", "release-manifest.json"}
 
     def valid_sha256(value):
         return (
@@ -640,10 +654,10 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     package = json.loads(package_result.stdout)
     if (
         package.get("ok") is not True
-        or package.get("artifact_count") != 3
+        or package.get("artifact_count") != len(expected_artifact_names)
         or package.get("artifact_dir") != str(output_dir.resolve())
         or package.get("package_path") != str(package_path.resolve())
-        or package.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]
+        or package.get("artifact_names") != expected_artifact_names
         or package.get("service") != "paper-lab-agent"
         or package.get("version") != "0.1.0"
         or package.get("demo_ready") is not True
@@ -658,7 +672,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"
         or package.get("openapi_path_count") != 28
         or not valid_sha256(package.get("package_sha256"))
-        or set((package.get("checksums") or {})) != {"openapi.json", "demo-summary.json", "release-manifest.json"}
+        or set((package.get("checksums") or {})) != expected_checksum_names
         or not valid_release_checksums(package.get("checksums") or {})
         or package.get("demo_reaction_set_verified_by") != "prepare-demo-data"
         or not package.get("demo_reaction_set_verified_at")
@@ -681,9 +695,9 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     package_validation = json.loads(validate_package_result.stdout)
     if (
         package_validation.get("ok") is not True
-        or package_validation.get("artifact_count") != 3
+        or package_validation.get("artifact_count") != len(expected_artifact_names)
         or package_validation.get("package_path") != str(package_path.resolve())
-        or package_validation.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]
+        or package_validation.get("artifact_names") != expected_artifact_names
         or package_validation.get("service") != "paper-lab-agent"
         or package_validation.get("version") != "0.1.0"
         or package_validation.get("demo_ready") is not True
@@ -699,7 +713,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package_validation.get("openapi_path_count") != 28
         or not valid_sha256(package_validation.get("package_sha256"))
         or package_validation.get("package_sha256") != package.get("package_sha256")
-        or set((package_validation.get("checksums") or {})) != {"openapi.json", "demo-summary.json", "release-manifest.json"}
+        or set((package_validation.get("checksums") or {})) != expected_checksum_names
         or package_validation.get("checksums") != package.get("checksums")
         or not valid_release_checksums(package_validation.get("checksums") or {})
         or package_validation.get("demo_reaction_set_verified_by") != "prepare-demo-data"
@@ -734,8 +748,8 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         }
         or handoff.get("artifact_dir") != str(output_dir.resolve())
         or handoff.get("package_path") != str(package_path.resolve())
-        or handoff.get("artifact_count") != 3
-        or handoff.get("artifact_names") != ["demo-summary.json", "openapi.json", "release-manifest.json"]
+        or handoff.get("artifact_count") != len(expected_artifact_names)
+        or handoff.get("artifact_names") != expected_artifact_names
         or handoff.get("service") != "paper-lab-agent"
         or handoff.get("version") != "0.1.0"
         or handoff.get("demo_ready") is not True
@@ -750,7 +764,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or handoff.get("openapi_path_count") != 28
         or not valid_sha256(handoff.get("package_sha256"))
         or handoff.get("package_sha256") != handoff.get("package_sha256", "").lower()
-        or set((handoff.get("checksums") or {})) != {"openapi.json", "demo-summary.json", "release-manifest.json"}
+        or set((handoff.get("checksums") or {})) != expected_checksum_names
         or not valid_release_checksums(handoff.get("checksums") or {})
         or handoff.get("demo_reaction_set_verified_by") != "prepare-demo-data"
         or not handoff.get("demo_reaction_set_verified_at")
