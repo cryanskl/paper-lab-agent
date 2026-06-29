@@ -2050,6 +2050,23 @@ def test_journal_option_label_handles_malformed_journal_items():
     assert label == "#- Journal · active=False"
 
 
+def test_journal_create_success_state_blocks_malformed_success_payloads():
+    from app import frontend_api
+
+    assert frontend_api.journal_create_success_state({"id": 7}) == {
+        "message": "journal #7",
+        "warning": None,
+    }
+    assert frontend_api.journal_create_success_state({"id": False}) == {
+        "message": "journal #unknown",
+        "warning": "journal create response: invalid",
+    }
+    assert frontend_api.journal_create_success_state(["journal"]) == {
+        "message": "journal #unknown",
+        "warning": "journal create response: invalid",
+    }
+
+
 def test_paper_search_journal_options_skip_malformed_items():
     from app import frontend_api
 

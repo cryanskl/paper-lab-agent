@@ -18962,6 +18962,28 @@ def test_streamlit_config_tab_can_create_journal_with_year_to():
         assert required in create_section
 
 
+def test_streamlit_config_create_journal_normalizes_success_payload():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    create_journal_section = streamlit[
+        streamlit.index('with st.form("create-journal-form")') :
+        streamlit.index("if journals_all:")
+    ]
+    create_response_offset = create_journal_section.index('status_code, result = api_post("/journals"')
+    create_success_section = create_journal_section[
+        create_journal_section.index("if status_code == 201:", create_response_offset) :
+        create_journal_section.index("else:", create_response_offset)
+    ]
+
+    assert "journal_create_success_state" in streamlit
+    assert "journal_success = journal_create_success_state(result)" in create_success_section
+    assert 'st.success(journal_success["message"])' in create_success_section
+    assert 'if journal_success["warning"]:' in create_success_section
+    assert 'st.warning(journal_success["warning"])' in create_success_section
+    assert "result['id']" not in create_success_section
+    assert 'result["id"]' not in create_success_section
+
+
 def test_streamlit_config_create_errors_show_payload_details():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

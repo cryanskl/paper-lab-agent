@@ -40,6 +40,7 @@ from app.frontend_api import (
     format_error_payload,
     health_display_state,
     int_or_default,
+    journal_create_success_state,
     journal_items,
     journal_option_label,
     journal_table_rows,
@@ -507,7 +508,10 @@ with config_tab:
                 }
                 status_code, result = api_post("/journals", json=payload)
                 if status_code == 201:
-                    st.success(f"journal #{result['id']}")
+                    journal_success = journal_create_success_state(result)
+                    st.success(journal_success["message"])
+                    if journal_success["warning"]:
+                        st.warning(journal_success["warning"])
                     st.rerun()
                 else:
                     st.warning(format_error_payload(result, status_code))

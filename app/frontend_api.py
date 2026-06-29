@@ -503,6 +503,13 @@ def journal_option_label(journal: dict[str, Any]) -> str:
     return f"#{id_label} {name_label} · active={active_label}"
 
 
+def journal_create_success_state(payload: Any) -> dict[str, Optional[str]]:
+    journal_id = payload.get("id") if isinstance(payload, dict) else None
+    if isinstance(journal_id, int) and not isinstance(journal_id, bool):
+        return {"message": f"journal #{journal_id}", "warning": None}
+    return {"message": "journal #unknown", "warning": "journal create response: invalid"}
+
+
 def paper_search_journal_options(journals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         journal
