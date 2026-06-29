@@ -83,6 +83,32 @@ def validate_release_package(package_path: Path, *, require_clean_source: bool =
                 f"{symlink_parent}"
             ],
         }
+    if requested_package_path.parent.exists() and not requested_package_path.parent.is_dir():
+        package_path = requested_package_path.absolute()
+        return {
+            "ok": False,
+            "package_path": str(package_path),
+            "package_sha256": None,
+            "artifact_count": 0,
+            "artifact_names": [],
+            "source": {},
+            "service": None,
+            "version": None,
+            "openapi_path_count": 0,
+            "checksums": {},
+            "demo_ready": None,
+            "demo_counts": {},
+            "demo_workflow_statuses": {},
+            "demo_export_formats": [],
+            "demo_export_audit_entry_counts": {},
+            "demo_export_audit_summary_formats": [],
+            "demo_reaction_set_verified_by": None,
+            "demo_reaction_set_verified_at": None,
+            "issues": [
+                "release package parent is not a regular directory: "
+                f"{requested_package_path.parent.resolve()}"
+            ],
+        }
     package_path = package_path.resolve()
     issues: list[str] = []
     artifact_names: list[str] = []

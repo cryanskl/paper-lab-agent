@@ -5679,6 +5679,19 @@ def test_validate_release_package_rejects_directory_package_path(tmp_path):
     assert f"release package is not a regular file: {package_path.resolve()}" in report["issues"]
 
 
+def test_validate_release_package_rejects_file_package_parent(tmp_path):
+    validate_release_package = load_validate_release_package()
+    package_parent = tmp_path / "packages"
+    package_path = package_parent / "paper-lab-agent-release.zip"
+    package_parent.write_text("not a directory", encoding="utf-8")
+
+    report = validate_release_package.validate_release_package(package_path)
+
+    assert report["ok"] is False
+    assert f"release package parent is not a regular directory: {package_parent.resolve()}" in report["issues"]
+    assert package_parent.is_file()
+
+
 def test_validate_release_package_reports_zip_read_failure(monkeypatch, tmp_path):
     validate_release_package = load_validate_release_package()
     package_path = tmp_path / "paper-lab-agent-release.zip"
