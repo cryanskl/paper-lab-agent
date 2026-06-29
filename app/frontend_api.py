@@ -236,6 +236,17 @@ def demo_data_display_state(demo_data: Any) -> dict[str, Any]:
     return {"ready": False, "missing": ["ready=false"]}
 
 
+def health_display_state(health: Any) -> dict[str, Optional[str]]:
+    if not isinstance(health, dict):
+        return {"caption": "service:invalid · status:invalid", "warning": "health: invalid"}
+    service = health.get("service")
+    status = health.get("status")
+    service_label = service.strip() if isinstance(service, str) and service.strip() else "service:invalid"
+    status_label = status.strip() if isinstance(status, str) and status.strip() else "status:invalid"
+    warning = None if service_label == service and status_label == status else "health: invalid"
+    return {"caption": f"{service_label} · {status_label}", "warning": warning}
+
+
 SYSTEM_COUNT_METRICS = [
     ("期刊", "journals"),
     ("论文", "papers"),

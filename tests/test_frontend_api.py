@@ -317,6 +317,26 @@ def test_demo_data_display_state_blocks_malformed_demo_data_object():
     assert state["missing"] == ["demo_data:invalid"]
 
 
+def test_health_display_state_blocks_malformed_health_payloads():
+    from app import frontend_api
+
+    assert frontend_api.health_display_state(
+        {"service": "paper-lab-agent", "status": "ok"}
+    ) == {
+        "caption": "paper-lab-agent · ok",
+        "warning": None,
+    }
+
+    assert frontend_api.health_display_state({"service": "", "status": ["ok"]}) == {
+        "caption": "service:invalid · status:invalid",
+        "warning": "health: invalid",
+    }
+    assert frontend_api.health_display_state(["health"]) == {
+        "caption": "service:invalid · status:invalid",
+        "warning": "health: invalid",
+    }
+
+
 def test_system_count_metric_rows_blocks_malformed_counts_objects():
     from app import frontend_api
 

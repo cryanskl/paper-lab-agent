@@ -37,6 +37,7 @@ from app.frontend_api import (
     filter_documents_by_status,
     format_category_summary,
     format_error_payload,
+    health_display_state,
     int_or_default,
     journal_items,
     journal_option_label,
@@ -104,7 +105,10 @@ st.title("paper-lab-agent")
 
 try:
     health = api_get("/health")
-    st.caption(f"{health['service']} · {health['status']}")
+    health_display = health_display_state(health)
+    st.caption(health_display["caption"])
+    if health_display["warning"]:
+        st.warning(health_display["warning"])
 except FrontendApiError as exc:
     st.error(format_error_payload(exc.payload, exc.status_code))
     st.json(exc.payload)

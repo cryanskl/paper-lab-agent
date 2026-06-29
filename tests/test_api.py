@@ -16234,6 +16234,20 @@ def test_streamlit_startup_health_error_shows_payload_details():
     assert 'st.error(f"API unavailable: {exc}")' not in startup_section
 
 
+def test_streamlit_startup_health_normalizes_success_payload():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    startup_section = streamlit[streamlit.index("st.set_page_config") : streamlit.index("review_message =")]
+
+    assert "health_display_state" in streamlit
+    assert "health_display = health_display_state(health)" in startup_section
+    assert 'st.caption(health_display["caption"])' in startup_section
+    assert 'if health_display["warning"]:' in startup_section
+    assert 'st.warning(health_display["warning"])' in startup_section
+    assert 'health["service"]' not in startup_section
+    assert 'health["status"]' not in startup_section
+
+
 def test_streamlit_high_frequency_actions_format_api_error_payloads():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
