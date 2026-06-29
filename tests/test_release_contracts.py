@@ -4454,17 +4454,18 @@ def test_validate_release_artifacts_rejects_unexpected_handoff_files(tmp_path):
     assert "release artifact directory contains unexpected files: ['old-demo-summary.json']" in report["issues"]
 
 
-def test_validate_release_artifacts_reports_unreadable_required_artifact(tmp_path):
+def test_validate_release_artifacts_rejects_directory_required_artifact(tmp_path):
     validate_release_artifacts = load_validate_release_artifacts()
     artifact_dir = tmp_path / "release"
     artifact_dir.mkdir()
-    (artifact_dir / "openapi.json").mkdir()
+    openapi_path = artifact_dir / "openapi.json"
+    openapi_path.mkdir()
     (artifact_dir / "demo-summary.json").write_text("{}", encoding="utf-8")
     (artifact_dir / "release-manifest.json").write_text("{}", encoding="utf-8")
 
     report = validate_release_artifacts.validate_release_artifacts(artifact_dir)
 
-    assert any(issue.startswith("OpenAPI artifact unreadable:") for issue in report["issues"])
+    assert f"OpenAPI artifact is not a regular file: {openapi_path}" in report["issues"]
 
 
 def test_validate_release_artifacts_reports_checksum_artifact_not_file(tmp_path):
@@ -4514,7 +4515,7 @@ def test_validate_release_artifacts_reports_checksum_artifact_not_file(tmp_path)
     report = validate_release_artifacts.validate_release_artifacts(artifact_dir)
 
     assert report["ok"] is False
-    assert any(issue.startswith("OpenAPI artifact unreadable:") for issue in report["issues"])
+    assert f"OpenAPI artifact is not a regular file: {openapi_path}" in report["issues"]
     assert f"checksum unavailable: openapi.json is not a file: {openapi_path.resolve()}" in report["issues"]
 
 
