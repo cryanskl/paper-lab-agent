@@ -2210,7 +2210,7 @@ def test_rag_query_accepts_normalizable_vector_db_backend_metadata(tmp_path):
     client = make_client(tmp_path)
 
     from app.db import get_conn
-    from app.services.rag import local_hash_embedding
+    from app.services.rag import local_hash_embedding, parse_vector_store_json
 
     with get_conn() as conn:
         document_id = conn.execute(
@@ -2262,6 +2262,8 @@ def test_rag_query_accepts_normalizable_vector_db_backend_metadata(tmp_path):
     payload = response.json()
     assert payload["sources"]
     assert payload["sources"][0]["vector_id"] == "legacy-backend-vector"
+    parsed = parse_vector_store_json(json.dumps(vector_record))
+    assert parsed["legacy-backend-vector"]["vector_db_backend"] == "local-json"
 
 
 def test_rag_query_invalid_vector_chunk_id_returns_clear_error(tmp_path):
