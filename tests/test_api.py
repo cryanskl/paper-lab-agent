@@ -18377,7 +18377,7 @@ def test_streamlit_search_filter_metadata_errors_show_payload_details():
 
     for required in [
         'search_journals_response = api_get("/journals", active=True, page_size=100)',
-        'categories = paper_category_options(api_get("/categories")["items"])',
+        'search_categories_response = api_get("/categories")',
         "except FrontendApiError as exc:",
         "st.error(format_error_payload(exc.payload, exc.status_code))",
         "st.json(exc.payload)",
@@ -18421,10 +18421,23 @@ def test_streamlit_search_categories_use_filtered_options():
     ]
 
     assert "paper_category_options" in streamlit
-    assert 'categories = paper_category_options(api_get("/categories")["items"])' in search_section
+    assert 'categories = paper_category_options(search_categories_response["items"])' in search_section
     assert 'categories = api_get("/categories")["items"]' not in search_section
     assert "category_options_by_slug = {category[\"slug\"]: category for category in categories}" in manual_category_section
     assert 'categories,' in manual_category_section
+
+
+def test_streamlit_search_tab_normalizes_categories_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    assert "paginated_response_state" in streamlit
+    assert 'search_categories_response = api_get("/categories")' in search_section
+    assert "search_categories_response = paginated_response_state(search_categories_response, default_page_size=20)" in search_section
+    assert search_section.index(
+        "search_categories_response = paginated_response_state(search_categories_response, default_page_size=20)"
+    ) < search_section.index('categories = paper_category_options(search_categories_response["items"])')
 
 
 def test_streamlit_search_results_show_dedupe_strategy():
