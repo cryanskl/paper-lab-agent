@@ -2060,6 +2060,27 @@ def test_paper_search_result_items_skip_malformed_items():
     ) == [valid_paper]
 
 
+def test_paper_search_response_state_handles_malformed_envelope():
+    from app import frontend_api
+
+    assert frontend_api.paper_search_response_state(
+        {"items": "bad", "total": "7", "page": False, "page_size": -1}
+    ) == {"items": [], "total": 0, "page": 1, "page_size": 20}
+    assert frontend_api.paper_search_response_state(
+        {
+            "items": [{"id": 7, "title": "Ar/O2 plasma chemistry"}],
+            "total": 1,
+            "page": 2,
+            "page_size": 10,
+        }
+    ) == {
+        "items": [{"id": 7, "title": "Ar/O2 plasma chemistry"}],
+        "total": 1,
+        "page": 2,
+        "page_size": 10,
+    }
+
+
 def test_paper_search_dedupe_label_handles_malformed_values():
     from app import frontend_api
 

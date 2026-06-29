@@ -18412,6 +18412,16 @@ def test_streamlit_search_results_use_filtered_paper_items():
     assert 'for paper in papers["items"]:' not in search_section
 
 
+def test_streamlit_search_results_normalize_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    search_section = streamlit[streamlit.index("with search_tab:") : streamlit.index("st.divider()", streamlit.index("with search_tab:"))]
+
+    assert "paper_search_response_state" in streamlit
+    assert "papers = paper_search_response_state(papers)" in search_section
+    assert search_section.index("papers = paper_search_response_state(papers)") < search_section.index('st.metric("结果"')
+
+
 def test_streamlit_search_manual_category_defaults_use_filtered_slugs():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")

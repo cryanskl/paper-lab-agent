@@ -44,6 +44,7 @@ from app.frontend_api import (
     paper_search_abstract_preview,
     paper_search_dedupe_label,
     paper_search_journal_options,
+    paper_search_response_state,
     paper_search_result_items,
     paper_upload_options,
     paper_upload_query_params,
@@ -272,6 +273,7 @@ with search_tab:
             st.caption("检索失败")
             st.warning(format_error_payload(exc.payload, exc.status_code))
             st.json(exc.payload)
+    papers = paper_search_response_state(papers)
     st.metric("结果", papers["total"])
     st.caption(f"page {papers['page']} · page_size {papers['page_size']}")
     if not search_error and papers["total"] == 0:

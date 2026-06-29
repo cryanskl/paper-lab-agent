@@ -155,6 +155,12 @@ def non_negative_int_or_zero(value: Any) -> int:
     return value
 
 
+def positive_int_or_default(value: Any, default: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        return default
+    return value
+
+
 def dict_or_empty(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -520,6 +526,18 @@ def paper_search_result_items(papers: list[dict[str, Any]]) -> list[dict[str, An
         and isinstance(paper.get("title"), str)
         and paper.get("title", "").strip()
     ]
+
+
+def paper_search_response_state(response: Any) -> dict[str, Any]:
+    if not isinstance(response, dict):
+        return {"items": [], "total": 0, "page": 1, "page_size": 20}
+    items = response.get("items")
+    return {
+        "items": items if isinstance(items, list) else [],
+        "total": non_negative_int_or_zero(response.get("total")),
+        "page": positive_int_or_default(response.get("page"), 1),
+        "page_size": positive_int_or_default(response.get("page_size"), 20),
+    }
 
 
 def paper_search_dedupe_label(paper: dict[str, Any]) -> str:
