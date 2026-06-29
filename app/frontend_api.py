@@ -875,6 +875,24 @@ def document_status_rows(document: dict[str, Any], chunks: Optional[dict[str, An
     return [{"field": field, "value": value} for field, value in rows]
 
 
+def document_chunks_response_state(response: Any) -> dict[str, Any]:
+    normalized = paginated_response_state(response, default_page_size=20)
+    if not isinstance(response, dict):
+        response = {}
+    indexed = response.get("indexed")
+    indexed = indexed if isinstance(indexed, bool) else False
+    index_status = response.get("index_status")
+    if not isinstance(index_status, str) or not index_status.strip():
+        index_status = "indexed" if indexed else "not_indexed"
+    index_error = response.get("index_error")
+    return {
+        **normalized,
+        "indexed": indexed,
+        "index_status": index_status,
+        "index_error": index_error if isinstance(index_error, str) else None,
+    }
+
+
 def document_asset_downloads(document: dict[str, Any]) -> list[dict[str, Any]]:
     assets = [
         ("pdf", "file_path", "下载原始 PDF", "application/pdf", "PDF 文件不存在", "bytes"),

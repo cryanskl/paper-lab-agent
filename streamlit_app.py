@@ -22,6 +22,7 @@ from app.frontend_api import (
     document_chunk_rows,
     document_chunk_option_label,
     document_chunk_preview_text,
+    document_chunks_response_state,
     document_filter_summary,
     document_option_label,
     documents_response_state,
@@ -771,6 +772,7 @@ with documents_tab:
             st.error(format_error_payload(exc.payload, exc.status_code))
             st.json(exc.payload)
             st.stop()
+        chunks = document_chunks_response_state(chunks)
         index_status = chunks.get("index_status") or ("indexed" if chunks["indexed"] else "not_indexed")
         st.caption(f"index_status: {index_status} · chunks: {chunks['total']}")
         st.dataframe(dataframe_display_rows(document_status_rows(document_detail, chunks)), use_container_width=True)

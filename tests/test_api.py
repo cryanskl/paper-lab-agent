@@ -17606,6 +17606,37 @@ def test_streamlit_document_chunks_errors_show_payload_details():
         assert required in chunks_load_section
 
 
+def test_document_chunks_response_state_normalizes_malformed_envelope():
+    from app import frontend_api
+
+    assert hasattr(frontend_api, "document_chunks_response_state")
+    normalized = frontend_api.document_chunks_response_state(
+        {"items": "invalid", "total": -3, "page": 0, "page_size": None, "indexed": "yes", "index_error": 3}
+    )
+
+    assert normalized == {
+        "items": [],
+        "total": 0,
+        "page": 1,
+        "page_size": 20,
+        "indexed": False,
+        "index_status": "not_indexed",
+        "index_error": None,
+    }
+
+
+def test_streamlit_document_chunks_normalizes_response_envelope():
+    repo = Path(__file__).resolve().parent.parent
+    streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
+    documents_section = streamlit[streamlit.index("with documents_tab:") : streamlit.index("with rag_tab:")]
+
+    assert "document_chunks_response_state" in streamlit
+    assert "chunks = document_chunks_response_state(chunks)" in documents_section
+    assert documents_section.index("chunks = document_chunks_response_state(chunks)") < documents_section.index(
+        "index_status = chunks.get"
+    )
+
+
 def test_streamlit_document_parse_surfaces_success_and_error_states():
     repo = Path(__file__).resolve().parent.parent
     streamlit = (repo / "streamlit_app.py").read_text(encoding="utf-8")
