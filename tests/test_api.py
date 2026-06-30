@@ -15987,6 +15987,8 @@ def test_streamlit_chemistry_review_ui_exposes_review_fields():
         'st.caption(review_state["summary"])',
         'review_state.get("source_note")',
         'review_state["export_message"]',
+        'loaded_reaction_set_id = int(detail["id"])',
+        'f"/reaction-sets/{loaded_reaction_set_id}/export?format={export_format}"',
         "未复核",
         "bolsig",
         "format={export_format}",
@@ -16184,11 +16186,18 @@ def test_streamlit_chemistry_documents_list_errors_show_payload_details():
         "chemistry_documents_response = api_get(",
         '"/documents"',
         "except FrontendApiError as exc:",
-        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.warning(format_error_payload(exc.payload, exc.status_code))",
+        'with st.expander("Raw API response"):',
         "st.json(exc.payload)",
-        "st.stop()",
+        '"items": []',
+        '"total": 0',
     ]:
         assert required in chemistry_section
+    error_section = chemistry_section[
+        chemistry_section.index("chemistry_documents_response = api_get(") :
+        chemistry_section.index("chemistry_documents_response = documents_response_state")
+    ]
+    assert "st.stop()" not in error_section
 
 
 def test_streamlit_chemistry_tab_exposes_reaction_set_pagination_controls():
@@ -16477,7 +16486,7 @@ def test_streamlit_chemistry_export_errors_show_payload_details():
     ]
 
     for required in [
-        'status, payload = api_post(f"/reaction-sets/{rs_id}/export?format={export_format}", json=None)',
+        'f"/reaction-sets/{loaded_reaction_set_id}/export?format={export_format}"',
         "if status == 409:",
         "st.warning(format_error_payload(payload, status))",
         "elif status >= 400:",
@@ -18355,11 +18364,18 @@ def test_streamlit_rag_documents_list_errors_show_payload_details():
     for required in [
         'rag_documents_response = api_get("/documents", page=int(rag_documents_page), page_size=int(rag_documents_page_size))',
         "except FrontendApiError as exc:",
-        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.warning(format_error_payload(exc.payload, exc.status_code))",
+        'with st.expander("Raw API response"):',
         "st.json(exc.payload)",
-        "st.stop()",
+        '"items": []',
+        '"total": 0',
     ]:
         assert required in rag_section
+    error_section = rag_section[
+        rag_section.index('rag_documents_response = api_get("/documents"') :
+        rag_section.index("rag_documents_response = documents_response_state")
+    ]
+    assert "st.stop()" not in error_section
 
 
 def test_streamlit_document_upload_shows_duplicate_result():
@@ -18456,11 +18472,18 @@ def test_streamlit_documents_list_errors_show_payload_details():
     for required in [
         'documents_response = api_get("/documents", page=int(documents_page), page_size=int(documents_page_size))',
         "except FrontendApiError as exc:",
-        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.warning(format_error_payload(exc.payload, exc.status_code))",
+        'with st.expander("Raw API response"):',
         "st.json(exc.payload)",
-        "st.stop()",
+        '"items": []',
+        '"total": 0',
     ]:
         assert required in documents_section
+    error_section = documents_section[
+        documents_section.index('documents_response = api_get("/documents"') :
+        documents_section.index("documents_response = documents_response_state")
+    ]
+    assert "st.stop()" not in error_section
 
 
 def test_streamlit_document_detail_errors_show_payload_details():
@@ -18469,17 +18492,19 @@ def test_streamlit_document_detail_errors_show_payload_details():
     documents_section = streamlit_documents_panel_section(streamlit)
     detail_section = documents_section[
         documents_section.index('selected = st.selectbox("文档", display_docs, format_func=document_option_label)') :
-        documents_section.index('if document_detail.get("parse_error"):')
+        documents_section.index("if document_detail and document_detail.get")
     ]
 
     for required in [
         'document_detail = api_get(f"/documents/{selected[\'id\']}")',
         "except FrontendApiError as exc:",
-        "st.error(format_error_payload(exc.payload, exc.status_code))",
+        "st.warning(format_error_payload(exc.payload, exc.status_code))",
+        'with st.expander("Raw API response"):',
         "st.json(exc.payload)",
-        "st.stop()",
+        "document_detail = None",
     ]:
         assert required in detail_section
+    assert "st.stop()" not in detail_section
 
 
 def test_streamlit_documents_tab_exposes_pagination_controls():

@@ -922,9 +922,10 @@ def render_documents_panel() -> Optional[dict[str, Any]]:
     try:
         documents_response = api_get("/documents", page=int(documents_page), page_size=int(documents_page_size))
     except FrontendApiError as exc:
-        st.error(format_error_payload(exc.payload, exc.status_code))
-        st.json(exc.payload)
-        st.stop()
+        st.warning(format_error_payload(exc.payload, exc.status_code))
+        with st.expander("Raw API response"):
+            st.json(exc.payload)
+        documents_response = {"items": [], "total": 0, "page": int(documents_page), "page_size": int(documents_page_size)}
     documents_response = documents_response_state(documents_response)
     docs = documents_response["items"]
     st.caption(
@@ -945,33 +946,35 @@ def render_documents_panel() -> Optional[dict[str, Any]]:
             document_detail = api_get(f"/documents/{selected['id']}")
             selected_document_detail = document_detail
         except FrontendApiError as exc:
-            st.error(format_error_payload(exc.payload, exc.status_code))
-            st.json(exc.payload)
-            st.stop()
-        if document_detail.get("parse_error"):
+            st.warning(format_error_payload(exc.payload, exc.status_code))
+            with st.expander("Raw API response"):
+                st.json(exc.payload)
+            document_detail = None
+        if document_detail and document_detail.get("parse_error"):
             st.warning(f"parse_error: {document_detail['parse_error']}")
-        for document_asset in document_asset_downloads(document_detail):
-            if document_asset["exists"]:
-                st.download_button(
-                    document_asset["label"],
-                    data=document_asset["data"],
-                    file_name=document_asset["file_name"],
-                    mime=document_asset["mime"],
+        if document_detail:
+            for document_asset in document_asset_downloads(document_detail):
+                if document_asset["exists"]:
+                    st.download_button(
+                        document_asset["label"],
+                        data=document_asset["data"],
+                        file_name=document_asset["file_name"],
+                        mime=document_asset["mime"],
+                    )
+                else:
+                    st.warning(document_asset["missing_message"])
+            st.caption(f"chemistry_status: {document_detail.get('chemistry_status') or 'unknown'}")
+            if document_detail.get("chemistry_error"):
+                st.warning(f"chemistry_error: {document_detail['chemistry_error']}")
+            linked_paper = document_detail.get("paper")
+            if linked_paper:
+                st.caption(
+                    "关联论文: "
+                    f'{linked_paper.get("title") or "Untitled"} · '
+                    f'DOI: {linked_paper.get("doi") or "-"} · '
+                    f'{linked_paper.get("journal_name") or "-"} · '
+                    f'{linked_paper.get("published_date") or "-"}'
                 )
-            else:
-                st.warning(document_asset["missing_message"])
-        st.caption(f"chemistry_status: {document_detail.get('chemistry_status') or 'unknown'}")
-        if document_detail.get("chemistry_error"):
-            st.warning(f"chemistry_error: {document_detail['chemistry_error']}")
-        linked_paper = document_detail.get("paper")
-        if linked_paper:
-            st.caption(
-                "关联论文: "
-                f'{linked_paper.get("title") or "Untitled"} · '
-                f'DOI: {linked_paper.get("doi") or "-"} · '
-                f'{linked_paper.get("journal_name") or "-"} · '
-                f'{linked_paper.get("published_date") or "-"}'
-            )
 
     return selected_document_detail
 
@@ -988,9 +991,15 @@ def render_rag_panel(selected_document: Optional[dict[str, Any]] = None) -> None
     try:
         rag_documents_response = api_get("/documents", page=int(rag_documents_page), page_size=int(rag_documents_page_size))
     except FrontendApiError as exc:
-        st.error(format_error_payload(exc.payload, exc.status_code))
-        st.json(exc.payload)
-        st.stop()
+        st.warning(format_error_payload(exc.payload, exc.status_code))
+        with st.expander("Raw API response"):
+            st.json(exc.payload)
+        rag_documents_response = {
+            "items": [],
+            "total": 0,
+            "page": int(rag_documents_page),
+            "page_size": int(rag_documents_page_size),
+        }
     rag_documents_response = documents_response_state(rag_documents_response)
     rag_documents = rag_documents_response["items"]
     st.caption(
@@ -1086,9 +1095,15 @@ def render_chemistry_panel(selected_document: Optional[dict[str, Any]] = None) -
             page_size=int(chemistry_documents_page_size),
         )
     except FrontendApiError as exc:
-        st.error(format_error_payload(exc.payload, exc.status_code))
-        st.json(exc.payload)
-        st.stop()
+        st.warning(format_error_payload(exc.payload, exc.status_code))
+        with st.expander("Raw API response"):
+            st.json(exc.payload)
+        chemistry_documents_response = {
+            "items": [],
+            "total": 0,
+            "page": int(chemistry_documents_page),
+            "page_size": int(chemistry_documents_page_size),
+        }
     chemistry_documents_response = documents_response_state(chemistry_documents_response)
     chemistry_documents = chemistry_documents_response["items"]
     st.caption(
@@ -1181,19 +1196,25 @@ def render_chemistry_panel(selected_document: Optional[dict[str, Any]] = None) -
             )
             selected_reaction_set_id = selected_reaction_set["id"]
 
-    rs_id = st.number_input("reaction_set_id", min_value=1, value=int(selected_reaction_set_id or 1))
+    manual_reaction_set_id = st.number_input("reaction_set_id", min_value=1, value=int(selected_reaction_set_id or 1))
+    active_reaction_set_id = int(selected_reaction_set_id or manual_reaction_set_id)
     load_reaction_set = st.button("加载反应集")
     should_load_reaction_set = load_reaction_set or selected_reaction_set_id is not None
     if should_load_reaction_set:
         try:
-            st.session_state["reaction_set_detail"] = api_get(f"/reaction-sets/{rs_id}")
+            st.session_state["reaction_set_detail"] = api_get(f"/reaction-sets/{active_reaction_set_id}")
         except FrontendApiError as exc:
             st.warning(format_error_payload(exc.payload, exc.status_code))
             st.json(exc.payload)
             st.session_state["reaction_set_detail"] = None
 
     detail = st.session_state.get("reaction_set_detail")
+    if detail and selected_document_id is not None and detail.get("document_id") != selected_document_id:
+        st.warning("当前反应集不属于选中的 PDF，已清空详情。")
+        st.session_state["reaction_set_detail"] = None
+        detail = None
     if detail:
+        loaded_reaction_set_id = int(detail["id"])
         review_state = reaction_set_review_state(detail)
         deposition = chemistry_deposition_summary(detail)
         st.caption(deposition["summary"])
@@ -1222,7 +1243,10 @@ def render_chemistry_panel(selected_document: Optional[dict[str, Any]] = None) -
             st.info(review_state["export_message"])
         export_format = st.selectbox("导出格式", ["json", "txt", "bolsig"], key="reaction_export_format")
         if st.button("导出反应集", key="export-reaction-set", disabled=export_blocked):
-            status, payload = api_post(f"/reaction-sets/{rs_id}/export?format={export_format}", json=None)
+            status, payload = api_post(
+                f"/reaction-sets/{loaded_reaction_set_id}/export?format={export_format}",
+                json=None,
+            )
             if status == 409:
                 st.warning(format_error_payload(payload, status))
                 st.json(payload)
