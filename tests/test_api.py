@@ -10942,8 +10942,10 @@ def test_env_example_validator_cli_rejects_runtime_url_drift(tmp_path):
         encoding="utf-8",
     )
 
+    import sys
+
     result = subprocess.run(
-        [".venv/bin/python", "scripts/validate_env_example.py", str(env_example)],
+        [sys.executable, "scripts/validate_env_example.py", str(env_example)],
         cwd=repo,
         check=False,
         capture_output=True,
