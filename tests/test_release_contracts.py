@@ -3165,13 +3165,15 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
         capture_output=True,
         text=True,
     ).stdout.strip()
+    # A detached HEAD (how CI checks out pull requests) yields an empty branch name,
+    # which the exporter records as "unknown" rather than blank.
     expected_branch = subprocess.run(
         ["git", "branch", "--show-current"],
         cwd=repo,
         check=True,
         capture_output=True,
         text=True,
-    ).stdout.strip()
+    ).stdout.strip() or "unknown"
     expected_dirty = bool(
         subprocess.run(
             ["git", "status", "--porcelain"],
@@ -3621,13 +3623,18 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     assert payload["service"] == "paper-lab-agent"
     assert payload["version"] == "0.1.0"
     assert payload["source"]["git_commit"]
-    assert payload["source"]["git_branch"] == subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    # A detached HEAD (how CI checks out pull requests) yields an empty branch name,
+    # which the exporter records as "unknown" rather than blank.
+    assert payload["source"]["git_branch"] == (
+        subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        or "unknown"
+    )
     assert isinstance(payload["source"]["git_dirty"], bool)
     assert payload["preflight_ok"] is True
     assert payload["preflight_warning_count"] == 3
