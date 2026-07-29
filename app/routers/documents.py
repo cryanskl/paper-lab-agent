@@ -9,7 +9,7 @@ from app.errors import AppError, AsyncJobResponse, PageResponse, page
 from app.services.chemistry import extract_reactions, mark_chemistry_queued
 from app.services.documents import mark_parse_queued, parse_document, save_upload
 from app.services.rag import index_document, mark_index_queued
-from app.services.translation import create_translation_job, translate_document
+from app.services.translation import create_translation_job, translate_document, translation_sections
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -63,6 +63,16 @@ class DocumentListResponse(BaseModel):
     page_size: int
 
 
+class TranslationSectionResponse(BaseModel):
+    section_id: Optional[int] = None
+    seq: Optional[int] = None
+    title: Optional[str] = None
+    section_type: Optional[str] = None
+    source: str
+    target: str
+    note: Optional[str] = None
+
+
 class TranslationResponse(BaseModel):
     id: int
     document_id: int
@@ -72,6 +82,7 @@ class TranslationResponse(BaseModel):
     output_path: Optional[str] = None
     error: Optional[str] = None
     created_at: str
+    sections: list[TranslationSectionResponse] = []
 
 
 class SectionResponse(BaseModel):
@@ -310,7 +321,9 @@ def get_translation(document_id: int) -> dict:
         ).fetchone()
     if not row:
         raise AppError(404, "translation_not_found", "Translation not found")
-    return dict_from_row(row)
+    translation = dict_from_row(row)
+    translation["sections"] = translation_sections(document_id, translation.get("output_path"))
+    return translation
 
 
 @router.post("/{document_id}/index", status_code=202, response_model=AsyncJobResponse, response_model_exclude_none=True)

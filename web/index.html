@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>等离子体文献工作台</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230F1217'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%232C7A88' stroke-width='2'/%3E%3Cellipse cx='16' cy='16' rx='11' ry='4' fill='none' stroke='%236FC7D6' stroke-width='1.6'/%3E%3Cellipse cx='16' cy='16' rx='11' ry='4' fill='none' stroke='%236FC7D6' stroke-width='1.6' transform='rotate(60 16 16)'/%3E%3Cellipse cx='16' cy='16' rx='11' ry='4' fill='none' stroke='%236FC7D6' stroke-width='1.6' transform='rotate(-60 16 16)'/%3E%3Ccircle cx='16' cy='16' r='2.5' fill='%237FD0DE'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <div class="brand">等离子体文献工作台</div>
+      <div class="brand-sub">PECVD · ETCH SIMULATION</div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="spacer"></div>
+    <div class="sysbox" id="sysbox">
+      <div class="sysbox-title">系统状态</div>
+      <div class="sysrow"><span>翻译引擎</span><span class="dim">—</span></div>
+      <div class="sysrow"><span>RAG 索引</span><span class="dim">—</span></div>
+      <div class="sysrow"><span>学术 API</span><span class="dim">—</span></div>
+    </div>
+  </aside>
+
+  <!-- ── 文献检索 ───────────────────────────────────────── -->
+  <section class="screen" data-screen="search" hidden>
+    <div class="topbar">
+      <div class="topbar-row">
+        <div class="screen-title">文献检索</div>
+        <div class="screen-sub" id="search-source">来源：OpenAlex + Crossref · 期刊白名单</div>
+        <div class="spacer"></div>
+        <button class="btn-accent-soft" id="open-drawer">待下载清单 · <span data-marked-count>0</span></button>
+      </div>
+      <div class="topbar-row search-row">
+        <input id="search-q" class="input flex" placeholder="关键词 / DOI / 作者，例如：SiH4 dissociation cross section">
+        <div class="year-wrap">
+          <button class="btn-ghost" id="year-btn">年份 <span id="year-label">1990–2026</span> ▾</button>
+          <div class="year-pop" id="year-pop" hidden>
+            <div class="year-presets" id="year-presets"></div>
+            <div class="year-line"><span>起始年份</span><span class="mono accent" id="year-from-val">1990</span></div>
+            <input type="range" id="year-from" min="1990" max="2026" step="1" value="1990">
+            <div class="year-line"><span>截止年份</span><span class="mono accent" id="year-to-val">2026</span></div>
+            <input type="range" id="year-to" min="1990" max="2026" step="1" value="2026">
+          </div>
+        </div>
+        <select id="search-sort" class="select">
+          <option value="relevance">按相关度</option>
+          <option value="date_desc" selected>按年份（新→旧）</option>
+        </select>
+        <button class="btn-primary" id="do-search">检索</button>
+      </div>
+      <div class="chips-row">
+        <span class="chips-label">期刊白名单</span>
+        <div class="chips" id="journal-chips"></div>
+        <button class="chip" id="oa-chip">仅开放获取</button>
+      </div>
+    </div>
+    <div class="scroll" id="search-scroll">
+      <div class="result-meta" id="search-meta">输入关键词后点击检索</div>
+      <div id="search-results"></div>
+      <div class="pager" id="search-pager" hidden>
+        <button class="btn-ghost sm" data-page-prev>上一页</button>
+        <span class="dim" data-page-label></span>
+        <button class="btn-ghost sm" data-page-next>下一页</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 文献库 ─────────────────────────────────────────── -->
+  <section class="screen" data-screen="library" hidden>
+    <div class="topbar compact">
+      <div class="topbar-row">
+        <div class="screen-title">文献库</div>
+        <div class="screen-sub" id="lib-sub">上传 PDF 后按 file_hash 去重，并可关联检索到的文献</div>
+      </div>
+    </div>
+    <div class="scroll">
+      <div class="dropzone" id="dropzone">
+        <div class="dz-main">将 PDF 拖拽到此处，或点击选择文件</div>
+        <div class="dz-sub">支持批量上传 · 上传后可依次执行 GROBID 解析 → 翻译 → RAG 索引</div>
+        <input type="file" accept="application/pdf,.pdf" multiple id="file-input" hidden>
+      </div>
+      <div class="lib-opts">
+        <span class="chips-label">关联文献</span>
+        <select id="upload-paper" class="select sm"><option value="">不关联</option></select>
+        <span class="divider">│</span>
+        <span class="chips-label">翻译目标语言</span>
+        <select id="target-lang" class="select sm">
+          <option value="zh">中文 zh</option>
+          <option value="en">英文 en</option>
+        </select>
+        <span class="divider">│</span>
+        <span class="chips-label">上传后加入项目</span>
+        <select id="upload-project" class="select sm"><option value="none">暂不加入</option></select>
+        <span id="newproj-closed">
+          <button class="btn-dashed" id="open-newproj">＋ 新建项目</button>
+        </span>
+        <span id="newproj-open" hidden>
+          <input id="newproj-name" class="input sm" placeholder="新项目名称" style="width:150px">
+          <button class="btn-primary sm" id="confirm-newproj">创建</button>
+        </span>
+      </div>
+      <div class="lib-grid" id="lib-grid"></div>
+    </div>
+  </section>
+
+  <!-- ── 双语阅读 ───────────────────────────────────────── -->
+  <section class="screen" data-screen="reader" hidden>
+    <div class="reader-bar">
+      <button class="btn-ghost sm" id="back-to-lib">← 文献库</button>
+      <select id="reader-project" class="select"><option value="all">全部文献</option></select>
+      <div class="reader-search-wrap">
+        <input id="reader-search" class="input" placeholder="搜索项目内文献…">
+        <div class="dropdown" id="reader-drop" hidden></div>
+      </div>
+      <div class="segmented" id="reader-modes"></div>
+      <div class="stepper">
+        <button id="font-dec">A−</button>
+        <span class="dim" id="font-label">15px</span>
+        <button id="font-inc">A＋</button>
+      </div>
+      <button class="btn-ghost sm" id="gloss-toggle">术语表</button>
+    </div>
+    <div class="reader-panes">
+      <div class="pane" id="pane-en">
+        <div class="pane-label">ENGLISH · 原文</div>
+        <div id="paras-en"></div>
+      </div>
+      <div class="pane" id="pane-zh">
+        <div class="pane-label">中文 · 译文（引擎翻译，段落级对齐）</div>
+        <div id="paras-zh"></div>
+      </div>
+    </div>
+    <div class="glossbar" id="glossbar" hidden></div>
+  </section>
+
+  <!-- ── AI 问答 ────────────────────────────────────────── -->
+  <section class="screen row" data-screen="chat" hidden>
+    <div class="chat-side">
+      <div class="side-label">对话范围</div>
+      <div class="stack" id="scope-opts"></div>
+
+      <div id="proj-picker" hidden>
+        <div class="side-label mt">选择项目</div>
+        <div class="stack" id="proj-rows"></div>
+        <div class="side-note">项目内文献</div>
+        <div class="stack tight" id="proj-docs"></div>
+      </div>
+
+      <div id="all-note" hidden>
+        <div class="allbox">全库检索覆盖全部 <span id="all-doc-count">0</span> 篇文献的 <span id="all-chunk-count">0</span> 个切块，无需选择文献。</div>
+      </div>
+
+      <div id="doc-picker" hidden>
+        <div class="side-label mt">选择文献</div>
+        <input id="doc-search" class="input sm full" placeholder="搜索标题 / 作者 / DOI…">
+        <div class="stack" id="doc-opts"></div>
+      </div>
+
+      <div class="side-label mt">预设指令</div>
+      <div class="stack" id="presets"></div>
+    </div>
+    <div class="chat-main">
+      <div class="chat-head">
+        <div class="screen-title sm">AI 问答</div>
+        <div class="screen-sub ellipsis" id="scope-summary"></div>
+      </div>
+      <div class="chat-log" id="chat-log"></div>
+      <div class="chat-input-bar">
+        <div class="slash-pop" id="slash-pop" hidden></div>
+        <div class="row gap8">
+          <input id="chat-input" class="input flex" placeholder="输入问题，或键入 / 唤起预设指令（/总结 /术语 /相关工作 /提问我）">
+          <button class="btn-primary" id="chat-send">发送</button>
+        </div>
+        <div class="chat-hint">回答基于所选范围内已建索引的 PDF 段落向量检索，引用标记 [n·¶段] 可点击跳转原文</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 待下载清单抽屉 ─────────────────────────────────── -->
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="drawer" id="drawer">
+    <div class="drawer-head">
+      <div class="screen-title sm">待下载清单</div>
+      <span class="pill" data-marked-count>0</span>
+      <div class="spacer"></div>
+      <button class="icon-btn" id="close-drawer">×</button>
+    </div>
+    <div class="drawer-body" id="drawer-body"></div>
+    <div class="drawer-foot">
+      <button class="btn-primary flex" id="export-txt">导出 TXT</button>
+      <button class="btn-ghost flex" id="export-csv">导出 CSV</button>
+      <button class="btn-ghost danger" id="clear-marked">清空</button>
+    </div>
+  </aside>
+
+  <button class="sel-btn" id="sel-btn" hidden>发送到问答 →</button>
+  <div class="toast" id="toast" hidden></div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

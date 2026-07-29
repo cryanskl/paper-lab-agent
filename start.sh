@@ -204,22 +204,26 @@ STREAMLIT_PID=$!
 
 wait_for_service "Streamlit" "${FRONTEND_HEALTH_URL}" "${DEV_READY_TIMEOUT}" "${STREAMLIT_PID}" "${FRONTEND_LOG}"
 
+WORKBENCH_URL="http://${API_URL_HOST}:${API_PORT}/ui/"
+
 {
   echo "API_PID=${API_PID}"
   echo "STREAMLIT_PID=${STREAMLIT_PID}"
   echo "API_URL=http://${API_URL_HOST}:${API_PORT}"
+  echo "WORKBENCH_URL=${WORKBENCH_URL}"
   echo "STREAMLIT_URL=${FRONTEND_URL}"
   echo "API_BASE_URL=${API_BASE_URL}"
 } > "${PID_FILE}"
 
-echo "FastAPI:   http://${API_URL_HOST}:${API_PORT}"
-echo "Streamlit: ${FRONTEND_URL}"
+echo "FastAPI:    http://${API_URL_HOST}:${API_PORT}"
+echo "工作台:      ${WORKBENCH_URL}"
+echo "Streamlit:  ${FRONTEND_URL}"
 echo "API_BASE_URL=${API_BASE_URL}"
 echo "Backend log: ${BACKEND_LOG}"
 echo "Frontend log: ${FRONTEND_LOG}"
 echo "Startup log: ${STARTUP_LOG}"
 
-open_url "${FRONTEND_URL}"
+open_url "${WORKBENCH_URL}"
 
 if [[ "${DEV_EXIT_AFTER_READY}" == "true" ]]; then
   echo "DEV_EXIT_AFTER_READY=true; services verified, exiting and cleaning child processes."

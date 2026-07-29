@@ -14,6 +14,8 @@ FORMULA_RE = re.compile(r"(\$\$.*?\$\$|\$.*?\$)", re.DOTALL)
 FORMULA_PLACEHOLDER_RE = re.compile(r"<EQ_\d+>")
 PRESERVE_SECTION_TYPES = {"table", "reference"}
 MAX_TARGET_LANG_SLUG_LENGTH = 80
+TRANSLATION_BLOCK_RE = re.compile(r"^## ", re.MULTILINE)
+TRANSLATION_SUBHEADING_RE = re.compile(r"^### (.+)$", re.MULTILINE)
 
 
 class Translator(Protocol):
@@ -143,6 +145,77 @@ def translation_output_path(settings: Settings, document_id: int, target_lang: s
     if not base_path.exists():
         return base_path
     return settings.translation_dir / f"document-{document_id}-{slug}-{translation_id}.md"
+
+
+def parse_translation_block(block: str) -> dict:
+    lines = block.split("\n")
+    title = lines[0].strip()
+    parts = TRANSLATION_SUBHEADING_RE.split("\n".join(lines[1:]))
+    source = ""
+    target = ""
+    note = None
+    for index in range(1, len(parts) - 1, 2):
+        heading = parts[index].strip().lower()
+        body = parts[index + 1].strip()
+        if heading == "source":
+            source = body
+            continue
+        body_lines = body.split("\n")
+        if body_lines and body_lines[0].startswith("> "):
+            note = body_lines[0][2:].strip()
+            body = "\n".join(body_lines[1:]).strip()
+        target = body
+    return {"title": title, "source": source, "target": target, "note": note}
+
+
+def parse_translation_markdown(markdown: str) -> list[dict]:
+    blocks = TRANSLATION_BLOCK_RE.split(markdown)[1:]
+    return [parse_translation_block(block) for block in blocks]
+
+
+def read_translation_markdown(output_path: Optional[str]) -> str:
+    if not output_path:
+        return ""
+    path = Path(output_path)
+    try:
+        if path.is_symlink() or not path.is_file():
+            return ""
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def translation_sections(document_id: int, output_path: Optional[str]) -> list[dict]:
+    """Aligned source/target pairs for the bilingual reader.
+
+    The translated text only lives in the output markdown, so the file is parsed back
+    into blocks and paired positionally with the document sections, which carry the
+    stable seq / section_type / section id the reader needs for citation jumps.
+    """
+    blocks = parse_translation_markdown(read_translation_markdown(output_path))
+    if not blocks:
+        return []
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, seq, title, section_type FROM sections WHERE document_id=? ORDER BY seq",
+            (document_id,),
+        ).fetchall()
+    sections = [dict_from_row(row) for row in rows]
+    items = []
+    for index, block in enumerate(blocks):
+        section = sections[index] if index < len(sections) else {}
+        items.append(
+            {
+                "section_id": section.get("id"),
+                "seq": section.get("seq", index),
+                "title": section.get("title") or block["title"],
+                "section_type": section.get("section_type"),
+                "source": block["source"],
+                "target": block["target"],
+                "note": block["note"],
+            }
+        )
+    return items
 
 
 def create_translation_job(document_id: int, target_lang: str) -> dict:
