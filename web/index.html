@@ -57,6 +57,10 @@
         <div class="chips" id="journal-chips"></div>
         <button class="chip" id="oa-chip">仅开放获取</button>
       </div>
+      <div class="chips-row tight">
+        <span class="chips-label">标签</span>
+        <div class="chips" id="category-chips"></div>
+      </div>
     </div>
     <div class="scroll" id="search-scroll">
       <div class="result-meta" id="search-meta">输入关键词后点击检索</div>
@@ -177,6 +181,35 @@
         </div>
         <div class="chat-hint">回答基于所选范围内已建索引的 PDF 段落向量检索，引用标记 [n·¶段] 可点击跳转原文</div>
       </div>
+    </div>
+  </section>
+
+  <!-- ── 化学库复核 ─────────────────────────────────────── -->
+  <section class="screen row" data-screen="chemistry" hidden>
+    <div class="chem-side">
+      <div class="side-label">复核人</div>
+      <input id="reviewer" class="input sm full" placeholder="必填，例如 engineer_a">
+      <div class="side-note" id="reviewer-hint">每次复核动作都会记入 reaction_audits，责任人不可为空。</div>
+
+      <div class="side-label mt">已抽取的文档</div>
+      <div class="stack" id="chem-docs"></div>
+
+      <div class="side-label mt">反应集</div>
+      <div class="stack" id="chem-sets"></div>
+    </div>
+    <div class="chem-main">
+      <div class="chem-head">
+        <div class="screen-title sm">化学库复核</div>
+        <div class="screen-sub ellipsis" id="chem-summary">选择左侧文档以载入反应集</div>
+        <div class="spacer"></div>
+        <div class="chem-exports" id="chem-exports" hidden>
+          <button class="btn-ghost sm" data-export="json">导出 JSON</button>
+          <button class="btn-ghost sm" data-export="txt">导出 TXT</button>
+          <button class="btn-primary sm" data-export="bolsig">导出 BOLSIG+</button>
+        </div>
+      </div>
+      <div class="gate" id="chem-gate" hidden></div>
+      <div class="scroll" id="chem-body"></div>
     </div>
   </section>
 
