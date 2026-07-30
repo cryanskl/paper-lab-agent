@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app import __version__
@@ -69,8 +72,24 @@ def create_app() -> FastAPI:
     app.include_router(reactions.router, prefix=settings.api_prefix)
     app.include_router(system.router, prefix=settings.api_prefix)
     install_openapi_error_schema(app)
+    mount_web_ui(app)
 
     return app
+
+
+WEB_UI_DIR = Path(__file__).resolve().parent.parent / "web"
+
+
+def mount_web_ui(app: FastAPI) -> None:
+    """Serve the workbench SPA at /ui, with / redirecting to it."""
+    if not WEB_UI_DIR.is_dir():
+        return
+
+    @app.get("/", include_in_schema=False)
+    def web_ui_root() -> RedirectResponse:
+        return RedirectResponse(url="/ui/")
+
+    app.mount("/ui", StaticFiles(directory=WEB_UI_DIR, html=True), name="web-ui")
 
 
 app = create_app()

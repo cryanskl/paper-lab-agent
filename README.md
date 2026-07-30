@@ -101,7 +101,31 @@ PAPER_LAB_SCHEDULER_ENABLED=true bash scripts/dev.sh
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
+## 文献工作台（Web UI）
+
+工作台随 API 一起提供，无需单独进程、无需构建步骤：起好 uvicorn 后打开 <http://127.0.0.1:8000/>
+即自动跳转到 `/ui/`。静态资源在 `web/`（原生 HTML + CSS + JS，不引入前端框架，也不加载任何 CDN），
+由 FastAPI 的 `StaticFiles` 直接挂载在 `/ui`。
+
+四个页面对应后端既有能力：
+
+| 页面 | 主要动作 | 依赖接口 |
+| --- | --- | --- |
+| 文献检索 | 关键词 / 年份区间 / 期刊白名单 / 仅 OA 筛选、展开摘要、复制 DOI、加入待下载清单 | `GET /papers`、`GET /journals` |
+| 文献库 | 拖拽上传 PDF、触发解析 / 翻译 / RAG 索引、查看状态与失败原因 | `POST /documents`、`POST /documents/{id}/parse`、`.../translate`、`.../index`、`GET /documents` |
+| 双语阅读 | 左右分栏对照、滚动联动、字号调节、术语高亮、划选发送到问答 | `GET /documents/{id}/sections`、`GET /documents/{id}/translation` |
+| AI 问答 | 单篇 / 项目 / 全库范围检索，回答带 `[n·¶段]` 引用并可点击跳回原文 | `POST /rag/query` |
+
+「待下载清单」「项目分组」「字号与术语表偏好」是纯前端视图状态，存在浏览器 localStorage，
+不写库、不新增接口。清单支持导出 TXT / CSV 供人工下载 PDF 使用——全文获取仍是人工 + OA 自动补全，
+工作台不会自动爬取或绕过付费墙。
+
+未配置 `LLM_API_KEY` 时翻译走本地 echo adapter，译文栏会如实保留原文（侧边栏「翻译引擎」显示「本地回显」），
+不会伪造译文。
+
 ## Streamlit
+
+Streamlit 页面继续保留，作为面向发布验收的运维视图（抓取任务诊断、化学库复核、release readiness）。
 
 ```bash
 python -m streamlit run streamlit_app.py

@@ -397,7 +397,9 @@ def uvicorn_target_issue(repo: Path, target: str, label: str, app_dir: str | Non
             spec = None
         if spec is None or spec.origin is None:
             return f"{label}: uvicorn target missing: {target}"
-        if spec.origin not in {"built-in", "frozen"} and not is_within_repo(repo, Path(spec.origin)):
+        # built-in / frozen modules ship with the interpreter, so they are outside the
+        # repository by definition; Python 3.11 freezes stdlib modules such as `os`.
+        if spec.origin in {"built-in", "frozen"} or not is_within_repo(repo, Path(spec.origin)):
             return f"{label}: uvicorn target outside repository: {target}"
         try:
             module = __import__(module_name, fromlist=["*"])
