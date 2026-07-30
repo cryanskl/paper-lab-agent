@@ -110,6 +110,7 @@ class GrobidCapabilityResponse(BaseModel):
 
 
 class ExternalCapabilitiesResponse(BaseModel):
+    openalex_api_key: bool
     openalex_mailto: bool
     unpaywall_email: bool
     grobid_url: str
@@ -258,12 +259,12 @@ def storage_health(settings) -> dict:
 
 def config_warnings(settings) -> list[dict]:
     warnings = []
-    if not settings.openalex_mailto:
+    if not settings.openalex_api_key:
         warnings.append(
             {
-                "code": "missing_openalex_mailto",
+                "code": "missing_openalex_api_key",
                 "capability": "openalex_crawl",
-                "message": "OPENALEX_MAILTO is not configured; local offline mode still works, but production crawl diagnostics are weaker.",
+                "message": "OPENALEX_API_KEY is not configured; OpenAlex requests may be rejected, while Crossref fallback and local offline mode remain available.",
             }
         )
     if not settings.unpaywall_email:
@@ -424,6 +425,7 @@ async def status(check_external: bool = False) -> dict:
         },
         "storage_health": health,
         "external_capabilities": {
+            "openalex_api_key": bool(settings.openalex_api_key),
             "openalex_mailto": bool(settings.openalex_mailto),
             "unpaywall_email": bool(settings.unpaywall_email),
             "grobid_url": settings.grobid_url,

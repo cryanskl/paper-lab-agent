@@ -1,8 +1,13 @@
 import hashlib
+from io import BytesIO
+
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 
 from app.config import get_settings
 from app.db import get_conn
 from app.services.documents import assert_safe_document_storage_path, count_pdf_pages
+from app.services.rag import get_vector_store
 from app.utils import json_dumps
 
 
@@ -35,17 +40,95 @@ FIXTURE_PAPERS = [
     },
 ]
 
+def build_fixture_pdf() -> bytes:
+    buffer = BytesIO()
+    pdf = canvas.Canvas(
+        buffer,
+        pagesize=letter,
+        pageCompression=1,
+        invariant=1,
+    )
+    width, height = letter
+    pdf.setTitle("Global model of an Ar/O2 inductively coupled plasma")
+    pdf.setAuthor("Paper Lab Fixture Authors")
+    pdf.setSubject("Deterministic fixture for GROBID integration tests")
+
+    pdf.setFont("Helvetica-Bold", 16)
+    pdf.drawString(54, height - 58, "Global model of an Ar/O2 inductively coupled plasma")
+    pdf.setFont("Helvetica", 10)
+    pdf.drawString(54, height - 78, "Paper Lab Fixture Authors")
+
+    text = pdf.beginText(54, height - 112)
+    text.setLeading(15)
+    article_lines = [
+        ("Helvetica-Bold", 12, "Abstract"),
+        (
+            "Helvetica",
+            10,
+            "This deterministic fixture describes low-temperature Ar/O2 plasma chemistry,",
+        ),
+        (
+            "Helvetica",
+            10,
+            "electron-impact ionization, reaction kinetics, and global plasma simulation.",
+        ),
+        ("Helvetica-Bold", 12, "1. Introduction"),
+        (
+            "Helvetica",
+            10,
+            "Inductively coupled plasmas are widely used to study reactive gas mixtures.",
+        ),
+        (
+            "Helvetica",
+            10,
+            "This fixture provides searchable text and article-like structure for PDF parsing.",
+        ),
+        ("Helvetica-Bold", 12, "2. Reaction chemistry"),
+        ("Courier", 10, "e + Ar -> e + e + Ar+"),
+        (
+            "Helvetica",
+            10,
+            "The ionization reaction is e + Ar -> e + e + Ar+ .",
+        ),
+        (
+            "Helvetica",
+            10,
+            "The rate coefficient is reported as k_1 without automatic unit conversion.",
+        ),
+        (
+            "Helvetica",
+            10,
+            "Cross-section source: LXCat IST-Lisbon, https://nl.lxcat.net/data/set/example",
+        ),
+        ("Helvetica-Bold", 12, "3. Conclusion"),
+        (
+            "Helvetica",
+            10,
+            "The document is intentionally short but is a standards-compliant PDF.",
+        ),
+        ("Helvetica-Bold", 12, "References"),
+        (
+            "Helvetica",
+            10,
+            "[1] Paper Lab Fixture Authors, Plasma Sources Science and Technology, 2026.",
+        ),
+    ]
+    for font_name, font_size, line in article_lines:
+        text.setFont(font_name, font_size)
+        text.textLine(line)
+    pdf.drawText(text)
+    pdf.setFont("Helvetica", 8)
+    pdf.drawCentredString(width / 2, 30, "Paper Lab deterministic GROBID fixture - page 1")
+    pdf.showPage()
+    pdf.save()
+    return buffer.getvalue()
+
+
 FIXTURE_DOCUMENTS = [
     {
         "paper_doi": "10.1088/1361-6595/fixture-ar-o2",
         "original_name": "fixture-plasma-chemistry.pdf",
-        "content": (
-            b"%PDF-1.4\n"
-            b"1 0 obj << /Type /Page >> endobj\n"
-            b"Argon plasma chemistry fixture document. "
-            b"LXCat IST-Lisbon https://nl.lxcat.net/data/set/example "
-            b"e + Ar -> e + e + Ar+ . The rate is $k_1$.\n"
-        ),
+        "content": build_fixture_pdf(),
     }
 ]
 
@@ -109,7 +192,21 @@ def load_fixture_documents() -> dict:
             stored.write_bytes(content)
             paper = conn.execute("SELECT id FROM papers WHERE doi=?", (document["paper_doi"],)).fetchone()
             paper_id = paper["id"] if paper else None
-            existing = conn.execute("SELECT id FROM documents WHERE file_hash=?", (digest,)).fetchone()
+            existing = conn.execute(
+                "SELECT id, file_hash FROM documents WHERE file_hash=?",
+                (digest,),
+            ).fetchone()
+            if existing is None and paper_id is not None:
+                existing = conn.execute(
+                    """
+                    SELECT id, file_hash
+                    FROM documents
+                    WHERE paper_id=? AND original_name=?
+                    ORDER BY id
+                    LIMIT 1
+                    """,
+                    (paper_id, document["original_name"]),
+                ).fetchone()
             params = (
                 paper_id,
                 str(stored),
@@ -118,14 +215,47 @@ def load_fixture_documents() -> dict:
                 count_pdf_pages(content),
             )
             if existing:
-                conn.execute(
-                    """
-                    UPDATE documents
-                    SET paper_id=?, file_path=?, original_name=?, num_pages=?
-                    WHERE file_hash=?
-                    """,
-                    (paper_id, str(stored), document["original_name"], count_pdf_pages(content), digest),
-                )
+                document_id = int(existing["id"])
+                if existing["file_hash"] != digest:
+                    get_vector_store(settings).delete_document(document_id)
+                    conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+                    conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))
+                    conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
+                    conn.execute("DELETE FROM sections WHERE document_id=?", (document_id,))
+                    conn.execute(
+                        """
+                        UPDATE documents
+                        SET paper_id=?,
+                            file_path=?,
+                            file_hash=?,
+                            original_name=?,
+                            num_pages=?,
+                            parse_status='uploaded',
+                            parse_error=NULL,
+                            index_status='not_indexed',
+                            index_error=NULL,
+                            chemistry_status='not_extracted',
+                            chemistry_error=NULL,
+                            tei_path=NULL
+                        WHERE id=?
+                        """,
+                        params + (document_id,),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE documents
+                        SET paper_id=?, file_path=?, original_name=?, num_pages=?
+                        WHERE id=?
+                        """,
+                        (
+                            paper_id,
+                            str(stored),
+                            document["original_name"],
+                            count_pdf_pages(content),
+                            document_id,
+                        ),
+                    )
                 updated += 1
             else:
                 conn.execute(

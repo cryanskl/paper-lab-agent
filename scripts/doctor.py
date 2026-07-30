@@ -43,6 +43,7 @@ PYTHON_DEPENDENCIES = (
     ("pytest", "pytest"),
 )
 REQUIRED_ENV_EXAMPLE_KEYS = (
+    "OPENALEX_API_KEY",
     "OPENALEX_MAILTO",
     "UNPAYWALL_EMAIL",
     "GROBID_URL",
@@ -77,16 +78,17 @@ REQUIRED_ENV_EXAMPLE_KEYS = (
     "DEV_READY_TIMEOUT",
 )
 SECRET_LIKE_ENV_EXAMPLE_KEYS = (
+    "OPENALEX_API_KEY",
     "OPENALEX_MAILTO",
     "UNPAYWALL_EMAIL",
     "LLM_API_KEY",
 )
 OPTIONAL_EXTERNAL_CONFIG = (
     (
-        "OPENALEX_MAILTO",
-        "openalex_mailto",
-        "missing_openalex_mailto",
-        "OPENALEX_MAILTO is not configured; local offline mode still works.",
+        "OPENALEX_API_KEY",
+        "openalex_api_key",
+        "missing_openalex_api_key",
+        "OPENALEX_API_KEY is not configured; OpenAlex requests may be rejected while Crossref fallback remains available.",
     ),
     (
         "UNPAYWALL_EMAIL",
@@ -631,6 +633,7 @@ def check_external_config(repo: Path, env: dict[str, str] | None = None) -> dict
     embedding_model = normalize_adapter_name(env.get("EMBEDDING_MODEL")) or "local-hash"
     vector_db_backend = normalize_adapter_name(env.get("VECTOR_DB_BACKEND")) or "local-json"
     capabilities = {
+        "openalex_api_key": configured_env_value(env.get("OPENALEX_API_KEY")),
         "openalex_mailto": configured_env_value(env.get("OPENALEX_MAILTO")),
         "unpaywall_email": configured_env_value(env.get("UNPAYWALL_EMAIL")),
         "grobid_url": configured_text(env.get("GROBID_URL")) or "http://127.0.0.1:8070",

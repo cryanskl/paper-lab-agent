@@ -120,6 +120,7 @@ class CrawlRunIn(BaseModel):
     period: str = "manual"
     date_from: Optional[str] = None
     date_to: Optional[str] = None
+    search_query: Optional[str] = None
 
     @field_validator("journal_ids")
     @classmethod
@@ -147,6 +148,18 @@ class CrawlRunIn(BaseModel):
         date.fromisoformat(value)
         return value
 
+    @field_validator("search_query")
+    @classmethod
+    def search_query_must_be_reasonable(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = " ".join(value.split())
+        if not normalized:
+            return None
+        if len(normalized) > 300:
+            raise ValueError("search_query must be at most 300 characters")
+        return normalized
+
     @model_validator(mode="after")
     def date_range_must_be_ordered(self) -> "CrawlRunIn":
         if self.date_from and self.date_to and date.fromisoformat(self.date_from) > date.fromisoformat(self.date_to):
@@ -164,7 +177,10 @@ def run_crawl(background_tasks: BackgroundTasks, body: Optional[CrawlRunIn] = No
     except ValueError as exc:
         raise AppError(400, "invalid_crawl_date_range", str(exc))
     for job in jobs:
-        background_tasks.add_task(run_crawl_job, job["job_id"], job["journal_id"], job["date_from"], job["date_to"])
+        task_args = (job["job_id"], job["journal_id"], job["date_from"], job["date_to"])
+        if body.search_query:
+            task_args += (body.search_query,)
+        background_tasks.add_task(run_crawl_job, *task_args)
     if not jobs:
         raise AppError(404, "no_active_journals", "No active journals matched crawl request")
     return {

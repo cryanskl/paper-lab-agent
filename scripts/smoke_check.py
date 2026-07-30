@@ -21,6 +21,7 @@ RUNTIME_ENV_KEYS = [
     "VECTOR_DB_PATH",
     "VECTOR_DB_BACKEND",
     "PAPER_LAB_SCHEDULER_ENABLED",
+    "OPENALEX_API_KEY",
     "OPENALEX_MAILTO",
     "UNPAYWALL_EMAIL",
     "LLM_API_KEY",
@@ -45,6 +46,7 @@ def configure_runtime(base_dir: Path) -> None:
     os.environ["VECTOR_DB_PATH"] = str(base_dir / "vector-index.json")
     os.environ["VECTOR_DB_BACKEND"] = "local-json"
     os.environ["PAPER_LAB_SCHEDULER_ENABLED"] = "false"
+    os.environ["OPENALEX_API_KEY"] = ""
     os.environ["OPENALEX_MAILTO"] = ""
     os.environ["UNPAYWALL_EMAIL"] = ""
     os.environ["LLM_API_KEY"] = ""

@@ -257,6 +257,23 @@ def test_crawl_keyword_matching_strips_mode_whitespace():
     assert matches_keywords(work, {"mode": " and ", "terms": ["plasma", "chemistry"]}) is False
 
 
+def test_online_search_query_matches_title_abstract_doi_and_authors():
+    from app.services.crawl import matches_search_query
+
+    work = {
+        "title": "Argon plasma chemistry model",
+        "abstract": "Electron impact ionization rates.",
+        "doi": "10.5555/example.paper",
+        "authors": [{"name": "Jane Doe"}],
+    }
+
+    assert matches_search_query(work, "plasma ionization") is True
+    assert matches_search_query(work, "10.5555 example paper") is True
+    assert matches_search_query(work, "Jane Doe") is True
+    assert matches_search_query(work, "plasma oxygen") is False
+    assert matches_search_query(work, "   ") is True
+
+
 def test_health_seed_and_search(tmp_path):
     client = make_client(tmp_path)
     assert client.get("/health").json()["status"] == "ok"
@@ -2774,15 +2791,15 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert result["config_warning_count"] == 3
     assert result["config_warning_codes"] == [
-        "missing_openalex_mailto",
+        "missing_openalex_api_key",
         "missing_unpaywall_email",
         "missing_llm_api_key",
     ]
     assert result["config_warning_details"] == [
         {
-            "code": "missing_openalex_mailto",
+            "code": "missing_openalex_api_key",
             "capability": "openalex_crawl",
-            "message": "OPENALEX_MAILTO is not configured; local offline mode still works, but production crawl diagnostics are weaker.",
+            "message": "OPENALEX_API_KEY is not configured; OpenAlex requests may be rejected, while Crossref fallback and local offline mode remain available.",
         },
         {
             "code": "missing_unpaywall_email",
@@ -2799,7 +2816,7 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["release_readiness"]["demo_data_missing"] == []
     assert result["release_readiness"]["failed_workflows"] == []
     assert result["release_readiness"]["config_warning_codes"] == [
-        "missing_openalex_mailto",
+        "missing_openalex_api_key",
         "missing_unpaywall_email",
         "missing_llm_api_key",
     ]
@@ -2809,12 +2826,14 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
 def test_smoke_check_configure_runtime_clears_optional_external_env(tmp_path, monkeypatch):
     from scripts.smoke_check import configure_runtime
 
+    monkeypatch.setenv("OPENALEX_API_KEY", "openalex-test-key")
     monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
     monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
     monkeypatch.setenv("LLM_API_KEY", "sk-test")
 
     configure_runtime(tmp_path)
 
+    assert os.environ["OPENALEX_API_KEY"] == ""
     assert os.environ["OPENALEX_MAILTO"] == ""
     assert os.environ["UNPAYWALL_EMAIL"] == ""
     assert os.environ["LLM_API_KEY"] == ""
@@ -2823,6 +2842,7 @@ def test_smoke_check_configure_runtime_clears_optional_external_env(tmp_path, mo
 def test_smoke_check_restores_external_env_after_run(monkeypatch):
     from scripts.smoke_check import run_smoke
 
+    monkeypatch.setenv("OPENALEX_API_KEY", "openalex-test-key")
     monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
     monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
     monkeypatch.setenv("LLM_API_KEY", "sk-test")
@@ -2830,6 +2850,7 @@ def test_smoke_check_restores_external_env_after_run(monkeypatch):
     result = run_smoke()
 
     assert result["config_warning_count"] == 3
+    assert os.environ["OPENALEX_API_KEY"] == "openalex-test-key"
     assert os.environ["OPENALEX_MAILTO"] == "lab@example.test"
     assert os.environ["UNPAYWALL_EMAIL"] == "lab@example.test"
     assert os.environ["LLM_API_KEY"] == "sk-test"
@@ -2880,14 +2901,14 @@ def test_smoke_check_script_outputs_json():
     assert payload["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
     assert payload["config_warning_count"] == 3
     assert payload["config_warning_codes"] == [
-        "missing_openalex_mailto",
+        "missing_openalex_api_key",
         "missing_unpaywall_email",
         "missing_llm_api_key",
     ]
     assert [warning["code"] for warning in payload["config_warning_details"]] == payload["config_warning_codes"]
     assert payload["release_readiness"]["ready"] is True
     assert payload["release_readiness"]["config_warning_codes"] == [
-        "missing_openalex_mailto",
+        "missing_openalex_api_key",
         "missing_unpaywall_email",
         "missing_llm_api_key",
     ]
@@ -4209,6 +4230,7 @@ def test_resolve_oa_passes_unpaywall_retry_and_timeout_settings(tmp_path, monkey
     from app.routers import papers as papers_router
 
     get_settings.cache_clear()
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "")
     monkeypatch.setenv("UNPAYWALL_API_MAX_RETRIES", "6")
     monkeypatch.setenv("UNPAYWALL_API_RETRY_BACKOFF_SECONDS", "0")
     monkeypatch.setenv("UNPAYWALL_API_REQUEST_INTERVAL_SECONDS", "0.4")
@@ -4582,6 +4604,8 @@ def test_crawl_job_passes_api_retry_and_page_settings(tmp_path, monkeypatch):
     from app.services import crawl as crawl_service
 
     get_settings.cache_clear()
+    monkeypatch.setenv("OPENALEX_API_KEY", "")
+    monkeypatch.setenv("OPENALEX_MAILTO", "")
     monkeypatch.setenv("ACADEMIC_API_MAX_PAGES", "4")
     monkeypatch.setenv("ACADEMIC_API_MAX_RETRIES", "5")
     monkeypatch.setenv("ACADEMIC_API_RETRY_BACKOFF_SECONDS", "0")
@@ -4622,10 +4646,11 @@ def test_crawl_job_passes_api_retry_and_page_settings(tmp_path, monkeypatch):
 
     assert created == [
         (
-            "openalex",
-            None,
-            {
-                "max_retries": 5,
+                "openalex",
+                None,
+                {
+                    "api_key": None,
+                    "max_retries": 5,
                 "retry_backoff_seconds": 0.0,
                 "request_interval_seconds": 0.3,
                 "timeout": 7.0,
@@ -4901,6 +4926,7 @@ def test_crawl_job_passes_unpaywall_retry_and_timeout_settings(tmp_path, monkeyp
     from app.services import crawl as crawl_service
 
     get_settings.cache_clear()
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "")
     monkeypatch.setenv("UNPAYWALL_API_MAX_RETRIES", "4")
     monkeypatch.setenv("UNPAYWALL_API_RETRY_BACKOFF_SECONDS", "0")
     monkeypatch.setenv("UNPAYWALL_API_REQUEST_INTERVAL_SECONDS", "0.2")
@@ -5415,6 +5441,45 @@ def test_crawl_run_response_includes_created_job_context(tmp_path, monkeypatch):
     }
 
 
+def test_crawl_run_forwards_normalized_online_search_query(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.routers import crawl as crawl_router
+
+    def fake_create_jobs(journal_ids, period, date_from, date_to):
+        return [
+            {
+                "job_id": 43,
+                "journal_id": 2,
+                "period": period,
+                "date_from": date_from,
+                "date_to": date_to,
+            }
+        ]
+
+    calls = []
+
+    async def fake_run_crawl_job(job_id, journal_id, date_from, date_to, search_query):
+        calls.append((job_id, journal_id, date_from, date_to, search_query))
+
+    monkeypatch.setattr(crawl_router, "create_jobs", fake_create_jobs)
+    monkeypatch.setattr(crawl_router, "run_crawl_job", fake_run_crawl_job)
+
+    response = client.post(
+        "/api/v1/crawl/run",
+        json={
+            "journal_ids": [2],
+            "period": "manual",
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-31",
+            "search_query": "  plasma   chemistry  ",
+        },
+    )
+
+    assert response.status_code == 202
+    assert calls == [(43, 2, "2026-01-01", "2026-01-31", "plasma chemistry")]
+
+
 def test_crawl_run_rejects_empty_and_non_positive_journal_ids(tmp_path):
     client = make_client(tmp_path)
 
@@ -5630,6 +5695,7 @@ def test_system_status_can_check_grobid_health(tmp_path, monkeypatch):
 
 
 def test_system_status_reports_missing_optional_config_without_blocking(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_API_KEY", "")
     monkeypatch.setenv("OPENALEX_MAILTO", "")
     monkeypatch.setenv("UNPAYWALL_EMAIL", "")
     monkeypatch.setenv("LLM_API_KEY", "")
@@ -5642,7 +5708,7 @@ def test_system_status_reports_missing_optional_config_without_blocking(tmp_path
     status = response.json()
     warnings = status["config_warnings"]
     codes = {warning["code"] for warning in warnings}
-    assert "missing_openalex_mailto" in codes
+    assert "missing_openalex_api_key" in codes
     assert "missing_unpaywall_email" in codes
     assert "missing_llm_api_key" in codes
     assert all(warning["message"] for warning in warnings)
@@ -5650,6 +5716,7 @@ def test_system_status_reports_missing_optional_config_without_blocking(tmp_path
 
 
 def test_system_status_treats_blank_optional_config_as_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_API_KEY", "   ")
     monkeypatch.setenv("OPENALEX_MAILTO", "   ")
     monkeypatch.setenv("UNPAYWALL_EMAIL", "   ")
     monkeypatch.setenv("LLM_API_KEY", "   ")
@@ -5659,9 +5726,10 @@ def test_system_status_treats_blank_optional_config_as_missing(tmp_path, monkeyp
     status = client.get("/api/v1/system/status").json()
     codes = {warning["code"] for warning in status["config_warnings"]}
 
-    assert "missing_openalex_mailto" in codes
+    assert "missing_openalex_api_key" in codes
     assert "missing_unpaywall_email" in codes
     assert "missing_llm_api_key" in codes
+    assert status["external_capabilities"]["openalex_api_key"] is False
     assert status["external_capabilities"]["openalex_mailto"] is False
     assert status["external_capabilities"]["unpaywall_email"] is False
     assert status["external_capabilities"]["llm_api_key"] is False
@@ -6080,6 +6148,7 @@ def test_system_status_reports_normalized_effective_vector_config(tmp_path, monk
 
 
 def test_system_status_reports_supported_adapter_warning_details(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_API_KEY", "openalex-test-key")
     monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
     monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
     monkeypatch.setenv("LLM_API_KEY", "test-key")
@@ -10682,7 +10751,7 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert "release_readiness" in release_text
     assert "config_warning_codes" in release_text
     assert "config_warning_details" in release_text
-    assert "missing_openalex_mailto" in release_text
+    assert "missing_openalex_api_key" in release_text
     assert "crawl_job_status" in release_text
     assert "crawled_papers" in release_text
     assert '"papers": 2' in release_text
@@ -10905,6 +10974,7 @@ def test_env_example_validator_cli_rejects_runtime_url_drift(tmp_path):
     env_example.write_text(
         "\n".join(
             [
+                "OPENALEX_API_KEY=",
                 "OPENALEX_MAILTO=",
                 "UNPAYWALL_EMAIL=",
                 "GROBID_URL=http://127.0.0.1:8070",
@@ -11321,6 +11391,7 @@ def test_system_status_reports_demo_data_readiness(tmp_path):
 
 
 def test_system_status_reports_release_readiness(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_API_KEY", "openalex-test-key")
     monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
     monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
     monkeypatch.setenv("LLM_API_KEY", "sk-test")
@@ -11571,6 +11642,7 @@ def test_system_status_reports_workflow_status_counts(tmp_path):
 
 
 def test_system_release_readiness_blocks_rejected_chemistry_workflows(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_API_KEY", "openalex-test-key")
     monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
     monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
     monkeypatch.setenv("LLM_API_KEY", "sk-test")
@@ -11631,6 +11703,7 @@ def test_system_release_readiness_blocks_rejected_chemistry_workflows(tmp_path, 
 
 
 def test_system_release_readiness_blocks_unknown_workflow_statuses(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_API_KEY", "openalex-test-key")
     monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
     monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
     monkeypatch.setenv("LLM_API_KEY", "sk-test")
@@ -11690,6 +11763,7 @@ def test_system_release_readiness_blocks_unknown_workflow_statuses(tmp_path, mon
 
 
 def test_system_release_readiness_blocks_blank_workflow_statuses(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_API_KEY", "openalex-test-key")
     monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
     monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
     monkeypatch.setenv("LLM_API_KEY", "sk-test")
@@ -18481,6 +18555,7 @@ def test_streamlit_sidebar_exposes_external_capability_status():
         "external_capabilities_display_state",
         "external_display",
         'external_display["warnings"]',
+        "openalex_api_key",
         "openalex_mailto",
         "unpaywall_email",
         "grobid_url",

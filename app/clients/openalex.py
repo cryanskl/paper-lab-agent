@@ -15,6 +15,7 @@ class OpenAlexClient:
     def __init__(
         self,
         mailto: Optional[str] = None,
+        api_key: Optional[str] = None,
         transport: Optional[Any] = None,
         max_retries: int = 3,
         retry_backoff_seconds: float = 0.25,
@@ -23,6 +24,7 @@ class OpenAlexClient:
         sleep: Any = asyncio.sleep,
     ):
         self.mailto = mailto.strip() if isinstance(mailto, str) and mailto.strip() else None
+        self.api_key = api_key.strip() if isinstance(api_key, str) and api_key.strip() else None
         self.transport = transport
         self.max_retries = max(1, max_retries)
         self.retry_backoff_seconds = retry_backoff_seconds
@@ -43,6 +45,8 @@ class OpenAlexClient:
             f"to_publication_date:{date_to}",
         ]
         params: dict[str, Any] = {"filter": ",".join(filters), "per-page": 100, "cursor": "*"}
+        if self.api_key:
+            params["api_key"] = self.api_key
         if self.mailto:
             params["mailto"] = self.mailto
         results: list[dict[str, Any]] = []

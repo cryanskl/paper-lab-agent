@@ -30,7 +30,7 @@
     <div class="topbar">
       <div class="topbar-row">
         <div class="screen-title">文献检索</div>
-        <div class="screen-sub" id="search-source">来源：OpenAlex + Crossref · 期刊白名单</div>
+        <div class="screen-sub" id="search-source">默认检索本地库 · 在线同步使用 OpenAlex / Crossref</div>
         <div class="spacer"></div>
         <button class="btn-accent-soft" id="open-drawer">待下载清单 · <span data-marked-count>0</span></button>
       </div>
@@ -50,7 +50,10 @@
           <option value="relevance">按相关度</option>
           <option value="date_desc" selected>按年份（新→旧）</option>
         </select>
-        <button class="btn-primary" id="do-search">检索</button>
+        <div class="search-actions">
+          <button class="btn-primary" id="do-search">检索本地库</button>
+          <button class="btn-online" id="do-online-search">在线同步并检索</button>
+        </div>
       </div>
       <div class="chips-row">
         <span class="chips-label">期刊白名单</span>
@@ -63,7 +66,7 @@
       </div>
     </div>
     <div class="scroll" id="search-scroll">
-      <div class="result-meta" id="search-meta">输入关键词后点击检索</div>
+      <div class="result-meta" id="search-meta">输入关键词后检索本地库，或从学术 API 在线同步</div>
       <div id="search-results"></div>
       <div class="pager" id="search-pager" hidden>
         <button class="btn-ghost sm" data-page-prev>上一页</button>

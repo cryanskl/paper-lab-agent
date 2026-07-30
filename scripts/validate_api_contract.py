@@ -125,6 +125,7 @@ SYSTEM_STATUS_NESTED_FIELDS = {
         "storage_errors",
     ),
     "external_capabilities": (
+        "openalex_api_key",
         "openalex_mailto",
         "unpaywall_email",
         "grobid_url",

@@ -556,6 +556,7 @@ def test_external_capabilities_display_state_blocks_malformed_capability_fields(
 
     state = frontend_api.external_capabilities_display_state(
         {
+            "openalex_api_key": "yes",
             "openalex_mailto": "yes",
             "unpaywall_email": False,
             "translation_adapter": ["local-echo"],
@@ -564,6 +565,7 @@ def test_external_capabilities_display_state_blocks_malformed_capability_fields(
     )
 
     assert "external_capabilities:invalid" in state["warnings"]
+    assert state["capabilities"]["openalex_api_key"] is False
     assert state["capabilities"]["openalex_mailto"] is False
     assert state["capabilities"]["unpaywall_email"] is False
     assert state["capabilities"]["translation_adapter"] == ""

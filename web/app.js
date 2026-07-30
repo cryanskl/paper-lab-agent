@@ -90,6 +90,9 @@ const state = {
   searchTotal: 0,
   results: [],
   searched: false,
+  searchMode: 'local',
+  onlineSyncing: false,
+  syncSummary: null,
   expanded: {},
   absZh: {},
   documents: [],
@@ -226,12 +229,12 @@ function renderSysbox() {
   const cap = s.external_capabilities || {};
   const counts = s.counts || {};
   const engineOnline = cap.translation_adapter === 'openai-compatible';
-  const academicOnline = !!cap.openalex_mailto;
+  const academicOnline = !!cap.openalex_api_key;
   $('#sysbox').innerHTML = `
     <div class="sysbox-title">系统状态</div>
     <div class="sysrow"><span>翻译引擎</span><span class="${engineOnline ? 'ok' : 'off'}">${engineOnline ? '在线' : '本地回显'}</span></div>
     <div class="sysrow"><span>RAG 索引</span><span class="dim">${counts.documents || 0} 篇 · ${counts.chunks || 0} 段</span></div>
-    <div class="sysrow"><span>学术 API</span><span class="${academicOnline ? 'ok' : 'off'}">${academicOnline ? '已连接' : '未配置邮箱'}</span></div>`;
+    <div class="sysrow"><span>学术 API</span><span class="${academicOnline ? 'ok' : 'off'}">${academicOnline ? 'API Key 已配置' : '缺少 API Key'}</span></div>`;
 }
 
 function setPage(page) {
@@ -251,7 +254,7 @@ async function loadJournals() {
   const data = await apiOrNull('/journals?active=1&page_size=100');
   state.journals = (data && data.items) || [];
   $('#search-source').textContent =
-    `来源：OpenAlex + Crossref · 期刊白名单 ${state.journals.length} 本`;
+    `默认检索本地库 · 在线同步 OpenAlex → Crossref 回退 · 期刊白名单 ${state.journals.length} 本`;
   renderJournalChips();
   renderUploadPaperOptions();
 }
@@ -374,9 +377,14 @@ function searchQuery() {
   return params.toString();
 }
 
-async function runSearch(resetPage) {
+async function runSearch(resetPage, options) {
+  options = options || {};
   if (resetPage !== false) state.searchPage = 1;
-  $('#search-meta').textContent = '检索中…';
+  if (!options.keepSyncSummary) {
+    state.searchMode = 'local';
+    state.syncSummary = null;
+  }
+  $('#search-meta').textContent = '正在检索本地文献库…';
   try {
     const data = await api(`/papers?${searchQuery()}`);
     state.results = data.items || [];
@@ -394,13 +402,17 @@ async function runSearch(resetPage) {
 
 function renderResults() {
   const meta = $('#search-meta');
-  meta.textContent = `共 ${state.searchTotal} 条结果 · 已标记 ${persisted.marked.length} 条待下载`
+  const sync = state.searchMode === 'online' && state.syncSummary
+    ? `在线同步完成：${state.syncSummary.succeeded}/${state.syncSummary.total} 个期刊成功`
+      + ` · 新增 ${state.syncSummary.newPapers} 篇 · `
+    : '本地文献库 · ';
+  meta.textContent = `${sync}共 ${state.searchTotal} 条结果 · 已标记 ${persisted.marked.length} 条待下载`
     + (state.activeJournal != null ? ' · 已按白名单期刊过滤' : '');
   const wrap = $('#search-results');
   if (!state.results.length) {
     wrap.innerHTML = `<div class="empty-state">${state.searched
-      ? '没有命中文献<br>可放宽年份区间、清除期刊筛选，或先在「抓取」中拉取元数据'
-      : '输入关键词后点击检索'}</div>`;
+      ? '没有命中文献<br>可放宽年份区间、清除期刊筛选，或点击「在线同步并检索」更新元数据'
+      : '输入关键词后检索本地库，或从学术 API 在线同步'}</div>`;
     $('#search-pager').hidden = true;
     return;
   }
@@ -410,6 +422,84 @@ function renderResults() {
   $('[data-page-label]').textContent = `第 ${state.searchPage} / ${pages} 页`;
   $('[data-page-prev]').disabled = state.searchPage <= 1;
   $('[data-page-next]').disabled = state.searchPage >= pages;
+}
+
+function onlineDateRange() {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const today = [
+    currentYear,
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-');
+  return {
+    date_from: `${state.yearFrom}-01-01`,
+    date_to: state.yearTo >= currentYear ? today : `${state.yearTo}-12-31`,
+  };
+}
+
+function setOnlineSearchBusy(busy, label) {
+  state.onlineSyncing = busy;
+  $('#do-search').disabled = busy;
+  const button = $('#do-online-search');
+  button.disabled = busy;
+  button.textContent = label || (busy ? '在线同步中…' : '在线同步并检索');
+}
+
+function waitForOnlineSearchPoll(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function waitForCrawlJobs(jobIds) {
+  const deadline = Date.now() + 180000;
+  while (Date.now() < deadline) {
+    const jobs = await Promise.all(jobIds.map((jobId) => api(`/crawl/jobs/${jobId}`)));
+    const finished = jobs.filter((job) => ['success', 'failed'].includes(job.status));
+    const newPapers = jobs.reduce((total, job) => total + Number(job.papers_new || 0), 0);
+    $('#search-meta').textContent =
+      `在线同步中：${finished.length}/${jobs.length} 个期刊完成 · 已新增 ${newPapers} 篇`;
+    setOnlineSearchBusy(true, `同步中 ${finished.length}/${jobs.length}`);
+    if (finished.length === jobs.length) return jobs;
+    await waitForOnlineSearchPoll(1000);
+  }
+  throw new Error('在线同步等待超过 3 分钟，请稍后在本地库中重试检索');
+}
+
+async function runOnlineSearch() {
+  if (state.onlineSyncing) return;
+  const query = state.query.trim();
+  if (!query) {
+    toast('请先输入在线检索关键词', true);
+    $('#search-q').focus();
+    return;
+  }
+  setOnlineSearchBusy(true);
+  $('#search-meta').textContent = '正在创建 OpenAlex / Crossref 在线同步任务…';
+  const body = Object.assign({ period: 'manual', search_query: query }, onlineDateRange());
+  if (state.activeJournal != null) body.journal_ids = [state.activeJournal];
+  try {
+    const accepted = await api('/crawl/run', { method: 'POST', body });
+    const jobIds = (accepted.jobs || []).map((job) => job.job_id);
+    if (!jobIds.length) throw new Error('在线同步没有创建任何期刊任务');
+    const jobs = await waitForCrawlJobs(jobIds);
+    const succeeded = jobs.filter((job) => job.status === 'success');
+    const failed = jobs.filter((job) => job.status === 'failed');
+    state.searchMode = 'online';
+    state.syncSummary = {
+      total: jobs.length,
+      succeeded: succeeded.length,
+      failed: failed.length,
+      newPapers: jobs.reduce((total, job) => total + Number(job.papers_new || 0), 0),
+    };
+    await runSearch(true, { keepSyncSummary: true });
+    if (failed.length) toast(`${failed.length} 个期刊同步失败，已展示其余结果`, true);
+    else toast('在线同步完成，已刷新本地结果');
+  } catch (e) {
+    $('#search-meta').textContent = `在线同步失败：${e.message} · 本地结果未改变`;
+    toast(`在线同步失败：${e.message}`, true);
+  } finally {
+    setOnlineSearchBusy(false);
+  }
 }
 
 function paperCard(p) {
@@ -1262,6 +1352,7 @@ function bindSearch() {
   $('#search-q').addEventListener('input', (e) => { state.query = e.target.value; });
   $('#search-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(); });
   $('#do-search').addEventListener('click', () => runSearch());
+  $('#do-online-search').addEventListener('click', () => runOnlineSearch());
   $('#search-sort').addEventListener('change', (e) => { state.sort = e.target.value; runSearch(); });
   $('#oa-chip').addEventListener('click', (e) => {
     state.oaOnly = !state.oaOnly;

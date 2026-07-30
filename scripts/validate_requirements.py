@@ -41,6 +41,7 @@ FALLBACK_STDLIB_MODULES = {
     "hashlib",
     "html",
     "importlib",
+    "io",
     "json",
     "logging",
     "math",

@@ -182,7 +182,8 @@ with st.sidebar:
     st.subheader("外部能力")
     for warning in external_display["warnings"]:
         st.warning(warning)
-    st.caption(f"OpenAlex mailto: {'已配置' if external_capabilities.get('openalex_mailto') else '未配置'}")
+    st.caption(f"OpenAlex API key: {'已配置' if external_capabilities.get('openalex_api_key') else '未配置'}")
+    st.caption(f"Crossref/OpenAlex contact email: {'已配置' if external_capabilities.get('openalex_mailto') else '未配置'}")
     st.caption(f"Unpaywall email: {'已配置' if external_capabilities.get('unpaywall_email') else '未配置'}")
     st.caption(f"GROBID URL: {external_capabilities.get('grobid_url') or '-'}")
     st.caption(f"LLM key: {'已配置' if external_capabilities.get('llm_api_key') else '未配置'}")

@@ -487,7 +487,7 @@ def validate_system_status(status: dict) -> list[str]:
         if missing_capabilities:
             errors.append(f"external_capabilities missing keys: {', '.join(missing_capabilities)}")
         invalid_capabilities = []
-        for key in ("openalex_mailto", "unpaywall_email", "llm_api_key"):
+        for key in ("openalex_api_key", "openalex_mailto", "unpaywall_email", "llm_api_key"):
             if key in external_capabilities and not isinstance(external_capabilities[key], bool):
                 invalid_capabilities.append(key)
         for key in ("grobid_url", "embedding_model", "vector_db_backend"):

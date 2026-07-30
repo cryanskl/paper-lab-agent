@@ -382,7 +382,7 @@ def external_capabilities_display_state(external_capabilities: Any) -> dict[str,
         }
     warnings: list[str] = []
     capabilities = dict(external_capabilities)
-    for key in ("openalex_mailto", "unpaywall_email", "llm_api_key"):
+    for key in ("openalex_api_key", "openalex_mailto", "unpaywall_email", "llm_api_key"):
         value = external_capabilities.get(key)
         if value is None:
             continue

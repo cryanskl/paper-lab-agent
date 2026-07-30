@@ -50,6 +50,29 @@ def matches_keywords(work: dict[str, Any], keywords: Any) -> bool:
     return any(f" {term} " in padded_haystack for term in terms)
 
 
+def matches_search_query(work: dict[str, Any], search_query: Optional[str]) -> bool:
+    normalized_query = normalize_keyword_text(search_query)
+    if not normalized_query:
+        return True
+    terms = normalized_query.split()
+    authors = work.get("authors") or []
+    if isinstance(authors, list):
+        author_text = " ".join(
+            str(author.get("name") or author.get("display_name") or "")
+            if isinstance(author, dict)
+            else str(author)
+            for author in authors
+        )
+    else:
+        author_text = str(authors)
+    haystack = normalize_keyword_text(
+        f"{work.get('title') or ''}\n{work.get('abstract') or ''}\n"
+        f"{work.get('doi') or ''}\n{author_text}"
+    )
+    padded_haystack = f" {haystack} "
+    return all(f" {term} " in padded_haystack for term in terms)
+
+
 def optional_text(value: Any, default: Optional[str] = None) -> Optional[str]:
     if isinstance(value, str):
         text = value.strip()
@@ -209,7 +232,11 @@ async def fetch_metadata_works(settings, issn: str, date_from: str, date_to: str
     openalex_error = None
     openalex_empty = False
     try:
-        works = await OpenAlexClient(settings.openalex_mailto, **client_options).works_by_issn(
+        works = await OpenAlexClient(
+            mailto=settings.openalex_mailto,
+            api_key=settings.openalex_api_key,
+            **client_options,
+        ).works_by_issn(
             issn, date_from, date_to, max_pages=settings.academic_api_max_pages
         )
         if works:
@@ -235,7 +262,13 @@ async def fetch_metadata_works(settings, issn: str, date_from: str, date_to: str
     return works, None
 
 
-async def run_crawl_job(job_id: int, journal_id: int, date_from: str, date_to: str) -> None:
+async def run_crawl_job(
+    job_id: int,
+    journal_id: int,
+    date_from: str,
+    date_to: str,
+    search_query: Optional[str] = None,
+) -> None:
     settings = get_settings()
     with get_conn() as conn:
         conn.execute(
@@ -265,7 +298,7 @@ async def run_crawl_job(job_id: int, journal_id: int, date_from: str, date_to: s
         unpaywall = UnpaywallClient(settings.unpaywall_email, **unpaywall_client_options(settings))
         with get_conn() as conn:
             for work in works:
-                if not matches_keywords(work, keywords):
+                if not matches_keywords(work, keywords) or not matches_search_query(work, search_query):
                     filtered += 1
                     continue
                 oa = {"oa_status": "unknown", "oa_pdf_url": None}

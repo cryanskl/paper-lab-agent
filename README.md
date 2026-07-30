@@ -26,9 +26,11 @@ bash scripts/dev.sh
 ```
 
 服务启动时会自动用 `docs/schema.sql` 初始化 `data/plasma.db`。
-`scripts/doctor.py --compact` 会在启动服务前检查 Python 版本、关键项目文件、Python 依赖是否可导入、本地存储目录可创建和可写，以及外部能力配置 warning；它会读取 `.env` 中的本地路径配置，但已导出的环境变量仍优先，适合新机器快速预检。compact 输出里的 `warning_count`、`warning_codes` 和 `warning_details` 用于提示 OpenAlex、Unpaywall、LLM 等可选外部能力是否未配置，也会提示 `unsupported_embedding_model`、`unsupported_vector_db_backend` 这类本地 RAG adapter 配置风险；这些 warning 不会阻断默认离线模式。发布、演示或交付前请使用 `python scripts/doctor.py --strict --compact`，让必需检查失败时返回非零退出码；release gate 会校验默认离线 preflight 的 `warning_count`、`warning_codes` 和 `warning_details`，防止预检摘要漂移。release gate runs default offline preflight with optional external env cleared, so a developer machine with real OpenAlex, Unpaywall, or LLM credentials still exercises the deterministic offline handoff path.
+`scripts/doctor.py --compact` 会在启动服务前检查 Python 版本、关键项目文件、Python 依赖是否可导入、本地存储目录可创建和可写，以及外部能力配置 warning；它会读取 `.env` 中的本地路径配置，但已导出的环境变量仍优先，适合新机器快速预检。compact 输出里的 `warning_count`、`warning_codes` 和 `warning_details` 用于提示 OpenAlex、Unpaywall、LLM 等可选外部能力是否未配置，也会提示 `unsupported_embedding_model`、`unsupported_vector_db_backend` 这类本地 RAG adapter 配置风险；这些 warning 不会阻断默认离线模式。发布、演示或交付前请使用 `python scripts/doctor.py --strict --compact`，让必需检查失败时返回非零退出码；release gate 会校验默认离线 preflight 的 `warning_count`、`warning_codes` 和 `warning_details`，防止预检摘要漂移。release gate runs default offline preflight with optional external env explicitly overridden to blank values, so a developer machine with real OpenAlex, Unpaywall, or LLM credentials in `.env` still exercises the deterministic offline handoff path.
 `scripts/dev.sh` 会等待 FastAPI `/api/v1/health` 和 Streamlit `/_stcore/health` 都可访问后再打印地址。
 如果只设置 `PAPER_LAB_DATA_DIR`，SQLite、PDF、TEI、翻译、导出和本地向量索引默认都会落在该目录下；需要拆分存储位置时再单独设置 `DATABASE_PATH`、`PAPER_LAB_PDF_DIR`、`VECTOR_DB_PATH` 等变量。
+
+OpenAlex 正式调用需要免费 API Key。在 <https://openalex.org/settings/api> 注册并复制 Key 后，将其写入本地 `.env` 的 `OPENALEX_API_KEY`；`OPENALEX_MAILTO` 保留为 Crossref/OpenAlex 的联系邮箱。Unpaywall 无需单独注册账号，只需设置 `UNPAYWALL_EMAIL`。系统状态只暴露这些配置是否存在，不返回凭据内容。
 
 验证：
 
@@ -133,7 +135,7 @@ Windows 相关注意事项：
 
 | 页面 | 主要动作 | 依赖接口 |
 | --- | --- | --- |
-| 文献检索 | 关键词 / 年份区间 / 期刊白名单 / 标签 / 仅 OA 筛选、展开摘要、复制 DOI、加入待下载清单 | `GET /papers`、`GET /journals`、`GET /categories` |
+| 文献检索 | 明确区分本地库检索与在线同步；在线模式按当前关键词 / 年份 / 期刊调用 OpenAlex，失败时回退 Crossref，完成后自动刷新本地结果；同时支持标签 / 仅 OA 筛选、展开摘要、复制 DOI、加入待下载清单 | `GET /papers`、`POST /crawl/run`、`GET /crawl/jobs/{id}`、`GET /journals`、`GET /categories` |
 | 文献库 | 拖拽上传 PDF、触发解析 / 翻译 / RAG 索引 / 化学库抽取、给文献打标、查看状态与失败原因 | `POST /documents`、`POST /documents/{id}/parse`、`.../translate`、`.../index`、`.../extract-chemistry`、`PUT /papers/{id}/categories` |
 | 双语阅读 | 左右分栏对照、滚动联动、字号调节、术语高亮、划选发送到问答 | `GET /documents/{id}/sections`、`GET /documents/{id}/translation` |
 | AI 问答 | 单篇 / 项目 / 全库范围检索，回答带 `[n·¶段]` 引用并可点击跳回原文 | `POST /rag/query` |
@@ -226,7 +228,7 @@ CI 配置在 `.github/workflows/ci.yml`，默认跑同一条离线测试命令�
 - 慢机器启动超时：`DEV_READY_TIMEOUT=60 bash scripts/dev.sh`
 - 指定解释器：`PYTHON=.venv/bin/python bash scripts/dev.sh`
 - GROBID 未启动：解析会降级为本地文本 fallback，`documents.parse_error` 会记录原因。
-- 外部 API 未配置：OpenAlex、Unpaywall、LLM 均从 `.env` 读取；未配置时系统保持本地可运行，不用假数据冒充外部能力。
+- 外部 API 未配置：OpenAlex 从 `.env` 读取 `OPENALEX_API_KEY`，Unpaywall 读取 `UNPAYWALL_EMAIL`，LLM 读取 `LLM_API_KEY`；未配置时系统保持本地可运行，不用假数据冒充外部能力。
 
 ## Productization Roadmap
 

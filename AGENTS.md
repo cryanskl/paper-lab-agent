@@ -27,11 +27,11 @@ FastAPI + SQLite + APScheduler + GROBID + Chroma/FAISS；前端 Streamlit。未�
 
 ## 外部依赖
 
-- OpenAlex / Crossref：请求带 `mailto` 进 polite pool，控制频率、加重试；二者互为备援。
+- OpenAlex：请求带 `OPENALEX_API_KEY`；Crossref 请求带 `OPENALEX_MAILTO` 作为联系信息。两者都要控制频率、加重试，并互为备援。
 - Unpaywall：按 DOI 查 OA，仅补合法开放获取链接。
 - GROBID：以 Docker 服务方式调用，地址从环境变量读。
 - LLM / 嵌入模型：key 从环境变量读，不要硬编码。
-- 所有外部依赖写进 `.env.example`，至少包含：`OPENALEX_MAILTO`、`UNPAYWALL_EMAIL`、`GROBID_URL`、`LLM_API_KEY`、`EMBEDDING_MODEL`、`VECTOR_DB_PATH`、`DATABASE_PATH`。
+- 所有外部依赖写进 `.env.example`，至少包含：`OPENALEX_API_KEY`、`OPENALEX_MAILTO`、`UNPAYWALL_EMAIL`、`GROBID_URL`、`LLM_API_KEY`、`EMBEDDING_MODEL`、`VECTOR_DB_PATH`、`DATABASE_PATH`。
 
 ## 红线（不可逾越）
 

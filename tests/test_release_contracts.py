@@ -2331,6 +2331,7 @@ def test_doctor_script_reports_optional_external_config_warnings(tmp_path):
     check = doctor.check_external_config(
         tmp_path,
         env={
+            "OPENALEX_API_KEY": "",
             "OPENALEX_MAILTO": "",
             "UNPAYWALL_EMAIL": "",
             "LLM_API_KEY": "",
@@ -2343,6 +2344,7 @@ def test_doctor_script_reports_optional_external_config_warnings(tmp_path):
     assert check["name"] == "external_config"
     assert check["status"] == "pass"
     assert check["capabilities"] == {
+        "openalex_api_key": False,
         "openalex_mailto": False,
         "unpaywall_email": False,
         "grobid_url": "http://127.0.0.1:8070",
@@ -2351,7 +2353,7 @@ def test_doctor_script_reports_optional_external_config_warnings(tmp_path):
         "vector_db_backend": "local-json",
     }
     assert [warning["code"] for warning in check["warnings"]] == [
-        "missing_openalex_mailto",
+        "missing_openalex_api_key",
         "missing_unpaywall_email",
         "missing_llm_api_key",
     ]
@@ -2363,6 +2365,7 @@ def test_doctor_script_reports_unsupported_local_adapter_config_warnings(tmp_pat
     check = doctor.check_external_config(
         tmp_path,
         env={
+            "OPENALEX_API_KEY": "openalex-test-key",
             "OPENALEX_MAILTO": "lab@example.test",
             "UNPAYWALL_EMAIL": "lab@example.test",
             "LLM_API_KEY": "sk-test",
@@ -2415,7 +2418,7 @@ def test_doctor_summary_counts_external_config_warnings():
                 "status": "pass",
                 "issues": [],
                 "warnings": [
-                    {"code": "missing_openalex_mailto"},
+                    {"code": "missing_openalex_api_key"},
                     {"code": "missing_unpaywall_email"},
                 ],
             },
@@ -2427,7 +2430,7 @@ def test_doctor_summary_counts_external_config_warnings():
     assert compact["ok"] is True
     assert compact["issue_count"] == 0
     assert compact["warning_count"] == 2
-    assert compact["warning_codes"] == ["missing_openalex_mailto", "missing_unpaywall_email"]
+    assert compact["warning_codes"] == ["missing_openalex_api_key", "missing_unpaywall_email"]
 
 
 def test_doctor_script_reports_storage_parent_that_is_not_directory(tmp_path):
@@ -2744,11 +2747,17 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert "uvicorn" in release_check
     assert "DOCTOR_JSON=" in release_check
     assert 'doctor.get("warning_count") != 3' in release_check
-    assert 'expected_doctor_warning_codes = ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]' in release_check
+    assert 'expected_doctor_warning_codes = ["missing_openalex_api_key", "missing_unpaywall_email", "missing_llm_api_key"]' in release_check
     assert 'doctor.get("warning_codes") != expected_doctor_warning_codes' in release_check
     assert 'doctor_warning_details = doctor.get("warning_details")' in release_check
     assert "doctor_warning_detail_codes != expected_doctor_warning_codes" in release_check
     assert "OFFLINE_PREFLIGHT_ENV=(" in release_check
+    assert '"OPENALEX_API_KEY="' in release_check
+    assert '"OPENALEX_MAILTO="' in release_check
+    assert '"UNPAYWALL_EMAIL="' in release_check
+    assert '"LLM_API_KEY="' in release_check
+    assert "TEST_ENV=(" in release_check
+    assert '"-u" "OPENALEX_API_KEY"' in release_check
     assert '"-u" "OPENALEX_MAILTO"' in release_check
     assert '"-u" "UNPAYWALL_EMAIL"' in release_check
     assert '"-u" "LLM_API_KEY"' in release_check
@@ -2756,9 +2765,9 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert 'PREPARE_DEMO_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<\'PY\'' in release_check
     assert 'RELEASE_ARTIFACTS_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<\'PY\'' in release_check
     assert 'SMOKE_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" -m scripts.smoke_check)"' in release_check
-    assert 'env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" -m pytest -q' in release_check
-    assert "release gate runs default offline preflight with optional external env cleared" in readme
-    assert "default offline preflight with optional external env cleared" in checklist
+    assert 'env "${TEST_ENV[@]}" "${PYTHON_CMD[@]}" -m pytest -q' in release_check
+    assert "optional external env explicitly overridden to blank values" in readme
+    assert "optional external env explicitly overridden to blank values" in checklist
     assert "release gate also starts a live API with prepared demo data" in readme
     assert "live API with prepared demo data" in checklist
     assert "release_check failed: doctor preflight summary" in release_check
@@ -2867,7 +2876,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert "release-acceptance-matrix.md" in release_check
     assert 'manifest.get("artifact_count") != len(expected_artifact_names)' in release_check
     assert 'manifest.get("artifact_names") != expected_artifact_names' in release_check
-    assert 'expected_preflight_warning_codes = ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]' in release_check
+    assert 'expected_preflight_warning_codes = ["missing_openalex_api_key", "missing_unpaywall_email", "missing_llm_api_key"]' in release_check
     assert 'not valid_preflight_evidence(manifest)' in release_check
     assert 'package.get("artifact_dir") != str(output_dir.resolve())' in release_check
     assert 'package.get("package_path") != str(package_path.resolve())' in release_check
@@ -3112,6 +3121,14 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     data_dir = tmp_path / "data"
     env = os.environ.copy()
     env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    env.update(
+        {
+            "OPENALEX_API_KEY": "",
+            "OPENALEX_MAILTO": "",
+            "UNPAYWALL_EMAIL": "",
+            "LLM_API_KEY": "",
+        }
+    )
     for key in [
         "DATABASE_PATH",
         "PAPER_LAB_PDF_DIR",
@@ -3189,7 +3206,7 @@ def test_export_release_artifacts_script_writes_handoff_bundle(tmp_path):
     assert manifest["preflight_ok"] is True
     assert manifest["preflight_warning_count"] == 3
     assert manifest["preflight_warning_codes"] == [
-        "missing_openalex_mailto",
+        "missing_openalex_api_key",
         "missing_unpaywall_email",
         "missing_llm_api_key",
     ]
@@ -3575,6 +3592,14 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     data_dir = tmp_path / "data"
     env = os.environ.copy()
     env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    env.update(
+        {
+            "OPENALEX_API_KEY": "",
+            "OPENALEX_MAILTO": "",
+            "UNPAYWALL_EMAIL": "",
+            "LLM_API_KEY": "",
+        }
+    )
     for key in [
         "DATABASE_PATH",
         "PAPER_LAB_PDF_DIR",
@@ -3639,7 +3664,7 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     assert payload["preflight_ok"] is True
     assert payload["preflight_warning_count"] == 3
     assert payload["preflight_warning_codes"] == [
-        "missing_openalex_mailto",
+        "missing_openalex_api_key",
         "missing_unpaywall_email",
         "missing_llm_api_key",
     ]
@@ -3673,6 +3698,14 @@ def test_validate_release_artifacts_rejects_acceptance_matrix_source_drift(tmp_p
     data_dir = tmp_path / "data"
     env = os.environ.copy()
     env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    env.update(
+        {
+            "OPENALEX_API_KEY": "",
+            "OPENALEX_MAILTO": "",
+            "UNPAYWALL_EMAIL": "",
+            "LLM_API_KEY": "",
+        }
+    )
     for key in [
         "DATABASE_PATH",
         "PAPER_LAB_PDF_DIR",
@@ -3742,6 +3775,14 @@ def test_validate_release_artifacts_rejects_preflight_warning_count_drift(tmp_pa
     data_dir = tmp_path / "data"
     env = os.environ.copy()
     env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    env.update(
+        {
+            "OPENALEX_API_KEY": "",
+            "OPENALEX_MAILTO": "",
+            "UNPAYWALL_EMAIL": "",
+            "LLM_API_KEY": "",
+        }
+    )
     for key in [
         "DATABASE_PATH",
         "PAPER_LAB_PDF_DIR",
@@ -3808,6 +3849,10 @@ def test_validate_release_artifacts_rejects_duplicate_preflight_warning_codes(tm
     data_dir = tmp_path / "data"
     env = os.environ.copy()
     env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    env["OPENALEX_API_KEY"] = ""
+    env["OPENALEX_MAILTO"] = ""
+    env["UNPAYWALL_EMAIL"] = ""
+    env["LLM_API_KEY"] = ""
     for key in [
         "DATABASE_PATH",
         "PAPER_LAB_PDF_DIR",
@@ -4831,6 +4876,14 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     data_dir = tmp_path / "data"
     env = os.environ.copy()
     env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    env.update(
+        {
+            "OPENALEX_API_KEY": "",
+            "OPENALEX_MAILTO": "",
+            "UNPAYWALL_EMAIL": "",
+            "LLM_API_KEY": "",
+        }
+    )
     for key in [
         "DATABASE_PATH",
         "PAPER_LAB_PDF_DIR",
@@ -4894,7 +4947,7 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert payload["preflight_ok"] is True
     assert payload["preflight_warning_count"] == 3
     assert payload["preflight_warning_codes"] == [
-        "missing_openalex_mailto",
+        "missing_openalex_api_key",
         "missing_unpaywall_email",
         "missing_llm_api_key",
     ]
@@ -4954,7 +5007,7 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert validate_payload["preflight_ok"] is True
     assert validate_payload["preflight_warning_count"] == 3
     assert validate_payload["preflight_warning_codes"] == [
-        "missing_openalex_mailto",
+        "missing_openalex_api_key",
         "missing_unpaywall_email",
         "missing_llm_api_key",
     ]
@@ -4974,6 +5027,14 @@ def test_build_release_handoff_script_exports_validates_packages_and_revalidates
     data_dir = tmp_path / "data"
     env = os.environ.copy()
     env["PAPER_LAB_DATA_DIR"] = str(data_dir)
+    env.update(
+        {
+            "OPENALEX_API_KEY": "",
+            "OPENALEX_MAILTO": "",
+            "UNPAYWALL_EMAIL": "",
+            "LLM_API_KEY": "",
+        }
+    )
     for key in [
         "DATABASE_PATH",
         "PAPER_LAB_PDF_DIR",
@@ -5026,7 +5087,7 @@ def test_build_release_handoff_script_exports_validates_packages_and_revalidates
     assert payload["preflight_ok"] is True
     assert payload["preflight_warning_count"] == 3
     assert payload["preflight_warning_codes"] == [
-        "missing_openalex_mailto",
+        "missing_openalex_api_key",
         "missing_unpaywall_email",
         "missing_llm_api_key",
     ]
@@ -9032,6 +9093,7 @@ def test_api_contract_validator_reports_missing_config_warning_detail_fields():
                                             "external_capabilities": {
                                                 "type": "object",
                                                 "required": [
+                                                    "openalex_api_key",
                                                     "openalex_mailto",
                                                     "unpaywall_email",
                                                     "grobid_url",
@@ -9043,6 +9105,7 @@ def test_api_contract_validator_reports_missing_config_warning_detail_fields():
                                                     "vector_db_backend",
                                                 ],
                                                 "properties": {
+                                                    "openalex_api_key": {"type": "boolean"},
                                                     "openalex_mailto": {"type": "boolean"},
                                                     "unpaywall_email": {"type": "boolean"},
                                                     "grobid_url": {"type": "string"},
@@ -9810,7 +9873,8 @@ def test_requirements_validator_ignores_standard_library_imports(tmp_path):
     source_dir = tmp_path / "scripts"
     source_dir.mkdir()
     (source_dir / "uses_stdlib.py").write_text(
-        "import email.utils\nimport fnmatch\nimport importlib.util\nimport shlex\nimport stat\nimport subprocess\nimport unicodedata\nimport zipfile\n",
+        "import email.utils\nimport fnmatch\nimport importlib.util\nimport io\nimport shlex\nimport stat\n"
+        "import subprocess\nimport unicodedata\nimport zipfile\n",
         encoding="utf-8",
     )
     requirements_path = tmp_path / "requirements.txt"
@@ -10540,6 +10604,7 @@ def test_readme_commands_validator_runs_as_release_script():
 
 
 def test_env_loader_strips_inline_comments_without_touching_quoted_hashes(tmp_path):
+    import os
     import subprocess
 
     repo = Path(__file__).resolve().parent.parent
@@ -10554,6 +10619,8 @@ def test_env_loader_strips_inline_comments_without_touching_quoted_hashes(tmp_pa
         encoding="utf-8",
     )
 
+    env = os.environ.copy()
+    env.pop("LLM_API_KEY", None)
     result = subprocess.run(
         [
             "bash",
@@ -10563,6 +10630,7 @@ def test_env_loader_strips_inline_comments_without_touching_quoted_hashes(tmp_pa
             str(env_file),
         ],
         cwd=repo,
+        env=env,
         check=False,
         capture_output=True,
         text=True,

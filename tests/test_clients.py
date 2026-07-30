@@ -27,6 +27,29 @@ def test_openalex_client_fetches_at_least_one_page_when_max_pages_is_zero():
     assert len(seen_urls) == 1
 
 
+def test_openalex_client_sends_trimmed_api_key_without_putting_it_in_user_agent():
+    seen_api_keys = []
+    seen_user_agents = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_api_keys.append(request.url.params.get("api_key"))
+        seen_user_agents.append(request.headers.get("user-agent"))
+        return json_response({"results": [], "meta": {"next_cursor": None}})
+
+    client = OpenAlexClient(
+        mailto="lab@example.test",
+        api_key="  openalex-test-key  ",
+        transport=httpx.MockTransport(handler),
+    )
+
+    works = asyncio.run(client.works_by_issn("1234-5678", "2026-01-01", "2026-01-31"))
+
+    assert works == []
+    assert seen_api_keys == ["openalex-test-key"]
+    assert seen_user_agents == ["paper-lab-agent (mailto:lab@example.test)"]
+    assert all("openalex-test-key" not in (user_agent or "") for user_agent in seen_user_agents)
+
+
 def test_crossref_client_fetches_at_least_one_page_when_max_pages_is_zero():
     seen_urls = []
 

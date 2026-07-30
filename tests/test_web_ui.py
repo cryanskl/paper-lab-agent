@@ -228,6 +228,19 @@ def test_web_ui_calls_only_documented_api_prefix():
     assert "fetch(API + path" in app_js
 
 
+def test_web_ui_separates_local_search_from_online_sync():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="do-search">检索本地库</button>' in index
+    assert 'id="do-online-search">在线同步并检索</button>' in index
+    assert "async function runOnlineSearch()" in app_js
+    assert "api('/crawl/run', { method: 'POST', body })" in app_js
+    assert "search_query: query" in app_js
+    assert "await waitForCrawlJobs(jobIds)" in app_js
+    assert "await runSearch(true, { keepSyncSummary: true })" in app_js
+
+
 def test_web_ui_declares_every_workbench_screen():
     index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")

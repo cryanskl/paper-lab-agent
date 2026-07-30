@@ -11,6 +11,13 @@ else
   PYTHON_CMD=("python")
 fi
 OFFLINE_PREFLIGHT_ENV=(
+  "OPENALEX_API_KEY="
+  "OPENALEX_MAILTO="
+  "UNPAYWALL_EMAIL="
+  "LLM_API_KEY="
+)
+TEST_ENV=(
+  "-u" "OPENALEX_API_KEY"
   "-u" "OPENALEX_MAILTO"
   "-u" "UNPAYWALL_EMAIL"
   "-u" "LLM_API_KEY"
@@ -40,7 +47,7 @@ import os
 import sys
 
 doctor = json.loads(os.environ["DOCTOR_JSON"])
-expected_doctor_warning_codes = ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]
+expected_doctor_warning_codes = ["missing_openalex_api_key", "missing_unpaywall_email", "missing_llm_api_key"]
 doctor_warning_details = doctor.get("warning_details")
 doctor_warning_detail_codes = [
     warning.get("code") for warning in doctor_warning_details or [] if isinstance(warning, dict)
@@ -528,7 +535,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
     demo_summary = json.loads(demo_summary_path.read_text(encoding="utf-8"))
     openapi = json.loads(openapi_path.read_text(encoding="utf-8"))
     acceptance_matrix = acceptance_matrix_path.read_text(encoding="utf-8")
-    expected_preflight_warning_codes = ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]
+    expected_preflight_warning_codes = ["missing_openalex_api_key", "missing_unpaywall_email", "missing_llm_api_key"]
     expected_artifacts = {
         "openapi": "openapi.json",
         "demo_summary": "demo-summary.json",
@@ -787,7 +794,7 @@ import sys
 from app import __version__
 
 payload = json.loads(os.environ["SMOKE_JSON"])
-expected_config_warning_codes = ["missing_openalex_mailto", "missing_unpaywall_email", "missing_llm_api_key"]
+expected_config_warning_codes = ["missing_openalex_api_key", "missing_unpaywall_email", "missing_llm_api_key"]
 expected = {
     "crawl_job_status": "success",
     "translation_status": "done",
@@ -1010,4 +1017,4 @@ if payload.get("reaction_audits", 0) < 1:
     )
     raise SystemExit(1)
 PY
-env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" -m pytest -q
+env "${TEST_ENV[@]}" "${PYTHON_CMD[@]}" -m pytest -q

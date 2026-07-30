@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     vector_db_path: Path = Field(default=Path("data/vector-index.json"), alias="VECTOR_DB_PATH")
     vector_db_backend: str = Field(default="local-json", alias="VECTOR_DB_BACKEND")
 
+    openalex_api_key: Optional[str] = Field(default=None, alias="OPENALEX_API_KEY")
     openalex_mailto: Optional[str] = Field(default=None, alias="OPENALEX_MAILTO")
     unpaywall_email: Optional[str] = Field(default=None, alias="UNPAYWALL_EMAIL")
     grobid_url: str = Field(default="http://127.0.0.1:8070", alias="GROBID_URL")
@@ -53,7 +54,7 @@ class Settings(BaseSettings):
 
     api_prefix: str = "/api/v1"
 
-    @field_validator("openalex_mailto", "unpaywall_email", "llm_api_key", mode="before")
+    @field_validator("openalex_api_key", "openalex_mailto", "unpaywall_email", "llm_api_key", mode="before")
     @classmethod
     def optional_secret_must_not_be_blank(cls, value):
         if isinstance(value, str):
