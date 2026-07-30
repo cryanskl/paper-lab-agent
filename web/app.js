@@ -40,7 +40,12 @@ const NAV = [
   { key: 'library', label: '文献库', sub: 'LIBRARY' },
   { key: 'reader', label: '双语阅读', sub: 'READER' },
   { key: 'chat', label: 'AI 问答', sub: 'Q&A' },
+  { key: 'chemistry', label: '化学库复核', sub: 'CHEMISTRY' },
 ];
+
+const REACTION_TYPES = ['elastic', 'excitation', 'ionization', 'attachment', 'recombination'];
+const RATE_TYPES = ['cross_section', 'arrhenius', 'constant'];
+const EXPORT_LABELS = { json: 'JSON', txt: 'TXT', bolsig: 'BOLSIG+' };
 
 const YEAR_MIN = 1990;
 const YEAR_MAX = new Date().getFullYear();
@@ -53,7 +58,10 @@ const YEAR_PRESETS = [
 
 /* ── 本地视图状态 ── */
 const persisted = Object.assign(
-  { marked: [], projects: [], fontSize: 15, glossary: true, uploadProject: 'none', targetLang: 'zh' },
+  {
+    marked: [], projects: [], fontSize: 15, glossary: true,
+    uploadProject: 'none', targetLang: 'zh', reviewer: '',
+  },
   readStore()
 );
 
@@ -69,7 +77,10 @@ const state = {
   page: 'search',
   status: null,
   journals: [],
+  categories: [],
   activeJournal: null,
+  activeCategory: null,
+  tagEditor: null,
   oaOnly: false,
   query: '',
   yearFrom: YEAR_MIN,
@@ -83,6 +94,7 @@ const state = {
   absZh: {},
   documents: [],
   docMeta: {},
+  paperCache: {},
   libLoaded: false,
   readerDocId: null,
   readerProject: 'all',
@@ -102,6 +114,12 @@ const state = {
   slashOpen: false,
   selection: null,
   drawerOpen: false,
+  chemDocId: null,
+  chemSets: [],
+  chemSetId: null,
+  chemSet: null,
+  chemLoading: false,
+  chemAudit: {},
 };
 
 /* ── 工具 ── */
@@ -225,6 +243,7 @@ function setPage(page) {
   if (page === 'library') loadLibrary();
   if (page === 'reader') { ensureLibrary().then(renderReaderBar); }
   if (page === 'chat') { ensureLibrary().then(renderChatSide); }
+  if (page === 'chemistry') { ensureLibrary().then(openChemistry); }
 }
 
 /* ── 文献检索 ── */
@@ -246,10 +265,106 @@ function renderJournalChips() {
   }).join('');
 }
 
+/* ── 标签（复用 categories / paper_categories） ── */
+async function loadCategories() {
+  const data = await apiOrNull('/categories?page_size=100');
+  state.categories = (data && data.items) || [];
+  renderCategoryChips();
+}
+
+function renderCategoryChips() {
+  $('#category-chips').innerHTML = state.categories.length
+    ? state.categories.map((c) => `<button class="chip ${state.activeCategory === c.slug ? 'on' : ''}"
+        data-category="${esc(c.slug)}" title="${esc(c.description || '')}">${esc(c.name)}</button>`).join('')
+    : '<span class="chips-label">（分类表为空）</span>';
+}
+
+function tagChips(paper) {
+  return (paper.category_details || []).map((c) => {
+    const manual = c.method === 'manual';
+    const title = manual ? '人工标注' : `自动分类${c.confidence != null ? ` · 置信度 ${c.confidence}` : ''}`;
+    return `<span class="tag-chip ${manual ? '' : 'auto'}" title="${esc(title)}">${esc(c.name)}</span>`;
+  }).join('');
+}
+
+function tagEditorMarkup(paper) {
+  const selected = new Set((paper.category_details || []).map((c) => c.id));
+  const opts = state.categories.map((c) => `<button class="tag-opt ${selected.has(c.id) ? 'on' : ''}"
+    data-tag="${c.id}"><span class="box">${selected.has(c.id) ? '✓' : ''}</span>${esc(c.name)}</button>`).join('');
+  return `<div class="tag-editor">
+    <div class="lbl">打标 · 人工标注会覆盖自动分类</div>
+    <div class="tag-opts">${opts || '<span class="chips-label">分类表为空，先新建一个标签</span>'}</div>
+    <div class="tag-editor-foot">
+      <input class="input" data-new-tag placeholder="新建标签名称">
+      <button class="btn-dashed" data-tag-act="create">＋ 新建标签</button>
+      <div class="spacer"></div>
+      <button class="btn-ghost sm" data-tag-act="auto">自动分类</button>
+      <button class="btn-ghost sm" data-tag-act="cancel">取消</button>
+      <button class="btn-primary sm" data-tag-act="save">保存标签</button>
+    </div>
+    <div class="tag-note">保存后写入 paper_categories（method=manual）；「自动分类」调用 LLM 分类接口，结果以 auto 记录，不覆盖人工标注。</div>
+  </div>`;
+}
+
+async function saveTags(paperId, categoryIds) {
+  try {
+    await api(`/papers/${paperId}/categories`, {
+      method: 'PUT',
+      body: { category_ids: categoryIds, method: 'manual' },
+    });
+    toast(categoryIds.length ? `已保存 ${categoryIds.length} 个标签` : '已清空该文献的标签');
+  } catch (e) {
+    toast(`打标失败：${e.message}`, true);
+    return;
+  }
+  state.tagEditor = null;
+  await refreshTaggedPaper(paperId);
+}
+
+async function autoClassify(paperId) {
+  toast('正在调用分类接口…');
+  try {
+    await api(`/papers/${paperId}/classify`, { method: 'POST' });
+    toast('自动分类完成');
+  } catch (e) {
+    toast(`自动分类失败：${e.message}`, true);
+    return;
+  }
+  await refreshTaggedPaper(paperId);
+}
+
+async function createCategory(name, paperId) {
+  const label = (name || '').trim();
+  if (!label) { toast('标签名称不能为空', true); return; }
+  const slug = label.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]/g, '') || `tag-${Date.now()}`;
+  try {
+    await api('/categories', { method: 'POST', body: { name: label, slug } });
+    toast(`已新建标签「${label}」`);
+  } catch (e) {
+    toast(`新建标签失败：${e.message}`, true);
+    return;
+  }
+  await loadCategories();
+  if (state.tagEditor === paperId) renderLibrary();
+}
+
+/* 打标后同步刷新：检索结果与文献库卡片都读同一份 paper 数据 */
+async function refreshTaggedPaper(paperId) {
+  const fresh = await apiOrNull(`/papers/${paperId}`);
+  if (fresh) {
+    const index = state.results.findIndex((p) => p.id === paperId);
+    if (index >= 0) state.results[index] = Object.assign({}, state.results[index], fresh);
+    state.paperCache[paperId] = fresh;
+  }
+  renderResults();
+  renderLibrary();
+}
+
 function searchQuery() {
   const params = new URLSearchParams();
   if (state.query.trim()) params.set('q', state.query.trim());
   if (state.activeJournal != null) params.set('journal_id', state.activeJournal);
+  if (state.activeCategory) params.set('category', state.activeCategory);
   params.set('year_from', state.yearFrom);
   params.set('year_to', state.yearTo);
   if (state.oaOnly) params.set('oa_only', 'true');
@@ -306,9 +421,7 @@ function paperCard(p) {
   const oa = p.oa_pdf_url
     ? `<a class="card-fact" style="color:var(--accent-1)" href="${esc(p.oa_pdf_url)}" target="_blank" rel="noopener">OA 全文 ↗</a>`
     : `<span class="card-fact">${p.oa_status ? `OA ${esc(p.oa_status)}` : '无 OA 链接'}</span>`;
-  const cats = (p.category_details || [])
-    .map((c) => `<span class="zone zx" title="${c.method === 'manual' ? '人工分类' : '自动分类'}${c.confidence != null ? ` · 置信度 ${c.confidence}` : ''}">${esc(c.name)}</span>`)
-    .join('');
+  const cats = tagChips(p);
   const zh = state.absZh[p.id];
   const zhBlock = zh
     ? `<div class="abs-zh ${zh.muted ? 'muted' : ''}"><span class="tag">摘要翻译</span>${esc(zh.text)}</div>`
@@ -410,14 +523,21 @@ async function loadLibrary() {
   state.libLoaded = true;
   renderNav();
   await Promise.all(state.documents.map(async (doc) => {
-    const [translation, chunks] = await Promise.all([
+    const [translation, chunks, reactionSets] = await Promise.all([
       apiOrNull(`/documents/${doc.id}/translation`),
       apiOrNull(`/documents/${doc.id}/chunks?page_size=1`),
+      apiOrNull(`/documents/${doc.id}/reaction-sets?page_size=50`),
     ]);
     state.docMeta[doc.id] = {
       translation,
       chunkTotal: chunks ? chunks.total : 0,
+      reactionSets: (reactionSets && reactionSets.items) || [],
     };
+    // 卡片上的标签需要完整的 category_details，document.paper 摘要里没有
+    if (doc.paper_id != null && !state.paperCache[doc.paper_id]) {
+      const paper = await apiOrNull(`/papers/${doc.paper_id}`);
+      if (paper) state.paperCache[doc.paper_id] = paper;
+    }
   }));
   renderLibrary();
   renderUploadProjectOptions();
@@ -492,6 +612,26 @@ function renderLibrary() {
         ? '<div class="lib-note ok">✓ 已关联检索到的文献记录</div>'
         : '<div class="lib-note idle">未关联文献记录，可重新上传时选择关联</div>';
     const readable = doc.parse_status === 'parsed';
+    const cached = doc.paper_id != null ? state.paperCache[doc.paper_id] : null;
+    const editing = state.tagEditor === doc.paper_id && doc.paper_id != null;
+    const tags = cached && (cached.category_details || []).length ? tagChips(cached) : '';
+    const tagRow = doc.paper_id == null
+      ? '<div class="tag-note">该文档未关联文献记录，无法打标——标签存在 paper_categories 上，需先关联 paper。</div>'
+      : `<div class="lib-foot">
+          <span class="chips-label">标签</span>
+          ${tags || '<span class="chips-label">尚未打标</span>'}
+          <div class="spacer"></div>
+          <button class="btn-ghost sm" data-doc-act="tag">${editing ? '收起' : '打标'}</button>
+        </div>${editing && cached ? tagEditorMarkup(cached) : ''}`;
+    const chemSets = meta.reactionSets || [];
+    const chemRow = chemSets.length
+      ? `<div class="lib-foot">
+          <span class="tag ${chemSets.every((s) => s.export_ready) ? 'done' : 'todo'}">
+            反应集 ${chemSets.length} · 待复核 ${chemSets.reduce((n, s) => n + s.unverified_count, 0)}</span>
+          <div class="spacer"></div>
+          <button class="btn-ghost sm" data-doc-act="chem">去复核</button>
+        </div>`
+      : '';
     return `<div class="lib-card" data-doc="${doc.id}">
       <div class="lib-head">
         <div class="lib-title">${esc(docTitle(doc))}</div>
@@ -504,10 +644,13 @@ function renderLibrary() {
         <span class="tag ${parse.cls}">${esc(parse.label)}</span>
         <span class="doi">${paper && paper.doi ? `DOI ${esc(paper.doi)}` : 'DOI 未关联'}</span>
       </div>
+      ${tagRow}
+      ${chemRow}
       <div class="lib-actions">
         <button class="btn-ghost sm" data-doc-act="parse">解析</button>
         <button class="btn-ghost sm" data-doc-act="translate" ${readable ? '' : 'disabled'}>翻译</button>
         <button class="btn-ghost sm" data-doc-act="index" ${readable ? '' : 'disabled'}>建 RAG 索引</button>
+        <button class="btn-ghost sm" data-doc-act="chemistry" ${readable ? '' : 'disabled'}>抽取化学库</button>
         <div class="spacer"></div>
         <button class="btn-ghost sm ${readable ? 'on' : ''}" data-doc-act="open" ${readable ? '' : 'disabled'}>
           ${readable ? '打开阅读' : '解析后可读'}</button>
@@ -574,6 +717,9 @@ async function docAction(docId, action) {
     } else if (action === 'index') {
       await api(`/documents/${docId}/index`, { method: 'POST' });
       toast('已触发 RAG 分块与向量化');
+    } else if (action === 'chemistry') {
+      await api(`/documents/${docId}/extract-chemistry`, { method: 'POST' });
+      toast('已触发化学库抽取，完成后到「化学库复核」逐条复核');
     }
   } catch (e) {
     toast(`操作失败：${e.message}`, true);
@@ -905,6 +1051,205 @@ async function relatedPapers(question) {
   return (data && data.items) || [];
 }
 
+/* ── 化学库复核 ── */
+function chemistryDocs() {
+  return state.documents.filter((d) => ((state.docMeta[d.id] || {}).reactionSets || []).length
+    || d.chemistry_status === 'extracted' || d.chemistry_status === 'extracting');
+}
+
+/* 进入本页时自动选中第一个有反应集的文档，否则左侧列了文档而右侧空着 */
+async function openChemistry() {
+  const docs = chemistryDocs();
+  if (!docs.length) { renderChemistry(); return; }
+  const stillThere = docs.some((d) => d.id === state.chemDocId);
+  if (stillThere && state.chemSet) { renderChemistry(); return; }
+  await loadChemDoc((stillThere ? state.chemDocId : docs[0].id));
+}
+
+async function loadChemDoc(docId) {
+  state.chemDocId = docId;
+  state.chemSetId = null;
+  state.chemSet = null;
+  const data = await apiOrNull(`/documents/${docId}/reaction-sets?page_size=50`);
+  state.chemSets = (data && data.items) || [];
+  if (state.chemSets.length) await loadChemSet(state.chemSets[0].id);
+  else renderChemistry();
+}
+
+async function loadChemSet(setId) {
+  state.chemSetId = setId;
+  state.chemLoading = true;
+  renderChemistry();
+  state.chemSet = await apiOrNull(`/reaction-sets/${setId}`);
+  state.chemLoading = false;
+  renderChemistry();
+}
+
+function renderChemistry() {
+  const docs = chemistryDocs();
+  $('#reviewer').value = persisted.reviewer;
+  $('#chem-docs').innerHTML = docs.length
+    ? docs.map((d) => {
+      const sets = (state.docMeta[d.id] || {}).reactionSets || [];
+      const pending = sets.reduce((n, s) => n + s.unverified_count, 0);
+      return `<button class="doc-btn ${state.chemDocId === d.id ? 'on' : ''}" data-chemdoc="${d.id}">
+        <span class="name">${esc(docTitle(d))}</span>
+        <span class="tag ${pending ? 'todo' : 'done'}">${sets.length ? (pending ? `待 ${pending}` : '已复核') : d.chemistry_status || '—'}</span>
+      </button>`;
+    }).join('')
+    : '<div class="side-note">还没有抽取过化学库。在「文献库」中对已解析文档点「抽取化学库」。</div>';
+
+  $('#chem-sets').innerHTML = state.chemSets.length
+    ? state.chemSets.map((s) => `<button class="set-btn ${state.chemSetId === s.id ? 'on' : ''}" data-chemset="${s.id}">
+        <span class="name">${esc(s.gas_mixture || s.name || `反应集 #${s.id}`)}</span>
+        <span class="tag ${s.export_ready ? 'done' : 'todo'}">${s.verified_count}/${s.reaction_count}</span>
+      </button>`).join('')
+    : '<div class="side-note">该文档下没有反应集</div>';
+
+  const set = state.chemSet;
+  const body = $('#chem-body');
+  const gate = $('#chem-gate');
+  $('#chem-exports').hidden = !set;
+
+  if (state.chemLoading) {
+    $('#chem-summary').textContent = '载入中…';
+    gate.hidden = true;
+    body.innerHTML = '<div class="empty-state">载入中…</div>';
+    return;
+  }
+  if (!set) {
+    $('#chem-summary').textContent = docs.length ? '选择左侧文档以载入反应集' : '尚无可复核的反应集';
+    gate.hidden = true;
+    body.innerHTML = `<div class="empty-state">${docs.length
+      ? '选择左侧的文档与反应集开始复核'
+      : '还没有抽取过化学库<br>先在「文献库」对已解析文档执行「抽取化学库」'}</div>`;
+    return;
+  }
+
+  $('#chem-summary').textContent = [
+    set.gas_mixture ? `气体 ${set.gas_mixture}` : null,
+    set.lxcat_db ? `LXCat ${set.lxcat_db}` : 'LXCat 未识别',
+    `${set.reaction_count} 条反应`,
+    `已复核 ${set.verified_count}`,
+    set.status ? `状态 ${set.status}` : null,
+  ].filter(Boolean).join(' · ');
+
+  gate.hidden = false;
+  gate.className = set.export_ready ? 'gate ok' : 'gate';
+  gate.innerHTML = set.export_ready
+    ? '✓ 人工复核闸门已通过：全部反应均已 verified，可以导出仿真输入。'
+    : `⚠ 人工复核闸门未通过：还有 <b>${set.unverified_count}</b> 条反应未复核。闸门不可绕过——此时调用导出接口会返回 409。`;
+
+  body.innerHTML = set.reactions.map((r) => reactionCard(r)).join('')
+    || '<div class="empty-state">该反应集没有反应条目</div>';
+}
+
+function reactionCard(r) {
+  const source = [
+    r.source_label ? `<span class="lbl">出处</span>${esc(r.source_label)}` : null,
+    r.source_section_title && !r.source_label ? `<span class="lbl">章节</span>${esc(r.source_section_title)}` : null,
+  ].filter(Boolean).join(' · ');
+  const excerpt = r.source_excerpt
+    ? `<div><span class="lbl">原文</span><span class="ex">${esc(r.source_excerpt)}</span></div>` : '';
+  const audits = state.chemAudit[r.id] && (r.audit_log || []).length
+    ? `<div class="rx-audit"><div class="lbl">复核审计 · ${r.audit_log.length} 条</div>${
+      r.audit_log.map((a) => `<div class="row">
+        <span class="who">${esc(a.verified_by || '未署名')}</span> · ${esc(a.action)} · ${esc(a.verified_at || a.created_at)}
+        ${Object.keys(a.field_changes || {}).length
+        ? `<div class="chg">${Object.entries(a.field_changes).map(([k, v]) =>
+          `${esc(k)}: ${esc(JSON.stringify(v))}`).join('；')}</div>` : ''}
+      </div>`).join('')}</div>`
+    : '';
+  const opt = (list, current) => ['<option value="">（空）</option>']
+    .concat(list.map((v) => `<option value="${v}" ${current === v ? 'selected' : ''}>${v}</option>`)).join('');
+  return `<div class="rx ${r.verified ? 'done' : ''}" data-rx="${r.id}">
+    <div class="rx-head">
+      <div class="rx-eq">${esc(r.reaction)}</div>
+      <span class="tag ${r.verified ? 'done' : 'todo'}">${r.verified ? '✓ 已复核' : '待复核'}</span>
+      ${r.confidence != null ? `<span class="rx-conf">置信度 ${esc(r.confidence)}</span>` : ''}
+    </div>
+    ${source || excerpt ? `<div class="rx-src">${source}${excerpt}</div>` : ''}
+    <div class="rx-grid">
+      <div class="rx-field"><label>反应类型</label>
+        <select class="select" data-f="reaction_type">${opt(REACTION_TYPES, r.reaction_type)}</select></div>
+      <div class="rx-field"><label>速率类型</label>
+        <select class="select" data-f="rate_type">${opt(RATE_TYPES, r.rate_type)}</select></div>
+      <div class="rx-field"><label>速率系数（保留原文）</label>
+        <input class="input" data-f="rate_value" value="${esc(r.rate_value || '')}" placeholder="照抄论文原文"></div>
+      <div class="rx-field"><label>阈值 eV</label>
+        <input class="input" data-f="threshold_ev" value="${r.threshold_ev != null ? esc(r.threshold_ev) : ''}" placeholder="留空表示缺失"></div>
+      <div class="rx-field"><label>截面链接</label>
+        <input class="input" data-f="cross_section_url" value="${esc(r.cross_section_url || '')}" placeholder="http(s)://"></div>
+    </div>
+    <div class="rx-hint">速率系数与阈值一律保留论文原文，不做单位换算、不填补缺失值。清空某字段即为如实记录「原文未给出」，该动作也会进审计日志。</div>
+    <div class="rx-foot">
+      <button class="btn-ghost sm" data-rx-act="audit">${state.chemAudit[r.id] ? '收起审计' : `审计日志 ${(r.audit_log || []).length}`}</button>
+      <div class="spacer"></div>
+      ${r.verified ? '<button class="btn-ghost sm" data-rx-act="unverify">撤回复核</button>' : ''}
+      <button class="btn-ghost sm" data-rx-act="save">仅保存修正</button>
+      <button class="btn-primary sm" data-rx-act="verify">${r.verified ? '重新确认' : '通过复核'}</button>
+    </div>
+    ${audits}
+  </div>`;
+}
+
+function reactionFormPayload(card, verified) {
+  const payload = { verified, verified_by: persisted.reviewer.trim() };
+  $$('[data-f]', card).forEach((input) => {
+    const field = input.dataset.f;
+    const raw = input.value.trim();
+    if (field === 'threshold_ev') {
+      payload[field] = raw === '' ? null : Number(raw);
+      return;
+    }
+    payload[field] = raw === '' ? null : raw;
+  });
+  return payload;
+}
+
+async function submitReaction(reactionId, card, verified) {
+  if (!persisted.reviewer.trim()) {
+    toast('请先在左侧填写复核人——每次复核都要有可追溯的责任人', true);
+    $('#reviewer').focus();
+    return;
+  }
+  const payload = reactionFormPayload(card, verified);
+  if (payload.threshold_ev != null && Number.isNaN(payload.threshold_ev)) {
+    toast('阈值 eV 必须是数字，或留空表示原文未给出', true);
+    return;
+  }
+  try {
+    state.chemSet = await api(`/reactions/${reactionId}/verify`, { method: 'PUT', body: payload });
+    toast(verified ? '已通过复核并记入审计' : '已保存修正');
+  } catch (e) {
+    toast(`复核失败：${e.message}`, true);
+    return;
+  }
+  const list = await apiOrNull(`/documents/${state.chemDocId}/reaction-sets?page_size=50`);
+  state.chemSets = (list && list.items) || state.chemSets;
+  if (state.docMeta[state.chemDocId]) state.docMeta[state.chemDocId].reactionSets = state.chemSets;
+  renderChemistry();
+}
+
+async function exportReactionSet(format) {
+  if (!state.chemSetId) return;
+  try {
+    const result = await api(`/reaction-sets/${state.chemSetId}/export?format=${format}`, { method: 'POST' });
+    const gate = $('#chem-gate');
+    gate.className = 'gate ok';
+    gate.innerHTML = `✓ 已导出 ${EXPORT_LABELS[format]}：<span class="mono">${esc(result.output_path)}</span>
+      · ${result.reaction_count} 条反应 · ${result.audit_entry_count} 条审计记录`;
+    toast(`已导出 ${EXPORT_LABELS[format]}`);
+  } catch (e) {
+    const gate = $('#chem-gate');
+    gate.className = 'gate bad';
+    gate.innerHTML = e.status === 409
+      ? `✗ 导出被人工复核闸门拦下（409 ${esc(e.code)}）：${esc(e.message)}。这是速率系数的强制闸门，必须逐条复核通过后才能导出。`
+      : `✗ 导出失败（${e.status} ${esc(e.code)}）：${esc(e.message)}`;
+    toast(`导出失败：${e.message}`, true);
+  }
+}
+
 /* ── 事件绑定 ── */
 function bindNav() {
   $('#nav').addEventListener('click', (e) => {
@@ -929,6 +1274,14 @@ function bindSearch() {
     const id = Number(chip.dataset.journal);
     state.activeJournal = state.activeJournal === id ? null : id;
     renderJournalChips();
+    runSearch();
+  });
+  $('#category-chips').addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-category]');
+    if (!chip) return;
+    const slug = chip.dataset.category;
+    state.activeCategory = state.activeCategory === slug ? null : slug;
+    renderCategoryChips();
     runSearch();
   });
 
@@ -1065,11 +1418,66 @@ function bindLibrary() {
   });
   $('#lib-grid').addEventListener('click', (e) => {
     const card = e.target.closest('[data-doc]');
-    const btn = e.target.closest('[data-doc-act]');
-    if (!card || !btn || btn.disabled) return;
+    if (!card) return;
     const docId = Number(card.dataset.doc);
-    if (btn.dataset.docAct === 'open') openReader(docId);
-    else docAction(docId, btn.dataset.docAct);
+    const doc = state.documents.find((d) => d.id === docId);
+
+    const tagOpt = e.target.closest('[data-tag]');
+    if (tagOpt) { tagOpt.classList.toggle('on'); tagOpt.querySelector('.box').textContent = tagOpt.classList.contains('on') ? '✓' : ''; return; }
+
+    const tagAct = e.target.closest('[data-tag-act]');
+    if (tagAct && doc) {
+      const editor = tagAct.closest('.tag-editor');
+      if (tagAct.dataset.tagAct === 'cancel') { state.tagEditor = null; renderLibrary(); }
+      else if (tagAct.dataset.tagAct === 'create') createCategory($('[data-new-tag]', editor).value, doc.paper_id);
+      else if (tagAct.dataset.tagAct === 'auto') autoClassify(doc.paper_id);
+      else if (tagAct.dataset.tagAct === 'save') {
+        saveTags(doc.paper_id, $$('.tag-opt.on', editor).map((b) => Number(b.dataset.tag)));
+      }
+      return;
+    }
+
+    const btn = e.target.closest('[data-doc-act]');
+    if (!btn || btn.disabled) return;
+    const action = btn.dataset.docAct;
+    if (action === 'open') openReader(docId);
+    else if (action === 'tag') {
+      state.tagEditor = state.tagEditor === doc.paper_id ? null : doc.paper_id;
+      renderLibrary();
+    } else if (action === 'chem') { setPage('chemistry'); loadChemDoc(docId); }
+    else docAction(docId, action);
+  });
+}
+
+function bindChemistry() {
+  $('#reviewer').addEventListener('input', (e) => {
+    persisted.reviewer = e.target.value;
+    saveStore();
+  });
+  $('#chem-docs').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-chemdoc]');
+    if (btn) loadChemDoc(Number(btn.dataset.chemdoc));
+  });
+  $('#chem-sets').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-chemset]');
+    if (btn) loadChemSet(Number(btn.dataset.chemset));
+  });
+  $('#chem-exports').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-export]');
+    if (btn) exportReactionSet(btn.dataset.export);
+  });
+  $('#chem-body').addEventListener('click', (e) => {
+    const card = e.target.closest('[data-rx]');
+    const btn = e.target.closest('[data-rx-act]');
+    if (!card || !btn) return;
+    const reactionId = Number(card.dataset.rx);
+    const action = btn.dataset.rxAct;
+    if (action === 'audit') {
+      state.chemAudit[reactionId] = !state.chemAudit[reactionId];
+      renderChemistry();
+    } else if (action === 'verify') submitReaction(reactionId, card, true);
+    else if (action === 'unverify') submitReaction(reactionId, card, false);
+    else if (action === 'save') submitReaction(reactionId, card, !!card.classList.contains('done'));
   });
 }
 
@@ -1238,13 +1646,14 @@ async function boot() {
   bindLibrary();
   bindReader();
   bindChat();
+  bindChemistry();
   syncYearInputs();
   renderMarked();
   renderNav();
   setPage('search');
   state.status = await apiOrNull('/system/status');
   renderSysbox();
-  await loadJournals();
+  await Promise.all([loadJournals(), loadCategories()]);
   await runSearch();
   await ensureLibrary();
 }

@@ -101,22 +101,52 @@ PAPER_LAB_SCHEDULER_ENABLED=true bash scripts/dev.sh
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
+## macOS / Windows
+
+同一套代码在两个系统上跑；只有启动脚本分平台，应用本身没有平台分支。
+
+| | macOS / Linux | Windows |
+| --- | --- | --- |
+| 一键启动 | `bash start.sh` | `powershell -ExecutionPolicy Bypass -File .\start.ps1` |
+| 虚拟环境解释器 | `.venv/bin/python` | `.venv\Scripts\python.exe` |
+
+两个脚本读同一批环境变量（`API_HOST`、`API_PORT`、`STREAMLIT_PORT`、`START_OPEN_BROWSER`、
+`DEV_READY_TIMEOUT`、`PAPER_LAB_SCHEDULER_ENABLED`、`LOG_DIR` 等），行为与输出对齐，
+都会打印 FastAPI / 工作台 / Streamlit 三个地址并默认打开工作台。
+
+Windows 相关注意事项：
+
+- 中文版 Windows 的默认 ANSI 代码页是 GBK。`start.ps1` 会固定 `PYTHONUTF8=1` 与
+  `PYTHONIOENCODING=utf-8` 并按 UTF-8 读 `.env`，避免中文日志和配置乱码。应用代码里所有文件
+  读写都显式带 `encoding="utf-8"`，`tests/test_web_ui.py` 有回归守卫防止漏写。
+- 存储路径全部走 `pathlib` 并从环境变量读，`.env` 里用 `./data/...` 这种相对路径在两个系统上都可用。
+- GROBID 仍以 Docker 服务方式调用，地址从 `GROBID_URL` 读，与宿主系统无关。
+- 前端是浏览器页面，不依赖宿主系统。
+
 ## 文献工作台（Web UI）
 
 工作台随 API 一起提供，无需单独进程、无需构建步骤：起好 uvicorn 后打开 <http://127.0.0.1:8000/>
 即自动跳转到 `/ui/`。静态资源在 `web/`（原生 HTML + CSS + JS，不引入前端框架，也不加载任何 CDN），
 由 FastAPI 的 `StaticFiles` 直接挂载在 `/ui`。
 
-四个页面对应后端既有能力：
+五个页面对应后端既有能力：
 
 | 页面 | 主要动作 | 依赖接口 |
 | --- | --- | --- |
-| 文献检索 | 关键词 / 年份区间 / 期刊白名单 / 仅 OA 筛选、展开摘要、复制 DOI、加入待下载清单 | `GET /papers`、`GET /journals` |
-| 文献库 | 拖拽上传 PDF、触发解析 / 翻译 / RAG 索引、查看状态与失败原因 | `POST /documents`、`POST /documents/{id}/parse`、`.../translate`、`.../index`、`GET /documents` |
+| 文献检索 | 关键词 / 年份区间 / 期刊白名单 / 标签 / 仅 OA 筛选、展开摘要、复制 DOI、加入待下载清单 | `GET /papers`、`GET /journals`、`GET /categories` |
+| 文献库 | 拖拽上传 PDF、触发解析 / 翻译 / RAG 索引 / 化学库抽取、给文献打标、查看状态与失败原因 | `POST /documents`、`POST /documents/{id}/parse`、`.../translate`、`.../index`、`.../extract-chemistry`、`PUT /papers/{id}/categories` |
 | 双语阅读 | 左右分栏对照、滚动联动、字号调节、术语高亮、划选发送到问答 | `GET /documents/{id}/sections`、`GET /documents/{id}/translation` |
 | AI 问答 | 单篇 / 项目 / 全库范围检索，回答带 `[n·¶段]` 引用并可点击跳回原文 | `POST /rag/query` |
+| 化学库复核 | 逐条人工复核（复核人必填、可顺手修正字段）、看原文出处与审计日志、闸门通过后导出仿真输入 | `GET /reaction-sets/{id}`、`PUT /reactions/{id}/verify`、`POST /reaction-sets/{id}/export` |
 
-「待下载清单」「项目分组」「字号与术语表偏好」是纯前端视图状态，存在浏览器 localStorage，
+**打标**复用既有 taxonomy：文献库卡片上勾选标签写入 `paper_categories`（`method=manual`），
+可新建标签，也可调 LLM 自动分类；标签同时作为检索页的筛选条件。未关联 `paper` 的文档不能打标，
+界面会如实说明原因，而不是静默失败。
+
+**化学库复核**是交付物的最后一关。速率系数与阈值一律保留论文原文，界面不做单位换算、不填补缺失值；
+反应集内任一反应未 `verified` 时导出返回 409，工作台会把这条闸门原因直接显示出来——闸门不可绕过。
+
+「待下载清单」「项目分组」「阅读偏好」「复核人」是纯前端视图状态，存在浏览器 localStorage，
 不写库、不新增接口。清单支持导出 TXT / CSV 供人工下载 PDF 使用——全文获取仍是人工 + OA 自动补全，
 工作台不会自动爬取或绕过付费墙。
 

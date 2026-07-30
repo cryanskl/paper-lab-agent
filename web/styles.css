@@ -408,6 +408,94 @@ input, select, button, textarea { outline: none; font-family: inherit; }
 .slash-pop .cmd { font-family: var(--mono); font-size: 12px; color: var(--accent-2); min-width: 76px; text-align: left; }
 .slash-pop .desc { font-size: 11.5px; color: var(--mut-3); }
 
+/* ── 化学库复核 ── */
+.chem-side {
+  width: 262px; min-width: 262px; border-right: 1px solid var(--line); background: var(--panel);
+  overflow-y: auto; padding: 14px 14px 20px;
+}
+.chem-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.chem-head {
+  padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel);
+  display: flex; align-items: center; gap: 10px;
+}
+.chem-exports { display: flex; gap: 6px; }
+.chem-side .doc-btn { flex-wrap: wrap; }
+.set-btn {
+  display: flex; align-items: center; gap: 6px; width: 100%; background: var(--card);
+  border: 1px solid var(--line); color: var(--mut-2); border-radius: 6px;
+  padding: 8px 10px; font-size: 11.5px; cursor: pointer; text-align: left;
+}
+.set-btn:hover { border-color: var(--accent-bd); }
+.set-btn.on { background: rgba(111, 199, 214, .08); border-color: var(--accent-bd); color: #C9E9EF; }
+.set-btn .name { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.gate {
+  margin: 12px 22px 0; padding: 9px 13px; border-radius: 6px; font-size: 11.5px; line-height: 1.8;
+  background: rgba(217, 164, 65, .09); border: 1px solid rgba(217, 164, 65, .3); color: var(--warn);
+}
+.gate.ok { background: rgba(111, 199, 214, .07); border-color: rgba(111, 199, 214, .3); color: var(--accent-2); }
+.gate.bad { background: rgba(217, 128, 128, .08); border-color: rgba(217, 128, 128, .3); color: var(--danger); }
+.rx {
+  border: 1px solid var(--line); background: var(--card); border-radius: 7px;
+  padding: 12px 15px; margin-bottom: 10px;
+}
+.rx:hover { border-color: var(--line-3); }
+.rx.done { border-left: 2px solid var(--accent); }
+.rx-head { display: flex; align-items: flex-start; gap: 10px; }
+.rx-eq {
+  flex: 1; font-family: var(--mono); font-size: 13px; color: var(--text-1); line-height: 1.6;
+  word-break: break-word;
+}
+.rx-conf { font-size: 10.5px; color: var(--mut-4); white-space: nowrap; }
+.rx-src {
+  margin-top: 8px; padding: 8px 11px; background: #10151D; border: 1px solid var(--line);
+  border-radius: 6px; font-size: 11.5px; color: var(--mut-3); line-height: 1.8;
+}
+.rx-src .lbl { font-size: 10px; letter-spacing: 1.2px; color: var(--mut-6); margin-right: 7px; }
+.rx-src .ex { color: var(--mut-4); font-style: italic; }
+.rx-grid {
+  margin-top: 10px; display: grid; gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+}
+.rx-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.rx-field label { font-size: 10.5px; color: var(--mut-6); letter-spacing: .5px; }
+.rx-field .input, .rx-field .select { width: 100%; padding: 5px 9px; font-size: 11.5px; border-radius: 5px; }
+.rx-field .select { padding-right: 22px; }
+.rx-hint { font-size: 10.5px; color: var(--mut-7); margin-top: 7px; line-height: 1.7; }
+.rx-foot { margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rx-audit { margin-top: 9px; border-top: 1px dashed var(--line-2); padding-top: 9px; }
+.rx-audit .lbl { font-size: 10px; letter-spacing: 1.2px; color: var(--mut-6); margin-bottom: 6px; }
+.rx-audit .row {
+  font-size: 11px; color: var(--mut-3); background: #10151D; border: 1px solid var(--line);
+  border-radius: 5px; padding: 5px 9px; margin-bottom: 4px; line-height: 1.7;
+}
+.rx-audit .who { color: var(--accent-2); font-family: var(--mono); }
+.rx-audit .chg { color: var(--mut-4); }
+
+/* ── 标签（打标） ── */
+.chips-row.tight { margin: 0 0 12px; }
+.tag-chip {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; padding: 2px 8px;
+  border-radius: 4px; background: rgba(157, 140, 255, .12); color: var(--rag); white-space: nowrap;
+}
+.tag-chip.auto { background: rgba(154, 163, 178, .12); color: var(--mut-2); }
+.tag-editor {
+  margin-top: 9px; padding: 10px 12px; background: #10151D; border: 1px solid var(--line-2);
+  border-radius: 6px;
+}
+.tag-editor .lbl { font-size: 10.5px; color: var(--mut-6); letter-spacing: 1px; margin-bottom: 7px; }
+.tag-opts { display: flex; flex-wrap: wrap; gap: 5px; }
+.tag-opt {
+  display: inline-flex; align-items: center; gap: 5px; background: transparent;
+  border: 1px solid var(--line-2); color: var(--mut-2); border-radius: 5px;
+  padding: 3px 9px; font-size: 11px; cursor: pointer;
+}
+.tag-opt:hover { border-color: var(--accent-bd); }
+.tag-opt.on { background: rgba(111, 199, 214, .12); border-color: var(--accent-bd); color: var(--accent-2); }
+.tag-opt .box { font-size: 9px; width: 9px; display: inline-block; }
+.tag-editor-foot { margin-top: 9px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tag-editor-foot .input { padding: 4px 9px; font-size: 11px; border-radius: 5px; width: 128px; }
+.tag-note { font-size: 10.5px; color: var(--mut-7); margin-top: 7px; line-height: 1.7; }
+
 /* ── 抽屉 / 浮层 ── */
 .scrim { position: fixed; inset: 0; background: rgba(5, 8, 12, .55); z-index: 40; }
 .drawer {

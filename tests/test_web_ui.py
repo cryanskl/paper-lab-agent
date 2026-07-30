@@ -226,3 +226,101 @@ def test_web_ui_calls_only_documented_api_prefix():
 
     assert "const API = '/api/v1';" in app_js
     assert "fetch(API + path" in app_js
+
+
+def test_web_ui_declares_every_workbench_screen():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    screens = set(re.findall(r'data-screen="([a-z]+)"', index))
+    nav_keys = set(re.findall(r"\{ key: '([a-z]+)'", app_js))
+
+    assert screens == {"search", "library", "reader", "chat", "chemistry"}
+    assert nav_keys == screens, "每个导航项都必须有对应的画面，否则点了会切到空白"
+
+
+def test_web_ui_tagging_writes_manual_category_override():
+    """打标复用既有 taxonomy，不新增端点、不动 schema。"""
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "/papers/${paperId}/categories" in app_js
+    assert "method: 'manual'" in app_js
+    assert "/categories" in app_js
+
+
+def test_web_ui_surfaces_reaction_export_gate_conflict():
+    """导出闸门是红线：409 必须让用户看懂，而不是静默失败。"""
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "e.status === 409" in app_js
+    assert "reaction-sets/${state.chemSetId}/export" in app_js
+
+
+def test_web_ui_requires_reviewer_before_verifying():
+    """verified_by 必填——每次复核都要有可追溯责任人。"""
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "verified_by: persisted.reviewer.trim()" in app_js
+    assert "if (!persisted.reviewer.trim())" in app_js
+
+
+def test_web_ui_does_not_convert_rate_values():
+    """速率系数保留论文原文，前端不得做单位换算。"""
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    rate_line = next(line for line in app_js.split("\n") if "data-f=\"rate_value\"" in line)
+    assert "esc(r.rate_value || '')" in rate_line
+    for forbidden in ("parseFloat(payload.rate_value", "Number(payload.rate_value", "* 1e", "toExponential"):
+        assert forbidden not in app_js
+
+
+# ── 跨平台（mac 开发 → Windows 部署） ──
+
+def test_app_runtime_never_relies_on_locale_default_encoding():
+    """Windows 的默认 ANSI 代码页会把中文文本解成乱码，文件 IO 必须显式 utf-8。"""
+    offenders = []
+    for path in sorted((Path(__file__).resolve().parent.parent / "app").rglob("*.py")):
+        for number, line in enumerate(path.read_text(encoding="utf-8").split("\n"), start=1):
+            if re.search(r"\.(read_text|write_text)\(", line) and "encoding=" not in line:
+                offenders.append(f"{path.name}:{number}")
+            if re.search(r"\bopen\(", line) and "encoding=" not in line and '"rb"' not in line and "'rb'" not in line:
+                offenders.append(f"{path.name}:{number}")
+
+    assert offenders == [], f"缺少显式 encoding，Windows 上会乱码：{offenders}"
+
+
+def test_app_runtime_has_no_posix_only_dependencies():
+    sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((Path(__file__).resolve().parent.parent / "app").rglob("*.py"))
+    )
+    for posix_only in ("import fcntl", "import pwd", "import grp", "os.uname", "os.fork", "SIGKILL", "/dev/null"):
+        assert posix_only not in sources, f"{posix_only} 在 Windows 上不可用"
+
+
+def test_windows_launcher_exists_and_targets_windows_paths():
+    launcher = (Path(__file__).resolve().parent.parent / "start.ps1").read_text(encoding="utf-8")
+
+    assert ".venv\\Scripts\\python.exe" in launcher, "Windows venv 解释器不在 .venv/bin"
+    assert ".venv/bin/python" not in launcher
+    # 中文 Windows 默认 GBK：不锁 UTF-8 会让日志与 .env 乱码
+    assert "PYTHONUTF8" in launcher
+    assert "PYTHONIOENCODING" in launcher
+
+
+def test_windows_launcher_honours_same_env_contract_as_start_sh():
+    root = Path(__file__).resolve().parent.parent
+    launcher = (root / "start.ps1").read_text(encoding="utf-8")
+    shell = (root / "start.sh").read_text(encoding="utf-8")
+
+    shared = [
+        "API_HOST", "API_PORT", "STREAMLIT_HOST", "STREAMLIT_PORT", "API_BASE_URL",
+        "DEV_READY_TIMEOUT", "DEV_EXIT_AFTER_READY", "START_OPEN_BROWSER",
+        "PAPER_LAB_SCHEDULER_ENABLED", "LOG_DIR",
+    ]
+    for name in shared:
+        assert name in shell, f"{name} 不在 start.sh 中，测试假设已过期"
+        assert name in launcher, f"start.ps1 缺少 start.sh 支持的 {name}"
+    # 两个启动器都应把工作台作为主入口
+    assert "WORKBENCH_URL" in shell
+    assert "WORKBENCH_URL" in launcher
