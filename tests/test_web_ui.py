@@ -261,6 +261,44 @@ def test_web_ui_tagging_writes_manual_category_override():
     assert "/categories" in app_js
 
 
+def test_web_ui_prompt_presets_use_sql_api_for_full_crud():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    for control_id in (
+        "new-preset",
+        "preset-editor",
+        "preset-cmd",
+        "preset-desc",
+        "preset-question",
+        "cancel-preset",
+    ):
+        assert f'id="{control_id}"' in index
+    assert "async function loadPresets()" in app_js
+    assert "api('/prompt-presets?page_size=100')" in app_js
+    assert "async function savePresetEditor()" in app_js
+    assert "editing ? 'PUT' : 'POST'" in app_js
+    assert "async function deletePreset(id)" in app_js
+    assert "method: 'DELETE'" in app_js
+    assert "state.presets = state.presets.filter" in app_js
+    assert 'data-preset-edit="${esc(p.id)}"' in app_js
+    assert 'data-preset-delete="${esc(p.id)}"' in app_js
+    assert "persisted.customPresets.push" not in app_js
+    assert "PRESETS.concat" not in app_js
+
+
+def test_web_ui_prompt_preset_validation_and_legacy_migration():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "发送内容不能为空" in app_js
+    assert "不能包含空格" in app_js
+    assert "快捷指令 ${cmd} 已存在" in app_js
+    assert "async function migrateLegacyPromptPresets()" in app_js
+    assert "delete persisted.customPresets" in app_js
+    assert "maxlength=\"24\"" in (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    assert "maxlength=\"1000\"" in (WEB_DIR / "index.html").read_text(encoding="utf-8")
+
+
 def test_web_ui_surfaces_reaction_export_gate_conflict():
     """导出闸门是红线：409 必须让用户看懂，而不是静默失败。"""
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")

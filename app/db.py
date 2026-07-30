@@ -8,6 +8,13 @@ from app.config import get_settings
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "docs" / "schema.sql"
 
+DEFAULT_PROMPT_PRESETS = [
+    ("/总结", "总结当前范围内文献的核心结论", "总结当前范围内文献的核心结论、方法与主要数据。"),
+    ("/术语", "提取并解释文中的专业术语", "提取当前范围文献中的关键专业术语，并逐条解释其含义。"),
+    ("/相关工作", "梳理相关工作与研究脉络", "梳理当前范围文献涉及的相关工作与研究脉络。"),
+    ("/提问我", "就所选文献向我提问，考察理解", "就当前范围的文献内容，向我提出两个考察理解的问题。"),
+]
+
 
 def dict_from_row(row: sqlite3.Row) -> dict[str, Any]:
     return {key: row[key] for key in row.keys()}
@@ -114,7 +121,19 @@ def ensure_schema_indexes(conn: sqlite3.Connection) -> None:
 
 
 def ensure_migrations(conn: sqlite3.Connection) -> None:
+    prompt_presets_existed = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='prompt_presets'"
+    ).fetchone() is not None
     ensure_schema_objects(conn)
+    if not prompt_presets_existed:
+        conn.executemany(
+            """
+            INSERT INTO prompt_presets (command, description, prompt)
+            VALUES (?, ?, ?)
+            """,
+            DEFAULT_PROMPT_PRESETS,
+        )
+        conn.commit()
     journal_columns = {row["name"] for row in conn.execute("PRAGMA table_info(journals)").fetchall()}
     journal_column_specs = {
         "publisher": "TEXT",

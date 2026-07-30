@@ -26,6 +26,7 @@ REQUIRED_TABLES = [
     "sections",
     "translations",
     "chunks",
+    "prompt_presets",
     "reaction_sets",
     "reactions",
     "reaction_audits",
@@ -44,7 +45,7 @@ REQUIRED_INDEXES = [
     "idx_reaction_audits_reaction",
 ]
 REQUIRED_TRIGGERS = ["papers_ai", "papers_ad", "papers_au"]
-SEED_COUNTS = {"journals": 6, "categories": 7}
+SEED_COUNTS = {"journals": 6, "categories": 7, "prompt_presets": 4}
 REQUIRED_COLUMNS = {
     "journals": [
         "id",
@@ -150,6 +151,14 @@ REQUIRED_COLUMNS = {
         "token_count",
         "vector_id",
         "embedded",
+    ],
+    "prompt_presets": [
+        "id",
+        "command",
+        "description",
+        "prompt",
+        "created_at",
+        "updated_at",
     ],
     "reaction_sets": [
         "id",

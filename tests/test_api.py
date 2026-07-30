@@ -282,6 +282,7 @@ def test_health_seed_and_search(tmp_path):
     system = client.get("/api/v1/system/status").json()
     assert system["counts"]["journals"] == 6
     assert system["counts"]["categories"] == 7
+    assert system["counts"]["prompt_presets"] == 4
     assert system["counts"]["crawl_jobs"] == 0
     assert system["counts"]["reaction_sets"] == 0
     assert system["counts"]["reactions"] == 0
@@ -1227,6 +1228,100 @@ def test_categories_list_supports_pagination_query(tmp_path):
     assert payload["page_size"] == 3
     assert len(payload["items"]) == 3
     assert [item["id"] for item in payload["items"]] == [4, 5, 6]
+
+
+def test_prompt_presets_seed_and_support_full_crud(tmp_path):
+    client = make_client(tmp_path)
+
+    initial = client.get("/api/v1/prompt-presets")
+    assert initial.status_code == 200
+    assert initial.json()["total"] == 4
+    assert [item["command"] for item in initial.json()["items"]] == [
+        "/总结",
+        "/术语",
+        "/相关工作",
+        "/提问我",
+    ]
+
+    builtin = initial.json()["items"][0]
+    updated = client.put(
+        f"/api/v1/prompt-presets/{builtin['id']}",
+        json={
+            "command": "概览",
+            "description": "编辑后的默认预设",
+            "prompt": "概览当前范围内的研究结论。",
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["command"] == "/概览"
+    assert updated.json()["description"] == "编辑后的默认预设"
+
+    created = client.post(
+        "/api/v1/prompt-presets",
+        json={
+            "command": "对比",
+            "description": "对比方法与结论",
+            "prompt": "对比当前范围内文献的方法、数据与结论。",
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()["command"] == "/对比"
+
+    deleted = client.delete(f"/api/v1/prompt-presets/{builtin['id']}")
+    assert deleted.status_code == 200
+    assert deleted.json() == {"id": builtin["id"], "command": "/概览"}
+
+    listed = client.get("/api/v1/prompt-presets", params={"page_size": 100}).json()
+    assert listed["total"] == 4
+    assert "/概览" not in [item["command"] for item in listed["items"]]
+    assert "/对比" in [item["command"] for item in listed["items"]]
+
+
+def test_prompt_preset_validation_conflict_and_not_found_are_json(tmp_path):
+    client = make_client(tmp_path)
+
+    duplicate = client.post(
+        "/api/v1/prompt-presets",
+        json={"command": "/总结", "description": None, "prompt": "重复"},
+    )
+    spaced = client.post(
+        "/api/v1/prompt-presets",
+        json={"command": "/错误 指令", "description": None, "prompt": "无效"},
+    )
+    blank_prompt = client.post(
+        "/api/v1/prompt-presets",
+        json={"command": "/空内容", "description": None, "prompt": "   "},
+    )
+    missing_update = client.put(
+        "/api/v1/prompt-presets/9999",
+        json={"command": "/不存在", "description": None, "prompt": "不存在"},
+    )
+    missing_delete = client.delete("/api/v1/prompt-presets/9999")
+
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "prompt_preset_conflict"
+    assert spaced.status_code == 422
+    assert spaced.json()["error"]["code"] == "validation_error"
+    assert blank_prompt.status_code == 422
+    assert blank_prompt.json()["error"]["code"] == "validation_error"
+    assert missing_update.status_code == 404
+    assert missing_update.json()["error"]["code"] == "prompt_preset_not_found"
+    assert missing_delete.status_code == 404
+    assert missing_delete.json()["error"]["code"] == "prompt_preset_not_found"
+
+
+def test_deleted_default_prompt_preset_is_not_reseeded_on_restart(tmp_path):
+    client = make_client(tmp_path)
+    preset_id = client.get("/api/v1/prompt-presets").json()["items"][0]["id"]
+    assert client.delete(f"/api/v1/prompt-presets/{preset_id}").status_code == 200
+
+    from app.db import init_db
+
+    init_db()
+
+    remaining = client.get("/api/v1/prompt-presets").json()
+    assert remaining["total"] == 3
+    assert all(item["id"] != preset_id for item in remaining["items"])
 
 
 def test_create_category_rejects_blank_name_and_slug(tmp_path):

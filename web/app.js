@@ -28,13 +28,6 @@ const GLOSSARY = [
 const ZH_TERMS = ['电子能量分布函数', '二次电子发射', '蒙特卡罗碰撞', '容性耦合', '粒子网格',
   '欧姆加热', '离子通量', '速率系数', '自偏压', '自由基', '鞘层', '解离', '电离', '截面', 'EEDF'];
 
-const PRESETS = [
-  { cmd: '/总结', desc: '总结当前范围内文献的核心结论', q: '总结当前范围内文献的核心结论、方法与主要数据。' },
-  { cmd: '/术语', desc: '提取并解释文中的专业术语', q: '提取当前范围文献中的关键专业术语，并逐条解释其含义。' },
-  { cmd: '/相关工作', desc: '梳理相关工作与研究脉络', q: '梳理当前范围文献涉及的相关工作与研究脉络。' },
-  { cmd: '/提问我', desc: '就所选文献向我提问，考察理解', q: '就当前范围的文献内容，向我提出两个考察理解的问题。' },
-];
-
 const NAV = [
   { key: 'search', label: '文献检索', sub: 'SEARCH' },
   { key: 'library', label: '文献库', sub: 'LIBRARY' },
@@ -64,12 +57,31 @@ const persisted = Object.assign(
   },
   readStore()
 );
+const legacyPromptPresets = Array.isArray(persisted.customPresets)
+  ? persisted.customPresets.filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      command: normalizePresetCommand(String(item.cmd || '').slice(0, 24)),
+      description: String(item.desc || '').trim().slice(0, 80) || null,
+      prompt: String(item.q || '').trim().slice(0, 1000),
+    }))
+    .filter((item) => /^\/[^\s/]{1,23}$/.test(item.command) && item.prompt)
+  : [];
 
 function readStore() {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (e) { return {}; }
 }
 function saveStore() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(persisted)); } catch (e) { /* 隐私模式下忽略 */ }
+}
+function allPresets() {
+  return state.presets;
+}
+function presetById(id) {
+  return allPresets().find((preset) => String(preset.id) === String(id));
+}
+function normalizePresetCommand(value) {
+  const raw = String(value || '').trim();
+  return raw.startsWith('/') ? raw : `/${raw}`;
 }
 
 /* ── 运行时状态 ── */
@@ -78,6 +90,7 @@ const state = {
   status: null,
   journals: [],
   categories: [],
+  presets: [],
   activeJournal: null,
   activeCategory: null,
   tagEditor: null,
@@ -115,6 +128,7 @@ const state = {
   typing: false,
   chatInput: '',
   slashOpen: false,
+  presetEditor: null,
   selection: null,
   drawerOpen: false,
   chemDocId: null,
@@ -273,6 +287,33 @@ async function loadCategories() {
   const data = await apiOrNull('/categories?page_size=100');
   state.categories = (data && data.items) || [];
   renderCategoryChips();
+}
+
+async function loadPresets() {
+  const data = await api('/prompt-presets?page_size=100');
+  state.presets = (data.items || []).map((preset) => ({
+    id: preset.id,
+    cmd: preset.command,
+    desc: preset.description || '',
+    q: preset.prompt,
+  }));
+}
+
+async function migrateLegacyPromptPresets() {
+  if (!legacyPromptPresets.length) {
+    delete persisted.customPresets;
+    saveStore();
+    return;
+  }
+  for (const preset of legacyPromptPresets) {
+    try {
+      await api('/prompt-presets', { method: 'POST', body: preset });
+    } catch (error) {
+      if (error.code !== 'prompt_preset_conflict') throw error;
+    }
+  }
+  delete persisted.customPresets;
+  saveStore();
 }
 
 function renderCategoryChips() {
@@ -1043,9 +1084,18 @@ function renderChatSide() {
     }).join('')
     : '<div class="side-note">没有已建索引的文档，请先在「文献库」执行「建 RAG 索引」</div>';
 
-  $('#presets').innerHTML = PRESETS.map((p, i) => `
-    <button class="preset-btn" data-preset="${i}">
-      <div class="cmd">${esc(p.cmd)}</div><div class="desc">${esc(p.desc)}</div></button>`).join('');
+  $('#presets').innerHTML = allPresets().map((p) => `
+    <div class="preset-item">
+      <button class="preset-btn" data-preset-id="${esc(p.id)}">
+        <div class="cmd">${esc(p.cmd)}</div>
+        <div class="desc">${esc(p.desc || '预设指令')}</div>
+      </button>
+      <div class="preset-actions">
+        <button type="button" title="编辑 ${esc(p.cmd)}" aria-label="编辑 ${esc(p.cmd)}" data-preset-edit="${esc(p.id)}">编辑</button>
+        <button class="danger" type="button" title="删除 ${esc(p.cmd)}" aria-label="删除 ${esc(p.cmd)}" data-preset-delete="${esc(p.id)}">删除</button>
+      </div>
+    </div>`).join('');
+  renderPresetEditor();
 
   const ids = chatDocumentIds();
   $('#scope-summary').textContent = state.chatScope === 'all'
@@ -1055,6 +1105,89 @@ function renderChatSide() {
       : ids.length
         ? `范围：单篇精读 · ${docTitle(state.documents.find((d) => d.id === ids[0]) || {})}`
         : '范围：单篇精读 · 未选择文献';
+}
+
+function renderPresetEditor() {
+  const editor = $('#preset-editor');
+  const draft = state.presetEditor;
+  editor.hidden = !draft;
+  $('#preset-error').hidden = true;
+  if (!draft) return;
+  $('#preset-cmd').value = draft.cmd || '';
+  $('#preset-desc').value = draft.desc || '';
+  $('#preset-question').value = draft.q || '';
+}
+
+function openPresetEditor(preset) {
+  state.presetEditor = preset
+    ? { id: preset.id, cmd: preset.cmd, desc: preset.desc, q: preset.q }
+    : { id: null, cmd: '/', desc: '', q: '' };
+  renderPresetEditor();
+  $('#preset-cmd').focus();
+  $('#preset-cmd').setSelectionRange($('#preset-cmd').value.length, $('#preset-cmd').value.length);
+}
+
+function presetEditorError(message) {
+  const error = $('#preset-error');
+  error.textContent = message;
+  error.hidden = false;
+}
+
+async function savePresetEditor() {
+  const draft = state.presetEditor;
+  if (!draft) return;
+  const cmd = normalizePresetCommand($('#preset-cmd').value);
+  const desc = $('#preset-desc').value.trim();
+  const q = $('#preset-question').value.trim();
+  if (!/^\/[^\s/]{1,23}$/.test(cmd)) {
+    presetEditorError('快捷指令需为 / 开头且不能包含空格，最多 24 个字符');
+    $('#preset-cmd').focus();
+    return;
+  }
+  if (!q) {
+    presetEditorError('发送内容不能为空');
+    $('#preset-question').focus();
+    return;
+  }
+  const duplicate = allPresets().find((preset) =>
+    preset.id !== draft.id && preset.cmd.toLowerCase() === cmd.toLowerCase());
+  if (duplicate) {
+    presetEditorError(`快捷指令 ${cmd} 已存在`);
+    $('#preset-cmd').focus();
+    return;
+  }
+  const editing = draft.id != null;
+  try {
+    await api(editing ? `/prompt-presets/${draft.id}` : '/prompt-presets', {
+      method: editing ? 'PUT' : 'POST',
+      body: { command: cmd, description: desc || null, prompt: q },
+    });
+    await loadPresets();
+    state.presetEditor = null;
+    renderChatSide();
+    toast(editing ? `已更新预设 ${cmd}` : `已保存预设 ${cmd}`);
+  } catch (error) {
+    if (error.code === 'prompt_preset_conflict') {
+      presetEditorError(`快捷指令 ${cmd} 已存在`);
+      $('#preset-cmd').focus();
+      return;
+    }
+    presetEditorError(`保存失败：${error.message}`);
+  }
+}
+
+async function deletePreset(id) {
+  const preset = presetById(id);
+  if (!preset || !window.confirm(`删除预设 ${preset.cmd}？`)) return;
+  try {
+    await api(`/prompt-presets/${id}`, { method: 'DELETE' });
+    state.presets = state.presets.filter((item) => String(item.id) !== String(id));
+    if (state.presetEditor && String(state.presetEditor.id) === String(id)) state.presetEditor = null;
+    renderChatSide();
+    toast(`已删除预设 ${preset.cmd}`);
+  } catch (error) {
+    toast(`删除失败：${error.message}`, true);
+  }
 }
 
 function stripSourceTrailer(answer) {
@@ -1682,18 +1815,47 @@ function bindChat() {
     renderChatSide();
   });
   $('#presets').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-preset]');
+    const edit = e.target.closest('[data-preset-edit]');
+    if (edit) {
+      openPresetEditor(presetById(edit.dataset.presetEdit));
+      return;
+    }
+    const remove = e.target.closest('[data-preset-delete]');
+    if (remove) {
+      deletePreset(remove.dataset.presetDelete);
+      return;
+    }
+    const btn = e.target.closest('[data-preset-id]');
     if (!btn) return;
-    const preset = PRESETS[Number(btn.dataset.preset)];
+    const preset = presetById(btn.dataset.presetId);
+    if (!preset) return;
     $('#chat-input').value = preset.q;
     state.chatInput = preset.q;
     $('#chat-input').focus();
+  });
+  $('#new-preset').addEventListener('click', () => openPresetEditor());
+  $('#cancel-preset').addEventListener('click', () => {
+    state.presetEditor = null;
+    renderPresetEditor();
+  });
+  $('#preset-editor').addEventListener('submit', (e) => {
+    e.preventDefault();
+    savePresetEditor();
+  });
+  [
+    ['preset-cmd', 'cmd'],
+    ['preset-desc', 'desc'],
+    ['preset-question', 'q'],
+  ].forEach(([elementId, field]) => {
+    $(`#${elementId}`).addEventListener('input', (e) => {
+      if (state.presetEditor) state.presetEditor[field] = e.target.value;
+    });
   });
   const input = $('#chat-input');
   input.addEventListener('input', (e) => {
     state.chatInput = e.target.value;
     const v = e.target.value;
-    const matches = PRESETS.filter((p) => p.cmd.indexOf(v.trim()) === 0);
+    const matches = allPresets().filter((p) => p.cmd.indexOf(v.trim()) === 0);
     state.slashOpen = v.startsWith('/') && !v.includes(' ') && matches.length > 0;
     const pop = $('#slash-pop');
     pop.hidden = !state.slashOpen;
@@ -1708,7 +1870,8 @@ function bindChat() {
   $('#slash-pop').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-slash]');
     if (!btn) return;
-    const preset = PRESETS.find((p) => p.cmd === btn.dataset.slash);
+    const preset = allPresets().find((p) => p.cmd === btn.dataset.slash);
+    if (!preset) return;
     input.value = preset.q;
     state.chatInput = preset.q;
     state.slashOpen = false;
@@ -1744,7 +1907,12 @@ async function boot() {
   setPage('search');
   state.status = await apiOrNull('/system/status');
   renderSysbox();
-  await Promise.all([loadJournals(), loadCategories()]);
+  try {
+    await migrateLegacyPromptPresets();
+  } catch (error) {
+    toast(`旧预设迁移失败：${error.message}`, true);
+  }
+  await Promise.all([loadJournals(), loadCategories(), loadPresets()]);
   await runSearch();
   await ensureLibrary();
 }

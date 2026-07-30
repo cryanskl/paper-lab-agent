@@ -179,6 +179,19 @@ CREATE TABLE chunks (
 CREATE INDEX idx_chunks_doc ON chunks(document_id);
 
 -- -------------------------------------------------------------
+-- 模块 G.1：RAG 问答预设指令（本地可编辑资产）
+-- 默认指令与用户新增指令统一存储，均可编辑/删除
+-- -------------------------------------------------------------
+CREATE TABLE prompt_presets (
+    id          INTEGER PRIMARY KEY,
+    command     TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    description TEXT,
+    prompt      TEXT NOT NULL,
+    created_at  TEXT DEFAULT (datetime('now')),
+    updated_at  TEXT DEFAULT (datetime('now'))
+);
+
+-- -------------------------------------------------------------
 -- 模块 H：化学库抽取（真正的交付物）
 -- 一篇文献 → 一个或多个反应集 → 多条反应
 -- -------------------------------------------------------------
@@ -254,3 +267,10 @@ INSERT INTO categories (name, slug, description) VALUES
 ('等离子体诊断',     'diagnostics',  '探针、光谱、成像等'),
 ('仿真方法',         'methods',      'Fluid / PIC-MCC / Hybrid / Global model'),
 ('截面与速率数据',   'cross-section','电子碰撞截面、速率系数、LXCat 数据');
+
+-- 种子数据：问答页默认预设。写入数据库后与用户预设完全相同，均可编辑/删除。
+INSERT INTO prompt_presets (command, description, prompt) VALUES
+('/总结', '总结当前范围内文献的核心结论', '总结当前范围内文献的核心结论、方法与主要数据。'),
+('/术语', '提取并解释文中的专业术语', '提取当前范围文献中的关键专业术语，并逐条解释其含义。'),
+('/相关工作', '梳理相关工作与研究脉络', '梳理当前范围文献涉及的相关工作与研究脉络。'),
+('/提问我', '就所选文献向我提问，考察理解', '就当前范围的文献内容，向我提出两个考察理解的问题。');

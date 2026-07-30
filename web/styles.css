@@ -354,12 +354,41 @@ input, select, button, textarea { outline: none; font-family: inherit; }
 .doc-btn .name { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .doc-btn .tag { font-size: 9.5px; padding: 1px 6px; border-radius: 3px; }
 .preset-btn {
-  width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+  width: 100%; background: transparent; border: 0; border-radius: 6px;
   padding: 7px 10px; cursor: pointer; text-align: left;
 }
-.preset-btn:hover { border-color: var(--accent-bd); }
+.preset-btn:hover { background: rgba(111, 199, 214, .05); }
 .preset-btn .cmd { font-family: var(--mono); font-size: 12px; color: var(--accent-2); }
 .preset-btn .desc { font-size: 10.5px; color: var(--mut-4); margin-top: 2px; }
+.side-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.side-label-row.mt { margin-top: 16px; }
+.side-label-row .side-label { margin-bottom: 0; }
+.preset-add {
+  border: 0; background: transparent; color: var(--mut-4); cursor: pointer; font-size: 11px; padding: 2px 0;
+}
+.preset-add:hover { color: var(--accent-2); }
+.preset-item {
+  display: flex; align-items: center; gap: 4px; width: 100%; background: var(--card);
+  border: 1px solid var(--line); border-radius: 6px;
+}
+.preset-item:hover { border-color: var(--accent-bd); }
+.preset-item .preset-btn { flex: 1; min-width: 0; }
+.preset-actions { display: flex; gap: 2px; padding-right: 7px; }
+.preset-actions button {
+  border: 0; background: transparent; color: var(--mut-5); font-size: 10px; cursor: pointer; padding: 3px;
+}
+.preset-actions button:hover { color: var(--accent-2); }
+.preset-actions button.danger:hover { color: var(--danger); }
+.preset-editor {
+  border: 1px solid var(--line-2); border-radius: 7px; padding: 10px; margin-bottom: 8px; background: #111720;
+}
+.preset-editor label { display: block; font-size: 10px; color: var(--mut-5); margin: 0 0 4px; }
+.preset-editor .input { margin-bottom: 8px; }
+.preset-editor textarea.input {
+  min-height: 84px; resize: vertical; font-family: var(--sans); line-height: 1.55;
+}
+.preset-editor-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.preset-error { color: var(--danger); font-size: 10.5px; line-height: 1.5; margin: -2px 0 8px; }
 .chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .chat-head {
   padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel);

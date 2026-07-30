@@ -167,7 +167,24 @@
         <div class="stack" id="doc-opts"></div>
       </div>
 
-      <div class="side-label mt">预设指令</div>
+      <div class="side-label-row mt">
+        <div class="side-label">预设指令</div>
+        <button class="preset-add" id="new-preset" type="button">＋ 新建</button>
+      </div>
+      <form class="preset-editor" id="preset-editor" hidden>
+        <label for="preset-cmd">快捷指令</label>
+        <input id="preset-cmd" class="input sm full" maxlength="24" placeholder="/对比">
+        <label for="preset-desc">说明</label>
+        <input id="preset-desc" class="input sm full" maxlength="80" placeholder="例如：比较研究方法和结论">
+        <label for="preset-question">发送内容</label>
+        <textarea id="preset-question" class="input full" maxlength="1000" rows="5"
+          placeholder="点击该预设后填入提问框的完整内容"></textarea>
+        <div class="preset-error" id="preset-error" hidden></div>
+        <div class="preset-editor-actions">
+          <button class="btn-ghost sm" id="cancel-preset" type="button">取消</button>
+          <button class="btn-primary sm" type="submit">保存预设</button>
+        </div>
+      </form>
       <div class="stack" id="presets"></div>
     </div>
     <div class="chat-main">
@@ -179,7 +196,7 @@
       <div class="chat-input-bar">
         <div class="slash-pop" id="slash-pop" hidden></div>
         <div class="row gap8">
-          <input id="chat-input" class="input flex" placeholder="输入问题，或键入 / 唤起预设指令（/总结 /术语 /相关工作 /提问我）">
+          <input id="chat-input" class="input flex" placeholder="输入问题，或键入 / 唤起预设指令">
           <button class="btn-primary" id="chat-send">发送</button>
         </div>
         <div class="chat-hint">回答基于所选范围内已建索引的 PDF 段落向量检索，引用标记 [n·¶段] 可点击跳转原文</div>
