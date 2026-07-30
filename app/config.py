@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     llm_model: str = Field(default="gpt-4o-mini", alias="LLM_MODEL")
     embedding_model: str = Field(default="local-hash", alias="EMBEDDING_MODEL")
     scheduler_enabled: bool = Field(default=False, alias="PAPER_LAB_SCHEDULER_ENABLED")
+    crawl_max_concurrency: int = Field(default=3, ge=1, le=10, alias="CRAWL_MAX_CONCURRENCY")
     academic_api_max_pages: int = Field(default=3, alias="ACADEMIC_API_MAX_PAGES")
     academic_api_max_retries: int = Field(default=3, alias="ACADEMIC_API_MAX_RETRIES")
     academic_api_retry_backoff_seconds: float = Field(default=0.25, alias="ACADEMIC_API_RETRY_BACKOFF_SECONDS")

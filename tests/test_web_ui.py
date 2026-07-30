@@ -239,6 +239,8 @@ def test_web_ui_separates_local_search_from_online_sync():
     assert "search_query: query" in app_js
     assert "await waitForCrawlJobs(jobIds)" in app_js
     assert "await runSearch(true, { keepSyncSummary: true })" in app_js
+    assert "Date.now() + 1800000" in app_js
+    assert "在线同步等待超过 30 分钟" in app_js
 
 
 def test_web_ui_declares_every_workbench_screen():

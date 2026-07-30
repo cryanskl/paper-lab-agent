@@ -3771,6 +3771,64 @@ def test_scheduler_dispatches_created_jobs_to_crawl_runner(monkeypatch):
     ]
 
 
+def test_crawl_jobs_run_with_bounded_journal_concurrency():
+    import asyncio
+
+    from app.services.crawl import run_crawl_jobs
+
+    active = 0
+    peak_active = 0
+    started = []
+
+    async def scenario():
+        release = asyncio.Event()
+
+        async def fake_run_crawl_job(job_id, journal_id, date_from, date_to):
+            nonlocal active, peak_active
+            active += 1
+            peak_active = max(peak_active, active)
+            started.append(journal_id)
+            if len(started) == 2:
+                release.set()
+            await release.wait()
+            await asyncio.sleep(0)
+            active -= 1
+
+        task_args = [
+            (101, 1, "2026-01-01", "2026-01-31"),
+            (102, 2, "2026-01-01", "2026-01-31"),
+            (103, 3, "2026-01-01", "2026-01-31"),
+            (104, 4, "2026-01-01", "2026-01-31"),
+        ]
+        await run_crawl_jobs(task_args, max_concurrency=2, runner=fake_run_crawl_job)
+
+    asyncio.run(scenario())
+
+    assert peak_active == 2
+    assert sorted(started) == [1, 2, 3, 4]
+
+
+def test_crawl_concurrency_setting_is_bounded(tmp_path):
+    import pytest
+    from pydantic import ValidationError
+
+    from app.config import Settings
+
+    settings = Settings(
+        _env_file=None,
+        PAPER_LAB_DATA_DIR=tmp_path,
+        CRAWL_MAX_CONCURRENCY=4,
+    )
+    assert settings.crawl_max_concurrency == 4
+
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            PAPER_LAB_DATA_DIR=tmp_path,
+            CRAWL_MAX_CONCURRENCY=11,
+        )
+
+
 def test_app_lifespan_starts_scheduler_when_enabled(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "test.db"))
     monkeypatch.setenv("PAPER_LAB_DATA_DIR", str(tmp_path))
@@ -10991,6 +11049,7 @@ def test_env_example_validator_cli_rejects_runtime_url_drift(tmp_path):
                 "PAPER_LAB_SCHEDULER_ENABLED=false",
                 "LLM_BASE_URL=https://api.openai.com/v1",
                 "LLM_MODEL=gpt-4o-mini",
+                "CRAWL_MAX_CONCURRENCY=3",
                 "ACADEMIC_API_MAX_PAGES=3",
                 "ACADEMIC_API_MAX_RETRIES=3",
                 "ACADEMIC_API_RETRY_BACKOFF_SECONDS=0.25",

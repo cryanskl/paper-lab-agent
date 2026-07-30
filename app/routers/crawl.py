@@ -6,7 +6,7 @@ from pydantic import BaseModel, field_validator, model_validator
 
 from app.db import dict_from_row, get_conn
 from app.errors import AppError, AsyncJobsResponse, page
-from app.services.crawl import create_jobs, normalize_keyword_config, run_crawl_job
+from app.services.crawl import create_jobs, normalize_keyword_config, run_crawl_job, run_crawl_jobs
 from app.utils import json_loads
 
 router = APIRouter(prefix="/crawl", tags=["crawl"])
@@ -176,13 +176,15 @@ def run_crawl(background_tasks: BackgroundTasks, body: Optional[CrawlRunIn] = No
         raise AppError(404, "journal_not_found", str(exc))
     except ValueError as exc:
         raise AppError(400, "invalid_crawl_date_range", str(exc))
+    task_args_list = []
     for job in jobs:
         task_args = (job["job_id"], job["journal_id"], job["date_from"], job["date_to"])
         if body.search_query:
             task_args += (body.search_query,)
-        background_tasks.add_task(run_crawl_job, *task_args)
+        task_args_list.append(task_args)
     if not jobs:
         raise AppError(404, "no_active_journals", "No active journals matched crawl request")
+    background_tasks.add_task(run_crawl_jobs, task_args_list, runner=run_crawl_job)
     return {
         "jobs": [
             {

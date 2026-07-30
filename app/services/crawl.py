@@ -1,8 +1,9 @@
+import asyncio
 import hashlib
 import re
 import unicodedata
 from datetime import date
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 from app.clients.crossref import CrossrefClient
 from app.clients.openalex import OpenAlexClient
@@ -296,18 +297,24 @@ async def run_crawl_job(
         new_count = 0
         classification_errors = []
         unpaywall = UnpaywallClient(settings.unpaywall_email, **unpaywall_client_options(settings))
+        accepted_works = []
+        for work in works:
+            if not matches_keywords(work, keywords) or not matches_search_query(work, search_query):
+                filtered += 1
+                continue
+            oa = {"oa_status": "unknown", "oa_pdf_url": None}
+            normalized_doi = normalize_doi(work.get("doi"))
+            if normalized_doi:
+                try:
+                    oa = await unpaywall.resolve(normalized_doi)
+                except Exception as exc:
+                    oa = {"oa_status": "unknown", "oa_pdf_url": None, "error": str(exc)}
+            accepted_works.append((work, oa))
+
+        # Keep network awaits outside the SQLite transaction. Parallel journal
+        # jobs can fetch concurrently, then each journal writes atomically.
         with get_conn() as conn:
-            for work in works:
-                if not matches_keywords(work, keywords) or not matches_search_query(work, search_query):
-                    filtered += 1
-                    continue
-                oa = {"oa_status": "unknown", "oa_pdf_url": None}
-                normalized_doi = normalize_doi(work.get("doi"))
-                if normalized_doi:
-                    try:
-                        oa = await unpaywall.resolve(normalized_doi)
-                    except Exception as exc:
-                        oa = {"oa_status": "unknown", "oa_pdf_url": None, "error": str(exc)}
+            for work, oa in accepted_works:
                 created, paper_id = upsert_paper_record(conn, journal, work, oa)
                 if created:
                     new_count += 1
@@ -335,6 +342,29 @@ async def run_crawl_job(
                 "UPDATE crawl_jobs SET status='failed', error=?, finished_at=? WHERE id=?",
                 (str(exc), now_iso(), job_id),
             )
+
+
+CrawlJobRunner = Callable[..., Awaitable[None]]
+
+
+async def run_crawl_jobs(
+    task_args: list[tuple[Any, ...]],
+    *,
+    max_concurrency: Optional[int] = None,
+    runner: Optional[CrawlJobRunner] = None,
+) -> None:
+    """Run journal jobs concurrently while keeping external API load bounded."""
+    concurrency = get_settings().crawl_max_concurrency if max_concurrency is None else max_concurrency
+    if concurrency < 1:
+        raise ValueError("max_concurrency must be at least 1")
+    semaphore = asyncio.Semaphore(concurrency)
+    job_runner = runner or run_crawl_job
+
+    async def run_one(args: tuple[Any, ...]) -> None:
+        async with semaphore:
+            await job_runner(*args)
+
+    await asyncio.gather(*(run_one(args) for args in task_args))
 
 
 def create_jobs(journal_ids: Optional[list[int]], period: str, date_from: Optional[str], date_to: Optional[str]) -> list[dict[str, Any]]:

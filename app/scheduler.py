@@ -2,7 +2,7 @@ import asyncio
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from app.services.crawl import create_jobs, run_crawl_job
+from app.services.crawl import create_jobs, run_crawl_job, run_crawl_jobs
 
 
 SCHEDULED_CRAWL_JOBS = [
@@ -36,8 +36,11 @@ SCHEDULED_CRAWL_JOBS = [
 def trigger_scheduled_crawl(period: str, dispatch: bool = True) -> list[dict]:
     jobs = create_jobs(journal_ids=None, period=period, date_from=None, date_to=None)
     if dispatch:
-        for job in jobs:
-            asyncio.run(run_crawl_job(job["job_id"], job["journal_id"], job["date_from"], job["date_to"]))
+        task_args = [
+            (job["job_id"], job["journal_id"], job["date_from"], job["date_to"])
+            for job in jobs
+        ]
+        asyncio.run(run_crawl_jobs(task_args, runner=run_crawl_job))
     return jobs
 
 

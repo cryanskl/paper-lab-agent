@@ -451,7 +451,7 @@ function waitForOnlineSearchPoll(milliseconds) {
 }
 
 async function waitForCrawlJobs(jobIds) {
-  const deadline = Date.now() + 180000;
+  const deadline = Date.now() + 1800000;
   while (Date.now() < deadline) {
     const jobs = await Promise.all(jobIds.map((jobId) => api(`/crawl/jobs/${jobId}`)));
     const finished = jobs.filter((job) => ['success', 'failed'].includes(job.status));
@@ -462,7 +462,7 @@ async function waitForCrawlJobs(jobIds) {
     if (finished.length === jobs.length) return jobs;
     await waitForOnlineSearchPoll(1000);
   }
-  throw new Error('在线同步等待超过 3 分钟，请稍后在本地库中重试检索');
+  throw new Error('在线同步等待超过 30 分钟；后台任务可能仍在运行，请稍后重试本地检索');
 }
 
 async function runOnlineSearch() {
