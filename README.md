@@ -6,13 +6,24 @@
 
 ## Quick Start
 
-一键启动（推荐给本机演示或日常点击启动）：
+一键启动（推荐给本机演示或日常使用）：
 
 ```bash
+# macOS / Linux
 ./start.sh
 ```
 
-`start.sh` 会自动创建 `.env`（如果不存在）、创建或复用 `.venv`、安装 `requirements.txt` 里的后端和 Streamlit 前端依赖、检查并释放 FastAPI/Streamlit 端口、启动前后端、等待健康检查通过后打开前端网页。每次运行都会写入独立日志目录：`logs/run-YYYYMMDD-HHMMSS/startup.log`、`backend.log`、`frontend.log`。需要只验证启动不打开浏览器时可运行：`START_OPEN_BROWSER=false DEV_EXIT_AFTER_READY=true ./start.sh`。
+```powershell
+# Windows PowerShell
+powershell -ExecutionPolicy Bypass -File .\start.ps1
+```
+
+`start.sh` 和 `start.ps1` 都会自动创建 `.env`（如果不存在）、创建或复用 `.venv`、安装
+`requirements.txt` 里的后端和 Streamlit 前端依赖、检查并释放 FastAPI/Streamlit 端口、启动前后端、
+等待健康检查通过后打开工作台。macOS/Linux 每次运行会写入独立日志目录：
+`logs/run-YYYYMMDD-HHMMSS/startup.log`、`backend.log`、`frontend.log`；Windows 会写入同类运行目录，
+并将标准输出和错误分别保存。需要只验证启动而不打开浏览器时，macOS/Linux 可运行
+`START_OPEN_BROWSER=false DEV_EXIT_AFTER_READY=true ./start.sh`，Windows 可先在 PowerShell 设置同名环境变量。
 
 手动启动：
 
@@ -124,6 +135,10 @@ Windows 相关注意事项：
 - 存储路径全部走 `pathlib` 并从环境变量读，`.env` 里用 `./data/...` 这种相对路径在两个系统上都可用。
 - GROBID 仍以 Docker 服务方式调用，地址从 `GROBID_URL` 读，与宿主系统无关。
 - 前端是浏览器页面，不依赖宿主系统。
+
+从新机器准备、`.env` 配置、GROBID、局域网访问、健康检查到更新与备份的完整步骤见
+[Windows 部署指南](docs/Windows部署指南.md)。当前 Windows 入口面向本机或受信任局域网部署；应用本身
+没有内置公网身份认证和 TLS，不应直接暴露到互联网。
 
 ## 文献工作台（Web UI）
 
@@ -242,3 +257,4 @@ CI 配置在 `.github/workflows/ci.yml`，默认跑同一条隔离测试命令�
 
 成品化阶段见 [docs/productization-roadmap.md](docs/productization-roadmap.md)。
 发布验收矩阵见 [docs/release-acceptance-matrix.md](docs/release-acceptance-matrix.md)。
+Windows 安装、启动、验证与运维见 [docs/Windows部署指南.md](docs/Windows部署指南.md)。
