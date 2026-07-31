@@ -14,6 +14,8 @@ def health_check_counts(**overrides):
         "categories": 7,
         "paper_categories": 0,
         "crawl_jobs": 0,
+        "search_history": 0,
+        "search_results": 0,
         "documents": 0,
         "sections": 0,
         "translations": 0,
@@ -29,6 +31,7 @@ def health_check_counts(**overrides):
 def health_check_status_counts(**overrides):
     status_counts = {
         "crawl_jobs": {},
+        "search_history": {},
         "document_parse": {},
         "document_index": {},
         "document_chemistry": {},
@@ -274,6 +277,29 @@ def test_online_search_query_matches_title_abstract_doi_and_authors():
     assert matches_search_query(work, "   ") is True
 
 
+def test_structured_online_search_supports_phrase_or_and_and_provider_query():
+    from app.services.crawl import build_provider_search_query, matches_search_terms, normalize_search_terms
+
+    work = {
+        "title": "Atomic layer deposition model",
+        "abstract": "Surface reaction pathways in argon plasma.",
+        "doi": "10.5555/example.paper",
+        "authors": [{"name": "Jane Doe"}],
+    }
+
+    assert normalize_search_terms(" atomic layer deposition， surface reaction\nJane Doe ") == [
+        "atomic layer deposition",
+        "surface reaction",
+        "Jane Doe",
+    ]
+    assert build_provider_search_query(["atomic layer deposition", "surface reaction"], "or") == (
+        '"atomic layer deposition" OR "surface reaction"'
+    )
+    assert matches_search_terms(work, ["surface reaction", "oxygen chemistry"], "or") is True
+    assert matches_search_terms(work, ["atomic layer deposition", "Jane Doe"], "and") is True
+    assert matches_search_terms(work, ["atomic layer deposition", "oxygen chemistry"], "and") is False
+
+
 def test_health_seed_and_search(tmp_path):
     client = make_client(tmp_path)
     assert client.get("/health").json()["status"] == "ok"
@@ -282,7 +308,10 @@ def test_health_seed_and_search(tmp_path):
     system = client.get("/api/v1/system/status").json()
     assert system["counts"]["journals"] == 6
     assert system["counts"]["categories"] == 7
+    assert system["counts"]["prompt_presets"] == 4
     assert system["counts"]["crawl_jobs"] == 0
+    assert system["counts"]["search_history"] == 0
+    assert system["counts"]["search_results"] == 0
     assert system["counts"]["reaction_sets"] == 0
     assert system["counts"]["reactions"] == 0
     assert system["runtime"]["scheduler_enabled"] is False
@@ -802,6 +831,62 @@ def test_papers_search_handles_special_characters(tmp_path):
     assert response.json()["items"][0]["title"] == "Ar/O2 plasma chemistry model"
 
 
+def test_papers_boolean_search_covers_authors_doi_and_global_result_limit(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.utils import json_dumps
+
+    papers = [
+        (
+            "10.5555/surface-only",
+            "Surface reaction kinetics",
+            "argon plasma",
+            json_dumps([{"name": "Alice Chen"}]),
+        ),
+        (
+            "10.5555/jane-only",
+            "Optical emission diagnostics",
+            "argon plasma",
+            json_dumps([{"name": "Jane Doe"}]),
+        ),
+        (
+            "10.5555/both",
+            "Surface reaction benchmark",
+            "low temperature plasma",
+            json_dumps([{"name": "Jane Doe"}]),
+        ),
+    ]
+    with get_conn() as conn:
+        conn.executemany(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, ?, ?, 'fixture', '{}')
+            """,
+            papers,
+        )
+
+    combined_and = client.get(
+        "/api/v1/papers",
+        params={"q": "surface reaction, Jane Doe", "q_mode": "and", "sort": "relevance"},
+    )
+    author = client.get("/api/v1/papers", params={"q": "Jane Doe", "q_mode": "or"})
+    doi = client.get("/api/v1/papers", params={"q": "10.5555/jane-only", "q_mode": "or"})
+    capped = client.get(
+        "/api/v1/papers",
+        params={"q": "argon plasma, low temperature plasma", "q_mode": "or", "result_limit": 2},
+    )
+
+    assert combined_and.status_code == 200
+    assert combined_and.json()["total"] == 1
+    assert combined_and.json()["items"][0]["doi"] == "10.5555/both"
+    assert author.json()["total"] == 2
+    assert doi.json()["total"] == 1
+    assert doi.json()["items"][0]["doi"] == "10.5555/jane-only"
+    assert capped.json()["total"] == 2
+    assert len(capped.json()["items"]) == 2
+
+
 def test_papers_treat_blank_category_as_unfiltered_list(tmp_path):
     client = make_client(tmp_path)
 
@@ -872,8 +957,11 @@ def test_crawl_job_detail_includes_journal_and_diagnostics(tmp_path):
         "papers_accepted": 7,
         "papers_existing": 4,
         "outcome": "failed",
-        "keyword_mode": "or",
-        "keyword_terms": SEED_KEYWORD_TERMS,
+        "keyword_mode": "disabled",
+        "keyword_terms": [],
+        "search_mode": None,
+        "search_terms": [],
+        "max_results": None,
         "error": "OpenAlex timeout",
     }
 
@@ -913,13 +1001,16 @@ def test_crawl_job_list_includes_journal_and_diagnostics(tmp_path):
         "papers_accepted": 6,
         "papers_existing": 2,
         "outcome": "new_papers",
-        "keyword_mode": "or",
-        "keyword_terms": SEED_KEYWORD_TERMS,
+        "keyword_mode": "disabled",
+        "keyword_terms": [],
+        "search_mode": None,
+        "search_terms": [],
+        "max_results": None,
         "error": "Crossref fallback",
     }
 
 
-def test_crawl_job_diagnostics_exposes_keyword_filter_config(tmp_path):
+def test_crawl_job_diagnostics_exposes_search_config_and_disables_journal_keywords(tmp_path):
     client = make_client(tmp_path)
 
     from app.db import get_conn
@@ -941,10 +1032,11 @@ def test_crawl_job_diagnostics_exposes_keyword_filter_config(tmp_path):
             """
             INSERT INTO crawl_jobs (
                 journal_id, period, date_from, date_to, status,
-                papers_found, papers_filtered, papers_new
-            ) VALUES (?, 'manual', '2026-06-01', '2026-06-02', 'success', 3, 3, 0)
+                papers_found, papers_filtered, papers_new,
+                search_terms, search_mode, max_results
+            ) VALUES (?, 'manual', '2026-06-01', '2026-06-02', 'success', 3, 3, 0, ?, 'or', 20)
             """,
-            (journal_id,),
+            (journal_id, '["plasma chemistry", "argon"]'),
         )
         job_id = cursor.lastrowid
 
@@ -953,8 +1045,11 @@ def test_crawl_job_diagnostics_exposes_keyword_filter_config(tmp_path):
     assert response.status_code == 200
     diagnostics = response.json()["diagnostics"]
     assert diagnostics["outcome"] == "all_filtered"
-    assert diagnostics["keyword_mode"] == "and"
-    assert diagnostics["keyword_terms"] == ["plasma chemistry", "argon"]
+    assert diagnostics["keyword_mode"] == "disabled"
+    assert diagnostics["keyword_terms"] == []
+    assert diagnostics["search_mode"] == "or"
+    assert diagnostics["search_terms"] == ["plasma chemistry", "argon"]
+    assert diagnostics["max_results"] == 20
 
 
 def test_crawl_job_diagnostics_outcome_distinguishes_no_new_papers(tmp_path):
@@ -1111,7 +1206,7 @@ def test_journal_rejects_invalid_issn_fields(tmp_path):
     assert updated.json()["error"]["code"] == "validation_error"
 
 
-def test_journal_keywords_reject_invalid_config(tmp_path):
+def test_journal_keywords_accept_empty_legacy_config_but_reject_invalid_mode(tmp_path):
     client = make_client(tmp_path)
 
     invalid_mode = client.post(
@@ -1125,8 +1220,8 @@ def test_journal_keywords_reject_invalid_config(tmp_path):
 
     assert invalid_mode.status_code == 422
     assert invalid_mode.json()["error"]["code"] == "validation_error"
-    assert empty_terms.status_code == 422
-    assert empty_terms.json()["error"]["code"] == "validation_error"
+    assert empty_terms.status_code == 201
+    assert empty_terms.json()["keywords"] == {"mode": "and", "terms": []}
 
 
 def test_journal_year_range_rejects_reversed_bounds(tmp_path):
@@ -1227,6 +1322,238 @@ def test_categories_list_supports_pagination_query(tmp_path):
     assert payload["page_size"] == 3
     assert len(payload["items"]) == 3
     assert [item["id"] for item in payload["items"]] == [4, 5, 6]
+
+
+def test_category_update_preserves_paper_links_and_normalizes_fields(tmp_path):
+    client = make_client(tmp_path)
+    from app.db import get_conn
+
+    created = client.post(
+        "/api/v1/categories",
+        json={"name": "Original Tag", "slug": "original-tag", "description": "Original"},
+    ).json()
+    with get_conn() as conn:
+        paper_id = conn.execute(
+            "INSERT INTO papers (title, abstract, authors, raw_metadata) VALUES (?, ?, '[]', '{}')",
+            ("Tagged paper", "A tagged abstract"),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO paper_categories (paper_id, category_id, confidence, method)
+            VALUES (?, ?, 1.0, 'manual')
+            """,
+            (paper_id, created["id"]),
+        )
+
+    response = client.put(
+        f"/api/v1/categories/{created['id']}",
+        json={
+            "name": "  Edited Tag  ",
+            "slug": "  Edited Slug  ",
+            "description": "  Updated description  ",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == created["id"]
+    assert response.json()["name"] == "Edited Tag"
+    assert response.json()["slug"] == "edited-slug"
+    assert response.json()["description"] == "Updated description"
+    assert response.json()["paper_count"] == 1
+    paper = client.get(f"/api/v1/papers/{paper_id}").json()
+    assert paper["categories"] == ["edited-slug"]
+    assert paper["category_details"][0]["name"] == "Edited Tag"
+    with get_conn() as conn:
+        link = conn.execute(
+            "SELECT category_id FROM paper_categories WHERE paper_id=?",
+            (paper_id,),
+        ).fetchone()
+    assert link["category_id"] == created["id"]
+
+
+def test_category_update_conflict_missing_and_validation_are_json(tmp_path):
+    client = make_client(tmp_path)
+    category = client.post(
+        "/api/v1/categories",
+        json={"name": "Editable", "slug": "editable"},
+    ).json()
+
+    conflict = client.put(
+        f"/api/v1/categories/{category['id']}",
+        json={"name": "Duplicate", "slug": "chemistry", "description": None},
+    )
+    missing = client.put(
+        "/api/v1/categories/9999",
+        json={"name": "Missing", "slug": "missing", "description": None},
+    )
+    invalid = client.put(
+        f"/api/v1/categories/{category['id']}",
+        json={"name": "   ", "slug": "valid", "description": None},
+    )
+
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "category_conflict"
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "category_not_found"
+    assert invalid.status_code == 422
+    assert invalid.json()["error"]["code"] == "validation_error"
+
+
+def test_prompt_presets_seed_and_support_full_crud(tmp_path):
+    client = make_client(tmp_path)
+
+    initial = client.get("/api/v1/prompt-presets")
+    assert initial.status_code == 200
+    assert initial.json()["total"] == 4
+    assert [item["command"] for item in initial.json()["items"]] == [
+        "/总结",
+        "/术语",
+        "/相关工作",
+        "/提问我",
+    ]
+
+    builtin = initial.json()["items"][0]
+    updated = client.put(
+        f"/api/v1/prompt-presets/{builtin['id']}",
+        json={
+            "command": "概览",
+            "description": "编辑后的默认预设",
+            "prompt": "概览当前范围内的研究结论。",
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["command"] == "/概览"
+    assert updated.json()["description"] == "编辑后的默认预设"
+
+    created = client.post(
+        "/api/v1/prompt-presets",
+        json={
+            "command": "对比",
+            "description": "对比方法与结论",
+            "prompt": "对比当前范围内文献的方法、数据与结论。",
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()["command"] == "/对比"
+
+    deleted = client.delete(f"/api/v1/prompt-presets/{builtin['id']}")
+    assert deleted.status_code == 200
+    assert deleted.json() == {"id": builtin["id"], "command": "/概览"}
+
+    listed = client.get("/api/v1/prompt-presets", params={"page_size": 100}).json()
+    assert listed["total"] == 4
+    assert "/概览" not in [item["command"] for item in listed["items"]]
+    assert "/对比" in [item["command"] for item in listed["items"]]
+
+
+def test_prompt_preset_validation_conflict_and_not_found_are_json(tmp_path):
+    client = make_client(tmp_path)
+
+    duplicate = client.post(
+        "/api/v1/prompt-presets",
+        json={"command": "/总结", "description": None, "prompt": "重复"},
+    )
+    spaced = client.post(
+        "/api/v1/prompt-presets",
+        json={"command": "/错误 指令", "description": None, "prompt": "无效"},
+    )
+    blank_prompt = client.post(
+        "/api/v1/prompt-presets",
+        json={"command": "/空内容", "description": None, "prompt": "   "},
+    )
+    missing_update = client.put(
+        "/api/v1/prompt-presets/9999",
+        json={"command": "/不存在", "description": None, "prompt": "不存在"},
+    )
+    missing_delete = client.delete("/api/v1/prompt-presets/9999")
+
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "prompt_preset_conflict"
+    assert spaced.status_code == 422
+    assert spaced.json()["error"]["code"] == "validation_error"
+    assert blank_prompt.status_code == 422
+    assert blank_prompt.json()["error"]["code"] == "validation_error"
+    assert missing_update.status_code == 404
+    assert missing_update.json()["error"]["code"] == "prompt_preset_not_found"
+    assert missing_delete.status_code == 404
+    assert missing_delete.json()["error"]["code"] == "prompt_preset_not_found"
+
+
+def test_deleted_default_prompt_preset_is_not_reseeded_on_restart(tmp_path):
+    client = make_client(tmp_path)
+    preset_id = client.get("/api/v1/prompt-presets").json()["items"][0]["id"]
+    assert client.delete(f"/api/v1/prompt-presets/{preset_id}").status_code == 200
+
+    from app.db import init_db
+
+    init_db()
+
+    remaining = client.get("/api/v1/prompt-presets").json()
+    assert remaining["total"] == 3
+    assert all(item["id"] != preset_id for item in remaining["items"])
+
+
+def test_categories_list_reports_paper_usage_and_delete_cascades_links(tmp_path):
+    client = make_client(tmp_path)
+    from app.db import get_conn
+
+    created = client.post(
+        "/api/v1/categories",
+        json={"name": "Temporary Tag", "slug": "temporary-tag"},
+    ).json()
+    with get_conn() as conn:
+        paper_id = conn.execute(
+            "INSERT INTO papers (title, abstract, authors, raw_metadata) VALUES (?, ?, '[]', '{}')",
+            ("Tagged paper", "A tagged abstract"),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO paper_categories (paper_id, category_id, confidence, method)
+            VALUES (?, ?, 1.0, 'manual')
+            """,
+            (paper_id, created["id"]),
+        )
+
+    listed = client.get("/api/v1/categories", params={"page_size": 100}).json()["items"]
+    assert next(item for item in listed if item["id"] == created["id"])["paper_count"] == 1
+
+    response = client.delete(f"/api/v1/categories/{created['id']}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": created["id"],
+        "name": "Temporary Tag",
+        "slug": "temporary-tag",
+        "removed_paper_links": 1,
+    }
+    assert client.get(f"/api/v1/papers/{paper_id}").json()["categories"] == []
+    assert all(item["id"] != created["id"] for item in client.get("/api/v1/categories").json()["items"])
+
+
+def test_delete_category_rejects_parent_with_children(tmp_path):
+    client = make_client(tmp_path)
+    parent = client.post(
+        "/api/v1/categories",
+        json={"name": "Parent Tag", "slug": "parent-tag"},
+    ).json()
+    client.post(
+        "/api/v1/categories",
+        json={"name": "Child Tag", "slug": "child-tag", "parent_id": parent["id"]},
+    )
+
+    response = client.delete(f"/api/v1/categories/{parent['id']}")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "category_has_children"
+
+
+def test_delete_category_returns_json_not_found(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.delete("/api/v1/categories/9999")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "category_not_found"
 
 
 def test_create_category_rejects_blank_name_and_slug(tmp_path):
@@ -1504,6 +1831,121 @@ def test_duplicate_document_upload_returns_existing_resource(tmp_path):
     assert payload["document"]["id"] == first.json()["id"]
     assert payload["document"]["file_hash"] == first.json()["file_hash"]
     assert payload["document"]["original_name"] == "duplicate.pdf"
+
+
+def test_document_upload_can_queue_automatic_processing_without_changing_default(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.routers import documents as document_router
+
+    queued = []
+
+    async def fake_pipeline(document_id, target_lang):
+        queued.append((document_id, target_lang))
+        return {"document_id": document_id, "target_lang": target_lang, "status": "done"}
+
+    monkeypatch.setattr(document_router, "run_document_pipeline", fake_pipeline)
+
+    automatic = client.post(
+        "/api/v1/documents",
+        data={"auto_process": "true", "target_lang": " zh "},
+        files={"file": ("automatic.pdf", pdf_bytes(b"Automatic plasma workflow"), "application/pdf")},
+    )
+    manual = client.post(
+        "/api/v1/documents",
+        files={"file": ("manual.pdf", pdf_bytes(b"Manual plasma workflow"), "application/pdf")},
+    )
+
+    assert automatic.status_code == 201
+    assert automatic.json()["parse_status"] == "parsing"
+    assert queued == [(automatic.json()["id"], "zh")]
+    assert manual.status_code == 201
+    assert manual.json()["parse_status"] == "uploaded"
+
+
+def test_document_pipeline_runs_derived_stages_after_parse_and_continues_after_stage_failure(monkeypatch):
+    import asyncio
+
+    from app.services import document_pipeline
+
+    events = []
+
+    async def fake_parse(document_id):
+        events.append(("parse", document_id))
+        return {"document_id": document_id, "parse_status": "parsed"}
+
+    def fake_translate(document_id, target_lang, translation_id):
+        assert translation_id == 99
+        events.append(("translation", document_id, target_lang))
+        return {"status": "done"}
+
+    def fake_translation_queue(document_id, target_lang):
+        events.append(("queue_translation", document_id, target_lang))
+        return {"id": 99}
+
+    def fake_index_queue(document_id):
+        events.append(("queue_index", document_id))
+
+    def fake_chemistry_queue(document_id):
+        events.append(("queue_chemistry", document_id))
+
+    def fail_index(document_id):
+        events.append(("index", document_id))
+        raise RuntimeError("vector backend unavailable")
+
+    def fake_chemistry(document_id):
+        events.append(("chemistry", document_id))
+        return {"status": "extracted"}
+
+    monkeypatch.setattr(document_pipeline, "parse_document", fake_parse)
+    monkeypatch.setattr(document_pipeline, "create_translation_job", fake_translation_queue)
+    monkeypatch.setattr(document_pipeline, "mark_index_queued", fake_index_queue)
+    monkeypatch.setattr(document_pipeline, "mark_chemistry_queued", fake_chemistry_queue)
+    monkeypatch.setattr(document_pipeline, "translate_document", fake_translate)
+    monkeypatch.setattr(document_pipeline, "index_document", fail_index)
+    monkeypatch.setattr(document_pipeline, "extract_reactions", fake_chemistry)
+
+    result = asyncio.run(document_pipeline.run_document_pipeline(42, "zh"))
+
+    assert events == [
+        ("parse", 42),
+        ("queue_translation", 42, "zh"),
+        ("queue_index", 42),
+        ("queue_chemistry", 42),
+        ("translation", 42, "zh"),
+        ("index", 42),
+        ("chemistry", 42),
+    ]
+    assert result["status"] == "done"
+    assert result["index"] == {"status": "failed", "error": "vector backend unavailable"}
+    assert result["chemistry"]["status"] == "extracted"
+
+
+def test_document_pipeline_stops_when_parse_fails(monkeypatch):
+    import asyncio
+
+    from app.services import document_pipeline
+
+    calls = []
+
+    async def failed_parse(document_id):
+        calls.append(("parse", document_id))
+        return {"document_id": document_id, "parse_status": "failed"}
+
+    def unexpected_stage(*args):
+        calls.append(("unexpected", args))
+        return {"status": "done"}
+
+    monkeypatch.setattr(document_pipeline, "parse_document", failed_parse)
+    monkeypatch.setattr(document_pipeline, "translate_document", unexpected_stage)
+    monkeypatch.setattr(document_pipeline, "index_document", unexpected_stage)
+    monkeypatch.setattr(document_pipeline, "extract_reactions", unexpected_stage)
+
+    result = asyncio.run(document_pipeline.run_document_pipeline(7, "zh"))
+
+    assert calls == [("parse", 7)]
+    assert result["status"] == "failed"
+    assert result["stopped_after"] == "parse"
 
 
 def test_document_upload_stores_pdf_with_pdf_extension_even_when_filename_is_misleading(tmp_path):
@@ -2378,8 +2820,111 @@ def test_fixture_loader_supports_walking_skeleton(tmp_path):
     assert papers["total"] >= 2
     oa_only = client.get("/api/v1/papers?q=plasma&oa_only=true").json()
     assert oa_only["total"] == 1
+    downloadable_only = client.get("/api/v1/papers?q=plasma&downloadable_only=true").json()
+    assert downloadable_only["total"] == 0
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE papers SET oa_pdf_url=? WHERE doi=?",
+            (
+                "https://open-repository.example.org/papers/ar-o2-icp.pdf",
+                "10.1088/1361-6595/fixture-ar-o2",
+            ),
+        )
+
+    downloadable_only = client.get("/api/v1/papers?q=plasma&downloadable_only=true").json()
+    assert downloadable_only["total"] == 1
+    assert downloadable_only["items"][0]["doi"] == "10.1088/1361-6595/fixture-ar-o2"
     repeat = load_fixture_papers()
     assert repeat["updated"] == 2
+
+
+def test_paper_oa_pdf_download_returns_attachment(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.fixture_loader import load_fixture_papers
+    from app.routers import papers as papers_router
+    from app.services.oa_download import OAPdfDownload
+
+    load_fixture_papers()
+    with get_conn() as conn:
+        paper = conn.execute(
+            "SELECT id FROM papers WHERE doi=?",
+            ("10.1088/1361-6595/fixture-ar-o2",),
+        ).fetchone()
+        conn.execute(
+            "UPDATE papers SET oa_pdf_url=? WHERE id=?",
+            ("https://open-repository.example.org/paper.pdf", paper["id"]),
+        )
+    requested_urls = []
+
+    async def fake_download(url, **kwargs):
+        requested_urls.append((url, kwargs))
+        return OAPdfDownload(
+            content=pdf_bytes(b"open access paper"),
+            final_url=url,
+        )
+
+    monkeypatch.setattr(papers_router, "download_oa_pdf", fake_download)
+
+    response = client.get(f"/api/v1/papers/{paper['id']}/download")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["content-disposition"].startswith(
+        f'attachment; filename="paper-{paper["id"]}.pdf";'
+    )
+    assert "filename*=UTF-8''Global%20model%20of%20an%20Ar%20O2" in response.headers["content-disposition"]
+    assert response.content == pdf_bytes(b"open access paper")
+    assert requested_urls == [
+        (
+            "https://open-repository.example.org/paper.pdf",
+            {"user_agent": "testclient"},
+        )
+    ]
+
+
+def test_paper_oa_pdf_download_reports_unavailable_and_upstream_errors(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.fixture_loader import load_fixture_papers
+    from app.routers import papers as papers_router
+    from app.services.oa_download import OADownloadError
+
+    load_fixture_papers()
+    with get_conn() as conn:
+        paper = conn.execute(
+            "SELECT id FROM papers WHERE doi=?",
+            ("10.1088/1361-6595/fixture-ar-o2",),
+        ).fetchone()
+        conn.execute("UPDATE papers SET oa_pdf_url=NULL WHERE id=?", (paper["id"],))
+
+    unavailable = client.get(f"/api/v1/papers/{paper['id']}/download")
+    missing = client.get("/api/v1/papers/999999/download")
+
+    assert unavailable.status_code == 409
+    assert unavailable.json()["error"]["code"] == "oa_pdf_unavailable"
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "paper_not_found"
+
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE papers SET oa_pdf_url=? WHERE id=?",
+            ("https://open-repository.example.org/login", paper["id"]),
+        )
+
+    async def fail_download(_url, **_kwargs):
+        raise OADownloadError(409, "oa_pdf_access_denied", "Open-access PDF source requires authorization")
+
+    monkeypatch.setattr(papers_router, "download_oa_pdf", fail_download)
+    denied = client.get(f"/api/v1/papers/{paper['id']}/download")
+
+    assert denied.status_code == 409
+    assert denied.json()["error"]["code"] == "oa_pdf_access_denied"
 
 
 def test_fixture_loader_imports_idempotent_document_sample(tmp_path):
@@ -5195,7 +5740,7 @@ def test_crawl_job_rejects_adapter_non_web_pdf_url_before_storing(tmp_path, monk
     assert paper["oa_pdf_url"] is None
 
 
-def test_crawl_job_records_found_filtered_and_new_counts(tmp_path, monkeypatch):
+def test_crawl_job_does_not_apply_legacy_journal_keyword_gate(tmp_path, monkeypatch):
     make_client(tmp_path)
 
     from app.db import get_conn
@@ -5253,9 +5798,234 @@ def test_crawl_job_records_found_filtered_and_new_counts(tmp_path, monkeypatch):
 
     assert job["status"] == "success"
     assert job["papers_found"] == 2
-    assert job["papers_filtered"] == 1
-    assert job["papers_new"] == 1
-    assert [paper["doi"] for paper in papers] == ["10.3/match"]
+    assert job["papers_filtered"] == 0
+    assert job["papers_new"] == 2
+    assert [paper["doi"] for paper in papers] == ["10.3/match", "10.3/skip"]
+
+
+def test_online_search_reserves_global_limit_before_oa_and_saves_preview_batch(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    import asyncio
+
+    from app.db import get_conn
+    from app.services import crawl as crawl_service
+
+    works = [
+        {
+            "doi": f"10.3/bounded-{index}",
+            "title": f"Plasma bounded result {index}",
+            "abstract": "plasma surface reaction",
+            "authors": [],
+            "published_date": f"2026-01-{index + 1:02d}",
+            "published_year": 2026,
+            "landing_url": f"https://example.test/bounded-{index}",
+            "source_api": "openalex",
+            "raw_metadata": {},
+        }
+        for index in range(5)
+    ]
+    oa_calls = []
+
+    async def fake_fetch_metadata_works(*args, **kwargs):
+        assert kwargs["result_limit"] == 4
+        return works, None
+
+    class FakeUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            oa_calls.append(doi)
+            return {"oa_status": "gold", "oa_pdf_url": f"https://example.test/{doi}.pdf"}
+
+    monkeypatch.setattr(crawl_service, "fetch_metadata_works", fake_fetch_metadata_works)
+    monkeypatch.setattr(crawl_service, "UnpaywallClient", FakeUnpaywallClient)
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO search_history (
+                cache_key, query_text, search_terms, search_mode, journal_ids,
+                date_from, date_to, max_results, status, decision_status
+            )
+            VALUES ('bounded-cache', 'plasma', '["plasma"]', 'or', '[2]',
+                    '2026-01-01', '2026-01-31', 2, 'running', 'preview')
+            """
+        )
+        search_id = cursor.lastrowid
+    jobs = crawl_service.create_jobs(
+        [2],
+        "manual",
+        "2026-01-01",
+        "2026-01-31",
+        search_terms=["plasma"],
+        search_mode="or",
+        max_results=2,
+        search_history_id=search_id,
+    )
+    asyncio.run(
+        crawl_service.run_crawl_job(
+            jobs[0]["job_id"],
+            2,
+            "2026-01-01",
+            "2026-01-31",
+            ["plasma"],
+            "or",
+            2,
+        )
+    )
+
+    with get_conn() as conn:
+        job = conn.execute("SELECT * FROM crawl_jobs WHERE id=?", (jobs[0]["job_id"],)).fetchone()
+        preview_count = conn.execute(
+            "SELECT COUNT(*) AS n FROM papers WHERE library_status='preview'"
+        ).fetchone()["n"]
+        result_count = conn.execute(
+            "SELECT COUNT(*) AS n FROM search_results WHERE search_history_id=?",
+            (search_id,),
+        ).fetchone()["n"]
+        conn.execute(
+            """
+            UPDATE search_history
+            SET status='success', result_count=?, new_result_count=?, finished_at=datetime('now')
+            WHERE id=?
+            """,
+            (result_count, result_count, search_id),
+        )
+
+    assert len(oa_calls) == 2
+    assert job["papers_found"] == 5
+    assert job["papers_filtered"] == 3
+    assert preview_count == 2
+    assert result_count == 2
+    assert client.get("/api/v1/papers", params={"q": "plasma"}).json()["total"] == 0
+    assert client.get(
+        "/api/v1/papers",
+        params={"q": "plasma", "search_id": search_id},
+    ).json()["total"] == 2
+
+    saved = client.post(f"/api/v1/crawl/searches/{search_id}/save")
+    assert saved.status_code == 200
+    assert saved.json()["decision_status"] == "saved"
+    assert saved.json()["saved_count"] == 2
+    assert client.get("/api/v1/papers", params={"q": "plasma"}).json()["total"] == 2
+
+
+def test_discard_search_removes_unreferenced_preview_and_preserves_existing_paper(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        preview_id = conn.execute(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, library_status, source_api, raw_metadata)
+            VALUES ('10.3/discard-preview', 'Discard preview plasma', 'plasma', '[]', 'preview', 'fixture', '{}')
+            """
+        ).lastrowid
+        saved_id = conn.execute(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, library_status, source_api, raw_metadata)
+            VALUES ('10.3/keep-saved', 'Keep saved plasma', 'plasma', '[]', 'saved', 'fixture', '{}')
+            """
+        ).lastrowid
+        search_id = conn.execute(
+            """
+            INSERT INTO search_history (
+                cache_key, query_text, search_terms, search_mode, journal_ids,
+                date_from, date_to, max_results, status, decision_status, result_count, new_result_count
+            )
+            VALUES ('discard-cache', 'plasma', '["plasma"]', 'or', '[2]',
+                    '2026-01-01', '2026-01-31', 20, 'success', 'preview', 2, 1)
+            """
+        ).lastrowid
+        conn.executemany(
+            """
+            INSERT INTO search_results (
+                search_history_id, paper_id, paper_title, paper_doi, was_new, result_status
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (search_id, preview_id, "Discard preview plasma", "10.3/discard-preview", 1, "preview"),
+                (search_id, saved_id, "Keep saved plasma", "10.3/keep-saved", 0, "existing"),
+            ],
+        )
+
+    discarded = client.delete(f"/api/v1/crawl/searches/{search_id}")
+
+    assert discarded.status_code == 200
+    assert discarded.json()["decision_status"] == "discarded"
+    assert discarded.json()["removed_count"] == 1
+    assert discarded.json()["preserved_count"] == 1
+    with get_conn() as conn:
+        assert conn.execute("SELECT 1 FROM papers WHERE id=?", (preview_id,)).fetchone() is None
+        assert conn.execute("SELECT 1 FROM papers WHERE id=?", (saved_id,)).fetchone() is not None
+
+
+def test_discard_saved_search_removes_its_unreferenced_new_paper(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        paper_id = conn.execute(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, library_status, source_api, raw_metadata)
+            VALUES ('10.3/saved-then-undone', 'Saved then undone', 'plasma', '[]', 'saved', 'fixture', '{}')
+            """
+        ).lastrowid
+        search_id = conn.execute(
+            """
+            INSERT INTO search_history (
+                cache_key, query_text, search_terms, search_mode, journal_ids,
+                date_from, date_to, max_results, status, decision_status, result_count, new_result_count
+            )
+            VALUES ('saved-undo-cache', 'plasma', '["plasma"]', 'or', '[2]',
+                    '2026-01-01', '2026-01-31', 20, 'success', 'saved', 1, 1)
+            """
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO search_results (
+                search_history_id, paper_id, paper_title, paper_doi, was_new, result_status
+            ) VALUES (?, ?, 'Saved then undone', '10.3/saved-then-undone', 1, 'saved')
+            """,
+            (search_id, paper_id),
+        )
+
+    discarded = client.delete(f"/api/v1/crawl/searches/{search_id}")
+
+    assert discarded.status_code == 200
+    assert discarded.json()["removed_count"] == 1
+    assert discarded.json()["preserved_count"] == 0
+    with get_conn() as conn:
+        assert conn.execute("SELECT 1 FROM papers WHERE id=?", (paper_id,)).fetchone() is None
+
+
+def test_search_preview_rollback_priorities():
+    from app.services.search_preview import decide_rollback_action
+
+    assert decide_rollback_action(
+        has_document=True,
+        has_other_saved_search=False,
+        has_other_preview_search=False,
+    ) == "preserve_saved"
+    assert decide_rollback_action(
+        has_document=False,
+        has_other_saved_search=True,
+        has_other_preview_search=True,
+    ) == "preserve_saved"
+    assert decide_rollback_action(
+        has_document=False,
+        has_other_saved_search=False,
+        has_other_preview_search=True,
+    ) == "preserve_preview"
+    assert decide_rollback_action(
+        has_document=False,
+        has_other_saved_search=False,
+        has_other_preview_search=False,
+    ) == "remove"
 
 
 def test_crawl_job_auto_classifies_accepted_papers(tmp_path, monkeypatch):
@@ -5449,7 +6219,12 @@ def test_crawl_run_accepts_missing_body_with_default_all_active_journals(tmp_pat
                 "date_to": None,
                 "status": "pending",
             }
-        ]
+        ],
+        "search_id": None,
+        "decision_status": None,
+        "cache_hit": False,
+        "cache_ttl_hours": 24,
+        "result_count": 0,
     }
 
 
@@ -5495,7 +6270,12 @@ def test_crawl_run_response_includes_created_job_context(tmp_path, monkeypatch):
                 "date_to": "2026-06-07",
                 "status": "pending",
             }
-        ]
+        ],
+        "search_id": None,
+        "decision_status": None,
+        "cache_hit": False,
+        "cache_ttl_hours": 24,
+        "result_count": 0,
     }
 
 
@@ -5504,7 +6284,11 @@ def test_crawl_run_forwards_normalized_online_search_query(tmp_path, monkeypatch
 
     from app.routers import crawl as crawl_router
 
-    def fake_create_jobs(journal_ids, period, date_from, date_to):
+    def fake_create_jobs(journal_ids, period, date_from, date_to, **kwargs):
+        assert kwargs["search_terms"] == ["plasma", "chemistry"]
+        assert kwargs["search_mode"] == "and"
+        assert kwargs["max_results"] == 50
+        assert kwargs["search_history_id"] > 0
         return [
             {
                 "job_id": 43,
@@ -5517,8 +6301,8 @@ def test_crawl_run_forwards_normalized_online_search_query(tmp_path, monkeypatch
 
     calls = []
 
-    async def fake_run_crawl_job(job_id, journal_id, date_from, date_to, search_query):
-        calls.append((job_id, journal_id, date_from, date_to, search_query))
+    async def fake_run_crawl_job(job_id, journal_id, date_from, date_to, search_terms, search_mode, max_results):
+        calls.append((job_id, journal_id, date_from, date_to, search_terms, search_mode, max_results))
 
     monkeypatch.setattr(crawl_router, "create_jobs", fake_create_jobs)
     monkeypatch.setattr(crawl_router, "run_crawl_job", fake_run_crawl_job)
@@ -5535,7 +6319,69 @@ def test_crawl_run_forwards_normalized_online_search_query(tmp_path, monkeypatch
     )
 
     assert response.status_code == 202
-    assert calls == [(43, 2, "2026-01-01", "2026-01-31", "plasma chemistry")]
+    assert calls == [(43, 2, "2026-01-01", "2026-01-31", ["plasma", "chemistry"], "and", 50)]
+
+
+def test_crawl_run_reuses_exact_structured_search_cache_for_24_hours(tmp_path, monkeypatch):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import crawl as crawl_router
+
+    async def fake_run_search_jobs(search_history_id, _task_args_list):
+        with get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE crawl_jobs
+                SET status='success', papers_found=3, papers_filtered=1, papers_new=2,
+                    finished_at=datetime('now')
+                WHERE search_history_id=?
+                """,
+                (search_history_id,),
+            )
+            conn.execute(
+                """
+                UPDATE search_history
+                SET status='success', result_count=2, finished_at=datetime('now')
+                WHERE id=?
+                """,
+                (search_history_id,),
+            )
+
+    monkeypatch.setattr(crawl_router, "run_search_jobs", fake_run_search_jobs)
+    body = {
+        "journal_ids": [2],
+        "period": "manual",
+        "date_from": "2026-01-01",
+        "date_to": "2026-01-31",
+        "search_terms": [" surface reaction ", "atomic layer deposition"],
+        "search_mode": "or",
+        "max_results": 20,
+    }
+
+    first = client.post("/api/v1/crawl/run", json=body)
+    second = client.post("/api/v1/crawl/run", json=body)
+
+    assert first.status_code == 202
+    assert first.json()["cache_hit"] is False
+    assert len(first.json()["jobs"]) == 1
+    assert second.status_code == 202
+    assert second.json() == {
+        "jobs": [],
+        "search_id": first.json()["search_id"],
+        "decision_status": "preview",
+        "cache_hit": True,
+        "cache_ttl_hours": 24,
+        "result_count": 2,
+    }
+    with get_conn() as conn:
+        histories = conn.execute("SELECT * FROM search_history").fetchall()
+        jobs = conn.execute("SELECT * FROM crawl_jobs").fetchall()
+    assert len(histories) == 1
+    assert len(jobs) == 1
+    assert histories[0]["search_terms"] == '["surface reaction", "atomic layer deposition"]'
+    assert jobs[0]["search_mode"] == "or"
+    assert jobs[0]["max_results"] == 20
 
 
 def test_crawl_run_rejects_empty_and_non_positive_journal_ids(tmp_path):

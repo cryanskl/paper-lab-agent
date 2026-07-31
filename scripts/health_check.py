@@ -84,6 +84,8 @@ COUNT_REQUIRED_KEYS = {
     "categories",
     "paper_categories",
     "crawl_jobs",
+    "search_history",
+    "search_results",
     "documents",
     "sections",
     "translations",
@@ -94,6 +96,7 @@ COUNT_REQUIRED_KEYS = {
 }
 STATUS_COUNT_REQUIRED_KEYS = {
     "crawl_jobs",
+    "search_history",
     "document_parse",
     "document_index",
     "document_chemistry",

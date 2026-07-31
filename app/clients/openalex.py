@@ -32,7 +32,15 @@ class OpenAlexClient:
         self.timeout = timeout
         self.sleep = sleep
 
-    async def works_by_issn(self, issn: str, date_from: str, date_to: str, max_pages: int = 3) -> list[dict[str, Any]]:
+    async def works_by_issn(
+        self,
+        issn: str,
+        date_from: str,
+        date_to: str,
+        max_pages: int = 3,
+        search_query: Optional[str] = None,
+        result_limit: Optional[int] = None,
+    ) -> list[dict[str, Any]]:
         if not isinstance(issn, str):
             return []
         issn = unicodedata.normalize("NFKC", issn).strip()
@@ -44,7 +52,13 @@ class OpenAlexClient:
             f"from_publication_date:{date_from}",
             f"to_publication_date:{date_to}",
         ]
-        params: dict[str, Any] = {"filter": ",".join(filters), "per-page": 100, "cursor": "*"}
+        if result_limit is not None:
+            result_limit = max(1, result_limit)
+        per_page = min(100, result_limit) if result_limit is not None else 100
+        params: dict[str, Any] = {"filter": ",".join(filters), "per-page": per_page, "cursor": "*"}
+        if isinstance(search_query, str) and search_query.strip():
+            params["search"] = search_query.strip()
+            params["sort"] = "relevance_score:desc"
         if self.api_key:
             params["api_key"] = self.api_key
         if self.mailto:
@@ -61,6 +75,8 @@ class OpenAlexClient:
                 page_results = payload.get("results") or []
                 if isinstance(page_results, list):
                     results.extend(self.normalize(item) for item in page_results if isinstance(item, dict))
+                if result_limit is not None and len(results) >= result_limit:
+                    return results[:result_limit]
                 meta = payload.get("meta") or {}
                 if not isinstance(meta, dict):
                     meta = {}

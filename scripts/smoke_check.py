@@ -234,17 +234,16 @@ def run_smoke() -> dict:
         crawl_diagnostics = crawl_job["diagnostics"]
         assert_ok(crawl_diagnostics["status"] == "success", f"expected crawl job success, got {crawl_diagnostics}")
         assert_ok(crawl_diagnostics["papers_found"] == 4, f"expected crawl papers_found=4, got {crawl_diagnostics}")
-        assert_ok(crawl_diagnostics["papers_filtered"] == 1, f"expected crawl papers_filtered=1, got {crawl_diagnostics}")
-        assert_ok(crawl_diagnostics["papers_new"] == 2, f"expected crawl papers_new=2, got {crawl_diagnostics}")
+        assert_ok(crawl_diagnostics["papers_filtered"] == 0, f"expected crawl papers_filtered=0, got {crawl_diagnostics}")
+        assert_ok(crawl_diagnostics["papers_new"] == 3, f"expected crawl papers_new=3, got {crawl_diagnostics}")
         assert_ok(crawl_diagnostics["outcome"] == "new_papers", f"expected crawl outcome=new_papers, got {crawl_diagnostics}")
-        assert_ok(crawl_diagnostics["papers_accepted"] == 3, f"expected crawl papers_accepted=3, got {crawl_diagnostics}")
+        assert_ok(crawl_diagnostics["papers_accepted"] == 4, f"expected crawl papers_accepted=4, got {crawl_diagnostics}")
         crawl_keyword_terms = crawl_diagnostics.get("keyword_terms") or []
-        assert_ok(crawl_diagnostics["keyword_mode"] == "or", f"expected crawl keyword_mode=or, got {crawl_diagnostics}")
-        assert_ok(bool(crawl_keyword_terms), f"expected crawl keyword terms, got {crawl_diagnostics}")
         assert_ok(
-            "plasma chemistry" in crawl_keyword_terms,
-            f"expected plasma chemistry keyword term, got {crawl_diagnostics}",
+            crawl_diagnostics["keyword_mode"] == "disabled",
+            f"expected crawl keyword_mode=disabled, got {crawl_diagnostics}",
         )
+        assert_ok(not crawl_keyword_terms, f"expected no journal keyword terms, got {crawl_diagnostics}")
         crawled_search = assert_status(client.get("/api/v1/papers?q=argon smoke crawl"), 200, "crawled paper search")
         assert_ok(crawled_search["total"] >= 1, f"expected crawled paper to be searchable, got {crawled_search}")
         crawled_paper_id = crawled_search["items"][0]["id"]

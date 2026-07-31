@@ -678,7 +678,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package.get("demo_counts", {}).get("reaction_audits") != 1
         or package.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
         or package.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"
-        or package.get("openapi_path_count") != 28
+        or package.get("openapi_path_count") != 34
         or not valid_sha256(package.get("package_sha256"))
         or set((package.get("checksums") or {})) != expected_checksum_names
         or not valid_release_checksums(package.get("checksums") or {})
@@ -718,7 +718,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package_validation.get("demo_counts", {}).get("reaction_audits") != 1
         or package_validation.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
         or package_validation.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"
-        or package_validation.get("openapi_path_count") != 28
+        or package_validation.get("openapi_path_count") != 34
         or not valid_sha256(package_validation.get("package_sha256"))
         or package_validation.get("package_sha256") != package.get("package_sha256")
         or set((package_validation.get("checksums") or {})) != expected_checksum_names
@@ -769,7 +769,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or handoff.get("demo_counts", {}).get("reaction_audits") != 1
         or handoff.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
         or handoff.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"
-        or handoff.get("openapi_path_count") != 28
+        or handoff.get("openapi_path_count") != 34
         or not valid_sha256(handoff.get("package_sha256"))
         or handoff.get("package_sha256") != handoff.get("package_sha256", "").lower()
         or set((handoff.get("checksums") or {})) != expected_checksum_names
@@ -826,15 +826,15 @@ expected = {
     "auto_classify_method": "auto",
     "journal_filter_search_hits": 1,
     "crawl_job_found": 4,
-    "crawl_job_new": 2,
+    "crawl_job_new": 3,
     "crawl_job_list_total": 1,
     "crawl_job_detail_status": "success",
     "crawl_job_detail_journal_name": "Plasma Sources Science and Technology",
     "crawl_job_detail_diagnostics_outcome": "new_papers",
-    "crawl_job_detail_diagnostics_papers_accepted": 3,
-    "crawl_job_detail_keyword_mode": "or",
-    "crawl_job_detail_has_keyword_terms": True,
-    "crawl_job_detail_keyword_terms_include_plasma_chemistry": True,
+    "crawl_job_detail_diagnostics_papers_accepted": 4,
+    "crawl_job_detail_keyword_mode": "disabled",
+    "crawl_job_detail_has_keyword_terms": False,
+    "crawl_job_detail_keyword_terms_include_plasma_chemistry": False,
     "no_doi_search_hits": 1,
     "no_doi_paper_has_doi": False,
     "no_doi_paper_dedupe_strategy": "no_doi_fingerprint",

@@ -17,7 +17,7 @@
 | PRD 阶段 | 发布验收点 | 主要证据 |
 | --- | --- | --- |
 | 阶段 0 | 服务可启动、数据库可初始化、种子期刊和分类可查询 | `python scripts/doctor.py --strict --compact`；`curl /api/v1/health`；schema validator |
-| 阶段 1 | 白名单抓取、关键词过滤、DOI/无 DOI 去重、OA 补全、FTS 检索和 Streamlit 检索入口 | `python -m scripts.smoke_check`；`python scripts/prepare_demo_data.py --summary-only --compact` |
+| 阶段 1 | 白名单来源内的 OR/AND 联网搜索、本地搜索缓存、DOI/无 DOI 去重、OA 补全、FTS 检索和 Streamlit 检索入口 | `python -m scripts.smoke_check`；`python scripts/prepare_demo_data.py --summary-only --compact` |
 | 阶段 2 | PDF 上传去重、解析、章节入库、公式保护翻译和翻译产物 | smoke check；demo summary 的 document/section/translation 状态 |
 | 阶段 3 | 分类覆盖、分块索引、RAG 查询和引用来源 | smoke check；demo summary 的 chunk/RAG 证据 |
 | 阶段 4 | 反应集抽取、人工复核闸门、审计日志、JSON/TXT/BOLSIG 导出 | demo summary 的 `export_formats`、`export_audit_entry_counts`、`reaction_set_status` |

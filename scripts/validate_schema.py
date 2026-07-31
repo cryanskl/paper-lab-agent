@@ -22,10 +22,13 @@ REQUIRED_TABLES = [
     "categories",
     "paper_categories",
     "crawl_jobs",
+    "search_history",
+    "search_results",
     "documents",
     "sections",
     "translations",
     "chunks",
+    "prompt_presets",
     "reaction_sets",
     "reactions",
     "reaction_audits",
@@ -34,7 +37,11 @@ REQUIRED_INDEXES = [
     "idx_papers_journal",
     "idx_papers_year",
     "idx_papers_oa",
+    "idx_papers_library_status",
     "idx_crawljobs_journal",
+    "idx_search_history_cache",
+    "idx_search_results_search",
+    "idx_search_results_paper",
     "idx_documents_paper",
     "idx_sections_doc",
     "idx_translations_doc",
@@ -44,7 +51,7 @@ REQUIRED_INDEXES = [
     "idx_reaction_audits_reaction",
 ]
 REQUIRED_TRIGGERS = ["papers_ai", "papers_ad", "papers_au"]
-SEED_COUNTS = {"journals": 6, "categories": 7}
+SEED_COUNTS = {"journals": 6, "categories": 7, "prompt_presets": 4}
 REQUIRED_COLUMNS = {
     "journals": [
         "id",
@@ -77,6 +84,7 @@ REQUIRED_COLUMNS = {
         "source_api",
         "dedupe_key",
         "raw_metadata",
+        "library_status",
         "indexed_at",
         "updated_at",
     ],
@@ -104,10 +112,46 @@ REQUIRED_COLUMNS = {
         "papers_found",
         "papers_filtered",
         "papers_new",
+        "search_terms",
+        "search_mode",
+        "max_results",
+        "search_history_id",
         "error",
         "started_at",
         "finished_at",
         "created_at",
+    ],
+    "search_history": [
+        "id",
+        "cache_key",
+        "query_text",
+        "search_terms",
+        "search_mode",
+        "journal_ids",
+        "date_from",
+        "date_to",
+        "max_results",
+        "status",
+        "decision_status",
+        "job_ids",
+        "result_count",
+        "new_result_count",
+        "saved_at",
+        "discarded_at",
+        "error",
+        "created_at",
+        "finished_at",
+    ],
+    "search_results": [
+        "id",
+        "search_history_id",
+        "paper_id",
+        "paper_title",
+        "paper_doi",
+        "was_new",
+        "result_status",
+        "created_at",
+        "updated_at",
     ],
     "documents": [
         "id",
@@ -150,6 +194,14 @@ REQUIRED_COLUMNS = {
         "token_count",
         "vector_id",
         "embedded",
+    ],
+    "prompt_presets": [
+        "id",
+        "command",
+        "description",
+        "prompt",
+        "created_at",
+        "updated_at",
     ],
     "reaction_sets": [
         "id",
@@ -207,23 +259,28 @@ def validate_fts(conn: sqlite3.Connection) -> list[str]:
     try:
         conn.execute(
             """
-            INSERT INTO papers (title, abstract, authors, source_api, raw_metadata)
-            VALUES (?, ?, '[]', 'schema-validator', '{}')
+            INSERT INTO papers (doi, title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, ?, ?, 'schema-validator', '{}')
             """,
-            ("Schema validator plasma paper", "low temperature plasma",),
+            (
+                "10.5555/schema-validator",
+                "Schema validator plasma paper",
+                "low temperature plasma",
+                '[{"name":"Schema Validator Author"}]',
+            ),
         )
-        row = conn.execute(
+        rows = conn.execute(
             """
             SELECT rowid
             FROM papers_fts
             WHERE papers_fts MATCH ?
             """,
-            ("plasma",),
-        ).fetchone()
+            ('plasma OR "Schema Validator Author" OR "10.5555/schema-validator"',),
+        ).fetchall()
     except sqlite3.Error as exc:
         issues.append(f"papers_fts query failed: {exc}")
         return issues
-    if row is None:
+    if not rows:
         issues.append("papers_fts did not index inserted paper")
     return issues
 

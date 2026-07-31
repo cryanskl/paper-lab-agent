@@ -36,7 +36,15 @@ class CrossrefClient:
         self.timeout = timeout
         self.sleep = sleep
 
-    async def works_by_issn(self, issn: str, date_from: str, date_to: str, max_pages: int = 3) -> list[dict[str, Any]]:
+    async def works_by_issn(
+        self,
+        issn: str,
+        date_from: str,
+        date_to: str,
+        max_pages: int = 3,
+        search_query: Optional[str] = None,
+        result_limit: Optional[int] = None,
+    ) -> list[dict[str, Any]]:
         if not isinstance(issn, str):
             return []
         issn = unicodedata.normalize("NFKC", issn).strip()
@@ -46,11 +54,16 @@ class CrossrefClient:
         headers = {}
         if self.mailto:
             headers["User-Agent"] = f"paper-lab-agent (mailto:{self.mailto})"
+        if result_limit is not None:
+            result_limit = max(1, result_limit)
+        rows = min(100, result_limit) if result_limit is not None else 100
         params = {
             "filter": f"from-pub-date:{date_from},until-pub-date:{date_to}",
-            "rows": 100,
+            "rows": rows,
             "cursor": "*",
         }
+        if isinstance(search_query, str) and search_query.strip():
+            params["query.bibliographic"] = search_query.strip()
         if self.mailto:
             params["mailto"] = self.mailto
         results: list[dict[str, Any]] = []
@@ -65,6 +78,8 @@ class CrossrefClient:
                 items = message.get("items") or []
                 if isinstance(items, list):
                     results.extend(self.normalize(item) for item in items if isinstance(item, dict))
+                if result_limit is not None and len(results) >= result_limit:
+                    return results[:result_limit]
                 next_cursor = message.get("next-cursor")
                 if not isinstance(next_cursor, str) or not next_cursor or next_cursor == params["cursor"]:
                     break

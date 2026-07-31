@@ -7,11 +7,23 @@ from pydantic import BaseModel, field_validator
 from app.db import dict_from_row, get_conn
 from app.errors import AppError, AsyncJobResponse, PageResponse, page
 from app.services.chemistry import extract_reactions, mark_chemistry_queued
+from app.services.document_pipeline import run_document_pipeline
 from app.services.documents import mark_parse_queued, parse_document, save_upload
 from app.services.rag import index_document, mark_index_queued
 from app.services.translation import create_translation_job, translate_document, translation_sections
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+
+def normalize_target_lang(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("target_lang must not be blank")
+    if any(char in normalized for char in ("/", "\\")):
+        raise ValueError("target_lang must not contain path separators")
+    if any(ord(char) < 32 for char in normalized):
+        raise ValueError("target_lang must not contain control characters")
+    return normalized
 
 
 class TranslateIn(BaseModel):
@@ -20,14 +32,7 @@ class TranslateIn(BaseModel):
     @field_validator("target_lang")
     @classmethod
     def target_lang_must_not_be_blank(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("target_lang must not be blank")
-        if any(char in normalized for char in ("/", "\\")):
-            raise ValueError("target_lang must not contain path separators")
-        if any(ord(char) < 32 for char in normalized):
-            raise ValueError("target_lang must not contain control characters")
-        return normalized
+        return normalize_target_lang(value)
 
 
 class PaperSummaryResponse(BaseModel):
@@ -196,8 +201,18 @@ def get_document_or_404(document_id: int) -> dict:
         500: {"description": "Document upload failed"},
     },
 )
-async def upload_document(file: UploadFile = File(...), paper_id: Optional[int] = Form(None)) -> dict:
+async def upload_document(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    paper_id: Optional[int] = Form(None),
+    auto_process: bool = Form(False),
+    target_lang: str = Form("zh"),
+) -> dict:
     await ensure_pdf_upload(file)
+    try:
+        target_lang = normalize_target_lang(target_lang)
+    except ValueError as exc:
+        raise AppError(422, "validation_error", str(exc))
     if paper_id is not None:
         with get_conn() as conn:
             paper = conn.execute("SELECT id FROM papers WHERE id=?", (paper_id,)).fetchone()
@@ -215,6 +230,13 @@ async def upload_document(file: UploadFile = File(...), paper_id: Optional[int] 
             f"Document already exists with id {doc['id']}",
             {"document": document},
         )
+    if auto_process:
+        try:
+            mark_parse_queued(document["id"])
+        except Exception as exc:
+            raise AppError(500, "document_pipeline_queue_failed", str(exc))
+        background_tasks.add_task(run_document_pipeline, document["id"], target_lang)
+        document = get_document_or_404(document["id"])
     return document
 
 

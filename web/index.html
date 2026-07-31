@@ -13,7 +13,7 @@
   <aside class="sidebar">
     <div class="sidebar-head">
       <div class="brand">等离子体文献工作台</div>
-      <div class="brand-sub">PECVD · ETCH SIMULATION</div>
+      <div class="brand-sub">PLASMA LITERATURE WORKBENCH</div>
     </div>
     <nav class="nav" id="nav"></nav>
     <div class="spacer"></div>
@@ -30,12 +30,21 @@
     <div class="topbar">
       <div class="topbar-row">
         <div class="screen-title">文献检索</div>
-        <div class="screen-sub" id="search-source">默认检索本地库 · 在线同步使用 OpenAlex / Crossref</div>
         <div class="spacer"></div>
         <button class="btn-accent-soft" id="open-drawer">待下载清单 · <span data-marked-count>0</span></button>
       </div>
       <div class="topbar-row search-row">
-        <input id="search-q" class="input flex" placeholder="关键词 / DOI / 作者，例如：SiH4 dissociation cross section">
+        <input id="search-q" class="input flex"
+          placeholder="关键词用逗号分隔，也可输入 DOI / 作者，例如：SiH4, dissociation, cross section">
+        <select id="search-mode" class="select search-policy" aria-label="关键词关系">
+          <option value="or" selected>任一关键词（OR）</option>
+          <option value="and">全部关键词（AND）</option>
+        </select>
+        <select id="search-limit" class="select search-policy" aria-label="最多返回数量">
+          <option value="20">最多 20 篇</option>
+          <option value="50" selected>最多 50 篇</option>
+          <option value="100">最多 100 篇</option>
+        </select>
         <div class="year-wrap">
           <button class="btn-ghost" id="year-btn">年份 <span id="year-label">1990–2026</span> ▾</button>
           <div class="year-pop" id="year-pop" hidden>
@@ -47,18 +56,24 @@
           </div>
         </div>
         <select id="search-sort" class="select">
-          <option value="relevance">按相关度</option>
-          <option value="date_desc" selected>按年份（新→旧）</option>
+          <option value="relevance" selected>按相关度</option>
+          <option value="date_desc">按年份（新→旧）</option>
         </select>
         <div class="search-actions">
+          <button class="btn-online" id="do-online-search">联网搜索</button>
           <button class="btn-primary" id="do-search">检索本地库</button>
-          <button class="btn-online" id="do-online-search">在线同步并检索</button>
         </div>
       </div>
       <div class="chips-row">
-        <span class="chips-label">期刊白名单</span>
+        <span class="chips-label">期刊</span>
         <div class="chips" id="journal-chips"></div>
-        <button class="chip" id="oa-chip">仅开放获取</button>
+      </div>
+      <div class="chips-row tight">
+        <span class="chips-label">全文</span>
+        <div class="chips">
+          <button class="chip" id="oa-chip" title="只看有开放全文链接的论文">OA</button>
+          <button class="chip" id="download-chip" title="只看系统支持直接下载的论文">下载</button>
+        </div>
       </div>
       <div class="chips-row tight">
         <span class="chips-label">标签</span>
@@ -66,7 +81,13 @@
       </div>
     </div>
     <div class="scroll" id="search-scroll">
-      <div class="result-meta" id="search-meta">输入关键词后检索本地库，或从学术 API 在线同步</div>
+      <div class="search-result-head">
+        <div class="result-meta" id="search-meta">输入关键词后检索本地库，或在白名单期刊中联网搜索</div>
+        <div class="search-batch-actions" id="search-batch-actions" hidden>
+          <button class="btn-primary sm" id="save-search-batch">保存到本地库</button>
+          <button class="btn-ghost sm danger" id="discard-search-batch">撤销本次结果</button>
+        </div>
+      </div>
       <div id="search-results"></div>
       <div class="pager" id="search-pager" hidden>
         <button class="btn-ghost sm" data-page-prev>上一页</button>
@@ -76,18 +97,119 @@
     </div>
   </section>
 
+  <!-- ── 期刊管理 ───────────────────────────────────────── -->
+  <section class="screen" data-screen="journals" hidden>
+    <div class="topbar compact">
+      <div class="topbar-row">
+        <div class="screen-title">期刊管理</div>
+        <div class="screen-sub">定义联网搜索的期刊来源与年份边界</div>
+      </div>
+    </div>
+    <div class="scroll journal-manager-page">
+      <div class="journal-manager-layout">
+        <form class="journal-form-panel" id="journal-create-form" novalidate>
+          <div class="journal-panel-head">
+            <div>
+              <div class="journal-eyebrow">DISCOVERY SCOPE</div>
+              <h2 id="journal-form-title">新增白名单期刊</h2>
+              <p id="journal-form-description">期刊名称和至少一个 ISSN 为必填项；搜索关键词统一在文献检索页填写。</p>
+            </div>
+            <span class="journal-active-mark">ACTIVE</span>
+          </div>
+
+          <div class="journal-form-grid">
+            <label class="journal-field span-2" for="journal-name">
+              <span>期刊名称 <b>必填</b></span>
+              <input id="journal-name" class="input" maxlength="200"
+                placeholder="例如：Journal of Vacuum Science & Technology A" required>
+            </label>
+            <label class="journal-field" for="journal-issn-print">
+              <span>Print ISSN</span>
+              <input id="journal-issn-print" class="input mono" maxlength="9"
+                placeholder="0734-2101" inputmode="text">
+            </label>
+            <label class="journal-field" for="journal-issn-electronic">
+              <span>Electronic ISSN</span>
+              <input id="journal-issn-electronic" class="input mono" maxlength="9"
+                placeholder="1520-8559" inputmode="text">
+            </label>
+            <label class="journal-field" for="journal-year-from">
+              <span>起始年份</span>
+              <input id="journal-year-from" class="input mono" type="number"
+                min="1900" max="2100" value="1990">
+            </label>
+            <label class="journal-field" for="journal-year-to">
+              <span>截止年份</span>
+              <input id="journal-year-to" class="input mono" type="number"
+                min="1900" max="2100" placeholder="留空表示至今">
+            </label>
+            <label class="journal-field" for="journal-publisher">
+              <span>出版社</span>
+              <input id="journal-publisher" class="input" maxlength="160"
+                placeholder="例如：AIP Publishing">
+            </label>
+            <label class="journal-field" for="journal-platform">
+              <span>平台</span>
+              <input id="journal-platform" class="input" maxlength="120"
+                placeholder="例如：AIP Scitation">
+            </label>
+            <label class="journal-field" for="journal-url">
+              <span>期刊主页</span>
+              <input id="journal-url" class="input" type="url" maxlength="500"
+                placeholder="https://…">
+            </label>
+            <label class="journal-field" for="journal-sci-zone">
+              <span>SCI 分区</span>
+              <select id="journal-sci-zone" class="select">
+                <option value="">暂不填写</option>
+                <option value="SCI Q1">SCI Q1</option>
+                <option value="SCI Q2">SCI Q2</option>
+                <option value="SCI Q3">SCI Q3</option>
+                <option value="SCI Q4">SCI Q4</option>
+              </select>
+            </label>
+            <label class="journal-field" for="journal-impact-factor">
+              <span>影响因子</span>
+              <input id="journal-impact-factor" class="input mono" type="number"
+                min="0" step="0.001" placeholder="例如：3.3">
+            </label>
+          </div>
+
+          <div class="journal-form-message" id="journal-form-message" role="status" aria-live="polite" hidden></div>
+          <div class="journal-form-actions">
+            <button class="btn-ghost" id="journal-form-reset" type="button">清空</button>
+            <button class="btn-primary" id="journal-create-submit" type="submit">新增并启用</button>
+          </div>
+        </form>
+
+        <aside class="journal-roster-panel">
+          <div class="journal-roster-head">
+            <div>
+              <div class="journal-eyebrow">ACTIVE JOURNALS</div>
+              <h2>当前白名单</h2>
+            </div>
+            <span class="journal-count" id="journal-manager-count">0</span>
+          </div>
+          <div class="journal-scope-note">
+            联网搜索仅覆盖这里列出的 active 期刊。ISSN 用于精确定位；搜索词统一在文献检索页设置。
+          </div>
+          <div class="journal-roster" id="journal-manager-list"></div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
   <!-- ── 文献库 ─────────────────────────────────────────── -->
   <section class="screen" data-screen="library" hidden>
     <div class="topbar compact">
       <div class="topbar-row">
         <div class="screen-title">文献库</div>
-        <div class="screen-sub" id="lib-sub">上传 PDF 后按 file_hash 去重，并可关联检索到的文献</div>
       </div>
     </div>
     <div class="scroll">
       <div class="dropzone" id="dropzone">
         <div class="dz-main">将 PDF 拖拽到此处，或点击选择文件</div>
-        <div class="dz-sub">支持批量上传 · 上传后可依次执行 GROBID 解析 → 翻译 → RAG 索引</div>
+        <div class="dz-sub">支持批量上传 · 自动解析、翻译、建立 RAG 索引并抽取化学库</div>
         <input type="file" accept="application/pdf,.pdf" multiple id="file-input" hidden>
       </div>
       <div class="lib-opts">
@@ -114,13 +236,97 @@
     </div>
   </section>
 
+  <!-- ── 标签管理 ───────────────────────────────────────── -->
+  <section class="screen" data-screen="tags" hidden>
+    <div class="topbar compact">
+      <div class="topbar-row">
+        <div class="screen-title">标签管理</div>
+      <div class="screen-sub">统一维护文献标签；编辑会同步到检索、阅读与问答筛选</div>
+      </div>
+    </div>
+    <div class="scroll tag-manager-page">
+      <form class="tag-create-panel" id="tag-create-form">
+        <div>
+          <label for="tag-manage-name">标签名称</label>
+          <input id="tag-manage-name" class="input" maxlength="40" placeholder="例如：刻蚀机理" required>
+        </div>
+        <div class="tag-desc-field">
+          <label for="tag-manage-description">说明（可选）</label>
+          <input id="tag-manage-description" class="input" maxlength="160" placeholder="说明该标签适用的研究范围">
+        </div>
+        <button class="btn-primary" type="submit">＋ 新建标签</button>
+      </form>
+      <div class="tag-manager-summary" id="tag-manager-summary"></div>
+      <div class="tag-manager-list" id="tag-manager-list"></div>
+    </div>
+  </section>
+
+  <!-- ── 术语表管理 ─────────────────────────────────────── -->
+  <section class="screen" data-screen="glossary" hidden>
+    <div class="topbar compact">
+      <div class="topbar-row">
+        <div class="screen-title">术语表管理</div>
+        <div class="screen-sub">维护阅读页的双语术语、高亮与快捷问答入口</div>
+      </div>
+    </div>
+    <div class="scroll glossary-manager-page">
+      <div class="glossary-manager-intro">
+        <div>
+          <div class="glossary-eyebrow">LOCAL READING LEXICON</div>
+          <h2>把论文里的关键表达留在手边</h2>
+          <p>术语保存在当前浏览器。阅读时选中词或短语即可加入；补全中英对照后，两侧正文会立即同步高亮。</p>
+        </div>
+        <div class="glossary-manager-summary" id="glossary-manager-summary"></div>
+      </div>
+      <form class="glossary-form-panel" id="glossary-form" novalidate>
+        <div class="glossary-form-heading">
+          <div>
+            <div class="glossary-form-title" id="glossary-form-title">新增术语</div>
+            <div class="glossary-form-hint">可先填写一侧，之后再补充对应译名</div>
+          </div>
+        </div>
+        <label class="glossary-field" for="glossary-en">
+          <span>英文术语</span>
+          <input id="glossary-en" class="input" maxlength="120" autocomplete="off"
+            placeholder="例如 electron-impact ionization">
+        </label>
+        <label class="glossary-field" for="glossary-zh">
+          <span>中文译名</span>
+          <input id="glossary-zh" class="input" maxlength="120" autocomplete="off"
+            placeholder="例如 电子碰撞电离">
+        </label>
+        <div class="glossary-form-actions">
+          <div class="glossary-form-message" id="glossary-form-message" hidden></div>
+          <button class="btn-ghost" id="glossary-cancel" type="button" hidden>取消编辑</button>
+          <button class="btn-primary" id="glossary-submit" type="submit">加入术语表</button>
+        </div>
+      </form>
+      <div class="glossary-list-head">
+        <div>
+          <div class="glossary-list-title">术语清单</div>
+          <div class="glossary-list-note">点击正文中的高亮术语，会直接带入 AI 问答</div>
+        </div>
+        <input id="glossary-search" class="input" type="search" placeholder="搜索中英文术语…"
+          aria-label="搜索术语">
+      </div>
+      <div class="glossary-column-head" aria-label="术语清单列名">
+        <span>EN</span>
+        <span>中文</span>
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+      </div>
+      <div class="glossary-manager-list" id="glossary-manager-list"></div>
+    </div>
+  </section>
+
   <!-- ── 双语阅读 ───────────────────────────────────────── -->
   <section class="screen" data-screen="reader" hidden>
     <div class="reader-bar">
       <button class="btn-ghost sm" id="back-to-lib">← 文献库</button>
-      <select id="reader-project" class="select"><option value="all">全部文献</option></select>
+      <select id="reader-project" class="select" aria-label="阅读项目"><option value="all">全部文献</option></select>
+      <select id="reader-category" class="select" aria-label="阅读标签"><option value="">全部标签</option></select>
       <div class="reader-search-wrap">
-        <input id="reader-search" class="input" placeholder="搜索项目内文献…">
+        <input id="reader-search" class="input" placeholder="搜索标题 / DOI / 标签…">
         <div class="dropdown" id="reader-drop" hidden></div>
       </div>
       <div class="segmented" id="reader-modes"></div>
@@ -129,9 +335,17 @@
         <span class="dim" id="font-label">15px</span>
         <button id="font-inc">A＋</button>
       </div>
+      <button class="btn-ghost sm" id="reader-retranslate" disabled>再次翻译</button>
       <button class="btn-ghost sm" id="gloss-toggle">术语表</button>
     </div>
     <div class="reader-panes">
+      <div class="reader-qa-language" id="reader-qa-language" hidden>
+        <span>左侧阅读</span>
+        <div class="segmented" role="group" aria-label="AI 问答左侧阅读语言">
+          <button type="button" data-reader-lang="zh">中文</button>
+          <button type="button" data-reader-lang="en">English</button>
+        </div>
+      </div>
       <div class="pane" id="pane-en">
         <div class="pane-label">ENGLISH · 原文</div>
         <div id="paras-en"></div>
@@ -140,6 +354,24 @@
         <div class="pane-label">中文 · 译文（引擎翻译，段落级对齐）</div>
         <div id="paras-zh"></div>
       </div>
+      <aside class="reader-chat-panel" id="reader-chat-panel" hidden>
+        <div class="reader-chat-head">
+          <div>
+            <div class="reader-chat-eyebrow">CURRENT PAPER · RAG</div>
+            <div class="reader-chat-title">AI 问答</div>
+          </div>
+          <span class="reader-chat-status" id="reader-chat-status">检查索引…</span>
+        </div>
+        <div class="reader-chat-context ellipsis" id="reader-chat-context">选择一篇已解析论文后开始提问</div>
+        <div class="reader-chat-log" id="reader-chat-log"></div>
+        <div class="reader-chat-compose">
+          <div class="reader-chat-input-row">
+            <input id="reader-chat-input" class="input flex" placeholder="针对当前论文提问…">
+            <button class="btn-primary" id="reader-chat-send" type="button">发送</button>
+          </div>
+          <div class="reader-chat-hint">回答仅检索当前论文；引用标记可跳回左侧原文段落</div>
+        </div>
+      </aside>
     </div>
     <div class="glossbar" id="glossbar" hidden></div>
   </section>
@@ -149,6 +381,9 @@
     <div class="chat-side">
       <div class="side-label">对话范围</div>
       <div class="stack" id="scope-opts"></div>
+
+      <div class="side-label mt">标签筛选</div>
+      <select id="chat-category" class="select full" aria-label="问答标签"><option value="">全部标签</option></select>
 
       <div id="proj-picker" hidden>
         <div class="side-label mt">选择项目</div>
@@ -167,7 +402,24 @@
         <div class="stack" id="doc-opts"></div>
       </div>
 
-      <div class="side-label mt">预设指令</div>
+      <div class="side-label-row mt">
+        <div class="side-label">预设指令</div>
+        <button class="preset-add" id="new-preset" type="button">＋ 新建</button>
+      </div>
+      <form class="preset-editor" id="preset-editor" hidden>
+        <label for="preset-cmd">快捷指令</label>
+        <input id="preset-cmd" class="input sm full" maxlength="24" placeholder="/对比">
+        <label for="preset-desc">说明（可选）</label>
+        <input id="preset-desc" class="input sm full" maxlength="80" placeholder="一句话说明用途">
+        <label for="preset-question">发送内容</label>
+        <textarea id="preset-question" class="input full" maxlength="1000" rows="4"
+          placeholder="点击该预设后填入问答框的完整指令"></textarea>
+        <div class="preset-error" id="preset-error" hidden></div>
+        <div class="preset-editor-actions">
+          <button class="btn-ghost sm" id="cancel-preset" type="button">取消</button>
+          <button class="btn-primary sm" type="submit">保存预设</button>
+        </div>
+      </form>
       <div class="stack" id="presets"></div>
     </div>
     <div class="chat-main">
@@ -179,7 +431,7 @@
       <div class="chat-input-bar">
         <div class="slash-pop" id="slash-pop" hidden></div>
         <div class="row gap8">
-          <input id="chat-input" class="input flex" placeholder="输入问题，或键入 / 唤起预设指令（/总结 /术语 /相关工作 /提问我）">
+          <input id="chat-input" class="input flex" placeholder="输入问题，或键入 / 唤起内置与自定义预设指令">
           <button class="btn-primary" id="chat-send">发送</button>
         </div>
         <div class="chat-hint">回答基于所选范围内已建索引的 PDF 段落向量检索，引用标记 [n·¶段] 可点击跳转原文</div>
@@ -190,11 +442,7 @@
   <!-- ── 化学库复核 ─────────────────────────────────────── -->
   <section class="screen row" data-screen="chemistry" hidden>
     <div class="chem-side">
-      <div class="side-label">复核人</div>
-      <input id="reviewer" class="input sm full" placeholder="必填，例如 engineer_a">
-      <div class="side-note" id="reviewer-hint">每次复核动作都会记入 reaction_audits，责任人不可为空。</div>
-
-      <div class="side-label mt">已抽取的文档</div>
+      <div class="side-label">已抽取的文档</div>
       <div class="stack" id="chem-docs"></div>
 
       <div class="side-label mt">反应集</div>
@@ -225,15 +473,26 @@
       <div class="spacer"></div>
       <button class="icon-btn" id="close-drawer">×</button>
     </div>
+    <div class="drawer-summary">
+      <span id="download-summary">尚未加入待下载文章</span>
+      <span class="drawer-summary-hint">仅处理开放全文；浏览器可能询问是否允许多个下载</span>
+    </div>
     <div class="drawer-body" id="drawer-body"></div>
     <div class="drawer-foot">
-      <button class="btn-primary flex" id="export-txt">导出 TXT</button>
-      <button class="btn-ghost flex" id="export-csv">导出 CSV</button>
-      <button class="btn-ghost danger" id="clear-marked">清空</button>
+      <button class="btn-primary drawer-download-all" id="download-marked" disabled>一键下载可用全文</button>
+      <div class="drawer-foot-secondary">
+        <button class="btn-ghost flex" id="export-txt">导出 TXT</button>
+        <button class="btn-ghost flex" id="export-csv">导出 CSV</button>
+        <button class="btn-ghost danger" id="clear-marked">清空</button>
+      </div>
     </div>
   </aside>
 
-  <button class="sel-btn" id="sel-btn" hidden>发送到问答 →</button>
+  <div class="selection-popover" id="selection-popover" role="toolbar" aria-label="所选文字操作" hidden>
+    <button type="button" data-selection-action="glossary">＋ 加入术语表</button>
+    <span class="selection-divider" aria-hidden="true"></span>
+    <button type="button" class="primary" data-selection-action="chat">发送到对话 →</button>
+  </div>
   <div class="toast" id="toast" hidden></div>
 </div>
 <script src="app.js"></script>

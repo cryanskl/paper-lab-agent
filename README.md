@@ -131,12 +131,13 @@ Windows 相关注意事项：
 即自动跳转到 `/ui/`。静态资源在 `web/`（原生 HTML + CSS + JS，不引入前端框架，也不加载任何 CDN），
 由 FastAPI 的 `StaticFiles` 直接挂载在 `/ui`。
 
-五个页面对应后端既有能力：
+工作台页面对应后端既有能力与本地阅读工具：
 
 | 页面 | 主要动作 | 依赖接口 |
 | --- | --- | --- |
-| 文献检索 | 明确区分本地库检索与在线同步；在线模式按当前关键词 / 年份 / 期刊调用 OpenAlex，失败时回退 Crossref，完成后自动刷新本地结果；同时支持标签 / 仅 OA 筛选、展开摘要、复制 DOI、加入待下载清单 | `GET /papers`、`POST /crawl/run`、`GET /crawl/jobs/{id}`、`GET /journals`、`GET /categories` |
+| 文献检索 | 期刊只限定来源；搜索栏支持逗号分隔词/短语、OR/AND 和 20/50/100 篇全局上限。联网模式把搜索表达式下推 OpenAlex，失败时回退 Crossref，先展示可保存/撤销的缓存批次；24 小时内精确重复查询直接复用本地结果。作者与 DOI 也可本地检索 | `GET /papers`、`POST /crawl/run`、`POST /crawl/searches/{id}/save`、`DELETE /crawl/searches/{id}`、`GET /crawl/jobs/{id}` |
 | 文献库 | 拖拽上传 PDF、触发解析 / 翻译 / RAG 索引 / 化学库抽取、给文献打标、查看状态与失败原因 | `POST /documents`、`POST /documents/{id}/parse`、`.../translate`、`.../index`、`.../extract-chemistry`、`PUT /papers/{id}/categories` |
+| 术语表管理 | 维护浏览器本地中英术语；阅读页选词可直接加入，正文高亮即时更新 | 无（浏览器 `localStorage`） |
 | 双语阅读 | 左右分栏对照、滚动联动、字号调节、术语高亮、划选发送到问答 | `GET /documents/{id}/sections`、`GET /documents/{id}/translation` |
 | AI 问答 | 单篇 / 项目 / 全库范围检索，回答带 `[n·¶段]` 引用并可点击跳回原文 | `POST /rag/query` |
 | 化学库复核 | 逐条人工复核（复核人必填、可顺手修正字段）、看原文出处与审计日志、闸门通过后导出仿真输入 | `GET /reaction-sets/{id}`、`PUT /reactions/{id}/verify`、`POST /reaction-sets/{id}/export` |
@@ -148,14 +149,14 @@ Windows 相关注意事项：
 **化学库复核**是交付物的最后一关。速率系数与阈值一律保留论文原文，界面不做单位换算、不填补缺失值；
 反应集内任一反应未 `verified` 时导出返回 409，工作台会把这条闸门原因直接显示出来——闸门不可绕过。
 
-「待下载清单」「项目分组」「阅读偏好」「复核人」是纯前端视图状态，存在浏览器 localStorage，
+「待下载清单」「项目分组」「阅读偏好」「术语表」是纯前端工作台状态，存在浏览器 localStorage，
 不写库、不新增接口。清单支持导出 TXT / CSV 供人工下载 PDF 使用——全文获取仍是人工 + OA 自动补全，
 工作台不会自动爬取或绕过付费墙。
 
 未配置 `LLM_API_KEY` 时翻译走本地 echo adapter，译文栏会如实保留原文（侧边栏「翻译引擎」显示「本地回显」），
 不会伪造译文。
 
-在线同步在未选择单本期刊时会覆盖全部 active 白名单期刊，并默认同时处理 3 本；可通过 `.env` 的 `CRAWL_MAX_CONCURRENCY=1..10` 调整。前端最多等待 30 分钟并持续显示完成数，等待超时只停止页面轮询，不会取消后端已经创建的抓取任务。
+联网搜索在未选择单本期刊时会覆盖全部 active 白名单期刊，并默认同时处理 3 本；可通过 `.env` 的 `CRAWL_MAX_CONCURRENCY=1..10` 调整。默认最多展示 50 篇，可选 20/100；这是跨全部期刊的总上限，OA 补全也只对占用该配额的结果执行。精确重复查询的缓存 TTL 为 24 小时。前端最多等待 30 分钟并持续显示完成数，等待超时只停止页面轮询，不会取消后端已经创建的搜索任务。
 
 ## Streamlit
 

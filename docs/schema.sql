@@ -19,7 +19,7 @@ CREATE TABLE journals (
     url             TEXT,
     issn_print      TEXT,                       -- 抓取时用 ISSN 精确锁定期刊
     issn_electronic TEXT,
-    keywords        TEXT,                       -- JSON 数组，布尔匹配用
+    keywords        TEXT,                       -- 兼容旧数据；在线搜索不再作为期刊级准入条件
     year_from       INTEGER DEFAULT 1990,
     year_to         INTEGER,                    -- NULL = 至今
     sci_zone        TEXT,
@@ -49,28 +49,34 @@ CREATE TABLE papers (
     source_api      TEXT,                       -- crossref/openalex/arxiv
     dedupe_key      TEXT UNIQUE,                -- 无 DOI 时的保守去重键，NULL 表示不自动合并
     raw_metadata    TEXT,                        -- JSON 原始响应，便于重处理
+    library_status  TEXT NOT NULL DEFAULT 'saved', -- preview / saved；联网搜索新增项先预览
     indexed_at      TEXT DEFAULT (datetime('now')),
     updated_at      TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_papers_journal ON papers(journal_id);
 CREATE INDEX idx_papers_year    ON papers(published_year);
 CREATE INDEX idx_papers_oa      ON papers(oa_status);
+CREATE INDEX idx_papers_library_status ON papers(library_status);
 
--- 全文检索（标题 + 摘要），供检索界面用
+-- 全文检索（标题 + 摘要 + 作者 + DOI），供检索界面与在线搜索缓存复用
 CREATE VIRTUAL TABLE papers_fts USING fts5(
-    title, abstract,
+    title, abstract, authors, doi,
     content='papers', content_rowid='id',
     tokenize='unicode61'
 );
 CREATE TRIGGER papers_ai AFTER INSERT ON papers BEGIN
-    INSERT INTO papers_fts(rowid, title, abstract) VALUES (new.id, new.title, new.abstract);
+    INSERT INTO papers_fts(rowid, title, abstract, authors, doi)
+    VALUES (new.id, new.title, new.abstract, new.authors, new.doi);
 END;
 CREATE TRIGGER papers_ad AFTER DELETE ON papers BEGIN
-    INSERT INTO papers_fts(papers_fts, rowid, title, abstract) VALUES ('delete', old.id, old.title, old.abstract);
+    INSERT INTO papers_fts(papers_fts, rowid, title, abstract, authors, doi)
+    VALUES ('delete', old.id, old.title, old.abstract, old.authors, old.doi);
 END;
 CREATE TRIGGER papers_au AFTER UPDATE ON papers BEGIN
-    INSERT INTO papers_fts(papers_fts, rowid, title, abstract) VALUES ('delete', old.id, old.title, old.abstract);
-    INSERT INTO papers_fts(rowid, title, abstract) VALUES (new.id, new.title, new.abstract);
+    INSERT INTO papers_fts(papers_fts, rowid, title, abstract, authors, doi)
+    VALUES ('delete', old.id, old.title, old.abstract, old.authors, old.doi);
+    INSERT INTO papers_fts(rowid, title, abstract, authors, doi)
+    VALUES (new.id, new.title, new.abstract, new.authors, new.doi);
 END;
 
 -- -------------------------------------------------------------
@@ -107,12 +113,61 @@ CREATE TABLE crawl_jobs (
     papers_found INTEGER DEFAULT 0,
     papers_filtered INTEGER DEFAULT 0,
     papers_new   INTEGER DEFAULT 0,
+    search_terms TEXT,                          -- JSON 数组；NULL 表示非定向同步
+    search_mode  TEXT,                          -- or / and
+    max_results  INTEGER,                       -- 单次搜索期望的全局结果上限
+    search_history_id INTEGER,                  -- 对应 search_history.id（兼容迁移不加 FK）
     error        TEXT,
     started_at   TEXT,
     finished_at  TEXT,
     created_at   TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_crawljobs_journal ON crawl_jobs(journal_id);
+
+-- -------------------------------------------------------------
+-- 模块 B.1：在线搜索缓存索引
+-- 论文正文仍只存 papers；本表用于判断同一搜索范围是否可复用
+-- -------------------------------------------------------------
+CREATE TABLE search_history (
+    id             INTEGER PRIMARY KEY,
+    cache_key      TEXT NOT NULL,
+    query_text     TEXT NOT NULL,
+    search_terms   TEXT NOT NULL,               -- JSON 数组；逗号/换行分隔后的词或短语
+    search_mode    TEXT NOT NULL DEFAULT 'or',  -- or / and
+    journal_ids    TEXT NOT NULL,               -- JSON 数组；升序规范化
+    date_from      TEXT NOT NULL,
+    date_to        TEXT NOT NULL,
+    max_results    INTEGER NOT NULL DEFAULT 50,
+    status         TEXT NOT NULL DEFAULT 'pending', -- pending/running/success/failed
+    decision_status TEXT NOT NULL DEFAULT 'preview', -- preview/saved/discarded
+    job_ids        TEXT NOT NULL DEFAULT '[]',  -- JSON 数组；关联本次 crawl_jobs
+    result_count   INTEGER DEFAULT 0,
+    new_result_count INTEGER DEFAULT 0,
+    saved_at       TEXT,
+    discarded_at   TEXT,
+    error          TEXT,
+    created_at     TEXT DEFAULT (datetime('now')),
+    finished_at    TEXT
+);
+CREATE INDEX idx_search_history_cache
+    ON search_history(cache_key, status, finished_at);
+
+-- 在线搜索批次 ↔ 命中文献。
+-- 保留标题/DOI 快照，使撤销后仍可审计本次曾删除哪些预览项。
+CREATE TABLE search_results (
+    id                INTEGER PRIMARY KEY,
+    search_history_id INTEGER NOT NULL REFERENCES search_history(id) ON DELETE CASCADE,
+    paper_id          INTEGER REFERENCES papers(id) ON DELETE SET NULL,
+    paper_title       TEXT NOT NULL,
+    paper_doi         TEXT,
+    was_new           INTEGER NOT NULL DEFAULT 0,
+    result_status     TEXT NOT NULL DEFAULT 'preview', -- preview/existing/saved/removed/preserved
+    created_at        TEXT DEFAULT (datetime('now')),
+    updated_at        TEXT DEFAULT (datetime('now')),
+    UNIQUE(search_history_id, paper_id)
+);
+CREATE INDEX idx_search_results_search ON search_results(search_history_id);
+CREATE INDEX idx_search_results_paper  ON search_results(paper_id);
 
 -- -------------------------------------------------------------
 -- 模块 E：导入的全文 PDF（理解层入口）
@@ -177,6 +232,19 @@ CREATE TABLE chunks (
     created_at   TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_chunks_doc ON chunks(document_id);
+
+-- -------------------------------------------------------------
+-- 模块 G.1：RAG 问答预设指令（本地可编辑资产）
+-- 默认指令与用户新增指令统一存储，均可编辑/删除
+-- -------------------------------------------------------------
+CREATE TABLE prompt_presets (
+    id          INTEGER PRIMARY KEY,
+    command     TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    description TEXT,
+    prompt      TEXT NOT NULL,
+    created_at  TEXT DEFAULT (datetime('now')),
+    updated_at  TEXT DEFAULT (datetime('now'))
+);
 
 -- -------------------------------------------------------------
 -- 模块 H：化学库抽取（真正的交付物）
@@ -254,3 +322,10 @@ INSERT INTO categories (name, slug, description) VALUES
 ('等离子体诊断',     'diagnostics',  '探针、光谱、成像等'),
 ('仿真方法',         'methods',      'Fluid / PIC-MCC / Hybrid / Global model'),
 ('截面与速率数据',   'cross-section','电子碰撞截面、速率系数、LXCat 数据');
+
+-- 种子数据：问答页默认预设。写入数据库后与用户预设完全相同，均可编辑/删除。
+INSERT INTO prompt_presets (command, description, prompt) VALUES
+('/总结', '总结当前范围内文献的核心结论', '总结当前范围内文献的核心结论、方法与主要数据。'),
+('/术语', '提取并解释文中的专业术语', '提取当前范围文献中的关键专业术语，并逐条解释其含义。'),
+('/相关工作', '梳理相关工作与研究脉络', '梳理当前范围文献涉及的相关工作与研究脉络。'),
+('/提问我', '就所选文献向我提问，考察理解', '就当前范围的文献内容，向我提出两个考察理解的问题。');

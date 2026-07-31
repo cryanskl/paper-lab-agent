@@ -44,6 +44,9 @@ build/
 dist/
 test-results/
 playwright-report/
+.playwright-cli/
+.superpowers/
+output/
 
 # Python simulation outputs and caches
 .venv/

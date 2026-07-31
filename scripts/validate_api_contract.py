@@ -1139,12 +1139,13 @@ def empty_success_response_schema_issues(openapi: dict | None = None) -> list[st
             for status_code, response in spec.get("responses", {}).items():
                 if not str(status_code).isdigit() or not (200 <= int(status_code) < 300):
                     continue
-                schema = (
-                    response.get("content", {})
-                    .get("application/json", {})
-                    .get("schema")
-                )
-                if not schema or not resolve_openapi_ref(schema, source_openapi):
+                content = response.get("content", {})
+                schemas = [
+                    media.get("schema")
+                    for media in content.values()
+                    if isinstance(media, dict)
+                ]
+                if not any(schema and resolve_openapi_ref(schema, source_openapi) for schema in schemas):
                     issues.append(
                         f"{method_upper} {normalized_path} {status_code} response must declare a non-empty schema"
                     )

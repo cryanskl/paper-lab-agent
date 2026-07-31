@@ -387,10 +387,13 @@ async def status(check_external: bool = False) -> dict:
         "categories": table_count("categories"),
         "paper_categories": table_count("paper_categories"),
         "crawl_jobs": table_count("crawl_jobs"),
+        "search_history": table_count("search_history"),
+        "search_results": table_count("search_results"),
         "documents": table_count("documents"),
         "sections": table_count("sections"),
         "translations": table_count("translations"),
         "chunks": table_count("chunks"),
+        "prompt_presets": table_count("prompt_presets"),
         "reaction_sets": table_count("reaction_sets"),
         "reactions": table_count("reactions"),
         "reaction_audits": table_count("reaction_audits"),
@@ -399,6 +402,7 @@ async def status(check_external: bool = False) -> dict:
     health = storage_health(settings)
     status_counts = {
         "crawl_jobs": status_count("crawl_jobs", "status"),
+        "search_history": status_count("search_history", "status"),
         "document_parse": status_count("documents", "parse_status"),
         "document_index": status_count("documents", "index_status"),
         "document_chemistry": status_count("documents", "chemistry_status"),

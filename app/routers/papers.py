@@ -1,7 +1,9 @@
 import re
 from typing import Any, Optional
+from urllib.parse import quote, urlsplit
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, field_validator
 
 from app.clients.unpaywall import UnpaywallClient, oa_status, web_url
@@ -9,12 +11,36 @@ from app.config import get_settings
 from app.db import dict_from_row, get_conn
 from app.errors import AppError, page
 from app.services.classification import get_classifier
-from app.services.crawl import normalize_doi, unpaywall_client_options
+from app.services.crawl import normalize_doi, normalize_search_terms, unpaywall_client_options
+from app.services.oa_download import OADownloadError, download_oa_pdf
 from app.utils import json_dumps, json_loads
 
 router = APIRouter(prefix="/papers", tags=["papers"])
 
 FTS_SAFE_QUERY_RE = re.compile(r"^[\w\s]+$")
+
+
+def is_downloadable_oa_url(value: Any) -> int:
+    candidate = str(value or "").strip()
+    if not candidate:
+        return 0
+    try:
+        parsed = urlsplit(candidate)
+    except ValueError:
+        return 0
+    hostname = (parsed.hostname or "").lower()
+    if parsed.scheme.lower() not in {"http", "https"} or not hostname:
+        return 0
+    if hostname == "example.test" or hostname.endswith(".example.test"):
+        return 0
+    return 1
+
+
+def paper_pdf_filename(paper_id: int, title: Any) -> str:
+    cleaned = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', " ", str(title or ""))
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    cleaned = cleaned[:120].rstrip(" .")
+    return f"{cleaned or f'paper-{paper_id}'}.pdf"
 
 
 class CategoryOverrideIn(BaseModel):
@@ -119,6 +145,15 @@ def fts_query(value: str) -> str:
     return f'"{value.replace(chr(34), chr(34) + chr(34))}"'
 
 
+def boolean_fts_query(value: str, mode: str) -> str:
+    terms = normalize_search_terms(value)
+    if not terms:
+        return fts_query(value)
+    operator = " AND " if mode == "and" else " OR "
+    operands = [f'"{term.replace(chr(34), chr(34) + chr(34))}"' for term in terms]
+    return operator.join(operands)
+
+
 def dedupe_strategy(row: dict) -> str:
     if row.get("doi"):
         return "doi"
@@ -159,7 +194,11 @@ def list_papers(
     year_from: Optional[int] = None,
     year_to: Optional[int] = None,
     oa_only: bool = False,
+    downloadable_only: bool = False,
+    search_id: Optional[int] = Query(None, ge=1),
     sort: str = Query("date_desc", pattern="^(date_desc|relevance)$"),
+    q_mode: Optional[str] = Query(None, pattern="^(and|or)$"),
+    result_limit: Optional[int] = Query(None, ge=1, le=100),
     page_num: int = Query(1, alias="page", ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
@@ -174,10 +213,16 @@ def list_papers(
     clauses = []
     select_prefix = "SELECT DISTINCT p.* FROM papers p"
     count_prefix = "SELECT COUNT(DISTINCT p.id) AS n FROM papers p"
+    if search_id is not None:
+        joins.append("JOIN search_results sr ON sr.paper_id = p.id")
+        clauses.append("sr.search_history_id = ?")
+        params.append(search_id)
+    else:
+        clauses.append("p.library_status = 'saved'")
     if q:
         joins.append("JOIN papers_fts fts ON fts.rowid = p.id")
         clauses.append("papers_fts MATCH ?")
-        params.append(fts_query(q))
+        params.append(boolean_fts_query(q, q_mode) if q_mode else fts_query(q))
     if category:
         joins.append("JOIN paper_categories pc ON pc.paper_id = p.id JOIN categories c ON c.id = pc.category_id")
         clauses.append("c.slug = ?")
@@ -193,6 +238,8 @@ def list_papers(
         params.append(year_to)
     if oa_only:
         clauses.append("p.oa_pdf_url IS NOT NULL AND p.oa_pdf_url != ''")
+    if downloadable_only:
+        clauses.append("is_downloadable_oa_url(p.oa_pdf_url) = 1")
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     join_sql = " ".join(joins)
     order = "ORDER BY p.published_date DESC, p.id DESC"
@@ -200,11 +247,25 @@ def list_papers(
         order = "ORDER BY bm25(papers_fts)"
     offset = (page_num - 1) * page_size
     with get_conn() as conn:
+        conn.create_function(
+            "is_downloadable_oa_url",
+            1,
+            is_downloadable_oa_url,
+            deterministic=True,
+        )
         total = conn.execute(f"{count_prefix} {join_sql} {where}", params).fetchone()["n"]
-        rows = conn.execute(
-            f"{select_prefix} {join_sql} {where} {order} LIMIT ? OFFSET ?",
-            params + [page_size, offset],
-        ).fetchall()
+        if result_limit is not None:
+            total = min(total, result_limit)
+        remaining = max(total - offset, 0)
+        row_limit = min(page_size, remaining)
+        rows = (
+            conn.execute(
+                f"{select_prefix} {join_sql} {where} {order} LIMIT ? OFFSET ?",
+                params + [row_limit, offset],
+            ).fetchall()
+            if row_limit
+            else []
+        )
         items = []
         for row in rows:
             paper = dict_from_row(row)
@@ -222,6 +283,56 @@ def get_paper(paper_id: int) -> dict:
         return serialize_paper(paper, category_details_for(conn, paper_id)) | {
             "raw_metadata": json_loads(paper.get("raw_metadata"), {})
         }
+
+
+@router.get(
+    "/{paper_id}/download",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "Open-access PDF attachment",
+            "content": {
+                "application/pdf": {
+                    "schema": {"type": "string", "format": "binary"},
+                }
+            },
+        }
+    },
+)
+async def download_paper_pdf(paper_id: int, request: Request) -> Response:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, title, oa_pdf_url FROM papers WHERE id=?",
+            (paper_id,),
+        ).fetchone()
+    if not row:
+        raise AppError(404, "paper_not_found", "Paper not found")
+    oa_pdf_url = str(row["oa_pdf_url"] or "").strip()
+    if not oa_pdf_url:
+        raise AppError(409, "oa_pdf_unavailable", "Paper has no open-access PDF URL")
+    try:
+        downloaded = await download_oa_pdf(
+            oa_pdf_url,
+            user_agent=request.headers.get("user-agent", ""),
+        )
+    except OADownloadError as exc:
+        raise AppError(exc.status_code, exc.code, exc.message) from exc
+    filename = paper_pdf_filename(paper_id, row["title"])
+    fallback_filename = f"paper-{paper_id}.pdf"
+    disposition = (
+        f'attachment; filename="{fallback_filename}"; '
+        f"filename*=UTF-8''{quote(filename, safe='')}"
+    )
+    return Response(
+        content=downloaded.content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": disposition,
+            "Content-Length": str(len(downloaded.content)),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post("/{paper_id}/resolve-oa", response_model=PaperDetailResponse)

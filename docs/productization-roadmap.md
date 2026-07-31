@@ -17,7 +17,8 @@
 目标：白名单检索层可真实连接 OpenAlex / Crossref / Unpaywall，并且失败可诊断。
 
 - OpenAlex / Crossref 分页、重试、限流和字段归一化增强。
-- 关键词过滤支持 AND / OR 语义配置。
+- 用户搜索词支持 AND / OR 语义，并下推到 OpenAlex / Crossref；期刊配置不再承担关键词准入。
+- 精确重复搜索复用本地缓存，并以可配置的结果数量控制响应时间。
 - crawl job 详情展示每个期刊的 found/new/filtered/error。
 - DOI 为空的文献建立保守去重策略和审计字段。
 - Streamlit 检索页增加手动抓取、job 列表和 job 详情。
@@ -50,4 +51,3 @@
 - 提供 `scripts/dev.sh` 或等价命令，统一启动 API 与 Streamlit。
 - 提供健康检查命令和常见问题排查。
 - CI 可跑默认离线测试。
-

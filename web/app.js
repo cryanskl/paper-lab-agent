@@ -1,5 +1,6 @@
 /* 等离子体文献工作台 — 前端工作台
- * 所有数据来自 /api/v1 真实接口；仅「待下载清单」「项目分组」「阅读偏好」是本地视图状态，存 localStorage。
+ * 所有业务数据来自 /api/v1 真实接口；「待下载清单」「项目分组」「阅读偏好」「术语表」是本地工作台状态，
+ * 存 localStorage。
  */
 'use strict';
 
@@ -7,45 +8,45 @@ const API = '/api/v1';
 const LS_KEY = 'plasma-workbench';
 
 /* ── 术语表（中英对照，用于阅读页高亮） ── */
-const GLOSSARY = [
-  { en: 'capacitively coupled', zh: '容性耦合' },
-  { en: 'electron energy distribution function', zh: '电子能量分布函数' },
-  { en: 'EEDF', zh: '电子能量分布函数' },
-  { en: 'particle-in-cell', zh: '粒子网格法' },
-  { en: 'Monte Carlo collisions', zh: '蒙特卡罗碰撞' },
-  { en: 'secondary electron emission', zh: '二次电子发射' },
-  { en: 'ohmic heating', zh: '欧姆加热' },
-  { en: 'cross section', zh: '截面' },
-  { en: 'dissociation', zh: '解离' },
-  { en: 'ionization', zh: '电离' },
-  { en: 'attachment', zh: '吸附' },
-  { en: 'radical', zh: '自由基' },
-  { en: 'ion flux', zh: '离子通量' },
-  { en: 'sheath', zh: '鞘层' },
-  { en: 'self-bias', zh: '自偏压' },
-  { en: 'rate coefficient', zh: '速率系数' },
+const DEFAULT_GLOSSARY = [
+  { id: 'default-1', en: 'capacitively coupled', zh: '容性耦合' },
+  { id: 'default-2', en: 'electron energy distribution function', zh: '电子能量分布函数' },
+  { id: 'default-3', en: 'EEDF', zh: '电子能量分布函数' },
+  { id: 'default-4', en: 'particle-in-cell', zh: '粒子网格法' },
+  { id: 'default-5', en: 'Monte Carlo collisions', zh: '蒙特卡罗碰撞' },
+  { id: 'default-6', en: 'secondary electron emission', zh: '二次电子发射' },
+  { id: 'default-7', en: 'ohmic heating', zh: '欧姆加热' },
+  { id: 'default-8', en: 'cross section', zh: '截面' },
+  { id: 'default-9', en: 'dissociation', zh: '解离' },
+  { id: 'default-10', en: 'ionization', zh: '电离' },
+  { id: 'default-11', en: 'attachment', zh: '吸附' },
+  { id: 'default-12', en: 'radical', zh: '自由基' },
+  { id: 'default-13', en: 'ion flux', zh: '离子通量' },
+  { id: 'default-14', en: 'sheath', zh: '鞘层' },
+  { id: 'default-15', en: 'self-bias', zh: '自偏压' },
+  { id: 'default-16', en: 'rate coefficient', zh: '速率系数' },
 ];
-const ZH_TERMS = ['电子能量分布函数', '二次电子发射', '蒙特卡罗碰撞', '容性耦合', '粒子网格',
-  '欧姆加热', '离子通量', '速率系数', '自偏压', '自由基', '鞘层', '解离', '电离', '截面', 'EEDF'];
-
-const PRESETS = [
-  { cmd: '/总结', desc: '总结当前范围内文献的核心结论', q: '总结当前范围内文献的核心结论、方法与主要数据。' },
-  { cmd: '/术语', desc: '提取并解释文中的专业术语', q: '提取当前范围文献中的关键专业术语，并逐条解释其含义。' },
-  { cmd: '/相关工作', desc: '梳理相关工作与研究脉络', q: '梳理当前范围文献涉及的相关工作与研究脉络。' },
-  { cmd: '/提问我', desc: '就所选文献向我提问，考察理解', q: '就当前范围的文献内容，向我提出两个考察理解的问题。' },
-];
+const MAX_GLOSSARY_TERM_LENGTH = 120;
 
 const NAV = [
-  { key: 'search', label: '文献检索', sub: 'SEARCH' },
-  { key: 'library', label: '文献库', sub: 'LIBRARY' },
-  { key: 'reader', label: '双语阅读', sub: 'READER' },
-  { key: 'chat', label: 'AI 问答', sub: 'Q&A' },
-  { key: 'chemistry', label: '化学库复核', sub: 'CHEMISTRY' },
+  { key: 'search', label: '文献检索', sub: 'SEARCH', group: 'use' },
+  { key: 'library', label: '文献库', sub: 'LIBRARY', group: 'use' },
+  { key: 'reader', label: '双语阅读', sub: 'READER', group: 'use' },
+  { key: 'chat', label: 'AI 问答', sub: 'Q&A', group: 'use' },
+  { key: 'chemistry', label: '化学库复核', sub: 'CHEMISTRY', group: 'use' },
+  { key: 'journals', label: '期刊管理', sub: 'JOURNALS', group: 'manage' },
+  { key: 'tags', label: '标签管理', sub: 'TAGS', group: 'manage' },
+  { key: 'glossary', label: '术语表管理', sub: 'GLOSSARY', group: 'manage' },
+];
+const NAV_GROUPS = [
+  { key: 'use', label: '功能' },
+  { key: 'manage', label: '管理' },
 ];
 
 const REACTION_TYPES = ['elastic', 'excitation', 'ionization', 'attachment', 'recombination'];
 const RATE_TYPES = ['cross_section', 'arrhenius', 'constant'];
 const EXPORT_LABELS = { json: 'JSON', txt: 'TXT', bolsig: 'BOLSIG+' };
+const SELF_REVIEWER = 'self';
 
 const YEAR_MIN = 1990;
 const YEAR_MAX = new Date().getFullYear();
@@ -60,16 +61,54 @@ const YEAR_PRESETS = [
 const persisted = Object.assign(
   {
     marked: [], projects: [], fontSize: 15, glossary: true,
-    uploadProject: 'none', targetLang: 'zh', reviewer: '',
+    glossaryTerms: null, uploadProject: 'none', targetLang: 'zh',
   },
   readStore()
 );
+persisted.glossaryTerms = normalizeGlossaryTerms(persisted.glossaryTerms);
+const legacyPromptPresets = Array.isArray(persisted.customPresets)
+  ? persisted.customPresets.filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      command: normalizePresetCommand(String(item.cmd || '').slice(0, 24)),
+      description: String(item.desc || '').trim().slice(0, 80) || null,
+      prompt: String(item.q || '').trim().slice(0, 1000),
+    }))
+    .filter((item) => /^\/[^\s/]{1,23}$/.test(item.command) && item.prompt)
+  : [];
 
 function readStore() {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (e) { return {}; }
 }
 function saveStore() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(persisted)); } catch (e) { /* 隐私模式下忽略 */ }
+}
+function allPresets() {
+  return state.presets;
+}
+function presetById(id) {
+  return allPresets().find((preset) => String(preset.id) === String(id));
+}
+function normalizePresetCommand(value) {
+  const raw = String(value || '').trim();
+  return raw.startsWith('/') ? raw : `/${raw}`;
+}
+function normalizeGlossaryTerms(value) {
+  const source = Array.isArray(value) ? value : DEFAULT_GLOSSARY;
+  const seenIds = new Set();
+  return source.filter((item) => item && typeof item === 'object').map((item, index) => {
+    const fallbackId = `term-${index + 1}`;
+    let id = String(item.id || fallbackId).trim() || fallbackId;
+    while (seenIds.has(id)) id = `${fallbackId}-${seenIds.size + 1}`;
+    seenIds.add(id);
+    return {
+      id,
+      en: String(item.en || '').trim().replace(/\s+/g, ' ').slice(0, MAX_GLOSSARY_TERM_LENGTH),
+      zh: String(item.zh || '').trim().replace(/\s+/g, ' ').slice(0, MAX_GLOSSARY_TERM_LENGTH),
+    };
+  }).filter((item) => item.en || item.zh);
+}
+function glossaryTerms() {
+  return persisted.glossaryTerms;
 }
 
 /* ── 运行时状态 ── */
@@ -78,21 +117,30 @@ const state = {
   status: null,
   journals: [],
   categories: [],
+  presets: [],
   activeJournal: null,
   activeCategory: null,
   tagEditor: null,
+  categoryEditingId: null,
   oaOnly: false,
+  downloadOnly: false,
   query: '',
+  queryMode: 'or',
+  resultLimit: 50,
   yearFrom: YEAR_MIN,
   yearTo: YEAR_MAX,
-  sort: 'date_desc',
+  sort: 'relevance',
   searchPage: 1,
   searchTotal: 0,
   results: [],
   searched: false,
   searchMode: 'local',
+  activeSearchId: null,
+  searchBatchDecision: null,
   onlineSyncing: false,
   syncSummary: null,
+  journalSubmitting: false,
+  journalEditingId: null,
   expanded: {},
   absZh: {},
   documents: [],
@@ -101,13 +149,21 @@ const state = {
   libLoaded: false,
   readerDocId: null,
   readerProject: 'all',
+  readerCategory: '',
   readerMode: 'both',
+  readerQaLang: 'zh',
   readerParas: [],
   readerLoading: false,
+  readerRetranslating: false,
+  readerTargetLang: 'zh',
+  translationStatus: null,
   activePara: null,
   readerSearch: '',
   readerDropOpen: false,
+  readerQaThreads: {},
+  readerQaTyping: false,
   chatScope: 'single',
+  chatCategory: '',
   chatDocs: [],
   selProject: null,
   docSearch: '',
@@ -115,8 +171,13 @@ const state = {
   typing: false,
   chatInput: '',
   slashOpen: false,
+  presetEditor: null,
   selection: null,
+  glossaryEditingId: null,
+  glossaryQuery: '',
   drawerOpen: false,
+  batchDownloading: false,
+  markedDownloadState: {},
   chemDocId: null,
   chemSets: [],
   chemSetId: null,
@@ -173,10 +234,25 @@ async function apiOrNull(path) {
   try { return await api(path); } catch (e) { return null; }
 }
 
+function untranslatedAuthorName(value) {
+  const name = String(value || '').trim();
+  const hasLatin = /[A-Za-z]/.test(name);
+  const hasHan = /[\u3400-\u4DBF\u4E00-\u9FFF]/.test(name);
+  if (!hasLatin || !hasHan) return name;
+  return name
+    .replace(/[\u3400-\u4DBF\u4E00-\u9FFF]+/g, '')
+    .replace(/([[(（【])\s*([\])）】])/g, '')
+    .replace(/\s+([,;，；])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function authorsText(authors) {
   if (!Array.isArray(authors) || !authors.length) return '作者信息缺失';
   const names = authors
-    .map((a) => (typeof a === 'string' ? a : (a && (a.name || a.display_name || a.full_name)) || ''))
+    .map((a) => untranslatedAuthorName(
+      typeof a === 'string' ? a : (a && (a.name || a.display_name || a.full_name)) || ''
+    ))
     .filter(Boolean);
   if (!names.length) return '作者信息缺失';
   return names.length > 6 ? `${names.slice(0, 6).join(', ')} 等 ${names.length} 人` : names.join(', ');
@@ -204,7 +280,8 @@ function copyText(text) {
 
 function download(name, content, type) {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([content], { type }));
+  const blob = content instanceof Blob ? content : new Blob([content], { type });
+  a.href = URL.createObjectURL(blob);
   a.download = name;
   document.body.appendChild(a);
   a.click();
@@ -214,13 +291,15 @@ function download(name, content, type) {
 
 /* ── 导航与系统状态 ── */
 function renderNav() {
-  const badges = { library: state.documents.length };
-  $('#nav').innerHTML = NAV.map((n) => `
-    <button data-nav="${n.key}" class="${state.page === n.key ? 'on' : ''}">
-      <span class="lbl">${n.label}</span>
-      ${badges[n.key] ? `<span class="badge">${badges[n.key]}</span>` : ''}
-      <span class="sub">${n.sub}</span>
-    </button>`).join('');
+  $('#nav').innerHTML = NAV_GROUPS.map((group) => `
+    <div class="nav-group" aria-label="${group.label}">
+      <div class="nav-group-title">${group.label}</div>
+      ${NAV.filter((item) => item.group === group.key).map((item) => `
+        <button data-nav="${item.key}" class="${state.page === item.key ? 'on' : ''}">
+          <span class="lbl">${item.label}</span>
+          <span class="sub">${item.sub}</span>
+        </button>`).join('')}
+    </div>`).join('');
 }
 
 function renderSysbox() {
@@ -240,10 +319,13 @@ function renderSysbox() {
 function setPage(page) {
   state.page = page;
   state.selection = null;
-  $('#sel-btn').hidden = true;
+  $('#selection-popover').hidden = true;
   $$('.screen').forEach((node) => { node.hidden = node.dataset.screen !== page; });
   renderNav();
+  if (page === 'journals') renderJournalManager();
   if (page === 'library') loadLibrary();
+  if (page === 'tags') loadCategories();
+  if (page === 'glossary') renderGlossaryManager();
   if (page === 'reader') { ensureLibrary().then(renderReaderBar); }
   if (page === 'chat') { ensureLibrary().then(renderChatSide); }
   if (page === 'chemistry') { ensureLibrary().then(openChemistry); }
@@ -253,10 +335,10 @@ function setPage(page) {
 async function loadJournals() {
   const data = await apiOrNull('/journals?active=1&page_size=100');
   state.journals = (data && data.items) || [];
-  $('#search-source').textContent =
-    `默认检索本地库 · 在线同步 OpenAlex → Crossref 回退 · 期刊白名单 ${state.journals.length} 本`;
   renderJournalChips();
   renderUploadPaperOptions();
+  renderJournalManager();
+  renderNav();
 }
 
 function renderJournalChips() {
@@ -268,11 +350,211 @@ function renderJournalChips() {
   }).join('');
 }
 
+/* ── 期刊管理 ── */
+function renderJournalManager() {
+  const count = $('#journal-manager-count');
+  const list = $('#journal-manager-list');
+  if (!count || !list) return;
+  count.textContent = state.journals.length;
+  if (!state.journals.length) {
+    list.innerHTML = '<div class="journal-roster-empty">还没有启用的白名单期刊</div>';
+    return;
+  }
+  list.innerHTML = state.journals.map((journal) => {
+    const issn = journal.issn_electronic || journal.issn_print || 'ISSN 未填写';
+    const yearRange = `${journal.year_from || YEAR_MIN}–${journal.year_to || '至今'}`;
+    return `<div class="journal-roster-row" data-journal-row="${journal.id}">
+      <div class="journal-roster-main">
+        <div class="journal-roster-name" title="${esc(journal.name)}">${esc(journal.name)}</div>
+        <div class="journal-roster-meta">
+          <span>${esc(issn)}</span>
+          <span>${esc(yearRange)}</span>
+          <span>搜索词在检索页设置</span>
+        </div>
+      </div>
+      <div class="journal-roster-actions">
+        <button class="journal-row-action" type="button" data-journal-edit="${journal.id}"
+          aria-label="编辑 ${esc(journal.name)}">编辑</button>
+        <button class="journal-row-action danger" type="button" data-journal-delete="${journal.id}"
+          aria-label="删除 ${esc(journal.name)}">删除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function journalFormPayload() {
+  const yearTo = $('#journal-year-to').value.trim();
+  const impactFactor = $('#journal-impact-factor').value.trim();
+  return {
+    name: $('#journal-name').value.trim(),
+    publisher: $('#journal-publisher').value.trim() || null,
+    platform: $('#journal-platform').value.trim() || null,
+    url: $('#journal-url').value.trim() || null,
+    issn_print: $('#journal-issn-print').value.trim().toUpperCase() || null,
+    issn_electronic: $('#journal-issn-electronic').value.trim().toUpperCase() || null,
+    keywords: [],
+    year_from: Number($('#journal-year-from').value),
+    year_to: yearTo ? Number(yearTo) : null,
+    sci_zone: $('#journal-sci-zone').value || null,
+    impact_factor: impactFactor ? Number(impactFactor) : null,
+    active: true,
+  };
+}
+
+function journalValidationMessage(payload, excludedJournalId) {
+  if (!payload.name) return '请填写期刊名称。';
+  if (!payload.issn_print && !payload.issn_electronic) return '请至少填写一个 Print ISSN 或 Electronic ISSN。';
+  const issnPattern = /^\d{4}-\d{3}[\dX]$/;
+  if (payload.issn_print && !issnPattern.test(payload.issn_print)) return 'Print ISSN 格式应为 ####-####，校验位可为 X。';
+  if (payload.issn_electronic && !issnPattern.test(payload.issn_electronic)) return 'Electronic ISSN 格式应为 ####-####，校验位可为 X。';
+  if (!Number.isInteger(payload.year_from) || payload.year_from < 1900 || payload.year_from > 2100) {
+    return '起始年份应在 1900–2100 之间。';
+  }
+  if (payload.year_to != null && (
+    !Number.isInteger(payload.year_to) || payload.year_to < payload.year_from || payload.year_to > 2100
+  )) return '截止年份应不早于起始年份，且不晚于 2100。';
+  if (payload.impact_factor != null && (!Number.isFinite(payload.impact_factor) || payload.impact_factor < 0)) {
+    return '影响因子应为不小于 0 的数字。';
+  }
+  const normalizedName = payload.name.toLowerCase();
+  const duplicate = state.journals.find((journal) =>
+    journal.id !== excludedJournalId && (
+      String(journal.name || '').toLowerCase() === normalizedName
+      || (payload.issn_print && [journal.issn_print, journal.issn_electronic].includes(payload.issn_print))
+      || (payload.issn_electronic && [journal.issn_print, journal.issn_electronic].includes(payload.issn_electronic))
+    ));
+  return duplicate ? `白名单中已存在「${duplicate.name}」，请核对期刊名称和 ISSN。` : '';
+}
+
+function setJournalFormMessage(message, bad) {
+  const node = $('#journal-form-message');
+  node.textContent = message || '';
+  node.classList.toggle('bad', !!bad);
+  node.hidden = !message;
+}
+
+function resetJournalForm() {
+  state.journalEditingId = null;
+  $('#journal-create-form').reset();
+  $('#journal-year-from').value = String(YEAR_MIN);
+  $('#journal-form-title').textContent = '新增白名单期刊';
+  $('#journal-form-description').textContent = '期刊名称和至少一个 ISSN 为必填项；搜索关键词统一在文献检索页填写。';
+  $('#journal-form-reset').textContent = '清空';
+  $('#journal-create-submit').textContent = '新增并启用';
+  setJournalFormMessage('', false);
+}
+
+function editJournalFromWorkbench(journalId) {
+  const journal = state.journals.find((item) => item.id === journalId);
+  if (!journal) {
+    toast('找不到要编辑的期刊，请刷新后重试', true);
+    return;
+  }
+  state.journalEditingId = journal.id;
+  $('#journal-name').value = journal.name || '';
+  $('#journal-issn-print').value = journal.issn_print || '';
+  $('#journal-issn-electronic').value = journal.issn_electronic || '';
+  $('#journal-year-from').value = String(journal.year_from || YEAR_MIN);
+  $('#journal-year-to').value = journal.year_to == null ? '' : String(journal.year_to);
+  $('#journal-publisher').value = journal.publisher || '';
+  $('#journal-platform').value = journal.platform || '';
+  $('#journal-url').value = journal.url || '';
+  $('#journal-sci-zone').value = journal.sci_zone || '';
+  $('#journal-impact-factor').value = journal.impact_factor == null ? '' : String(journal.impact_factor);
+  $('#journal-form-title').textContent = '编辑白名单期刊';
+  $('#journal-form-description').textContent = `正在编辑「${journal.name}」；保存后新的范围会用于后续联网搜索。`;
+  $('#journal-form-reset').textContent = '取消编辑';
+  $('#journal-create-submit').textContent = '保存修改';
+  setJournalFormMessage('', false);
+  $('#journal-name').focus();
+}
+
+async function deleteJournalFromWorkbench(journalId) {
+  const journal = state.journals.find((item) => item.id === journalId);
+  if (!journal) {
+    toast('找不到要删除的期刊，请刷新后重试', true);
+    return;
+  }
+  const confirmed = window.confirm(
+    `确认删除白名单「${journal.name}」？\n\n该期刊将停止参与后续联网搜索；已抓取的论文和历史任务不会删除。`
+  );
+  if (!confirmed) return;
+  try {
+    await api(`/journals/${journal.id}`, { method: 'DELETE' });
+    if (state.journalEditingId === journal.id) resetJournalForm();
+    if (state.activeJournal === journal.id) state.activeJournal = null;
+    await loadJournals();
+    toast(`已删除白名单「${journal.name}」`);
+  } catch (error) {
+    toast(`删除失败：${error.message}`, true);
+  }
+}
+
+async function saveJournalFromWorkbench() {
+  if (state.journalSubmitting) return;
+  const payload = journalFormPayload();
+  const editingId = state.journalEditingId;
+  const validationMessage = journalValidationMessage(payload, editingId);
+  if (validationMessage) {
+    setJournalFormMessage(validationMessage, true);
+    return;
+  }
+  const submit = $('#journal-create-submit');
+  state.journalSubmitting = true;
+  submit.disabled = true;
+  submit.textContent = editingId == null ? '正在新增…' : '正在保存…';
+  setJournalFormMessage(editingId == null ? '正在写入白名单并刷新工作台…' : '正在保存修改并刷新工作台…', false);
+  try {
+    const journal = editingId == null
+      ? await api('/journals', { method: 'POST', body: payload })
+      : await api(`/journals/${editingId}`, { method: 'PUT', body: payload });
+    resetJournalForm();
+    await loadJournals();
+    const action = editingId == null ? '新增并启用' : '更新';
+    setJournalFormMessage(`已${action}「${journal.name}」。新的范围将用于后续联网搜索。`, false);
+    toast(`已${action}白名单「${journal.name}」`);
+  } catch (error) {
+    setJournalFormMessage(`${editingId == null ? '新增' : '保存'}失败：${error.message}`, true);
+  } finally {
+    state.journalSubmitting = false;
+    submit.disabled = false;
+    submit.textContent = state.journalEditingId == null ? '新增并启用' : '保存修改';
+  }
+}
+
 /* ── 标签（复用 categories / paper_categories） ── */
 async function loadCategories() {
   const data = await apiOrNull('/categories?page_size=100');
   state.categories = (data && data.items) || [];
   renderCategoryChips();
+  renderTagManager();
+}
+
+async function loadPresets() {
+  const data = await api('/prompt-presets?page_size=100');
+  state.presets = (data.items || []).map((preset) => ({
+    id: preset.id,
+    cmd: preset.command,
+    desc: preset.description || '',
+    q: preset.prompt,
+  }));
+}
+
+async function migrateLegacyPromptPresets() {
+  if (!legacyPromptPresets.length) {
+    delete persisted.customPresets;
+    saveStore();
+    return;
+  }
+  for (const preset of legacyPromptPresets) {
+    try {
+      await api('/prompt-presets', { method: 'POST', body: preset });
+    } catch (error) {
+      if (error.code !== 'prompt_preset_conflict') throw error;
+    }
+  }
+  delete persisted.customPresets;
+  saveStore();
 }
 
 function renderCategoryChips() {
@@ -280,6 +562,83 @@ function renderCategoryChips() {
     ? state.categories.map((c) => `<button class="chip ${state.activeCategory === c.slug ? 'on' : ''}"
         data-category="${esc(c.slug)}" title="${esc(c.description || '')}">${esc(c.name)}</button>`).join('')
     : '<span class="chips-label">（分类表为空）</span>';
+}
+
+function categoryOptions(selectedSlug, emptyLabel) {
+  return [`<option value="">${esc(emptyLabel || '全部标签')}</option>`].concat(
+    state.categories.map((category) =>
+      `<option value="${esc(category.slug)}" ${selectedSlug === category.slug ? 'selected' : ''}>`
+      + `${esc(category.name)}（${category.paper_count || 0}）</option>`)
+  ).join('');
+}
+
+function categoryBySlug(slug) {
+  return state.categories.find((category) => category.slug === slug);
+}
+
+function documentPaper(doc) {
+  if (!doc || doc.paper_id == null) return null;
+  return state.paperCache[doc.paper_id] || null;
+}
+
+function documentMatchesCategory(doc, slug) {
+  if (!slug) return true;
+  const paper = documentPaper(doc);
+  return !!paper && (paper.category_details || []).some((category) => category.slug === slug);
+}
+
+function renderTagManager() {
+  const list = $('#tag-manager-list');
+  const summary = $('#tag-manager-summary');
+  if (!list || !summary) return;
+  const linked = state.categories.reduce((total, category) => total + (category.paper_count || 0), 0);
+  summary.textContent = `${state.categories.length} 个标签 · ${linked} 条文献关联`;
+  if (!state.categories.length) {
+    list.innerHTML = '<div class="tag-manager-empty">还没有标签，可在上方创建第一个标签</div>';
+    return;
+  }
+  list.innerHTML = state.categories.map((category) => {
+    const childCount = (category.children || []).length;
+    const usage = category.paper_count || 0;
+    if (state.categoryEditingId === category.id) {
+      return `<form class="tag-manager-row is-editing" data-category-edit-form="${category.id}">
+        <div class="tag-manager-name tag-manager-edit-stack">
+          <input class="input" data-category-edit-name value="${esc(category.name)}"
+            aria-label="标签名称" maxlength="120" required>
+          <input class="input tag-manager-edit-description" data-category-edit-description
+            value="${esc(category.description || '')}" aria-label="标签说明"
+            maxlength="240" placeholder="标签说明（可选）">
+        </div>
+        <div class="tag-manager-slug">
+          <input class="input mono" data-category-edit-slug value="${esc(category.slug)}"
+            aria-label="英文标识" maxlength="120" required>
+        </div>
+        <div class="tag-manager-usage">${usage} 篇文献${childCount ? ` · ${childCount} 个子标签` : ''}</div>
+        <div class="tag-manager-actions">
+          <button type="submit" class="btn-primary sm">保存</button>
+          <button type="button" class="btn-ghost sm" data-category-edit-cancel="${category.id}">取消</button>
+        </div>
+      </form>`;
+    }
+    const deleteHint = childCount
+      ? `包含 ${childCount} 个子标签，需先处理子标签`
+      : usage
+        ? `删除并解除 ${usage} 条文献关联`
+        : '删除此标签';
+    return `<div class="tag-manager-row" data-category-row="${category.id}">
+      <div class="tag-manager-name">
+        ${esc(category.name)}
+        <div class="desc">${esc(category.description || '暂无说明')}</div>
+      </div>
+      <div class="tag-manager-slug">${esc(category.slug)}</div>
+      <div class="tag-manager-usage">${usage} 篇文献${childCount ? ` · ${childCount} 个子标签` : ''}</div>
+      <div class="tag-manager-actions">
+        <button class="btn-ghost sm" data-category-edit="${category.id}">编辑</button>
+        <button class="btn-ghost sm danger" data-category-delete="${category.id}"
+          title="${esc(deleteHint)}" ${childCount ? 'disabled' : ''}>删除</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function tagChips(paper) {
@@ -336,19 +695,107 @@ async function autoClassify(paperId) {
   await refreshTaggedPaper(paperId);
 }
 
-async function createCategory(name, paperId) {
+async function createCategory(name, description) {
   const label = (name || '').trim();
   if (!label) { toast('标签名称不能为空', true); return; }
-  const slug = label.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]/g, '') || `tag-${Date.now()}`;
+  const slugBase = label.toLowerCase().replace(/\s+/g, '-')
+    .replace(/[^a-z0-9_-]/g, '').replace(/^[-_]+|[-_]+$/g, '');
+  const slug = slugBase || `tag-${Date.now()}`;
   try {
-    await api('/categories', { method: 'POST', body: { name: label, slug } });
+    await api('/categories', {
+      method: 'POST',
+      body: { name: label, slug, description: (description || '').trim() || null },
+    });
     toast(`已新建标签「${label}」`);
   } catch (e) {
     toast(`新建标签失败：${e.message}`, true);
-    return;
+    return false;
   }
   await loadCategories();
-  if (state.tagEditor === paperId) renderLibrary();
+  renderLibrary();
+  if (state.page === 'reader') renderReaderBar();
+  if (state.page === 'chat') renderChatSide();
+  return true;
+}
+
+function removeCategoryFromPaper(paper, categoryId, slug) {
+  if (!paper) return;
+  paper.category_details = (paper.category_details || []).filter((category) => category.id !== categoryId);
+  paper.categories = (paper.categories || []).filter((categorySlug) => categorySlug !== slug);
+}
+
+function updateCategoryOnPaper(paper, updated, previousSlug) {
+  if (!paper) return;
+  paper.category_details = (paper.category_details || []).map((category) =>
+    category.id === updated.id
+      ? Object.assign({}, category, { name: updated.name, slug: updated.slug })
+      : category);
+  paper.categories = (paper.categories || []).map((slug) =>
+    slug === previousSlug ? updated.slug : slug);
+}
+
+async function updateCategory(categoryId, form) {
+  const previous = state.categories.find((item) => item.id === categoryId);
+  if (!previous) return;
+  const name = $('[data-category-edit-name]', form).value.trim();
+  const slug = $('[data-category-edit-slug]', form).value.trim();
+  const description = $('[data-category-edit-description]', form).value.trim();
+  if (!name || !slug) {
+    toast('标签名称和英文标识不能为空', true);
+    return;
+  }
+  const submit = $('button[type="submit"]', form);
+  submit.disabled = true;
+  submit.textContent = '保存中…';
+  try {
+    const updated = await api(`/categories/${categoryId}`, {
+      method: 'PUT',
+      body: { name, slug, description: description || null },
+    });
+    state.results.forEach((paper) => updateCategoryOnPaper(paper, updated, previous.slug));
+    Object.values(state.paperCache).forEach((paper) =>
+      updateCategoryOnPaper(paper, updated, previous.slug));
+    if (state.activeCategory === previous.slug) state.activeCategory = updated.slug;
+    if (state.readerCategory === previous.slug) state.readerCategory = updated.slug;
+    if (state.chatCategory === previous.slug) state.chatCategory = updated.slug;
+    state.categoryEditingId = null;
+    await loadCategories();
+    renderResults();
+    renderLibrary();
+    if (state.page === 'reader') renderReaderBar();
+    if (state.page === 'chat') renderChatSide();
+    toast(`已更新标签「${updated.name}」`);
+  } catch (error) {
+    submit.disabled = false;
+    submit.textContent = '保存';
+    toast(`保存标签失败：${error.message}`, true);
+  }
+}
+
+async function deleteCategory(categoryId) {
+  const category = state.categories.find((item) => item.id === categoryId);
+  if (!category) return;
+  const usage = category.paper_count || 0;
+  const detail = usage
+    ? `该操作会同时解除 ${usage} 条文献关联，文献本身不会被删除。`
+    : '该标签当前没有关联文献。';
+  if (!window.confirm(`确定删除标签「${category.name}」？\n${detail}`)) return;
+  try {
+    const result = await api(`/categories/${categoryId}`, { method: 'DELETE' });
+    state.results.forEach((paper) => removeCategoryFromPaper(paper, categoryId, category.slug));
+    Object.values(state.paperCache).forEach((paper) => removeCategoryFromPaper(paper, categoryId, category.slug));
+    if (state.activeCategory === category.slug) state.activeCategory = null;
+    if (state.readerCategory === category.slug) state.readerCategory = '';
+    if (state.chatCategory === category.slug) state.chatCategory = '';
+    await loadCategories();
+    renderResults();
+    renderLibrary();
+    if (state.page === 'reader') renderReaderBar();
+    if (state.page === 'chat') renderChatSide();
+    toast(`已删除「${category.name}」，解除 ${result.removed_paper_links} 条文献关联`);
+  } catch (e) {
+    toast(`删除标签失败：${e.message}`, true);
+  }
 }
 
 /* 打标后同步刷新：检索结果与文献库卡片都读同一份 paper 数据 */
@@ -365,16 +812,31 @@ async function refreshTaggedPaper(paperId) {
 
 function searchQuery() {
   const params = new URLSearchParams();
-  if (state.query.trim()) params.set('q', state.query.trim());
+  if (state.query.trim()) {
+    params.set('q', state.query.trim());
+    params.set('q_mode', state.queryMode);
+    params.set('result_limit', state.resultLimit);
+  }
+  if (state.searchMode === 'online' && state.activeSearchId != null) {
+    params.set('search_id', state.activeSearchId);
+  }
   if (state.activeJournal != null) params.set('journal_id', state.activeJournal);
   if (state.activeCategory) params.set('category', state.activeCategory);
   params.set('year_from', state.yearFrom);
   params.set('year_to', state.yearTo);
   if (state.oaOnly) params.set('oa_only', 'true');
+  if (state.downloadOnly) params.set('downloadable_only', 'true');
   params.set('sort', state.query.trim() ? state.sort : 'date_desc');
   params.set('page', state.searchPage);
   params.set('page_size', '20');
   return params.toString();
+}
+
+function parseSearchTerms(value) {
+  return String(value || '').split(/[\n,，;；]+/)
+    .map((term) => term.trim().replace(/\s+/g, ' '))
+    .filter((term, index, terms) =>
+      term && terms.findIndex((candidate) => candidate.toLowerCase() === term.toLowerCase()) === index);
 }
 
 async function runSearch(resetPage, options) {
@@ -382,6 +844,8 @@ async function runSearch(resetPage, options) {
   if (resetPage !== false) state.searchPage = 1;
   if (!options.keepSyncSummary) {
     state.searchMode = 'local';
+    state.activeSearchId = null;
+    state.searchBatchDecision = null;
     state.syncSummary = null;
   }
   $('#search-meta').textContent = '正在检索本地文献库…';
@@ -402,17 +866,30 @@ async function runSearch(resetPage, options) {
 
 function renderResults() {
   const meta = $('#search-meta');
-  const sync = state.searchMode === 'online' && state.syncSummary
-    ? `在线同步完成：${state.syncSummary.succeeded}/${state.syncSummary.total} 个期刊成功`
-      + ` · 新增 ${state.syncSummary.newPapers} 篇 · `
-    : '本地文献库 · ';
+  let sync = '本地文献库 · ';
+  if (state.searchMode === 'online' && state.syncSummary) {
+    sync = state.syncSummary.cacheHit
+      ? `本地缓存命中（${state.syncSummary.cacheTtlHours} 小时内） · `
+      : `联网搜索完成：${state.syncSummary.succeeded}/${state.syncSummary.total} 个期刊成功`
+        + ` · 新增 ${state.syncSummary.newPapers} 篇 · `;
+  }
   meta.textContent = `${sync}共 ${state.searchTotal} 条结果 · 已标记 ${persisted.marked.length} 条待下载`
     + (state.activeJournal != null ? ' · 已按白名单期刊过滤' : '');
+  const batchActions = $('#search-batch-actions');
+  batchActions.hidden = !(
+    state.searchMode === 'online'
+    && state.activeSearchId != null
+    && state.searchBatchDecision !== 'discarded'
+  );
+  $('#save-search-batch').hidden = state.searchBatchDecision === 'saved';
+  $('#discard-search-batch').textContent = state.searchBatchDecision === 'saved'
+    ? '撤销已保存批次'
+    : '撤销本次结果';
   const wrap = $('#search-results');
   if (!state.results.length) {
     wrap.innerHTML = `<div class="empty-state">${state.searched
-      ? '没有命中文献<br>可放宽年份区间、清除期刊筛选，或点击「在线同步并检索」更新元数据'
-      : '输入关键词后检索本地库，或从学术 API 在线同步'}</div>`;
+      ? '没有命中文献<br>可切换 OR、放宽年份区间、清除期刊筛选，或点击「联网搜索」更新元数据'
+      : '输入关键词后检索本地库，或在白名单期刊中联网搜索'}</div>`;
     $('#search-pager').hidden = true;
     return;
   }
@@ -443,7 +920,7 @@ function setOnlineSearchBusy(busy, label) {
   $('#do-search').disabled = busy;
   const button = $('#do-online-search');
   button.disabled = busy;
-  button.textContent = label || (busy ? '在线同步中…' : '在线同步并检索');
+  button.textContent = label || (busy ? '联网搜索中…' : '联网搜索');
 }
 
 function waitForOnlineSearchPoll(milliseconds) {
@@ -457,30 +934,48 @@ async function waitForCrawlJobs(jobIds) {
     const finished = jobs.filter((job) => ['success', 'failed'].includes(job.status));
     const newPapers = jobs.reduce((total, job) => total + Number(job.papers_new || 0), 0);
     $('#search-meta').textContent =
-      `在线同步中：${finished.length}/${jobs.length} 个期刊完成 · 已新增 ${newPapers} 篇`;
+      `联网搜索中：${finished.length}/${jobs.length} 个期刊完成 · 已新增 ${newPapers} 篇`;
     setOnlineSearchBusy(true, `同步中 ${finished.length}/${jobs.length}`);
     if (finished.length === jobs.length) return jobs;
     await waitForOnlineSearchPoll(1000);
   }
-  throw new Error('在线同步等待超过 30 分钟；后台任务可能仍在运行，请稍后重试本地检索');
+  throw new Error('联网搜索等待超过 30 分钟；后台任务可能仍在运行，请稍后重试本地检索');
 }
 
 async function runOnlineSearch() {
   if (state.onlineSyncing) return;
   const query = state.query.trim();
-  if (!query) {
+  const searchTerms = parseSearchTerms(query);
+  if (!searchTerms.length) {
     toast('请先输入在线检索关键词', true);
     $('#search-q').focus();
     return;
   }
   setOnlineSearchBusy(true);
-  $('#search-meta').textContent = '正在创建 OpenAlex / Crossref 在线同步任务…';
-  const body = Object.assign({ period: 'manual', search_query: query }, onlineDateRange());
+  $('#search-meta').textContent = '正在检查本地缓存并创建 OpenAlex / Crossref 搜索任务…';
+  const body = Object.assign({
+    period: 'manual',
+    search_terms: searchTerms,
+    search_mode: state.queryMode,
+    max_results: state.resultLimit,
+  }, onlineDateRange());
   if (state.activeJournal != null) body.journal_ids = [state.activeJournal];
   try {
     const accepted = await api('/crawl/run', { method: 'POST', body });
     const jobIds = (accepted.jobs || []).map((job) => job.job_id);
-    if (!jobIds.length) throw new Error('在线同步没有创建任何期刊任务');
+    state.activeSearchId = accepted.search_id == null ? null : Number(accepted.search_id);
+    state.searchBatchDecision = accepted.decision_status || 'preview';
+    if (accepted.cache_hit) {
+      state.searchMode = 'online';
+      state.syncSummary = {
+        cacheHit: true,
+        cacheTtlHours: Number(accepted.cache_ttl_hours || 24),
+      };
+      await runSearch(true, { keepSyncSummary: true });
+      toast(`已复用本地缓存，最多返回 ${state.resultLimit} 篇`);
+      return;
+    }
+    if (!jobIds.length) throw new Error('联网搜索没有创建任何期刊任务');
     const jobs = await waitForCrawlJobs(jobIds);
     const succeeded = jobs.filter((job) => job.status === 'success');
     const failed = jobs.filter((job) => job.status === 'failed');
@@ -490,21 +985,51 @@ async function runOnlineSearch() {
       succeeded: succeeded.length,
       failed: failed.length,
       newPapers: jobs.reduce((total, job) => total + Number(job.papers_new || 0), 0),
+      cacheHit: false,
     };
     await runSearch(true, { keepSyncSummary: true });
-    if (failed.length) toast(`${failed.length} 个期刊同步失败，已展示其余结果`, true);
-    else toast('在线同步完成，已刷新本地结果');
+    if (failed.length) toast(`${failed.length} 个期刊搜索失败，已展示其余结果`, true);
+    else toast(`联网搜索完成，最多返回 ${state.resultLimit} 篇`);
   } catch (e) {
-    $('#search-meta').textContent = `在线同步失败：${e.message} · 本地结果未改变`;
-    toast(`在线同步失败：${e.message}`, true);
+    $('#search-meta').textContent = `联网搜索失败：${e.message} · 本地结果未改变`;
+    toast(`联网搜索失败：${e.message}`, true);
   } finally {
     setOnlineSearchBusy(false);
+  }
+}
+
+async function saveOnlineSearchBatch() {
+  if (state.activeSearchId == null) return;
+  try {
+    const result = await api(`/crawl/searches/${state.activeSearchId}/save`, { method: 'POST' });
+    state.searchBatchDecision = result.decision_status;
+    renderResults();
+    toast(`已保存 ${result.saved_count} 篇新论文到本地库`);
+  } catch (e) {
+    toast(`保存搜索结果失败：${e.message}`, true);
+  }
+}
+
+async function discardOnlineSearchBatch() {
+  if (state.activeSearchId == null) return;
+  if (!window.confirm('撤销本次联网搜索结果？\n\n仅本次新增且没有 PDF 或其他引用的预览论文会被删除。')) return;
+  try {
+    const result = await api(`/crawl/searches/${state.activeSearchId}`, { method: 'DELETE' });
+    state.searchMode = 'local';
+    state.activeSearchId = null;
+    state.searchBatchDecision = result.decision_status;
+    state.syncSummary = null;
+    await runSearch(true);
+    toast(`已撤销：删除 ${result.removed_count} 篇，安全保留 ${result.preserved_count} 篇`);
+  } catch (e) {
+    toast(`撤销搜索结果失败：${e.message}`, true);
   }
 }
 
 function paperCard(p) {
   const expanded = !!state.expanded[p.id];
   const marked = persisted.marked.some((m) => m.id === p.id);
+  const downloadInfo = downloadAvailability(p);
   const journal = state.journals.find((j) => j.id === p.journal_id);
   const zone = journal && journal.sci_zone
     ? `<span class="zone ${zoneClass(journal.sci_zone)}">${esc(journal.sci_zone)}</span>` : '';
@@ -516,6 +1041,9 @@ function paperCard(p) {
   const zhBlock = zh
     ? `<div class="abs-zh ${zh.muted ? 'muted' : ''}"><span class="tag">摘要翻译</span>${esc(zh.text)}</div>`
     : '';
+  const markButton = downloadInfo.supported
+    ? `<button class="btn-ghost sm mark-btn ${marked ? 'on' : ''}" data-act="mark">${marked ? '✓ 已在清单' : '加入待下载'}</button>`
+    : `<button class="btn-ghost sm mark-btn" disabled title="${esc(downloadInfo.reason)}">暂不支持下载</button>`;
   return `<div class="card" data-paper="${p.id}">
     <div class="card-top">
       <div class="flex">
@@ -529,7 +1057,7 @@ function paperCard(p) {
           ${cats}
         </div>
       </div>
-      <button class="btn-ghost sm mark-btn ${marked ? 'on' : ''}" data-act="mark">${marked ? '✓ 已在清单' : '加入待下载'}</button>
+      ${markButton}
     </div>
     <div class="abs ${expanded ? '' : 'clamp'}" data-act="expand">${esc(p.abstract || '（该条元数据没有摘要）')}</div>
     ${zhBlock}
@@ -571,13 +1099,51 @@ async function showAbstractTranslation(paperId) {
 }
 
 /* ── 待下载清单 ── */
+function downloadAvailability(paper) {
+  const value = String((paper && paper.oa_pdf_url) || '').trim();
+  if (!value) {
+    const status = String((paper && paper.oa_status) || '').toLowerCase();
+    if (status === 'closed') return { supported: false, reason: '未发现开放全文' };
+    if (status === 'unknown') return { supported: false, reason: '开放权限未知' };
+    if (['gold', 'green', 'hybrid', 'bronze'].includes(status)) {
+      return { supported: false, reason: '暂无可用 PDF 直链' };
+    }
+    return { supported: false, reason: '未提供开放全文链接' };
+  }
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase();
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      return { supported: false, reason: '全文链接协议不受支持' };
+    }
+    if (hostname === 'example.test' || hostname.endsWith('.example.test')) {
+      return { supported: false, reason: '测试数据不支持下载' };
+    }
+    return { supported: true, reason: '', url: url.href };
+  } catch (error) {
+    return { supported: false, reason: '全文链接无效' };
+  }
+}
+
+function currentMarkedPaper(marked) {
+  const current = state.results.find((paper) => paper.id === marked.id)
+    || state.paperCache[marked.id];
+  return current ? Object.assign({}, marked, current) : marked;
+}
+
 function toggleMark(paper) {
+  const downloadInfo = downloadAvailability(paper);
+  if (!downloadInfo.supported) {
+    toast(`暂不支持下载：${downloadInfo.reason}`, true);
+    return;
+  }
   const index = persisted.marked.findIndex((m) => m.id === paper.id);
   if (index >= 0) persisted.marked.splice(index, 1);
   else {
     persisted.marked.push({
       id: paper.id, doi: paper.doi || '', title: paper.title,
       journal: paper.journal_name || '', year: paper.published_year || '',
+      oa_status: paper.oa_status || 'unknown', oa_pdf_url: downloadInfo.url,
     });
   }
   saveStore();
@@ -588,18 +1154,132 @@ function toggleMark(paper) {
 function renderMarked() {
   $$('[data-marked-count]').forEach((node) => { node.textContent = persisted.marked.length; });
   const body = $('#drawer-body');
+  const summary = $('#download-summary');
+  const batchButton = $('#download-marked');
+  const entries = persisted.marked.map(currentMarkedPaper);
+  const availableCount = entries.filter((paper) => downloadAvailability(paper).supported).length;
+  const unsupportedCount = entries.length - availableCount;
+  summary.textContent = persisted.marked.length
+    ? `可下载 ${availableCount} 篇 · 不支持 ${unsupportedCount} 篇`
+    : '尚未加入待下载文章';
+  batchButton.disabled = availableCount === 0 || state.batchDownloading;
+  batchButton.textContent = state.batchDownloading
+    ? '正在下载开放全文…'
+    : availableCount
+    ? `一键下载可用全文（${availableCount}）`
+    : '一键下载可用全文';
   if (!persisted.marked.length) {
     body.innerHTML = '<div class="drawer-empty">清单为空<br>在检索结果中点击「加入待下载」收集 DOI</div>';
     return;
   }
-  body.innerHTML = persisted.marked.map((m, i) => `<div class="mk">
-    <div class="t">${esc(m.title)}</div>
+  body.innerHTML = entries.map((m, i) => {
+    const info = downloadAvailability(m);
+    const downloadState = state.markedDownloadState[m.id];
+    const status = {
+      downloading: { label: '下载中', className: 'downloading' },
+      downloaded: { label: '已下载', className: 'downloaded' },
+      failed: { label: '失败', className: 'failed' },
+    }[downloadState];
+    const label = status ? status.label : (info.supported ? '可下载' : '不支持下载');
+    const statusClass = status ? status.className : (info.supported ? 'ok' : 'off');
+    const busy = downloadState === 'downloading';
+    return `<div class="mk">
+    <div class="mk-top">
+      <div class="t">${esc(m.title)}</div>
+      <span class="mk-status ${statusClass}">${label}</span>
+    </div>
     <div class="r">
       <span class="d">${esc(m.doi || '无 DOI')}</span>
       <span class="m">${esc([m.journal, m.year].filter(Boolean).join(' · '))}</span>
       <div class="spacer"></div>
+      <button class="mk-download" data-download-marked="${i}" ${info.supported && !busy ? '' : 'disabled'}>${busy ? '下载中…' : (info.supported ? '下载' : '不支持')}</button>
       <button class="rm" data-unmark="${i}">移除</button>
-    </div></div>`).join('');
+    </div>
+    ${info.supported ? '' : `<div class="mk-reason">${esc(info.reason)}</div>`}
+  </div>`;
+  }).join('');
+}
+
+async function refreshMarkedDownloadInfo() {
+  if (!persisted.marked.length) return;
+  const papers = await Promise.all(
+    persisted.marked.map((marked) => apiOrNull(`/papers/${marked.id}`))
+  );
+  papers.forEach((paper, index) => {
+    if (!paper) return;
+    persisted.marked[index] = Object.assign({}, persisted.marked[index], {
+      doi: paper.doi || persisted.marked[index].doi || '',
+      title: paper.title || persisted.marked[index].title,
+      journal: paper.journal_name || persisted.marked[index].journal || '',
+      year: paper.published_year || persisted.marked[index].year || '',
+      oa_status: paper.oa_status || 'unknown',
+      oa_pdf_url: paper.oa_pdf_url || '',
+    });
+    state.paperCache[paper.id] = paper;
+  });
+  saveStore();
+  renderMarked();
+}
+
+function attachmentFilename(response, paper) {
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (encoded) {
+    try { return decodeURIComponent(encoded[1]); } catch (error) { /* 使用回退文件名 */ }
+  }
+  const plain = disposition.match(/filename="?([^";]+)"?/i);
+  return plain ? plain[1] : `paper-${paper.id}.pdf`;
+}
+
+async function launchPaperDownload(paper) {
+  const info = downloadAvailability(paper);
+  if (!info.supported) return false;
+  const response = await fetch(`${API}/papers/${encodeURIComponent(paper.id)}/download`);
+  if (!response.ok) {
+    const text = await response.text();
+    let payload = null;
+    try { payload = text ? JSON.parse(text) : null; } catch (error) { payload = null; }
+    const detail = payload && payload.error;
+    throw new Error(detail ? detail.message : `PDF 下载失败（HTTP ${response.status}）`);
+  }
+  const blob = await response.blob();
+  download(attachmentFilename(response, paper), blob, blob.type || 'application/pdf');
+  return true;
+}
+
+async function downloadMarkedPapers() {
+  if (state.batchDownloading) return;
+  const entries = persisted.marked.map(currentMarkedPaper);
+  const available = entries.filter((paper) => downloadAvailability(paper).supported);
+  const unsupported = entries.length - available.length;
+  if (!available.length) {
+    toast('清单中没有支持下载的开放全文', true);
+    return;
+  }
+  state.batchDownloading = true;
+  renderMarked();
+  let downloaded = 0;
+  let failed = 0;
+  for (const paper of available) {
+    state.markedDownloadState[paper.id] = 'downloading';
+    renderMarked();
+    try {
+      await launchPaperDownload(paper);
+      state.markedDownloadState[paper.id] = 'downloaded';
+      downloaded += 1;
+    } catch (error) {
+      state.markedDownloadState[paper.id] = 'failed';
+      failed += 1;
+    }
+    renderMarked();
+  }
+  state.batchDownloading = false;
+  renderMarked();
+  toast(
+    `已下载 ${downloaded} 篇${failed ? ` · ${failed} 篇失败` : ''}`
+      + `${unsupported ? ` · ${unsupported} 篇不支持` : ''}`,
+    failed > 0
+  );
 }
 
 /* ── 文献库 ── */
@@ -673,8 +1353,6 @@ function ragTag(doc, meta) {
 }
 
 function renderLibrary() {
-  $('#lib-sub').textContent =
-    `共 ${state.documents.length} 篇 · 上传 PDF 后按 file_hash 去重，可依次执行解析 / 翻译 / 索引`;
   const grid = $('#lib-grid');
   if (!state.documents.length) {
     grid.innerHTML = '<div class="empty-state">文献库为空<br>上传第一份 PDF 开始解析与翻译</div>';
@@ -775,11 +1453,12 @@ async function uploadFiles(files) {
     const form = new FormData();
     form.append('file', file);
     if (paperId) form.append('paper_id', paperId);
+    form.append('auto_process', 'true');
+    form.append('target_lang', persisted.targetLang);
     try {
       const doc = await api('/documents', { method: 'POST', body: form });
       assignToProject(doc.id);
-      toast(`${file.name} 已上传，正在解析…`);
-      api(`/documents/${doc.id}/parse`, { method: 'POST' }).catch(() => {});
+      toast(`${file.name} 已上传，正在自动处理…`);
     } catch (e) {
       if (e.status === 409 && e.payload && e.payload.error && e.payload.error.details) {
         const existing = e.payload.error.details.document;
@@ -818,17 +1497,177 @@ async function docAction(docId, action) {
   setTimeout(loadLibrary, 600);
 }
 
+/* ── 术语表管理 ── */
+function glossaryTermById(id) {
+  return glossaryTerms().find((term) => term.id === String(id));
+}
+
+function glossaryTermForText(text) {
+  const normalized = String(text || '').trim().toLowerCase();
+  if (!normalized) return null;
+  return glossaryTerms().find((term) =>
+    term.en.toLowerCase() === normalized || term.zh.toLowerCase() === normalized) || null;
+}
+
+function renderGlossaryManager() {
+  const list = $('#glossary-manager-list');
+  const summary = $('#glossary-manager-summary');
+  const search = $('#glossary-search');
+  if (!list || !summary || !search) return;
+  if (search.value !== state.glossaryQuery) search.value = state.glossaryQuery;
+  const query = state.glossaryQuery.trim().toLowerCase();
+  const terms = glossaryTerms().filter((term) =>
+    !query || `${term.en} ${term.zh}`.toLowerCase().includes(query));
+  const pending = glossaryTerms().filter((term) => !term.en || !term.zh).length;
+  summary.textContent = `${glossaryTerms().length} 个术语${pending ? ` · ${pending} 个待补充译名` : ''}`;
+  if (!terms.length) {
+    list.innerHTML = `<div class="glossary-manager-empty">${
+      glossaryTerms().length ? '没有匹配的术语' : '术语表为空，可在上方添加或从阅读页选词加入'
+    }</div>`;
+    return;
+  }
+  list.innerHTML = terms.map((term) => {
+    const incomplete = !term.en || !term.zh;
+    return `<div class="glossary-manager-row" data-glossary-row="${esc(term.id)}">
+      <div class="glossary-term-value ${term.en ? '' : 'pending'}">${esc(term.en || '待补充英文')}</div>
+      <div class="glossary-term-value ${term.zh ? '' : 'pending'}">${esc(term.zh || '待补充中文')}</div>
+      <div class="glossary-row-state">${incomplete ? '<span>待完善</span>' : ''}</div>
+      <div class="glossary-row-actions">
+        <button class="btn-ghost sm" type="button" data-glossary-edit="${esc(term.id)}">编辑</button>
+        <button class="btn-ghost sm danger" type="button" data-glossary-delete="${esc(term.id)}">删除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setGlossaryFormMessage(message, bad) {
+  const node = $('#glossary-form-message');
+  node.textContent = message || '';
+  node.classList.toggle('bad', !!bad);
+  node.hidden = !message;
+}
+
+function resetGlossaryForm() {
+  state.glossaryEditingId = null;
+  $('#glossary-form').reset();
+  $('#glossary-form-title').textContent = '新增术语';
+  $('#glossary-submit').textContent = '加入术语表';
+  $('#glossary-cancel').hidden = true;
+  setGlossaryFormMessage('', false);
+}
+
+function editGlossaryTerm(id) {
+  const term = glossaryTermById(id);
+  if (!term) return;
+  state.glossaryEditingId = term.id;
+  $('#glossary-en').value = term.en;
+  $('#glossary-zh').value = term.zh;
+  $('#glossary-form-title').textContent = '编辑术语';
+  $('#glossary-submit').textContent = '保存修改';
+  $('#glossary-cancel').hidden = false;
+  setGlossaryFormMessage('', false);
+  (term.en ? $('#glossary-en') : $('#glossary-zh')).focus();
+}
+
+function glossaryFormValidation(en, zh, excludedId) {
+  if (!en && !zh) return '英文术语和中文译名至少填写一项。';
+  if (en.length > MAX_GLOSSARY_TERM_LENGTH || zh.length > MAX_GLOSSARY_TERM_LENGTH) {
+    return `单项术语不能超过 ${MAX_GLOSSARY_TERM_LENGTH} 个字符。`;
+  }
+  const duplicate = glossaryTerms().find((term) =>
+    term.id !== excludedId && (
+      (en && term.en.toLowerCase() === en.toLowerCase())
+      || (zh && term.zh.toLowerCase() === zh.toLowerCase())
+    ));
+  return duplicate ? `术语表中已存在「${duplicate.en || duplicate.zh}」。` : '';
+}
+
+function saveGlossaryTerm() {
+  const en = $('#glossary-en').value.trim().replace(/\s+/g, ' ');
+  const zh = $('#glossary-zh').value.trim().replace(/\s+/g, ' ');
+  const editingId = state.glossaryEditingId;
+  const validation = glossaryFormValidation(en, zh, editingId);
+  if (validation) {
+    setGlossaryFormMessage(validation, true);
+    return;
+  }
+  if (editingId) {
+    const term = glossaryTermById(editingId);
+    if (!term) {
+      setGlossaryFormMessage('找不到要编辑的术语，请刷新后重试。', true);
+      return;
+    }
+    term.en = en;
+    term.zh = zh;
+    toast(`已更新术语「${en || zh}」`);
+  } else {
+    glossaryTerms().unshift({ id: `g${Date.now().toString(36)}`, en, zh });
+    toast(`已加入术语「${en || zh}」`);
+  }
+  saveStore();
+  resetGlossaryForm();
+  renderGlossaryManager();
+  renderGlossbar();
+  renderParas();
+}
+
+function deleteGlossaryTerm(id) {
+  const term = glossaryTermById(id);
+  if (!term) return;
+  if (!window.confirm(`确认删除术语「${term.en || term.zh}」？\n\n删除后，正文中的对应高亮也会消失。`)) return;
+  persisted.glossaryTerms = glossaryTerms().filter((item) => item.id !== term.id);
+  if (state.glossaryEditingId === term.id) resetGlossaryForm();
+  saveStore();
+  renderGlossaryManager();
+  renderGlossbar();
+  renderParas();
+  toast(`已删除术语「${term.en || term.zh}」`);
+}
+
+function addSelectionToGlossary() {
+  const selected = state.selection;
+  if (!selected) return;
+  const text = selected.text.trim().replace(/\s+/g, ' ');
+  if (!text || text.length > MAX_GLOSSARY_TERM_LENGTH) {
+    toast(`术语应为 ${MAX_GLOSSARY_TERM_LENGTH} 个字符以内的词或短语`, true);
+    return;
+  }
+  const existing = glossaryTermForText(text);
+  if (existing) {
+    hideSelectionPopover();
+    toast(`「${text}」已在术语表中`);
+    return;
+  }
+  const isChinese = selected.lang === 'zh' || (
+    selected.lang !== 'en' && /[\u3400-\u9fff]/.test(text)
+  );
+  glossaryTerms().unshift({
+    id: `g${Date.now().toString(36)}`,
+    en: isChinese ? '' : text,
+    zh: isChinese ? text : '',
+  });
+  saveStore();
+  hideSelectionPopover();
+  renderGlossbar();
+  renderParas();
+  toast(`已加入「${text}」；可在术语表管理补充译名`);
+}
+
 /* ── 双语阅读 ── */
 function readerCandidates() {
   const project = persisted.projects.find((p) => p.id === state.readerProject);
-  const pool = project
+  let pool = project
     ? state.documents.filter((d) => project.docs.includes(d.id))
     : state.documents;
+  pool = pool.filter((doc) => documentMatchesCategory(doc, state.readerCategory));
   const q = state.readerSearch.trim().toLowerCase();
   if (!q) return pool;
   return pool.filter((d) => {
     const paper = d.paper || {};
-    return `${docTitle(d)} ${paper.doi || ''} ${paper.journal_name || ''}`.toLowerCase().includes(q);
+    const categoryText = ((documentPaper(d) || {}).category_details || [])
+      .map((category) => `${category.name} ${category.slug}`).join(' ');
+    return `${docTitle(d)} ${paper.doi || ''} ${paper.journal_name || ''} ${categoryText}`
+      .toLowerCase().includes(q);
   });
 }
 
@@ -838,21 +1677,39 @@ function renderReaderBar() {
     persisted.projects.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`)
   ).join('');
   select.value = state.readerProject;
+  $('#reader-category').innerHTML = categoryOptions(state.readerCategory);
 
   $('#reader-modes').innerHTML = [
     { k: 'both', l: '对照' }, { k: 'zh', l: '仅中文' }, { k: 'en', l: '仅英文' },
+    { k: 'qa', l: 'AI 问答' },
   ].map((m) => `<button data-mode="${m.k}" class="${state.readerMode === m.k ? 'on' : ''}">${m.l}</button>`).join('');
 
   const current = state.documents.find((d) => d.id === state.readerDocId);
   $('#reader-search').placeholder = current ? docTitle(current).slice(0, 64) : '搜索文献…';
   $('#font-label').textContent = `${persisted.fontSize}px`;
   $('#gloss-toggle').classList.toggle('on', persisted.glossary);
-  $('#pane-en').hidden = state.readerMode === 'zh';
-  $('#pane-zh').hidden = state.readerMode === 'en';
+  const retranslate = $('#reader-retranslate');
+  retranslate.disabled = !current || state.readerLoading || state.readerRetranslating;
+  retranslate.dataset.busy = String(state.readerRetranslating);
+  retranslate.textContent = state.readerRetranslating ? '翻译中…' : '再次翻译';
+  retranslate.title = current
+    ? `使用当前翻译引擎重新翻译为 ${state.readerTargetLang}`
+    : '请先选择已解析文献';
+  const qaMode = state.readerMode === 'qa';
+  const readerPanes = $('.reader-panes');
+  readerPanes.classList.toggle('qa-mode', qaMode);
+  $('#reader-qa-language').hidden = !qaMode;
+  $$('#reader-qa-language [data-reader-lang]').forEach((button) => {
+    button.classList.toggle('on', button.dataset.readerLang === state.readerQaLang);
+  });
+  $('#pane-en').hidden = qaMode ? state.readerQaLang !== 'en' : state.readerMode === 'zh';
+  $('#pane-zh').hidden = qaMode ? state.readerQaLang !== 'zh' : state.readerMode === 'en';
+  $('#reader-chat-panel').hidden = !qaMode;
   renderReaderDrop();
   renderGlossbar();
+  renderReaderQa();
   if (!state.readerDocId) {
-    const first = state.documents.find((d) => d.parse_status === 'parsed');
+    const first = readerCandidates().find((d) => d.parse_status === 'parsed');
     if (first) { openReader(first.id); return; }
   }
   renderParas();
@@ -878,8 +1735,12 @@ function renderGlossbar() {
   bar.hidden = !(persisted.glossary && state.page === 'reader');
   if (bar.hidden) return;
   bar.innerHTML = '<span class="lbl">术语表</span>'
-    + GLOSSARY.slice(0, 8).map((g) => `<span class="g">${esc(g.en)} <span>${esc(g.zh)}</span></span>`).join('')
-    + '<span class="hint">选中任意文字可发送到问答</span>';
+    + glossaryTerms().slice(0, 8).map((term) =>
+      `<button class="g" type="button" data-glossary-send="${esc(term.id)}"
+        title="发送到对话：${esc(term.en || term.zh)}">${esc(term.en || '—')} <span>${esc(term.zh || '—')}</span></button>`
+    ).join('')
+    + '<button class="glossbar-manage" type="button" data-open-glossary>管理</button>'
+    + '<span class="hint">选中文字可加入术语表或发送到对话</span>';
 }
 
 async function openReader(docId) {
@@ -910,21 +1771,65 @@ async function openReader(docId) {
   });
   state.readerLoading = false;
   state.translationStatus = translation ? translation.status : null;
+  state.readerTargetLang = (translation && translation.target_lang) || persisted.targetLang || 'zh';
   renderReaderBar();
+}
+
+async function waitForTranslationJob(docId, translationId, timeoutMilliseconds = 120000) {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (Date.now() < deadline) {
+    const translation = await api(`/documents/${docId}/translation`);
+    if (translation.id === translationId && translation.status === 'done') return translation;
+    if (translation.id === translationId && translation.status === 'failed') {
+      throw new Error(translation.error || '翻译任务失败');
+    }
+    await waitForOnlineSearchPoll(900);
+  }
+  throw new Error('翻译等待超时，请稍后重试');
+}
+
+async function retranslateReader() {
+  const docId = state.readerDocId;
+  if (!docId || state.readerRetranslating) return;
+  const targetLang = state.readerTargetLang || persisted.targetLang || 'zh';
+  state.readerRetranslating = true;
+  renderReaderBar();
+  try {
+    const job = await api(`/documents/${docId}/translate`, {
+      method: 'POST',
+      body: { target_lang: targetLang },
+    });
+    toast(`正在使用当前引擎重新翻译（${targetLang}）…`);
+    const translation = await waitForTranslationJob(docId, job.job_id);
+    if (state.docMeta[docId]) state.docMeta[docId].translation = translation;
+    if (state.page === 'reader' && state.readerDocId === docId) await openReader(docId);
+    toast('重新翻译完成，已更新对照内容');
+  } catch (error) {
+    toast(`重新翻译失败：${error.message}`, true);
+  } finally {
+    state.readerRetranslating = false;
+    renderReaderBar();
+  }
 }
 
 function highlight(text, lang) {
   if (!persisted.glossary || !text) return esc(text);
-  const terms = lang === 'en' ? GLOSSARY.map((g) => g.en) : ZH_TERMS;
-  const sorted = terms.slice().sort((a, b) => b.length - a.length)
+  const terms = glossaryTerms()
+    .map((term) => lang === 'en' ? term.en : term.zh)
+    .filter(Boolean);
+  if (!terms.length) return esc(text);
+  const sorted = Array.from(new Set(terms.map((term) => term.toLowerCase())))
+    .sort((a, b) => b.length - a.length)
     .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const re = new RegExp(`(${sorted.join('|')})`, 'gi');
-  return esc(text).split(re).map((part, i) => {
-    if (i % 2 === 0) return part;
+  return String(text).split(re).map((part, i) => {
+    if (i % 2 === 0) return esc(part);
     const g = lang === 'en'
-      ? GLOSSARY.find((x) => x.en.toLowerCase() === part.toLowerCase())
-      : GLOSSARY.find((x) => x.zh === part);
-    return `<span class="term" title="${g ? esc(lang === 'en' ? g.zh : g.en) : ''}">${part}</span>`;
+      ? glossaryTerms().find((term) => term.en.toLowerCase() === part.toLowerCase())
+      : glossaryTerms().find((term) => term.zh.toLowerCase() === part.toLowerCase());
+    const counterpart = g ? (lang === 'en' ? g.zh : g.en) : '';
+    return `<span class="term" role="button" tabindex="0" data-glossary-send="${g ? esc(g.id) : ''}"
+      title="${counterpart ? esc(counterpart) : '发送到对话'}">${esc(part)}</span>`;
   }).join('');
 }
 
@@ -958,6 +1863,118 @@ function renderParas() {
   paneZh.innerHTML = build('zh');
 }
 
+function currentReaderQaThread() {
+  if (!state.readerDocId) return [];
+  const key = String(state.readerDocId);
+  if (!state.readerQaThreads[key]) state.readerQaThreads[key] = [];
+  return state.readerQaThreads[key];
+}
+
+function readerQaReady() {
+  const current = state.documents.find((doc) => doc.id === state.readerDocId);
+  return Boolean(current && current.index_status === 'indexed');
+}
+
+function readerQaEmptyMarkup(ready) {
+  if (!ready) {
+    return `<div class="reader-chat-empty unavailable">
+      <div class="reader-chat-orbit" aria-hidden="true">AI</div>
+      <div class="title">当前论文尚未进入知识库</div>
+      <div class="desc">请先在「文献库」完成解析并建立 RAG 索引，再回到这里提问。</div>
+    </div>`;
+  }
+  const prompts = [
+    '这篇论文的核心结论是什么？',
+    '请梳理实验条件和关键等离子体参数。',
+    '哪些结论有原文证据支持？',
+  ];
+  return `<div class="reader-chat-empty">
+    <div class="reader-chat-orbit" aria-hidden="true">AI</div>
+    <div class="title">边读，边问这篇论文</div>
+    <div class="desc">回答只使用当前论文的已索引段落，并保留可回查引用。</div>
+    <div class="reader-chat-suggestions">
+      ${prompts.map((prompt) => `<button type="button" data-reader-question="${esc(prompt)}">${esc(prompt)}</button>`).join('')}
+    </div>
+  </div>`;
+}
+
+function renderReaderQa() {
+  const panel = $('#reader-chat-panel');
+  if (!panel || panel.hidden) return;
+  const current = state.documents.find((doc) => doc.id === state.readerDocId);
+  const ready = readerQaReady();
+  const input = $('#reader-chat-input');
+  const send = $('#reader-chat-send');
+  $('#reader-chat-context').textContent = current
+    ? docTitle(current)
+    : '选择一篇已解析论文后开始提问';
+  $('#reader-chat-status').textContent = ready ? '当前论文 · 已索引' : '需要 RAG 索引';
+  $('#reader-chat-status').classList.toggle('ready', ready);
+  input.disabled = !ready || state.readerQaTyping;
+  send.disabled = !ready || state.readerQaTyping;
+  input.placeholder = ready ? '针对当前论文提问…' : '当前论文尚未建立 RAG 索引';
+
+  const messages = currentReaderQaThread();
+  const log = $('#reader-chat-log');
+  if (!messages.length && !state.readerQaTyping) {
+    log.innerHTML = readerQaEmptyMarkup(ready);
+    return;
+  }
+  log.innerHTML = messages.map((message, messageIndex) => {
+    if (message.role === 'user') {
+      return `<div class="msg-row user"><div class="bubble">
+        <div class="who">你</div><div class="body">${esc(message.text)}</div></div></div>`;
+    }
+    const sources = message.sources || [];
+    const citations = sources.map((source, sourceIndex) => `<button class="cite"
+      data-reader-cite="${messageIndex}:${sourceIndex}"
+      title="${esc(source.section_title || '')} · 点击跳回左侧原文">[${sourceIndex + 1}·¶${
+        source.section_seq != null ? source.section_seq : '?'}]</button>`).join('');
+    const hits = sources.length
+      ? `<div class="hits">命中 ${sources.length} 个当前论文切块 · 点击引用回到原文</div>`
+      : '';
+    return `<div class="msg-row ai"><div class="bubble">
+      <div class="who">助手 · 当前论文</div>${hits}
+      <div class="body">${esc(message.text)}${citations ? ` ${citations}` : ''}</div>
+    </div></div>`;
+  }).join('') + (state.readerQaTyping
+    ? '<div class="typing"><i></i><i></i><i></i><span>正在检索当前论文并生成回答…</span></div>'
+    : '');
+  log.scrollTop = log.scrollHeight;
+}
+
+async function sendReaderQa(text) {
+  const question = String(text || '').trim();
+  const docId = state.readerDocId;
+  if (!question || state.readerQaTyping || !docId) return;
+  if (!readerQaReady()) {
+    toast('当前论文尚未建立 RAG 索引，请先在文献库完成索引', true);
+    return;
+  }
+  const messages = currentReaderQaThread();
+  messages.push({ role: 'user', text: question });
+  state.readerQaTyping = true;
+  $('#reader-chat-input').value = '';
+  renderReaderQa();
+  try {
+    const data = await api('/rag/query', {
+      method: 'POST',
+      body: { question, document_ids: [docId], top_k: 6 },
+    });
+    messages.push({
+      role: 'ai',
+      text: stripSourceTrailer(data.answer) || '（检索到的切块没有可用内容）',
+      sources: data.sources || [],
+    });
+  } catch (error) {
+    messages.push({ role: 'ai', text: `检索失败：${error.message}`, sources: [] });
+  } finally {
+    state.readerQaTyping = false;
+    renderReaderQa();
+    $('#reader-chat-input').focus();
+  }
+}
+
 let scrollLock = false;
 function syncScroll(src, dst) {
   if (scrollLock || src.hidden || dst.hidden) return;
@@ -983,24 +2000,31 @@ async function jumpToSource(docId, seq) {
 
 /* ── AI 问答 ── */
 function chatDocumentIds() {
-  if (state.chatScope === 'all') return [];
+  const available = indexedDocs();
+  if (state.chatScope === 'all') return state.chatCategory ? available.map((doc) => doc.id) : [];
   if (state.chatScope === 'project') {
     const project = persisted.projects.find((p) => p.id === state.selProject);
-    return project ? project.docs.slice() : [];
+    return project ? available.filter((doc) => project.docs.includes(doc.id)).map((doc) => doc.id) : [];
   }
-  return state.chatDocs.slice();
+  return state.chatDocs.filter((id) => available.some((doc) => doc.id === id));
 }
 
 function indexedDocs() {
-  return state.documents.filter((d) => d.index_status === 'indexed');
+  return state.documents.filter((doc) =>
+    doc.index_status === 'indexed' && documentMatchesCategory(doc, state.chatCategory));
 }
 
-function totalChunks() {
-  return state.documents.reduce((sum, d) => sum + ((state.docMeta[d.id] || {}).chunkTotal || 0), 0);
+function totalChunks(docs) {
+  return (docs || state.documents).reduce(
+    (sum, d) => sum + ((state.docMeta[d.id] || {}).chunkTotal || 0),
+    0
+  );
 }
 
 function renderChatSide() {
-  const chunks = totalChunks();
+  const available = indexedDocs();
+  const chunks = totalChunks(available);
+  const activeTag = categoryBySlug(state.chatCategory);
   const scopes = [
     { k: 'single', l: '单篇文献', h: '精读' },
     { k: 'project', l: '项目问答', h: '跨文献' },
@@ -1009,12 +2033,18 @@ function renderChatSide() {
   $('#scope-opts').innerHTML = scopes.map((s) => `
     <button class="scope-btn ${state.chatScope === s.k ? 'on' : ''}" data-scope="${s.k}">
       <span class="dot"></span>${s.l}<span class="hint">${s.h}</span></button>`).join('');
+  $('#chat-category').innerHTML = categoryOptions(state.chatCategory);
 
   $('#proj-picker').hidden = state.chatScope !== 'project';
   $('#all-note').hidden = state.chatScope !== 'all';
   $('#doc-picker').hidden = state.chatScope !== 'single';
-  $('#all-doc-count').textContent = indexedDocs().length;
+  $('#all-doc-count').textContent = available.length;
   $('#all-chunk-count').textContent = chunks;
+  $('#all-note .allbox').innerHTML = activeTag
+    ? `标签「${esc(activeTag.name)}」匹配 <span id="all-doc-count">${available.length}</span> 篇已索引文献、`
+      + `<span id="all-chunk-count">${chunks}</span> 个切块。`
+    : `全库检索覆盖全部 <span id="all-doc-count">${available.length}</span> 篇文献的 `
+      + `<span id="all-chunk-count">${chunks}</span> 个切块，无需选择文献。`;
 
   if (!state.selProject && persisted.projects.length) state.selProject = persisted.projects[0].id;
   $('#proj-rows').innerHTML = persisted.projects.length
@@ -1026,12 +2056,16 @@ function renderChatSide() {
   const project = persisted.projects.find((p) => p.id === state.selProject);
   $('#proj-docs').innerHTML = ((project && project.docs) || [])
     .map((id) => state.documents.find((d) => d.id === id))
-    .filter(Boolean)
+    .filter((doc) => doc && documentMatchesCategory(doc, state.chatCategory))
     .map((d) => `<div class="proj-doc">${esc(docTitle(d))}</div>`).join('');
 
   const q = state.docSearch.trim().toLowerCase();
-  const docs = indexedDocs().filter((d) => !q
-    || `${docTitle(d)} ${(d.paper && d.paper.doi) || ''}`.toLowerCase().includes(q));
+  const docs = available.filter((d) => {
+    const categoryText = ((documentPaper(d) || {}).category_details || [])
+      .map((category) => `${category.name} ${category.slug}`).join(' ');
+    return !q || `${docTitle(d)} ${(d.paper && d.paper.doi) || ''} ${categoryText}`
+      .toLowerCase().includes(q);
+  });
   $('#doc-opts').innerHTML = docs.length
     ? docs.map((d) => {
       const on = state.chatDocs.includes(d.id);
@@ -1043,18 +2077,111 @@ function renderChatSide() {
     }).join('')
     : '<div class="side-note">没有已建索引的文档，请先在「文献库」执行「建 RAG 索引」</div>';
 
-  $('#presets').innerHTML = PRESETS.map((p, i) => `
-    <button class="preset-btn" data-preset="${i}">
-      <div class="cmd">${esc(p.cmd)}</div><div class="desc">${esc(p.desc)}</div></button>`).join('');
+  $('#presets').innerHTML = allPresets().map((p) => `
+    <div class="preset-item">
+      <button class="preset-btn" data-preset-id="${esc(p.id)}">
+        <div class="cmd">${esc(p.cmd)}</div>
+        <div class="desc">${esc(p.desc || '预设指令')}</div>
+      </button>
+      <div class="preset-actions">
+        <button type="button" title="编辑 ${esc(p.cmd)}" aria-label="编辑 ${esc(p.cmd)}" data-preset-edit="${esc(p.id)}">编辑</button>
+        <button class="danger" type="button" title="删除 ${esc(p.cmd)}" aria-label="删除 ${esc(p.cmd)}" data-preset-delete="${esc(p.id)}">删除</button>
+      </div>
+    </div>`).join('');
+  renderPresetEditor();
 
   const ids = chatDocumentIds();
+  const tagSummary = activeTag ? ` · 标签「${activeTag.name}」` : '';
   $('#scope-summary').textContent = state.chatScope === 'all'
-    ? `范围：全库 RAG · ${indexedDocs().length} 篇 · ${chunks} 个切块向量`
+    ? `范围：全库 RAG${tagSummary} · ${available.length} 篇 · ${chunks} 个切块向量`
     : state.chatScope === 'project'
-      ? `范围：项目「${project ? project.name : '未选择'}」· ${ids.length} 篇`
+      ? `范围：项目「${project ? project.name : '未选择'}」${tagSummary} · ${ids.length} 篇`
       : ids.length
-        ? `范围：单篇精读 · ${docTitle(state.documents.find((d) => d.id === ids[0]) || {})}`
-        : '范围：单篇精读 · 未选择文献';
+        ? `范围：单篇精读${tagSummary} · ${docTitle(state.documents.find((d) => d.id === ids[0]) || {})}`
+        : `范围：单篇精读${tagSummary} · 未选择文献`;
+}
+
+function renderPresetEditor() {
+  const editor = $('#preset-editor');
+  const draft = state.presetEditor;
+  editor.hidden = !draft;
+  $('#preset-error').hidden = true;
+  if (!draft) return;
+  $('#preset-cmd').value = draft.cmd || '';
+  $('#preset-desc').value = draft.desc || '';
+  $('#preset-question').value = draft.q || '';
+}
+
+function openPresetEditor(preset) {
+  state.presetEditor = preset
+    ? { id: preset.id, cmd: preset.cmd, desc: preset.desc, q: preset.q }
+    : { id: null, cmd: '/', desc: '', q: '' };
+  renderPresetEditor();
+  $('#preset-cmd').focus();
+  $('#preset-cmd').setSelectionRange($('#preset-cmd').value.length, $('#preset-cmd').value.length);
+}
+
+function presetEditorError(message) {
+  const error = $('#preset-error');
+  error.textContent = message;
+  error.hidden = false;
+}
+
+async function savePresetEditor() {
+  const draft = state.presetEditor;
+  if (!draft) return;
+  const cmd = normalizePresetCommand($('#preset-cmd').value);
+  const desc = $('#preset-desc').value.trim();
+  const q = $('#preset-question').value.trim();
+  if (!/^\/[^\s/]{1,23}$/.test(cmd)) {
+    presetEditorError('快捷指令需为 / 开头且不能包含空格，最多 24 个字符');
+    $('#preset-cmd').focus();
+    return;
+  }
+  if (!q) {
+    presetEditorError('发送内容不能为空');
+    $('#preset-question').focus();
+    return;
+  }
+  const duplicate = allPresets().find((preset) =>
+    preset.id !== draft.id && preset.cmd.toLowerCase() === cmd.toLowerCase());
+  if (duplicate) {
+    presetEditorError(`快捷指令 ${cmd} 已存在`);
+    $('#preset-cmd').focus();
+    return;
+  }
+  const editing = draft.id != null;
+  try {
+    await api(editing ? `/prompt-presets/${draft.id}` : '/prompt-presets', {
+      method: editing ? 'PUT' : 'POST',
+      body: { command: cmd, description: desc || null, prompt: q },
+    });
+    await loadPresets();
+    state.presetEditor = null;
+    renderChatSide();
+    toast(editing ? `已更新预设 ${cmd}` : `已保存预设 ${cmd}`);
+  } catch (error) {
+    if (error.code === 'prompt_preset_conflict') {
+      presetEditorError(`快捷指令 ${cmd} 已存在`);
+      $('#preset-cmd').focus();
+      return;
+    }
+    presetEditorError(`保存失败：${error.message}`);
+  }
+}
+
+async function deletePreset(id) {
+  const preset = presetById(id);
+  if (!preset || !window.confirm(`删除预设 ${preset.cmd}？`)) return;
+  try {
+    await api(`/prompt-presets/${id}`, { method: 'DELETE' });
+    state.presets = state.presets.filter((item) => String(item.id) !== String(id));
+    if (state.presetEditor && String(state.presetEditor.id) === String(id)) state.presetEditor = null;
+    renderChatSide();
+    toast(`已删除预设 ${preset.cmd}`);
+  } catch (error) {
+    toast(`删除失败：${error.message}`, true);
+  }
 }
 
 function stripSourceTrailer(answer) {
@@ -1104,7 +2231,7 @@ async function sendChat(text) {
   const question = (text || '').trim();
   if (!question || state.typing) return;
   const ids = chatDocumentIds();
-  if (state.chatScope !== 'all' && !ids.length) {
+  if ((state.chatScope !== 'all' || state.chatCategory) && !ids.length) {
     toast('请先在左侧选择文献或项目', true);
     return;
   }
@@ -1137,7 +2264,13 @@ async function sendChat(text) {
 async function relatedPapers(question) {
   const words = question.replace(/[^\w\s一-龥]/g, ' ').split(/\s+/).filter((w) => w.length > 2);
   if (!words.length) return [];
-  const data = await apiOrNull(`/papers?q=${encodeURIComponent(words.slice(0, 4).join(' '))}&sort=relevance&page_size=2`);
+  const params = new URLSearchParams({
+    q: words.slice(0, 4).join(' '),
+    sort: 'relevance',
+    page_size: '2',
+  });
+  if (state.chatCategory) params.set('category', state.chatCategory);
+  const data = await apiOrNull(`/papers?${params.toString()}`);
   return (data && data.items) || [];
 }
 
@@ -1177,7 +2310,6 @@ async function loadChemSet(setId) {
 
 function renderChemistry() {
   const docs = chemistryDocs();
-  $('#reviewer').value = persisted.reviewer;
   $('#chem-docs').innerHTML = docs.length
     ? docs.map((d) => {
       const sets = (state.docMeta[d.id] || {}).reactionSets || [];
@@ -1244,7 +2376,7 @@ function reactionCard(r) {
   const audits = state.chemAudit[r.id] && (r.audit_log || []).length
     ? `<div class="rx-audit"><div class="lbl">复核审计 · ${r.audit_log.length} 条</div>${
       r.audit_log.map((a) => `<div class="row">
-        <span class="who">${esc(a.verified_by || '未署名')}</span> · ${esc(a.action)} · ${esc(a.verified_at || a.created_at)}
+        <span class="who">${esc(reviewerDisplayName(a.verified_by))}</span> · ${esc(a.action)} · ${esc(a.verified_at || a.created_at)}
         ${Object.keys(a.field_changes || {}).length
         ? `<div class="chg">${Object.entries(a.field_changes).map(([k, v]) =>
           `${esc(k)}: ${esc(JSON.stringify(v))}`).join('；')}</div>` : ''}
@@ -1283,8 +2415,12 @@ function reactionCard(r) {
   </div>`;
 }
 
+function reviewerDisplayName(verifiedBy) {
+  return verifiedBy === SELF_REVIEWER ? '本人' : (verifiedBy || '未署名');
+}
+
 function reactionFormPayload(card, verified) {
-  const payload = { verified, verified_by: persisted.reviewer.trim() };
+  const payload = { verified, verified_by: SELF_REVIEWER };
   $$('[data-f]', card).forEach((input) => {
     const field = input.dataset.f;
     const raw = input.value.trim();
@@ -1298,11 +2434,6 @@ function reactionFormPayload(card, verified) {
 }
 
 async function submitReaction(reactionId, card, verified) {
-  if (!persisted.reviewer.trim()) {
-    toast('请先在左侧填写复核人——每次复核都要有可追溯的责任人', true);
-    $('#reviewer').focus();
-    return;
-  }
   const payload = reactionFormPayload(card, verified);
   if (payload.threshold_ev != null && Number.isNaN(payload.threshold_ev)) {
     toast('阈值 eV 必须是数字，或留空表示原文未给出', true);
@@ -1353,10 +2484,29 @@ function bindSearch() {
   $('#search-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(); });
   $('#do-search').addEventListener('click', () => runSearch());
   $('#do-online-search').addEventListener('click', () => runOnlineSearch());
+  $('#save-search-batch').addEventListener('click', () => saveOnlineSearchBatch());
+  $('#discard-search-batch').addEventListener('click', () => discardOnlineSearchBatch());
+  $('#search-mode').addEventListener('change', (e) => {
+    state.queryMode = e.target.value;
+    if (state.searched) runSearch();
+  });
+  $('#search-limit').addEventListener('change', (e) => {
+    state.resultLimit = Number(e.target.value);
+    if (state.searched) runSearch();
+  });
   $('#search-sort').addEventListener('change', (e) => { state.sort = e.target.value; runSearch(); });
   $('#oa-chip').addEventListener('click', (e) => {
     state.oaOnly = !state.oaOnly;
+    if (state.oaOnly) state.downloadOnly = false;
     e.currentTarget.classList.toggle('on', state.oaOnly);
+    $('#download-chip').classList.toggle('on', state.downloadOnly);
+    runSearch();
+  });
+  $('#download-chip').addEventListener('click', (e) => {
+    state.downloadOnly = !state.downloadOnly;
+    if (state.downloadOnly) state.oaOnly = false;
+    e.currentTarget.classList.toggle('on', state.downloadOnly);
+    $('#oa-chip').classList.toggle('on', state.oaOnly);
     runSearch();
   });
   $('#journal-chips').addEventListener('click', (e) => {
@@ -1422,6 +2572,23 @@ function bindSearch() {
   $('[data-page-next]').addEventListener('click', () => { state.searchPage += 1; runSearch(false); });
 }
 
+function bindJournals() {
+  $('#journal-create-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    saveJournalFromWorkbench();
+  });
+  $('#journal-form-reset').addEventListener('click', resetJournalForm);
+  $('#journal-manager-list').addEventListener('click', (event) => {
+    const edit = event.target.closest('[data-journal-edit]');
+    if (edit) {
+      editJournalFromWorkbench(Number(edit.dataset.journalEdit));
+      return;
+    }
+    const remove = event.target.closest('[data-journal-delete]');
+    if (remove) deleteJournalFromWorkbench(Number(remove.dataset.journalDelete));
+  });
+}
+
 function syncYearInputs() {
   $('#year-from').value = state.yearFrom;
   $('#year-to').value = state.yearTo;
@@ -1438,10 +2605,36 @@ function bindDrawer() {
   const drawer = $('#drawer');
   const scrim = $('#scrim');
   const setOpen = (open) => { drawer.classList.toggle('open', open); scrim.hidden = !open; };
-  $('#open-drawer').addEventListener('click', () => setOpen(true));
+  $('#open-drawer').addEventListener('click', () => {
+    setOpen(true);
+    refreshMarkedDownloadInfo();
+  });
   $('#close-drawer').addEventListener('click', () => setOpen(false));
   scrim.addEventListener('click', () => setOpen(false));
-  $('#drawer-body').addEventListener('click', (e) => {
+  $('#drawer-body').addEventListener('click', async (e) => {
+    const downloadButton = e.target.closest('[data-download-marked]');
+    if (downloadButton) {
+      const index = Number(downloadButton.dataset.downloadMarked);
+      const paper = currentMarkedPaper(persisted.marked[index]);
+      const info = downloadAvailability(paper);
+      if (!info.supported) {
+        toast(`暂不支持下载：${info.reason}`, true);
+        return;
+      }
+      if (state.markedDownloadState[paper.id] === 'downloading') return;
+      state.markedDownloadState[paper.id] = 'downloading';
+      renderMarked();
+      try {
+        await launchPaperDownload(paper);
+        state.markedDownloadState[paper.id] = 'downloaded';
+        toast('PDF 已下载');
+      } catch (error) {
+        state.markedDownloadState[paper.id] = 'failed';
+        toast(`PDF 下载失败：${error.message}`, true);
+      }
+      renderMarked();
+      return;
+    }
     const btn = e.target.closest('[data-unmark]');
     if (!btn) return;
     persisted.marked.splice(Number(btn.dataset.unmark), 1);
@@ -1450,6 +2643,7 @@ function bindDrawer() {
     renderResults();
     renderUploadPaperOptions();
   });
+  $('#download-marked').addEventListener('click', downloadMarkedPapers);
   $('#export-txt').addEventListener('click', () => {
     if (!persisted.marked.length) { toast('清单为空', true); return; }
     download('doi-list.txt', persisted.marked.map((m) => m.doi || m.title).join('\n'), 'text/plain');
@@ -1520,7 +2714,7 @@ function bindLibrary() {
     if (tagAct && doc) {
       const editor = tagAct.closest('.tag-editor');
       if (tagAct.dataset.tagAct === 'cancel') { state.tagEditor = null; renderLibrary(); }
-      else if (tagAct.dataset.tagAct === 'create') createCategory($('[data-new-tag]', editor).value, doc.paper_id);
+      else if (tagAct.dataset.tagAct === 'create') createCategory($('[data-new-tag]', editor).value);
       else if (tagAct.dataset.tagAct === 'auto') autoClassify(doc.paper_id);
       else if (tagAct.dataset.tagAct === 'save') {
         saveTags(doc.paper_id, $$('.tag-opt.on', editor).map((b) => Number(b.dataset.tag)));
@@ -1540,11 +2734,67 @@ function bindLibrary() {
   });
 }
 
-function bindChemistry() {
-  $('#reviewer').addEventListener('input', (e) => {
-    persisted.reviewer = e.target.value;
-    saveStore();
+function bindTags() {
+  $('#tag-create-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const name = $('#tag-manage-name').value;
+    const description = $('#tag-manage-description').value;
+    const created = await createCategory(name, description);
+    if (!created) return;
+    $('#tag-manage-name').value = '';
+    $('#tag-manage-description').value = '';
+    $('#tag-manage-name').focus();
   });
+  $('#tag-manager-list').addEventListener('click', (event) => {
+    const edit = event.target.closest('[data-category-edit]');
+    if (edit) {
+      state.categoryEditingId = Number(edit.dataset.categoryEdit);
+      renderTagManager();
+      const input = $('[data-category-edit-name]');
+      input.focus();
+      input.select();
+      return;
+    }
+    const cancel = event.target.closest('[data-category-edit-cancel]');
+    if (cancel) {
+      state.categoryEditingId = null;
+      renderTagManager();
+      return;
+    }
+    const remove = event.target.closest('[data-category-delete]');
+    if (!remove || remove.disabled) return;
+    deleteCategory(Number(remove.dataset.categoryDelete));
+  });
+  $('#tag-manager-list').addEventListener('submit', (event) => {
+    const form = event.target.closest('[data-category-edit-form]');
+    if (!form) return;
+    event.preventDefault();
+    updateCategory(Number(form.dataset.categoryEditForm), form);
+  });
+}
+
+function bindGlossary() {
+  $('#glossary-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    saveGlossaryTerm();
+  });
+  $('#glossary-cancel').addEventListener('click', resetGlossaryForm);
+  $('#glossary-search').addEventListener('input', (event) => {
+    state.glossaryQuery = event.target.value;
+    renderGlossaryManager();
+  });
+  $('#glossary-manager-list').addEventListener('click', (event) => {
+    const edit = event.target.closest('[data-glossary-edit]');
+    if (edit) {
+      editGlossaryTerm(edit.dataset.glossaryEdit);
+      return;
+    }
+    const remove = event.target.closest('[data-glossary-delete]');
+    if (remove) deleteGlossaryTerm(remove.dataset.glossaryDelete);
+  });
+}
+
+function bindChemistry() {
   $('#chem-docs').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-chemdoc]');
     if (btn) loadChemDoc(Number(btn.dataset.chemdoc));
@@ -1572,12 +2822,97 @@ function bindChemistry() {
   });
 }
 
+function hideSelectionPopover() {
+  state.selection = null;
+  $('#selection-popover').hidden = true;
+}
+
+function showSelectionPopover(pane) {
+  const selection = window.getSelection();
+  const popover = $('#selection-popover');
+  if (!selection || selection.isCollapsed || !selection.rangeCount) {
+    hideSelectionPopover();
+    return;
+  }
+  const anchorInPane = pane.contains(selection.anchorNode);
+  const focusInPane = pane.contains(selection.focusNode);
+  const text = selection.toString().trim().replace(/\s+/g, ' ');
+  if (!anchorInPane || !focusInPane || !text) {
+    hideSelectionPopover();
+    return;
+  }
+  const rect = selection.getRangeAt(0).getBoundingClientRect();
+  if (!rect.width && !rect.height) {
+    hideSelectionPopover();
+    return;
+  }
+  state.selection = { text, lang: pane.id === 'pane-zh' ? 'zh' : 'en' };
+  const addButton = $('[data-selection-action="glossary"]', popover);
+  addButton.disabled = text.length > MAX_GLOSSARY_TERM_LENGTH;
+  addButton.title = addButton.disabled
+    ? `词或短语不能超过 ${MAX_GLOSSARY_TERM_LENGTH} 个字符`
+    : '加入当前浏览器的术语表';
+  popover.hidden = false;
+  const gap = 10;
+  const width = popover.offsetWidth;
+  const height = popover.offsetHeight;
+  const center = rect.left + rect.width / 2;
+  const left = Math.max(10, Math.min(center - width / 2, window.innerWidth - width - 10));
+  let top = rect.top - height - gap;
+  const below = top < 52;
+  if (below) top = rect.bottom + gap;
+  popover.style.left = `${left}px`;
+  popover.style.top = `${top}px`;
+  popover.style.setProperty('--selection-pointer-x', `${Math.max(18, Math.min(center - left, width - 18))}px`);
+  popover.classList.toggle('below', below);
+}
+
+function sendTextToChat(text, kind) {
+  const normalized = String(text || '').trim().replace(/\s+/g, ' ');
+  if (!normalized) return;
+  hideSelectionPopover();
+  state.chatScope = 'single';
+  if (state.readerDocId && !state.chatDocs.includes(state.readerDocId)) state.chatDocs = [state.readerDocId];
+  setPage('chat');
+  const question = kind === 'term'
+    ? `请解释术语“${normalized.slice(0, MAX_GLOSSARY_TERM_LENGTH)}”在本文语境中的含义。`
+    : `请解释这段话：“${normalized.slice(0, 160)}”`;
+  $('#chat-input').value = question;
+  state.chatInput = question;
+  renderChatSide();
+  $('#chat-input').focus();
+}
+
 function bindReader() {
+  const applyReaderFilters = () => {
+    state.readerSearch = '';
+    $('#reader-search').value = '';
+    const candidates = readerCandidates();
+    const currentVisible = candidates.some((doc) => doc.id === state.readerDocId);
+    if (currentVisible) {
+      state.readerDropOpen = true;
+      renderReaderBar();
+      return;
+    }
+    const first = candidates.find((doc) => doc.parse_status === 'parsed');
+    if (first) {
+      openReader(first.id);
+      return;
+    }
+    state.readerDocId = null;
+    state.readerParas = [];
+    state.readerDropOpen = true;
+    renderReaderBar();
+  };
   $('#back-to-lib').addEventListener('click', () => setPage('library'));
+  $('#reader-retranslate').addEventListener('click', retranslateReader);
   $('#reader-project').addEventListener('change', (e) => {
     state.readerProject = e.target.value;
-    state.readerSearch = '';
-    renderReaderDrop();
+    applyReaderFilters();
+  });
+  $('#reader-category').addEventListener('change', (e) => {
+    state.readerCategory = e.target.value;
+    applyReaderFilters();
   });
   $('#reader-search').addEventListener('input', (e) => {
     state.readerSearch = e.target.value;
@@ -1602,6 +2937,32 @@ function bindReader() {
     state.readerMode = btn.dataset.mode;
     renderReaderBar();
   });
+  $('#reader-qa-language').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-reader-lang]');
+    if (!btn) return;
+    state.readerQaLang = btn.dataset.readerLang;
+    renderReaderBar();
+  });
+  const readerChatInput = $('#reader-chat-input');
+  readerChatInput.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    sendReaderQa(readerChatInput.value);
+  });
+  $('#reader-chat-send').addEventListener('click', () => sendReaderQa(readerChatInput.value));
+  $('#reader-chat-log').addEventListener('click', (event) => {
+    const suggestion = event.target.closest('[data-reader-question]');
+    if (suggestion) {
+      readerChatInput.value = suggestion.dataset.readerQuestion;
+      readerChatInput.focus();
+      return;
+    }
+    const citation = event.target.closest('[data-reader-cite]');
+    if (!citation) return;
+    const [messageIndex, sourceIndex] = citation.dataset.readerCite.split(':').map(Number);
+    const source = ((currentReaderQaThread()[messageIndex] || {}).sources || [])[sourceIndex];
+    if (source) jumpToSource(source.document_id, source.section_seq);
+  });
   $('#font-dec').addEventListener('click', () => {
     persisted.fontSize = Math.max(12, persisted.fontSize - 1);
     saveStore();
@@ -1621,43 +2982,77 @@ function bindReader() {
     renderGlossbar();
     renderParas();
   });
+  $('#glossbar').addEventListener('click', (event) => {
+    if (event.target.closest('[data-open-glossary]')) {
+      setPage('glossary');
+      return;
+    }
+    const button = event.target.closest('[data-glossary-send]');
+    const term = button && glossaryTermById(button.dataset.glossarySend);
+    if (term) sendTextToChat(term.en || term.zh, 'term');
+  });
   const paneEn = $('#pane-en');
   const paneZh = $('#pane-zh');
-  paneEn.addEventListener('scroll', () => syncScroll(paneEn, paneZh));
-  paneZh.addEventListener('scroll', () => syncScroll(paneZh, paneEn));
+  paneEn.addEventListener('scroll', () => { syncScroll(paneEn, paneZh); hideSelectionPopover(); });
+  paneZh.addEventListener('scroll', () => { syncScroll(paneZh, paneEn); hideSelectionPopover(); });
   [paneEn, paneZh].forEach((pane) => {
     pane.addEventListener('click', (e) => {
+      const glossaryTerm = e.target.closest('[data-glossary-send]');
+      if (glossaryTerm) {
+        const term = glossaryTermById(glossaryTerm.dataset.glossarySend);
+        if (term) sendTextToChat(term.en || term.zh, 'term');
+        return;
+      }
+      if ((window.getSelection() || '').toString().trim()) return;
       const para = e.target.closest('[data-para]');
       if (!para) return;
       const seq = Number(para.dataset.para);
       state.activePara = state.activePara === seq ? null : seq;
-      renderParas();
+      $$('.para').forEach((node) => {
+        node.classList.toggle('on', Number(node.dataset.para) === state.activePara);
+      });
     });
-    pane.addEventListener('mouseup', (e) => {
-      const text = (window.getSelection() || '').toString().trim();
-      const btn = $('#sel-btn');
-      if (text.length > 3) {
-        state.selection = text;
-        btn.style.left = `${Math.min(e.clientX, window.innerWidth - 170)}px`;
-        btn.style.top = `${Math.max(56, e.clientY - 48)}px`;
-        btn.hidden = false;
-      } else {
-        state.selection = null;
-        btn.hidden = true;
-      }
+    pane.addEventListener('keydown', (event) => {
+      const glossaryTerm = event.target.closest('[data-glossary-send]');
+      if (!glossaryTerm || !['Enter', ' '].includes(event.key)) return;
+      event.preventDefault();
+      const term = glossaryTermById(glossaryTerm.dataset.glossarySend);
+      if (term) sendTextToChat(term.en || term.zh, 'term');
+    });
+    pane.addEventListener('mouseup', () => {
+      requestAnimationFrame(() => showSelectionPopover(pane));
     });
   });
-  $('#sel-btn').addEventListener('click', () => {
-    const text = state.selection || '';
-    $('#sel-btn').hidden = true;
-    state.selection = null;
-    state.chatScope = 'single';
-    if (state.readerDocId && !state.chatDocs.includes(state.readerDocId)) state.chatDocs = [state.readerDocId];
-    setPage('chat');
-    const question = `请解释这段话：“${text.slice(0, 160)}”`;
-    $('#chat-input').value = question;
-    state.chatInput = question;
-    renderChatSide();
+  const selectionPopover = $('#selection-popover');
+  selectionPopover.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+  });
+  selectionPopover.addEventListener('click', (event) => {
+    const action = event.target.closest('[data-selection-action]');
+    if (!action || action.disabled) return;
+    if (action.dataset.selectionAction === 'glossary') {
+      addSelectionToGlossary();
+      return;
+    }
+    if (action.dataset.selectionAction === 'chat' && state.selection) {
+      sendTextToChat(state.selection.text, 'selection');
+    }
+  });
+  document.addEventListener('mousedown', (event) => {
+    if (!selectionPopover.hidden && !selectionPopover.contains(event.target)
+      && !paneEn.contains(event.target) && !paneZh.contains(event.target)) {
+      hideSelectionPopover();
+    }
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !selectionPopover.hidden) {
+      hideSelectionPopover();
+      const selection = window.getSelection();
+      if (selection) selection.removeAllRanges();
+    }
+  });
+  window.addEventListener('resize', () => {
+    if (!selectionPopover.hidden) hideSelectionPopover();
   });
 }
 
@@ -1674,6 +3069,13 @@ function bindChat() {
     state.selProject = btn.dataset.proj;
     renderChatSide();
   });
+  $('#chat-category').addEventListener('change', (e) => {
+    state.chatCategory = e.target.value;
+    state.chatDocs = state.chatDocs.filter((id) => indexedDocs().some((doc) => doc.id === id));
+    state.docSearch = '';
+    $('#doc-search').value = '';
+    renderChatSide();
+  });
   $('#doc-search').addEventListener('input', (e) => { state.docSearch = e.target.value; renderChatSide(); });
   $('#doc-opts').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-chatdoc]');
@@ -1682,18 +3084,47 @@ function bindChat() {
     renderChatSide();
   });
   $('#presets').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-preset]');
+    const edit = e.target.closest('[data-preset-edit]');
+    if (edit) {
+      openPresetEditor(presetById(edit.dataset.presetEdit));
+      return;
+    }
+    const remove = e.target.closest('[data-preset-delete]');
+    if (remove) {
+      deletePreset(remove.dataset.presetDelete);
+      return;
+    }
+    const btn = e.target.closest('[data-preset-id]');
     if (!btn) return;
-    const preset = PRESETS[Number(btn.dataset.preset)];
+    const preset = presetById(btn.dataset.presetId);
+    if (!preset) return;
     $('#chat-input').value = preset.q;
     state.chatInput = preset.q;
     $('#chat-input').focus();
+  });
+  $('#new-preset').addEventListener('click', () => openPresetEditor());
+  $('#cancel-preset').addEventListener('click', () => {
+    state.presetEditor = null;
+    renderPresetEditor();
+  });
+  $('#preset-editor').addEventListener('submit', (e) => {
+    e.preventDefault();
+    savePresetEditor();
+  });
+  [
+    ['preset-cmd', 'cmd'],
+    ['preset-desc', 'desc'],
+    ['preset-question', 'q'],
+  ].forEach(([elementId, field]) => {
+    $(`#${elementId}`).addEventListener('input', (e) => {
+      if (state.presetEditor) state.presetEditor[field] = e.target.value;
+    });
   });
   const input = $('#chat-input');
   input.addEventListener('input', (e) => {
     state.chatInput = e.target.value;
     const v = e.target.value;
-    const matches = PRESETS.filter((p) => p.cmd.indexOf(v.trim()) === 0);
+    const matches = allPresets().filter((p) => p.cmd.indexOf(v.trim()) === 0);
     state.slashOpen = v.startsWith('/') && !v.includes(' ') && matches.length > 0;
     const pop = $('#slash-pop');
     pop.hidden = !state.slashOpen;
@@ -1708,7 +3139,8 @@ function bindChat() {
   $('#slash-pop').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-slash]');
     if (!btn) return;
-    const preset = PRESETS.find((p) => p.cmd === btn.dataset.slash);
+    const preset = allPresets().find((p) => p.cmd === btn.dataset.slash);
+    if (!preset) return;
     input.value = preset.q;
     state.chatInput = preset.q;
     state.slashOpen = false;
@@ -1733,8 +3165,11 @@ function bindChat() {
 async function boot() {
   bindNav();
   bindSearch();
+  bindJournals();
   bindDrawer();
   bindLibrary();
+  bindTags();
+  bindGlossary();
   bindReader();
   bindChat();
   bindChemistry();
@@ -1744,7 +3179,12 @@ async function boot() {
   setPage('search');
   state.status = await apiOrNull('/system/status');
   renderSysbox();
-  await Promise.all([loadJournals(), loadCategories()]);
+  try {
+    await migrateLegacyPromptPresets();
+  } catch (error) {
+    toast(`旧预设迁移失败：${error.message}`, true);
+  }
+  await Promise.all([loadJournals(), loadCategories(), loadPresets()]);
   await runSearch();
   await ensureLibrary();
 }

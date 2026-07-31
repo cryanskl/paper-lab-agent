@@ -14,6 +14,7 @@ from app.services.classification import get_classifier
 from app.utils import json_dumps, json_loads, now_iso, today_iso
 
 SUBSCRIPT_DIGIT_TRANSLATION = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")
+SEARCH_TERM_SPLIT_RE = re.compile(r"[\n,，;；]+")
 
 
 def normalize_text(value: Any) -> str:
@@ -38,6 +39,62 @@ def normalize_keyword_config(keyword_config: Any) -> tuple[str, list[str]]:
         terms = [terms]
     normalized_terms = [normalize_keyword_text(term) for term in terms if normalize_keyword_text(term)]
     return ("and" if mode == "and" else "or", normalized_terms)
+
+
+def normalize_search_terms(value: Any) -> list[str]:
+    if value is None:
+        return []
+    raw_terms = value if isinstance(value, list) else SEARCH_TERM_SPLIT_RE.split(str(value))
+    normalized_terms = []
+    seen = set()
+    for item in raw_terms:
+        if not isinstance(item, str):
+            continue
+        term = re.sub(r"\s+", " ", unicodedata.normalize("NFKC", item).strip())
+        key = term.casefold()
+        if not term or key in seen:
+            continue
+        seen.add(key)
+        normalized_terms.append(term)
+    return normalized_terms
+
+
+def build_provider_search_query(search_terms: Any, search_mode: str = "or") -> Optional[str]:
+    terms = normalize_search_terms(search_terms)
+    if not terms:
+        return None
+    operator = " AND " if str(search_mode).strip().lower() == "and" else " OR "
+    operands = []
+    for term in terms:
+        escaped = term.replace("\\", "\\\\").replace('"', '\\"')
+        operands.append(f'"{escaped}"' if " " in escaped else escaped)
+    return operator.join(operands)
+
+
+def matches_search_terms(work: dict[str, Any], search_terms: Any, search_mode: str = "or") -> bool:
+    terms = [normalize_keyword_text(term) for term in normalize_search_terms(search_terms)]
+    terms = [term for term in terms if term]
+    if not terms:
+        return True
+    authors = work.get("authors") or []
+    if isinstance(authors, list):
+        author_text = " ".join(
+            str(author.get("name") or author.get("display_name") or "")
+            if isinstance(author, dict)
+            else str(author)
+            for author in authors
+        )
+    else:
+        author_text = str(authors)
+    haystack = normalize_keyword_text(
+        f"{work.get('title') or ''}\n{work.get('abstract') or ''}\n"
+        f"{work.get('doi') or ''}\n{author_text}"
+    )
+    padded_haystack = f" {haystack} "
+    checks = [f" {term} " in padded_haystack for term in terms]
+    if str(search_mode).strip().lower() == "and":
+        return all(checks)
+    return any(checks)
 
 
 def matches_keywords(work: dict[str, Any], keywords: Any) -> bool:
@@ -137,7 +194,14 @@ def build_dedupe_key(journal: dict[str, Any], work: dict[str, Any]) -> Optional[
     return f"no-doi:{hashlib.sha256(fingerprint.encode('utf-8')).hexdigest()}"
 
 
-def upsert_paper_record(conn, journal: dict[str, Any], work: dict[str, Any], oa: dict[str, Any]) -> tuple[bool, int]:
+def upsert_paper_record(
+    conn,
+    journal: dict[str, Any],
+    work: dict[str, Any],
+    oa: dict[str, Any],
+    *,
+    library_status: str = "saved",
+) -> tuple[bool, int]:
     doi = normalize_doi(work.get("doi"))
     dedupe_key = build_dedupe_key(journal, work)
     existing = None
@@ -179,10 +243,10 @@ def upsert_paper_record(conn, journal: dict[str, Any], work: dict[str, Any], oa:
         INSERT INTO papers (
             doi, title, abstract, authors, journal_id, journal_name, published_date,
             published_year, landing_url, oa_status, oa_pdf_url, source_api, dedupe_key, raw_metadata,
-            updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            library_status, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        payload,
+        payload[:-1] + (library_status, payload[-1]),
     )
     return True, cursor.lastrowid
 
@@ -228,8 +292,23 @@ def unpaywall_client_options(settings) -> dict[str, Any]:
     }
 
 
-async def fetch_metadata_works(settings, issn: str, date_from: str, date_to: str) -> tuple[list[dict[str, Any]], Optional[str]]:
+async def fetch_metadata_works(
+    settings,
+    issn: str,
+    date_from: str,
+    date_to: str,
+    *,
+    search_terms: Any = None,
+    search_mode: str = "or",
+    result_limit: Optional[int] = None,
+) -> tuple[list[dict[str, Any]], Optional[str]]:
     client_options = academic_client_options(settings)
+    provider_query = build_provider_search_query(search_terms, search_mode)
+    request_options: dict[str, Any] = {"max_pages": settings.academic_api_max_pages}
+    if provider_query:
+        request_options["search_query"] = provider_query
+    if result_limit is not None:
+        request_options["result_limit"] = result_limit
     openalex_error = None
     openalex_empty = False
     try:
@@ -237,9 +316,7 @@ async def fetch_metadata_works(settings, issn: str, date_from: str, date_to: str
             mailto=settings.openalex_mailto,
             api_key=settings.openalex_api_key,
             **client_options,
-        ).works_by_issn(
-            issn, date_from, date_to, max_pages=settings.academic_api_max_pages
-        )
+        ).works_by_issn(issn, date_from, date_to, **request_options)
         if works:
             return works, None
         openalex_empty = True
@@ -248,7 +325,7 @@ async def fetch_metadata_works(settings, issn: str, date_from: str, date_to: str
 
     try:
         works = await CrossrefClient(settings.openalex_mailto, **client_options).works_by_issn(
-            issn, date_from, date_to, max_pages=settings.academic_api_max_pages
+            issn, date_from, date_to, **request_options
         )
     except Exception as exc:
         if openalex_error:
@@ -268,13 +345,24 @@ async def run_crawl_job(
     journal_id: int,
     date_from: str,
     date_to: str,
-    search_query: Optional[str] = None,
+    search_terms: Any = None,
+    search_mode: str = "or",
+    max_results: int = 50,
 ) -> None:
     settings = get_settings()
     with get_conn() as conn:
         conn.execute(
             "UPDATE crawl_jobs SET status='running', started_at=? WHERE id=?",
             (now_iso(), job_id),
+        )
+        job_row = conn.execute(
+            "SELECT search_history_id FROM crawl_jobs WHERE id=?",
+            (job_id,),
+        ).fetchone()
+        search_history_id = (
+            int(job_row["search_history_id"])
+            if job_row and job_row["search_history_id"] is not None
+            else None
         )
         journal_row = conn.execute("SELECT * FROM journals WHERE id=?", (journal_id,)).fetchone()
         if not journal_row:
@@ -289,19 +377,55 @@ async def run_crawl_job(
         issn = optional_text(journal.get("issn_electronic")) or optional_text(journal.get("issn_print"))
         if not issn:
             raise RuntimeError("journal has no ISSN")
-        works, source_warning = await fetch_metadata_works(settings, issn, date_from, date_to)
+        normalized_search_terms = normalize_search_terms(search_terms)
+        candidate_limit = min(max(max_results, 1) * 2, 200) if normalized_search_terms else None
+        works, source_warning = await fetch_metadata_works(
+            settings,
+            issn,
+            date_from,
+            date_to,
+            search_terms=normalized_search_terms,
+            search_mode=search_mode,
+            result_limit=candidate_limit,
+        )
 
-        keywords = json_loads(journal.get("keywords"), [])
         found = len(works)
         filtered = 0
         new_count = 0
         classification_errors = []
-        unpaywall = UnpaywallClient(settings.unpaywall_email, **unpaywall_client_options(settings))
-        accepted_works = []
+        accepted_candidates = []
         for work in works:
-            if not matches_keywords(work, keywords) or not matches_search_query(work, search_query):
+            if not matches_search_terms(work, normalized_search_terms, search_mode):
                 filtered += 1
                 continue
+            if search_history_id is None and normalized_search_terms and len(accepted_candidates) >= max_results:
+                filtered += 1
+                continue
+            accepted_candidates.append(work)
+
+        if search_history_id is not None:
+            # Reserve the shared cross-journal budget before OA lookups. This keeps
+            # Unpaywall work bounded by max_results even when many journals run in parallel.
+            with get_conn() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    "SELECT result_count FROM search_history WHERE id=?",
+                    (search_history_id,),
+                ).fetchone()
+                allocated = int((row["result_count"] if row else 0) or 0)
+                remaining = max(max_results - allocated, 0)
+                reserved_count = min(len(accepted_candidates), remaining)
+                if len(accepted_candidates) > reserved_count:
+                    filtered += len(accepted_candidates) - reserved_count
+                    accepted_candidates = accepted_candidates[:reserved_count]
+                conn.execute(
+                    "UPDATE search_history SET result_count=? WHERE id=?",
+                    (allocated + reserved_count, search_history_id),
+                )
+
+        unpaywall = UnpaywallClient(settings.unpaywall_email, **unpaywall_client_options(settings))
+        accepted_works = []
+        for work in accepted_candidates:
             oa = {"oa_status": "unknown", "oa_pdf_url": None}
             normalized_doi = normalize_doi(work.get("doi"))
             if normalized_doi:
@@ -315,9 +439,45 @@ async def run_crawl_job(
         # jobs can fetch concurrently, then each journal writes atomically.
         with get_conn() as conn:
             for work, oa in accepted_works:
-                created, paper_id = upsert_paper_record(conn, journal, work, oa)
+                created, paper_id = upsert_paper_record(
+                    conn,
+                    journal,
+                    work,
+                    oa,
+                    library_status="preview" if search_history_id is not None else "saved",
+                )
                 if created:
                     new_count += 1
+                if search_history_id is not None:
+                    paper_row = conn.execute(
+                        "SELECT title, doi, library_status FROM papers WHERE id=?",
+                        (paper_id,),
+                    ).fetchone()
+                    result_status = "preview" if paper_row["library_status"] == "preview" else "existing"
+                    conn.execute(
+                        """
+                        INSERT INTO search_results (
+                            search_history_id, paper_id, paper_title, paper_doi,
+                            was_new, result_status, updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(search_history_id, paper_id) DO UPDATE SET
+                            paper_title=excluded.paper_title,
+                            paper_doi=excluded.paper_doi,
+                            was_new=MAX(search_results.was_new, excluded.was_new),
+                            result_status=excluded.result_status,
+                            updated_at=excluded.updated_at
+                        """,
+                        (
+                            search_history_id,
+                            paper_id,
+                            paper_row["title"],
+                            paper_row["doi"],
+                            int(created),
+                            result_status,
+                            now_iso(),
+                        ),
+                    )
                 try:
                     classify_paper(conn, settings, paper_id)
                 except Exception as exc:
@@ -367,7 +527,11 @@ async def run_crawl_jobs(
     await asyncio.gather(*(run_one(args) for args in task_args))
 
 
-def create_jobs(journal_ids: Optional[list[int]], period: str, date_from: Optional[str], date_to: Optional[str]) -> list[dict[str, Any]]:
+def resolve_job_specs(
+    journal_ids: Optional[list[int]],
+    date_from: Optional[str],
+    date_to: Optional[str],
+) -> list[dict[str, Any]]:
     date_to = date_to or today_iso()
     with get_conn() as conn:
         if journal_ids:
@@ -382,7 +546,7 @@ def create_jobs(journal_ids: Optional[list[int]], period: str, date_from: Option
                 raise LookupError(f"active journals not found: {', '.join(str(journal_id) for journal_id in missing_ids)}")
         else:
             journals = conn.execute("SELECT * FROM journals WHERE active=1").fetchall()
-        jobs = []
+        specs = []
         for row in journals:
             journal = dict_from_row(row)
             start = date_from
@@ -398,12 +562,43 @@ def create_jobs(journal_ids: Optional[list[int]], period: str, date_from: Option
                 start = last["date_to"] if last else f"{journal.get('year_from') or 1990}-01-01"
             if date.fromisoformat(start) > date.fromisoformat(date_to):
                 raise ValueError(f"date_from must be before or equal to date_to for journal {journal['id']}")
+            specs.append({"journal_id": journal["id"], "date_from": start, "date_to": date_to})
+    return specs
+
+
+def create_jobs(
+    journal_ids: Optional[list[int]],
+    period: str,
+    date_from: Optional[str],
+    date_to: Optional[str],
+    *,
+    search_terms: Any = None,
+    search_mode: Optional[str] = None,
+    max_results: Optional[int] = None,
+    search_history_id: Optional[int] = None,
+) -> list[dict[str, Any]]:
+    specs = resolve_job_specs(journal_ids, date_from, date_to)
+    with get_conn() as conn:
+        jobs = []
+        for spec in specs:
             cursor = conn.execute(
                 """
-                INSERT INTO crawl_jobs (journal_id, period, date_from, date_to, status)
-                VALUES (?, ?, ?, ?, 'pending')
+                INSERT INTO crawl_jobs (
+                    journal_id, period, date_from, date_to, status,
+                    search_terms, search_mode, max_results, search_history_id
+                )
+                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)
                 """,
-                (journal["id"], period, start, date_to),
+                (
+                    spec["journal_id"],
+                    period,
+                    spec["date_from"],
+                    spec["date_to"],
+                    json_dumps(normalize_search_terms(search_terms)) if normalize_search_terms(search_terms) else None,
+                    search_mode,
+                    max_results,
+                    search_history_id,
+                ),
             )
-            jobs.append({"job_id": cursor.lastrowid, "journal_id": journal["id"], "date_from": start, "date_to": date_to})
+            jobs.append({"job_id": cursor.lastrowid, **spec})
         return jobs

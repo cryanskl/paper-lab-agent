@@ -65,6 +65,78 @@ def test_crossref_client_fetches_at_least_one_page_when_max_pages_is_zero():
     assert len(seen_urls) == 1
 
 
+def test_academic_clients_push_down_search_and_stop_at_result_limit():
+    openalex_params = []
+    crossref_params = []
+
+    def openalex_handler(request: httpx.Request) -> httpx.Response:
+        openalex_params.append(dict(request.url.params))
+        return json_response(
+            {
+                "results": [
+                    {"id": "W1", "title": "Surface reaction one"},
+                    {"id": "W2", "title": "Surface reaction two"},
+                    {"id": "W3", "title": "Surface reaction three"},
+                ],
+                "meta": {"next_cursor": "unused"},
+            }
+        )
+
+    def crossref_handler(request: httpx.Request) -> httpx.Response:
+        crossref_params.append(dict(request.url.params))
+        return json_response(
+            {
+                "message": {
+                    "items": [
+                        {"DOI": "10.5555/one", "title": ["Surface reaction one"]},
+                        {"DOI": "10.5555/two", "title": ["Surface reaction two"]},
+                        {"DOI": "10.5555/three", "title": ["Surface reaction three"]},
+                    ],
+                    "next-cursor": "unused",
+                }
+            }
+        )
+
+    openalex = OpenAlexClient(transport=httpx.MockTransport(openalex_handler))
+    crossref = CrossrefClient(transport=httpx.MockTransport(crossref_handler))
+    openalex_works = asyncio.run(
+        openalex.works_by_issn(
+            "1234-5678",
+            "2026-01-01",
+            "2026-01-31",
+            search_query='"surface reaction" OR plasma',
+            result_limit=2,
+        )
+    )
+    crossref_works = asyncio.run(
+        crossref.works_by_issn(
+            "1234-5678",
+            "2026-01-01",
+            "2026-01-31",
+            search_query='"surface reaction" OR plasma',
+            result_limit=2,
+        )
+    )
+
+    assert len(openalex_works) == 2
+    assert openalex_params == [
+        {
+            "filter": (
+                "locations.source.issn:1234-5678,"
+                "from_publication_date:2026-01-01,"
+                "to_publication_date:2026-01-31"
+            ),
+            "per-page": "2",
+            "cursor": "*",
+            "search": '"surface reaction" OR plasma',
+            "sort": "relevance_score:desc",
+        }
+    ]
+    assert len(crossref_works) == 2
+    assert crossref_params[0]["rows"] == "2"
+    assert crossref_params[0]["query.bibliographic"] == '"surface reaction" OR plasma'
+
+
 def test_academic_clients_parse_retry_after_http_date():
     response = httpx.Response(
         429,

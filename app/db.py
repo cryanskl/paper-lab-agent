@@ -8,6 +8,13 @@ from app.config import get_settings
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "docs" / "schema.sql"
 
+DEFAULT_PROMPT_PRESETS = [
+    ("/总结", "总结当前范围内文献的核心结论", "总结当前范围内文献的核心结论、方法与主要数据。"),
+    ("/术语", "提取并解释文中的专业术语", "提取当前范围文献中的关键专业术语，并逐条解释其含义。"),
+    ("/相关工作", "梳理相关工作与研究脉络", "梳理当前范围文献涉及的相关工作与研究脉络。"),
+    ("/提问我", "就所选文献向我提问，考察理解", "就当前范围的文献内容，向我提出两个考察理解的问题。"),
+]
+
 
 def dict_from_row(row: sqlite3.Row) -> dict[str, Any]:
     return {key: row[key] for key in row.keys()}
@@ -99,7 +106,11 @@ def ensure_schema_indexes(conn: sqlite3.Connection) -> None:
         ("idx_papers_journal", "papers", ["journal_id"]),
         ("idx_papers_year", "papers", ["published_year"]),
         ("idx_papers_oa", "papers", ["oa_status"]),
+        ("idx_papers_library_status", "papers", ["library_status"]),
         ("idx_crawljobs_journal", "crawl_jobs", ["journal_id"]),
+        ("idx_search_history_cache", "search_history", ["cache_key", "status", "finished_at"]),
+        ("idx_search_results_search", "search_results", ["search_history_id"]),
+        ("idx_search_results_paper", "search_results", ["paper_id"]),
         ("idx_documents_paper", "documents", ["paper_id"]),
         ("idx_sections_doc", "sections", ["document_id"]),
         ("idx_translations_doc", "translations", ["document_id"]),
@@ -114,7 +125,19 @@ def ensure_schema_indexes(conn: sqlite3.Connection) -> None:
 
 
 def ensure_migrations(conn: sqlite3.Connection) -> None:
+    prompt_presets_existed = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='prompt_presets'"
+    ).fetchone() is not None
     ensure_schema_objects(conn)
+    if not prompt_presets_existed:
+        conn.executemany(
+            """
+            INSERT INTO prompt_presets (command, description, prompt)
+            VALUES (?, ?, ?)
+            """,
+            DEFAULT_PROMPT_PRESETS,
+        )
+        conn.commit()
     journal_columns = {row["name"] for row in conn.execute("PRAGMA table_info(journals)").fetchall()}
     journal_column_specs = {
         "publisher": "TEXT",
@@ -221,6 +244,10 @@ def ensure_migrations(conn: sqlite3.Connection) -> None:
         "papers_found": "INTEGER DEFAULT 0",
         "papers_filtered": "INTEGER DEFAULT 0",
         "papers_new": "INTEGER DEFAULT 0",
+        "search_terms": "TEXT",
+        "search_mode": "TEXT",
+        "max_results": "INTEGER",
+        "search_history_id": "INTEGER",
         "error": "TEXT",
         "started_at": "TEXT",
         "finished_at": "TEXT",
@@ -246,6 +273,7 @@ def ensure_migrations(conn: sqlite3.Connection) -> None:
         "source_api": "TEXT",
         "dedupe_key": "TEXT",
         "raw_metadata": "TEXT",
+        "library_status": "TEXT NOT NULL DEFAULT 'saved'",
         "indexed_at": "TEXT",
         "updated_at": "TEXT",
     }
@@ -254,6 +282,20 @@ def ensure_migrations(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE papers ADD COLUMN {column} {spec}")
             conn.commit()
             paper_columns.add(column)
+    search_history_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(search_history)").fetchall()
+    }
+    search_history_column_specs = {
+        "decision_status": "TEXT NOT NULL DEFAULT 'saved'",
+        "new_result_count": "INTEGER DEFAULT 0",
+        "saved_at": "TEXT",
+        "discarded_at": "TEXT",
+    }
+    for column, spec in search_history_column_specs.items():
+        if column not in search_history_columns:
+            conn.execute(f"ALTER TABLE search_history ADD COLUMN {column} {spec}")
+            conn.commit()
+            search_history_columns.add(column)
     paper_unique_indexes = conn.execute("PRAGMA index_list(papers)").fetchall()
     has_unique_dedupe_key_index = False
     for index in paper_unique_indexes:
@@ -279,13 +321,30 @@ def ensure_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_papers_dedupe_key ON papers(dedupe_key)")
         conn.commit()
     papers_fts = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='papers_fts'").fetchone()
-    fts_can_sync = {"title", "abstract"}.issubset(paper_columns)
+    expected_fts_columns = ["title", "abstract", "authors", "doi"]
+    fts_can_sync = set(expected_fts_columns).issubset(paper_columns)
     fts_needs_rebuild = False
+    if papers_fts is not None:
+        existing_fts_columns = [
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(papers_fts)").fetchall()
+            if row["name"]
+        ]
+        if existing_fts_columns != expected_fts_columns:
+            conn.executescript(
+                """
+                DROP TRIGGER IF EXISTS papers_ai;
+                DROP TRIGGER IF EXISTS papers_ad;
+                DROP TRIGGER IF EXISTS papers_au;
+                DROP TABLE papers_fts;
+                """
+            )
+            papers_fts = None
     if papers_fts is None and fts_can_sync:
         conn.execute(
             """
             CREATE VIRTUAL TABLE papers_fts USING fts5(
-                title, abstract,
+                title, abstract, authors, doi,
                 content='papers', content_rowid='id',
                 tokenize='unicode61'
             )
@@ -293,25 +352,24 @@ def ensure_migrations(conn: sqlite3.Connection) -> None:
         )
         fts_needs_rebuild = True
     if fts_can_sync:
-        existing_triggers = {
-            row["name"]
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='trigger' AND name IN ('papers_ai','papers_ad','papers_au')"
-            ).fetchall()
-        }
-        if existing_triggers != {"papers_ai", "papers_ad", "papers_au"}:
-            fts_needs_rebuild = True
         conn.executescript(
             """
-            CREATE TRIGGER IF NOT EXISTS papers_ai AFTER INSERT ON papers BEGIN
-                INSERT INTO papers_fts(rowid, title, abstract) VALUES (new.id, new.title, new.abstract);
+            DROP TRIGGER IF EXISTS papers_ai;
+            DROP TRIGGER IF EXISTS papers_ad;
+            DROP TRIGGER IF EXISTS papers_au;
+            CREATE TRIGGER papers_ai AFTER INSERT ON papers BEGIN
+                INSERT INTO papers_fts(rowid, title, abstract, authors, doi)
+                VALUES (new.id, new.title, new.abstract, new.authors, new.doi);
             END;
-            CREATE TRIGGER IF NOT EXISTS papers_ad AFTER DELETE ON papers BEGIN
-                INSERT INTO papers_fts(papers_fts, rowid, title, abstract) VALUES ('delete', old.id, old.title, old.abstract);
+            CREATE TRIGGER papers_ad AFTER DELETE ON papers BEGIN
+                INSERT INTO papers_fts(papers_fts, rowid, title, abstract, authors, doi)
+                VALUES ('delete', old.id, old.title, old.abstract, old.authors, old.doi);
             END;
-            CREATE TRIGGER IF NOT EXISTS papers_au AFTER UPDATE ON papers BEGIN
-                INSERT INTO papers_fts(papers_fts, rowid, title, abstract) VALUES ('delete', old.id, old.title, old.abstract);
-                INSERT INTO papers_fts(rowid, title, abstract) VALUES (new.id, new.title, new.abstract);
+            CREATE TRIGGER papers_au AFTER UPDATE ON papers BEGIN
+                INSERT INTO papers_fts(papers_fts, rowid, title, abstract, authors, doi)
+                VALUES ('delete', old.id, old.title, old.abstract, old.authors, old.doi);
+                INSERT INTO papers_fts(rowid, title, abstract, authors, doi)
+                VALUES (new.id, new.title, new.abstract, new.authors, new.doi);
             END;
             """
         )

@@ -198,6 +198,7 @@ def test_web_ui_index_and_assets_are_served(tmp_path):
     index = client.get("/ui/")
     assert index.status_code == 200
     assert "等离子体文献工作台" in index.text
+    assert "PLASMA LITERATURE WORKBENCH" in index.text
 
     for asset in ("/ui/app.js", "/ui/styles.css"):
         assert client.get(asset).status_code == 200
@@ -228,19 +229,142 @@ def test_web_ui_calls_only_documented_api_prefix():
     assert "fetch(API + path" in app_js
 
 
+def test_web_ui_does_not_show_translated_author_names():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "function untranslatedAuthorName(value)" in app_js
+    assert "if (!hasLatin || !hasHan) return name;" in app_js
+    assert ".map((a) => untranslatedAuthorName(" in app_js
+
+
 def test_web_ui_separates_local_search_from_online_sync():
     index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
 
+    assert 'id="search-source"' not in index
+    assert "默认检索本地库 · 在线同步" not in app_js
     assert 'id="do-search">检索本地库</button>' in index
-    assert 'id="do-online-search">在线同步并检索</button>' in index
+    assert 'id="do-online-search">联网搜索</button>' in index
+    assert index.index('id="do-online-search"') < index.index('id="do-search"')
+    assert 'id="search-mode"' in index
+    assert 'id="search-limit"' in index
     assert "async function runOnlineSearch()" in app_js
     assert "api('/crawl/run', { method: 'POST', body })" in app_js
-    assert "search_query: query" in app_js
+    assert "search_terms: searchTerms" in app_js
+    assert "search_mode: state.queryMode" in app_js
+    assert "max_results: state.resultLimit" in app_js
+    assert "if (accepted.cache_hit)" in app_js
     assert "await waitForCrawlJobs(jobIds)" in app_js
     assert "await runSearch(true, { keepSyncSummary: true })" in app_js
     assert "Date.now() + 1800000" in app_js
-    assert "在线同步等待超过 30 分钟" in app_js
+    assert "联网搜索等待超过 30 分钟" in app_js
+
+
+def test_web_ui_library_omits_redundant_file_hash_summary():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="lib-sub"' not in index
+    assert "共 ${state.documents.length} 篇 · 上传 PDF 后按 file_hash 去重" not in app_js
+
+
+def test_web_ui_library_upload_starts_automatic_document_processing():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "自动解析、翻译、建立 RAG 索引并抽取化学库" in index
+    assert "form.append('auto_process', 'true')" in app_js
+    assert "form.append('target_lang', persisted.targetLang)" in app_js
+    assert "${file.name} 已上传，正在自动处理…" in app_js
+    assert "api(`/documents/${doc.id}/parse`, { method: 'POST' }).catch(() => {});" not in app_js
+
+
+def test_web_ui_groups_fulltext_filters_and_keeps_oa_download_modes_exclusive():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert '<span class="chips-label">全文</span>' in index
+    assert 'id="oa-chip" title="只看有开放全文链接的论文">OA</button>' in index
+    assert 'id="download-chip" title="只看系统支持直接下载的论文">下载</button>' in index
+    assert "downloadOnly: false" in app_js
+    assert "params.set('downloadable_only', 'true')" in app_js
+    assert "if (state.oaOnly) state.downloadOnly = false;" in app_js
+    assert "if (state.downloadOnly) state.oaOnly = false;" in app_js
+
+
+def test_web_ui_download_queue_only_launches_supported_oa_fulltext():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert 'id="download-summary"' in index
+    assert 'id="download-marked" disabled>一键下载可用全文</button>' in index
+    assert "function downloadAvailability(paper)" in app_js
+    assert "hostname === 'example.test'" in app_js
+    assert "未发现开放全文" in app_js
+    assert "开放权限未知" in app_js
+    assert "测试数据不支持下载" in app_js
+    assert "async function downloadMarkedPapers()" in app_js
+    assert "entries.filter((paper) => downloadAvailability(paper).supported)" in app_js
+    assert "fetch(`${API}/papers/${encodeURIComponent(paper.id)}/download`)" in app_js
+    assert "const blob = await response.blob()" in app_js
+    assert "state.markedDownloadState[paper.id] = 'downloading'" in app_js
+    assert "state.markedDownloadState[paper.id] = 'downloaded'" in app_js
+    assert "state.markedDownloadState[paper.id] = 'failed'" in app_js
+    assert "已下载 ${downloaded} 篇" in app_js
+    assert "link.target = '_blank'" not in app_js
+    assert ".mk-status.downloading" in styles
+    assert ".mk-status.downloaded" in styles
+    assert ".mk-status.failed" in styles
+    assert ".mk-status.off" in styles
+    assert ".drawer-download-all" in styles
+
+
+def test_web_ui_download_queue_persists_and_refreshes_oa_metadata():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "oa_status: paper.oa_status || 'unknown'" in app_js
+    assert "oa_pdf_url: downloadInfo.url" in app_js
+    assert "async function refreshMarkedDownloadInfo()" in app_js
+    assert "apiOrNull(`/papers/${marked.id}`)" in app_js
+    assert "refreshMarkedDownloadInfo();" in app_js
+    assert "暂不支持下载" in app_js
+
+
+def test_web_ui_reader_can_retranslate_current_document():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="reader-retranslate" disabled>再次翻译</button>' in index
+    assert "async function retranslateReader()" in app_js
+    assert "async function waitForTranslationJob(" in app_js
+    assert "translation.id === translationId && translation.status === 'done'" in app_js
+    assert "api(`/documents/${docId}/translate`" in app_js
+    assert "body: { target_lang: targetLang }" in app_js
+    assert "await openReader(docId)" in app_js
+    assert "$('#reader-retranslate').addEventListener('click', retranslateReader)" in app_js
+
+
+def test_web_ui_reader_can_open_current_paper_ai_qa_split():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert "{ k: 'qa', l: 'AI 问答' }" in app_js
+    assert 'id="reader-qa-language"' in index
+    assert 'data-reader-lang="zh"' in index
+    assert 'data-reader-lang="en"' in index
+    assert 'id="reader-chat-panel"' in index
+    assert 'id="reader-chat-log"' in index
+    assert 'id="reader-chat-input"' in index
+    assert "state.readerQaLang = btn.dataset.readerLang" in app_js
+    assert "body: { question, document_ids: [docId], top_k: 6 }" in app_js
+    assert "function renderReaderQa()" in app_js
+    assert "function sendReaderQa(text)" in app_js
+    assert "data-reader-cite=" in app_js
+    assert "jumpToSource(source.document_id, source.section_seq)" in app_js
+    assert ".reader-panes.qa-mode" in styles
+    assert ".reader-chat-panel" in styles
 
 
 def test_web_ui_declares_every_workbench_screen():
@@ -248,10 +372,106 @@ def test_web_ui_declares_every_workbench_screen():
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
 
     screens = set(re.findall(r'data-screen="([a-z]+)"', index))
-    nav_keys = set(re.findall(r"\{ key: '([a-z]+)'", app_js))
+    nav_keys = set(re.findall(
+        r"\{ key: '([a-z]+)', label: '[^']+', sub: '[^']+', group: '[^']+' \}",
+        app_js,
+    ))
 
-    assert screens == {"search", "library", "reader", "chat", "chemistry"}
+    assert screens == {"search", "journals", "library", "tags", "glossary", "reader", "chat", "chemistry"}
     assert nav_keys == screens, "每个导航项都必须有对应的画面，否则点了会切到空白"
+
+
+def test_web_ui_navigation_has_no_count_badges():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "const badges" not in app_js
+    assert 'class="badge"' not in app_js
+
+
+def test_web_ui_navigation_groups_usage_before_management():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert "{ key: 'use', label: '功能' }" in app_js
+    assert "{ key: 'manage', label: '管理' }" in app_js
+    assert "group: 'use'" in app_js
+    assert "group: 'manage'" in app_js
+    assert app_js.index("key: 'search'") < app_js.index("key: 'journals'")
+    assert app_js.index("key: 'chemistry'") < app_js.index("key: 'journals'")
+    assert 'class="nav-group-title"' in app_js
+    assert ".nav-group + .nav-group" in styles
+
+
+def test_web_ui_can_create_whitelist_journal_from_left_navigation():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "{ key: 'journals', label: '期刊管理', sub: 'JOURNALS', group: 'manage' }" in app_js
+    assert 'data-screen="journals"' in index
+    assert '<div class="screen-title">期刊管理</div>' in index
+    assert '<span class="chips-label">期刊</span>' in index
+    assert 'id="journal-create-form"' in index
+    assert 'id="journal-manager-list"' in index
+    assert "function journalFormPayload()" in app_js
+    assert "async function saveJournalFromWorkbench()" in app_js
+    assert "api('/journals', { method: 'POST', body: payload })" in app_js
+    assert "await loadJournals()" in app_js
+    assert "bindJournals();" in app_js
+
+
+def test_web_ui_whitelist_journals_can_be_edited_and_soft_deleted():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="journal-form-title"' in index
+    assert 'id="journal-form-description"' in index
+    assert "function editJournalFromWorkbench(journalId)" in app_js
+    assert "async function deleteJournalFromWorkbench(journalId)" in app_js
+    assert 'data-journal-edit="${journal.id}"' in app_js
+    assert 'data-journal-delete="${journal.id}"' in app_js
+    assert "method: 'PUT'" in app_js
+    assert "method: 'DELETE'" in app_js
+    assert "window.confirm" in app_js
+    assert "已抓取的论文和历史任务不会删除" in app_js
+
+
+def test_web_ui_whitelist_form_only_guards_journal_scope_fields():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    for control_id in (
+        "journal-name",
+        "journal-issn-print",
+        "journal-issn-electronic",
+        "journal-year-from",
+        "journal-year-to",
+    ):
+        assert f'id="{control_id}"' in index
+    assert 'id="journal-keywords"' not in index
+    assert 'id="journal-keyword-mode"' not in index
+    assert "请至少填写一个 Print ISSN 或 Electronic ISSN" in app_js
+    assert "请至少填写一个主题关键词" not in app_js
+    assert "白名单中已存在" in app_js
+    assert "keywords: []" in app_js
+
+
+def test_web_ui_search_defaults_to_relevance_with_bounded_result_count():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert '<option value="relevance" selected>按相关度</option>' in index
+    assert "sort: 'relevance'" in app_js
+    assert "resultLimit: 50" in app_js
+    assert '<option value="50" selected>最多 50 篇</option>' in index
+    assert 'id="save-search-batch"' in index
+    assert 'id="discard-search-batch"' in index
+    assert "params.set('search_id', state.activeSearchId)" in app_js
+    assert "/crawl/searches/${state.activeSearchId}/save" in app_js
+    assert "method: 'DELETE'" in app_js
+    assert "撤销已保存批次" in app_js
+    assert ".search-batch-actions[hidden] { display: none; }" in (
+        WEB_DIR / "styles.css"
+    ).read_text(encoding="utf-8")
 
 
 def test_web_ui_tagging_writes_manual_category_override():
@@ -263,6 +483,123 @@ def test_web_ui_tagging_writes_manual_category_override():
     assert "/categories" in app_js
 
 
+def test_web_ui_has_unified_tag_manager_with_confirmed_delete():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert 'data-screen="tags"' in index
+    assert 'id="tag-create-form"' in index
+    assert 'id="tag-manager-list"' in index
+    assert "async function deleteCategory(categoryId)" in app_js
+    assert "window.confirm" in app_js
+    assert "method: 'DELETE'" in app_js
+    assert "result.removed_paper_links" in app_js
+
+
+def test_web_ui_reader_and_chat_filter_real_documents_by_category():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="reader-category"' in index
+    assert 'id="chat-category"' in index
+    assert "function documentMatchesCategory(doc, slug)" in app_js
+    assert "pool.filter((doc) => documentMatchesCategory(doc, state.readerCategory))" in app_js
+    assert "doc.index_status === 'indexed' && documentMatchesCategory(doc, state.chatCategory)" in app_js
+    assert "if (state.chatCategory) params.set('category', state.chatCategory)" in app_js
+
+
+def test_web_ui_tag_manager_supports_inline_edit_and_cache_migration():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert 'data-category-edit="${category.id}"' in app_js
+    assert 'data-category-edit-form="${category.id}"' in app_js
+    assert "api(`/categories/${categoryId}`" in app_js
+    assert "method: 'PUT'" in app_js
+    assert "updateCategoryOnPaper(paper, updated, previous.slug)" in app_js
+    assert "state.readerCategory = updated.slug" in app_js
+    assert "state.chatCategory = updated.slug" in app_js
+    assert ".tag-manager-row.is-editing" in styles
+
+
+def test_web_ui_glossary_manager_persists_crud_in_local_workbench_state():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert "{ key: 'glossary', label: '术语表管理', sub: 'GLOSSARY', group: 'manage' }" in app_js
+    assert 'data-screen="glossary"' in index
+    assert 'id="glossary-form"' in index
+    assert 'id="glossary-en"' in index
+    assert 'id="glossary-zh"' in index
+    assert 'id="glossary-manager-list"' in index
+    assert "persisted.glossaryTerms = normalizeGlossaryTerms" in app_js
+    assert "function saveGlossaryTerm()" in app_js
+    assert "function deleteGlossaryTerm(id)" in app_js
+    assert "saveStore();" in app_js
+    assert 'class="glossary-column-head"' in index
+    assert "<span>EN</span>" in index
+    assert "<span>中文</span>" in index
+    assert "glossary-language-mark" not in app_js
+    assert "glossary-pair-arrow" not in app_js
+    assert ".glossary-manager-row" in styles
+
+
+def test_web_ui_reader_selection_offers_glossary_and_chat_actions():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert 'id="selection-popover"' in index
+    assert 'data-selection-action="glossary"' in index
+    assert 'data-selection-action="chat"' in index
+    assert "function showSelectionPopover(pane)" in app_js
+    assert "function addSelectionToGlossary()" in app_js
+    assert "function sendTextToChat(text, kind)" in app_js
+    assert 'data-glossary-send="${g ? esc(g.id) : \'\'}"' in app_js
+    assert ".selection-popover" in styles
+    assert ".selection-popover[hidden]" in styles
+    assert "id=\"sel-btn\"" not in index
+
+
+def test_web_ui_prompt_presets_use_sql_api_for_full_crud():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    for control_id in (
+        "new-preset",
+        "preset-editor",
+        "preset-cmd",
+        "preset-desc",
+        "preset-question",
+        "cancel-preset",
+    ):
+        assert f'id="{control_id}"' in index
+    assert "async function loadPresets()" in app_js
+    assert "api('/prompt-presets?page_size=100')" in app_js
+    assert "async function savePresetEditor()" in app_js
+    assert "editing ? 'PUT' : 'POST'" in app_js
+    assert "async function deletePreset(id)" in app_js
+    assert "method: 'DELETE'" in app_js
+    assert "state.presets = state.presets.filter" in app_js
+    assert 'data-preset-edit="${esc(p.id)}"' in app_js
+    assert 'data-preset-delete="${esc(p.id)}"' in app_js
+    assert "persisted.customPresets.push" not in app_js
+    assert "PRESETS.concat" not in app_js
+
+
+def test_web_ui_prompt_preset_validation_and_legacy_migration():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "发送内容不能为空" in app_js
+    assert "不能包含空格" in app_js
+    assert "快捷指令 ${cmd} 已存在" in app_js
+    assert "async function migrateLegacyPromptPresets()" in app_js
+    assert "delete persisted.customPresets" in app_js
+    assert "maxlength=\"24\"" in (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    assert "maxlength=\"1000\"" in (WEB_DIR / "index.html").read_text(encoding="utf-8")
+
+
 def test_web_ui_surfaces_reaction_export_gate_conflict():
     """导出闸门是红线：409 必须让用户看懂，而不是静默失败。"""
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
@@ -271,12 +608,18 @@ def test_web_ui_surfaces_reaction_export_gate_conflict():
     assert "reaction-sets/${state.chemSetId}/export" in app_js
 
 
-def test_web_ui_requires_reviewer_before_verifying():
-    """verified_by 必填——每次复核都要有可追溯责任人。"""
+def test_web_ui_self_attributes_reviews_without_reviewer_input():
+    """单用户工作台无需填写复核人，但审计记录仍有稳定责任标识。"""
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
 
-    assert "verified_by: persisted.reviewer.trim()" in app_js
-    assert "if (!persisted.reviewer.trim())" in app_js
+    assert 'id="reviewer"' not in index
+    assert ">复核人<" not in index
+    assert "const SELF_REVIEWER = 'self';" in app_js
+    assert "verified_by: SELF_REVIEWER" in app_js
+    assert "reviewerDisplayName(a.verified_by)" in app_js
+    assert "verified_by: persisted.reviewer.trim()" not in app_js
+    assert "if (!persisted.reviewer.trim())" not in app_js
 
 
 def test_web_ui_does_not_convert_rate_values():

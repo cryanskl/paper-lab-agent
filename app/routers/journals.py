@@ -20,16 +20,16 @@ def normalize_keyword_term(value: str) -> str:
 
 def validate_keyword_config(value: KeywordConfig) -> KeywordConfig:
     if isinstance(value, list):
-        if not value or any(not isinstance(term, str) or not term.strip() for term in value):
-            raise ValueError("keywords must be a non-empty list of strings")
+        if any(not isinstance(term, str) or not term.strip() for term in value):
+            raise ValueError("keywords must be a list of non-empty strings")
         return [normalize_keyword_term(term) for term in value]
     raw_mode = value.get("mode")
     mode = raw_mode.strip().lower() if isinstance(raw_mode, str) else raw_mode
     terms = value.get("terms")
     if mode not in {"and", "or"}:
         raise ValueError("keywords.mode must be 'and' or 'or'")
-    if not isinstance(terms, list) or not terms or any(not isinstance(term, str) or not term.strip() for term in terms):
-        raise ValueError("keywords.terms must be a non-empty list of strings")
+    if not isinstance(terms, list) or any(not isinstance(term, str) or not term.strip() for term in terms):
+        raise ValueError("keywords.terms must be a list of non-empty strings")
     return {"mode": mode, "terms": [normalize_keyword_term(term) for term in terms]}
 
 

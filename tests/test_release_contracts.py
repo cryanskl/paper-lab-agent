@@ -2892,7 +2892,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package.get("demo_counts", {}).get("reaction_audits") != 1' in release_check
     assert 'package.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"' in release_check
     assert 'package.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"' in release_check
-    assert 'package.get("openapi_path_count") != 28' in release_check
+    assert 'package.get("openapi_path_count") != 34' in release_check
     assert 'not valid_sha256(package.get("package_sha256"))' in release_check
     assert "expected_checksum_names = set(expected_artifact_names)" in release_check
     assert 'set((package.get("checksums") or {})) != expected_checksum_names' in release_check
@@ -2916,7 +2916,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package_validation.get("demo_counts", {}).get("reaction_audits") != 1' in release_check
     assert 'package_validation.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"' in release_check
     assert 'package_validation.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"' in release_check
-    assert 'package_validation.get("openapi_path_count") != 28' in release_check
+    assert 'package_validation.get("openapi_path_count") != 34' in release_check
     assert 'not valid_sha256(package_validation.get("package_sha256"))' in release_check
     assert 'package_validation.get("package_sha256") != package.get("package_sha256")' in release_check
     assert 'set((package_validation.get("checksums") or {})) != expected_checksum_names' in release_check
@@ -3684,7 +3684,7 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     }
     assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
     assert payload["demo_reaction_set_verified_at"]
-    assert payload["openapi_path_count"] == 28
+    assert payload["openapi_path_count"] == 34
 
 
 def test_validate_release_artifacts_rejects_acceptance_matrix_source_drift(tmp_path):
@@ -4959,7 +4959,7 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert payload["demo_counts"]["reaction_audits"] == 1
     assert payload["demo_workflow_statuses"]["parse_status"] == "parsed"
     assert payload["demo_workflow_statuses"]["reaction_set_status"] == "verified"
-    assert payload["openapi_path_count"] == 28
+    assert payload["openapi_path_count"] == 34
     assert set(payload["checksums"]) == expected_checksum_names
     assert all(len(value) == 64 for value in payload["checksums"].values())
     assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
@@ -4999,7 +4999,7 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert validate_payload["demo_counts"]["reaction_audits"] == 1
     assert validate_payload["demo_workflow_statuses"]["parse_status"] == "parsed"
     assert validate_payload["demo_workflow_statuses"]["reaction_set_status"] == "verified"
-    assert validate_payload["openapi_path_count"] == 28
+    assert validate_payload["openapi_path_count"] == 34
     assert set(validate_payload["checksums"]) == expected_checksum_names
     assert all(len(value) == 64 for value in validate_payload["checksums"].values())
     assert validate_payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
@@ -6242,10 +6242,10 @@ def test_release_check_requires_crawl_job_observability_smoke_path():
     assert '"crawl_job_detail_status": "success"' in release_text
     assert '"crawl_job_detail_journal_name": "Plasma Sources Science and Technology"' in release_text
     assert '"crawl_job_detail_diagnostics_outcome": "new_papers"' in release_text
-    assert '"crawl_job_detail_diagnostics_papers_accepted": 3' in release_text
-    assert '"crawl_job_detail_keyword_mode": "or"' in release_text
-    assert '"crawl_job_detail_has_keyword_terms": True' in release_text
-    assert '"crawl_job_detail_keyword_terms_include_plasma_chemistry": True' in release_text
+    assert '"crawl_job_detail_diagnostics_papers_accepted": 4' in release_text
+    assert '"crawl_job_detail_keyword_mode": "disabled"' in release_text
+    assert '"crawl_job_detail_has_keyword_terms": False' in release_text
+    assert '"crawl_job_detail_keyword_terms_include_plasma_chemistry": False' in release_text
 
 
 def test_release_check_requires_no_doi_dedupe_smoke_path():
@@ -6253,7 +6253,7 @@ def test_release_check_requires_no_doi_dedupe_smoke_path():
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
 
     assert '"crawl_job_found": 4' in release_text
-    assert '"crawl_job_new": 2' in release_text
+    assert '"crawl_job_new": 3' in release_text
     assert '"no_doi_search_hits": 1' in release_text
     assert '"no_doi_paper_has_doi": False' in release_text
     assert '"no_doi_paper_dedupe_strategy": "no_doi_fingerprint"' in release_text
@@ -6833,6 +6833,31 @@ def test_api_contract_validator_reports_empty_success_response_schema():
     issues = validate_api_contract.empty_success_response_schema_issues(openapi=openapi)
 
     assert issues == ["POST /api/v1/crawl/run 202 response must declare a non-empty schema"]
+
+
+def test_api_contract_validator_accepts_binary_success_response_schema():
+    validate_api_contract = load_validate_api_contract()
+    openapi = {
+        "paths": {
+            "/api/v1/papers/{paper_id}/download": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/pdf": {
+                                    "schema": {"type": "string", "format": "binary"},
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    issues = validate_api_contract.empty_success_response_schema_issues(openapi=openapi)
+
+    assert issues == []
 
 
 def test_api_contract_validator_reports_bare_success_response_schema():
@@ -9873,8 +9898,8 @@ def test_requirements_validator_ignores_standard_library_imports(tmp_path):
     source_dir = tmp_path / "scripts"
     source_dir.mkdir()
     (source_dir / "uses_stdlib.py").write_text(
-        "import email.utils\nimport fnmatch\nimport importlib.util\nimport io\nimport shlex\nimport stat\n"
-        "import subprocess\nimport unicodedata\nimport zipfile\n",
+        "import dataclasses\nimport email.utils\nimport fnmatch\nimport importlib.util\nimport io\nimport ipaddress\n"
+        "import shlex\nimport socket\nimport stat\nimport subprocess\nimport unicodedata\nimport zipfile\n",
         encoding="utf-8",
     )
     requirements_path = tmp_path / "requirements.txt"
