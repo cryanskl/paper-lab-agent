@@ -35,6 +35,28 @@ RATE_VALUE_RE = re.compile(
 )
 
 
+class ConfirmedReactionSetExistsError(RuntimeError):
+    """Raised when a destructive document operation would replace reviewed chemistry."""
+
+
+def assert_reaction_sets_replaceable(conn, document_id: int) -> None:
+    confirmed = conn.execute(
+        """
+        SELECT id
+        FROM reaction_sets
+        WHERE document_id=? AND status='verified'
+        ORDER BY id
+        LIMIT 1
+        """,
+        (document_id,),
+    ).fetchone()
+    if confirmed:
+        raise ConfirmedReactionSetExistsError(
+            f"Document has confirmed reaction set #{confirmed['id']}; "
+            "confirmed review results must be preserved"
+        )
+
+
 def split_species(side: str) -> list[str]:
     return [part.strip() for part in SPECIES_SEPARATOR_RE.split(side) if part.strip()]
 
@@ -199,6 +221,7 @@ def detect_cross_section_url(text: str, start: Optional[int] = None, end: Option
 
 def mark_chemistry_queued(document_id: int) -> None:
     with get_conn() as conn:
+        assert_reaction_sets_replaceable(conn, document_id)
         conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
         conn.execute(
             "UPDATE documents SET chemistry_status='extracting', chemistry_error=NULL WHERE id=?",
@@ -208,7 +231,10 @@ def mark_chemistry_queued(document_id: int) -> None:
 
 def fail_chemistry_extraction(document_id: int, error: str) -> dict:
     with get_conn() as conn:
-        conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
+        conn.execute(
+            "DELETE FROM reaction_sets WHERE document_id=? AND status!='verified'",
+            (document_id,),
+        )
         conn.execute(
             "UPDATE documents SET chemistry_status='failed', chemistry_error=? WHERE id=?",
             (error, document_id),
@@ -218,11 +244,18 @@ def fail_chemistry_extraction(document_id: int, error: str) -> dict:
 
 def extract_reactions(document_id: int) -> dict:
     with get_conn() as conn:
+        assert_reaction_sets_replaceable(conn, document_id)
         conn.execute(
             "UPDATE documents SET chemistry_status='extracting', chemistry_error=NULL WHERE id=?",
             (document_id,),
         )
-        sections = conn.execute("SELECT * FROM sections WHERE document_id=? ORDER BY seq", (document_id,)).fetchall()
+        sections = [
+            dict_from_row(row)
+            for row in conn.execute(
+                "SELECT * FROM sections WHERE document_id=? ORDER BY seq",
+                (document_id,),
+            ).fetchall()
+        ]
         if not sections:
             conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
             conn.execute(
@@ -239,6 +272,46 @@ def extract_reactions(document_id: int) -> dict:
             return {"document_id": document_id, "status": "failed", "error": "document has no extractable section text"}
 
     try:
+        extracted_reactions = []
+        detected_gas_mixture = None
+        detected_lxcat_db = None
+        for section in sections:
+            text = section["content"] or ""
+            detected_gas_mixture = detected_gas_mixture or detect_gas_mixture(text)
+            detected_lxcat_db = detected_lxcat_db or detect_lxcat_db(text)
+            section_cross_section_url = detect_cross_section_url(text)
+            reaction_search_text = mask_urls_for_reaction_matching(text)
+            for match in REACTION_RE.finditer(reaction_search_text):
+                reaction = " ".join(match.group(1).split())
+                normalized_reaction, reactants, products = normalize_reaction(reaction)
+                cross_section_url = (
+                    detect_cross_section_url(text, match.start(), match.end()) or section_cross_section_url
+                )
+                threshold_ev = detect_threshold_ev(text, match.start(), match.end())
+                rate_value = detect_rate_value(text, match.start(), match.end())
+                if rate_value:
+                    rate_type = "constant"
+                elif cross_section_url:
+                    rate_type = "cross_section"
+                else:
+                    rate_type = "unknown"
+                extracted_reactions.append(
+                    {
+                        "reaction": normalized_reaction,
+                        "reaction_type": infer_reaction_type(reactants, products),
+                        "reactants": json.dumps(reactants, ensure_ascii=False),
+                        "products": json.dumps(products, ensure_ascii=False),
+                        "rate_type": rate_type,
+                        "rate_value": rate_value,
+                        "threshold_ev": threshold_ev,
+                        "reference": section["title"],
+                        "cross_section_url": cross_section_url,
+                        "source_section_id": section["id"],
+                        "source_label": source_label(section),
+                        "source_excerpt": source_excerpt(text, match.start(), match.end()),
+                    }
+                )
+
         with get_conn() as conn:
             conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
             cursor = conn.execute(
@@ -249,60 +322,37 @@ def extract_reactions(document_id: int) -> dict:
                 (document_id, "Extracted reaction set", None, None, "Extracted from parsed sections"),
             )
             reaction_set_id = cursor.lastrowid
-            found = 0
-            detected_gas_mixture = None
-            detected_lxcat_db = None
-            for section in sections:
-                text = section["content"] or ""
-                detected_gas_mixture = detected_gas_mixture or detect_gas_mixture(text)
-                detected_lxcat_db = detected_lxcat_db or detect_lxcat_db(text)
-                section_cross_section_url = detect_cross_section_url(text)
-                reaction_search_text = mask_urls_for_reaction_matching(text)
-                for match in REACTION_RE.finditer(reaction_search_text):
-                    reaction = " ".join(match.group(1).split())
-                    normalized_reaction, reactants, products = normalize_reaction(reaction)
-                    cross_section_url = (
-                        detect_cross_section_url(text, match.start(), match.end()) or section_cross_section_url
-                    )
-                    threshold_ev = detect_threshold_ev(text, match.start(), match.end())
-                    rate_value = detect_rate_value(text, match.start(), match.end())
-                    if rate_value:
-                        rate_type = "constant"
-                    elif cross_section_url:
-                        rate_type = "cross_section"
-                    else:
-                        rate_type = "unknown"
-                    conn.execute(
-                        """
-                        INSERT INTO reactions (
-                            reaction_set_id, reaction, reaction_type, reactants, products,
-                            rate_type, rate_value, threshold_ev, reference, cross_section_url,
-                            source_section_id, source_label, source_excerpt, confidence, verified
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-                        """,
-                        (
-                            reaction_set_id,
-                            normalized_reaction,
-                            infer_reaction_type(reactants, products),
-                            json.dumps(reactants, ensure_ascii=False),
-                            json.dumps(products, ensure_ascii=False),
-                            rate_type,
-                            rate_value,
-                            threshold_ev,
-                            section["title"],
-                            cross_section_url,
-                            section["id"],
-                            source_label(dict_from_row(section)),
-                            source_excerpt(text, match.start(), match.end()),
-                            0.5,
-                        ),
-                    )
-                    found += 1
+            for item in extracted_reactions:
+                conn.execute(
+                    """
+                    INSERT INTO reactions (
+                        reaction_set_id, reaction, reaction_type, reactants, products,
+                        rate_type, rate_value, threshold_ev, reference, cross_section_url,
+                        source_section_id, source_label, source_excerpt, confidence, verified
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    """,
+                    (
+                        reaction_set_id,
+                        item["reaction"],
+                        item["reaction_type"],
+                        item["reactants"],
+                        item["products"],
+                        item["rate_type"],
+                        item["rate_value"],
+                        item["threshold_ev"],
+                        item["reference"],
+                        item["cross_section_url"],
+                        item["source_section_id"],
+                        item["source_label"],
+                        item["source_excerpt"],
+                        0.5,
+                    ),
+                )
             if detected_gas_mixture:
                 conn.execute("UPDATE reaction_sets SET gas_mixture=? WHERE id=?", (detected_gas_mixture, reaction_set_id))
             if detected_lxcat_db:
                 conn.execute("UPDATE reaction_sets SET lxcat_db=? WHERE id=?", (detected_lxcat_db, reaction_set_id))
-            if found == 0:
+            if not extracted_reactions:
                 conn.execute("UPDATE reaction_sets SET status='rejected', source_note=? WHERE id=?", ("No reaction expressions found", reaction_set_id))
                 conn.execute(
                     "UPDATE documents SET chemistry_status='rejected', chemistry_error=? WHERE id=?",
@@ -342,6 +392,12 @@ def reaction_set_detail(reaction_set: dict, conn=None) -> dict:
         reaction["reactants"] = json.loads(reaction["reactants"] or "[]")
         reaction["products"] = json.loads(reaction["products"] or "[]")
         reaction["verified"] = bool(reaction["verified"])
+        review_status = reaction.get("review_status")
+        if reaction["verified"]:
+            review_status = "accepted"
+        elif review_status not in {"pending", "accepted", "rejected"}:
+            review_status = "accepted" if reaction["verified"] else "pending"
+        reaction["review_status"] = review_status
         audits = conn.execute(
             "SELECT * FROM reaction_audits WHERE reaction_id=? ORDER BY id DESC",
             (reaction["id"],),
@@ -354,26 +410,50 @@ def reaction_set_detail(reaction_set: dict, conn=None) -> dict:
             item["verified_at"] = item.get("created_at")
             reaction["audit_log"].append(item)
     reaction_set["reaction_count"] = len(reaction_set["reactions"])
-    reaction_set["verified_count"] = sum(1 for reaction in reaction_set["reactions"] if reaction.get("verified"))
-    reaction_set["unverified_count"] = reaction_set["reaction_count"] - reaction_set["verified_count"]
-    reaction_set["export_ready"] = reaction_set["reaction_count"] > 0 and reaction_set["unverified_count"] == 0
+    reaction_set["accepted_count"] = sum(
+        1 for reaction in reaction_set["reactions"] if reaction["review_status"] == "accepted"
+    )
+    reaction_set["rejected_count"] = sum(
+        1 for reaction in reaction_set["reactions"] if reaction["review_status"] == "rejected"
+    )
+    reaction_set["pending_count"] = sum(
+        1 for reaction in reaction_set["reactions"] if reaction["review_status"] == "pending"
+    )
+    reaction_set["verified_count"] = reaction_set["accepted_count"]
+    reaction_set["unverified_count"] = reaction_set["pending_count"]
+    reaction_set["export_ready"] = (
+        reaction_set["accepted_count"] > 0 and reaction_set["pending_count"] == 0
+    )
     return reaction_set
 
 
 def reconcile_reaction_set_review_state(conn, reaction_set_id: int, verified_by: Optional[str]) -> None:
-    remaining = conn.execute(
-        "SELECT COUNT(*) AS n FROM reactions WHERE reaction_set_id=? AND verified=0",
+    counts = conn.execute(
+        """
+        SELECT
+            SUM(CASE WHEN verified=0 AND review_status='pending' THEN 1 ELSE 0 END) AS pending,
+            SUM(CASE WHEN verified=1 OR review_status='accepted' THEN 1 ELSE 0 END) AS accepted
+        FROM reactions
+        WHERE reaction_set_id=?
+        """,
         (reaction_set_id,),
-    ).fetchone()["n"]
-    if remaining == 0:
+    ).fetchone()
+    pending = int(counts["pending"] or 0)
+    accepted = int(counts["accepted"] or 0)
+    if pending:
+        conn.execute(
+            "UPDATE reaction_sets SET status='pending', verified_by=NULL, verified_at=NULL WHERE id=?",
+            (reaction_set_id,),
+        )
+    elif accepted:
         conn.execute(
             "UPDATE reaction_sets SET status='verified', verified_by=?, verified_at=? WHERE id=?",
             (verified_by, now_iso(), reaction_set_id),
         )
     else:
         conn.execute(
-            "UPDATE reaction_sets SET status='pending', verified_by=NULL, verified_at=NULL WHERE id=?",
-            (reaction_set_id,),
+            "UPDATE reaction_sets SET status='rejected', verified_by=?, verified_at=? WHERE id=?",
+            (verified_by, now_iso(), reaction_set_id),
         )
 
 
@@ -382,6 +462,8 @@ def verify_reaction(
     verified: bool,
     rate_value: Optional[str],
     verified_by: Optional[str],
+    decision: Optional[str] = None,
+    reaction: Optional[str] = None,
     reaction_type: Optional[str] = None,
     rate_type: Optional[str] = None,
     threshold_ev: Optional[float] = None,
@@ -396,7 +478,20 @@ def verify_reaction(
         if not row:
             raise ValueError("reaction not found")
         before = dict_from_row(row)
-        updates = {"verified": 1 if verified else 0}
+        review_status = decision or ("accepted" if verified else "pending")
+        if review_status not in {"pending", "accepted", "rejected"}:
+            raise ValueError("invalid reaction review decision")
+        audit_action = (
+            ("verify" if verified else "unverify")
+            if decision is None
+            else {"accepted": "accept", "rejected": "reject", "pending": "unverify"}[review_status]
+        )
+        updates = {
+            "verified": 1 if review_status == "accepted" else 0,
+            "review_status": review_status,
+        }
+        if reaction is not None:
+            updates["reaction"] = reaction
         clear_fields = clear_fields or set()
         optional_updates = {
             "reaction_type": reaction_type,
@@ -424,7 +519,7 @@ def verify_reaction(
                 """,
                 (
                     reaction_id,
-                    "verify" if verified else "unverify",
+                    audit_action,
                     json.dumps({"_field_changes": {}}, ensure_ascii=False),
                     verified_by,
                 ),
@@ -447,7 +542,12 @@ def verify_reaction(
             INSERT INTO reaction_audits (reaction_id, action, changes, verified_by)
             VALUES (?, ?, ?, ?)
             """,
-            (reaction_id, "verify" if verified else "unverify", json.dumps(audit_changes, ensure_ascii=False), verified_by),
+            (
+                reaction_id,
+                audit_action,
+                json.dumps(audit_changes, ensure_ascii=False),
+                verified_by,
+            ),
         )
         reconcile_reaction_set_review_state(conn, reaction_set_id, verified_by)
         rs = conn.execute("SELECT * FROM reaction_sets WHERE id=?", (reaction_set_id,)).fetchone()
@@ -474,20 +574,35 @@ def export_reaction_set(reaction_set_id: int, fmt: str) -> dict:
         rs = conn.execute("SELECT * FROM reaction_sets WHERE id=?", (reaction_set_id,)).fetchone()
         if not rs:
             raise ValueError("reaction set not found")
-        remaining = conn.execute(
-            "SELECT COUNT(*) AS n FROM reactions WHERE reaction_set_id=? AND verified=0",
+        pending = conn.execute(
+            """
+            SELECT COUNT(*) AS n FROM reactions
+            WHERE reaction_set_id=? AND verified=0 AND review_status='pending'
+            """,
             (reaction_set_id,),
         ).fetchone()["n"]
-        total = conn.execute(
-            "SELECT COUNT(*) AS n FROM reactions WHERE reaction_set_id=?",
+        accepted = conn.execute(
+            """
+            SELECT COUNT(*) AS n FROM reactions
+            WHERE reaction_set_id=? AND (verified=1 OR review_status='accepted')
+            """,
             (reaction_set_id,),
         ).fetchone()["n"]
-        if total == 0:
+        if accepted == 0:
             raise PermissionError("reaction set has no reactions to export")
-        if remaining:
-            raise PermissionError("reaction set has unverified reactions")
+        if pending:
+            raise PermissionError("reaction set has pending reactions")
         detail = reaction_set_detail(dict_from_row(rs), conn)
-    reaction_count = len(detail["reactions"])
+    rejected_reactions = [
+        reaction for reaction in detail["reactions"] if reaction["review_status"] == "rejected"
+    ]
+    detail["candidate_reaction_count"] = detail["reaction_count"]
+    detail["rejected_reactions"] = rejected_reactions
+    detail["reactions"] = [
+        reaction for reaction in detail["reactions"] if reaction["review_status"] == "accepted"
+    ]
+    detail["reaction_count"] = len(detail["reactions"])
+    reaction_count = detail["reaction_count"]
     audit_entry_count = sum(len(reaction.get("audit_log") or []) for reaction in detail["reactions"])
     suffix_by_format = {"json": "json", "txt": "txt", "bolsig": "bolsig.txt"}
     out_path = settings.export_dir / f"reaction-set-{reaction_set_id}.{suffix_by_format[fmt]}"

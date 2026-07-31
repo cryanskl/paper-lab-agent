@@ -7,6 +7,8 @@ from app.config import get_settings
 
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "docs" / "schema.sql"
+SQLITE_BUSY_TIMEOUT_SECONDS = 10.0
+SQLITE_BUSY_TIMEOUT_MS = int(SQLITE_BUSY_TIMEOUT_SECONDS * 1000)
 
 DEFAULT_PROMPT_PRESETS = [
     ("/总结", "总结当前范围内文献的核心结论", "总结当前范围内文献的核心结论、方法与主要数据。"),
@@ -54,9 +56,10 @@ def connect() -> sqlite3.Connection:
     settings = get_settings()
     settings.ensure_dirs()
     assert_safe_database_path(settings.database_path)
-    conn = sqlite3.connect(settings.database_path)
+    conn = sqlite3.connect(settings.database_path, timeout=SQLITE_BUSY_TIMEOUT_SECONDS)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute(f"PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS}")
     return conn
 
 
@@ -75,6 +78,7 @@ def init_db() -> None:
     settings.ensure_dirs()
     should_init = not settings.database_path.exists()
     with connect() as conn:
+        conn.execute("PRAGMA journal_mode = WAL")
         existing = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='journals'"
         ).fetchone()
@@ -536,6 +540,7 @@ def ensure_migrations(conn: sqlite3.Connection) -> None:
         "source_label": "TEXT",
         "confidence": "REAL",
         "verified": "INTEGER DEFAULT 0",
+        "review_status": "TEXT DEFAULT 'pending'",
         "created_at": "TEXT",
     }
     for column, spec in reaction_column_specs.items():
@@ -549,6 +554,15 @@ def ensure_migrations(conn: sqlite3.Connection) -> None:
     if "source_excerpt" not in reaction_columns:
         conn.execute("ALTER TABLE reactions ADD COLUMN source_excerpt TEXT")
         conn.commit()
+    conn.execute(
+        """
+        UPDATE reactions
+        SET review_status = CASE WHEN verified=1 THEN 'accepted' ELSE 'pending' END
+        WHERE review_status IS NULL
+           OR review_status NOT IN ('pending', 'accepted', 'rejected')
+           OR (verified=1 AND review_status='pending')
+        """
+    )
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS reaction_audits (

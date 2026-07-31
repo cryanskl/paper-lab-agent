@@ -30,8 +30,8 @@ class Settings(BaseSettings):
     tei_dir: Path = Field(default=Path("data/tei"), alias="PAPER_LAB_TEI_DIR")
     translation_dir: Path = Field(default=Path("data/translations"), alias="PAPER_LAB_TRANSLATION_DIR")
     export_dir: Path = Field(default=Path("data/exports"), alias="PAPER_LAB_EXPORT_DIR")
-    vector_db_path: Path = Field(default=Path("data/vector-index.json"), alias="VECTOR_DB_PATH")
-    vector_db_backend: str = Field(default="local-json", alias="VECTOR_DB_BACKEND")
+    vector_db_path: Path = Field(default=Path("data/chroma"), alias="VECTOR_DB_PATH")
+    vector_db_backend: str = Field(default="chroma", alias="VECTOR_DB_BACKEND")
 
     openalex_api_key: Optional[str] = Field(default=None, alias="OPENALEX_API_KEY")
     openalex_mailto: Optional[str] = Field(default=None, alias="OPENALEX_MAILTO")
@@ -40,7 +40,22 @@ class Settings(BaseSettings):
     llm_api_key: Optional[str] = Field(default=None, alias="LLM_API_KEY")
     llm_base_url: str = Field(default="https://api.openai.com/v1", alias="LLM_BASE_URL")
     llm_model: str = Field(default="gpt-4o-mini", alias="LLM_MODEL")
-    embedding_model: str = Field(default="local-hash", alias="EMBEDDING_MODEL")
+    llm_request_timeout_seconds: float = Field(
+        default=180.0,
+        gt=0,
+        le=600,
+        alias="LLM_REQUEST_TIMEOUT_SECONDS",
+    )
+    translation_chunk_chars: int = Field(
+        default=6000,
+        ge=1000,
+        le=20000,
+        alias="TRANSLATION_CHUNK_CHARS",
+    )
+    embedding_model: str = Field(default="bge-m3", alias="EMBEDDING_MODEL")
+    rag_chunk_target_tokens: int = Field(default=450, ge=64, le=4096, alias="RAG_CHUNK_TARGET_TOKENS")
+    rag_chunk_max_tokens: int = Field(default=600, ge=64, le=8192, alias="RAG_CHUNK_MAX_TOKENS")
+    rag_chunk_overlap_tokens: int = Field(default=60, ge=0, le=1024, alias="RAG_CHUNK_OVERLAP_TOKENS")
     scheduler_enabled: bool = Field(default=False, alias="PAPER_LAB_SCHEDULER_ENABLED")
     crawl_max_concurrency: int = Field(default=3, ge=1, le=10, alias="CRAWL_MAX_CONCURRENCY")
     academic_api_max_pages: int = Field(default=3, alias="ACADEMIC_API_MAX_PAGES")
@@ -65,13 +80,17 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def derive_storage_paths_from_data_dir(self) -> "Settings":
+        if self.rag_chunk_target_tokens > self.rag_chunk_max_tokens:
+            raise ValueError("RAG_CHUNK_TARGET_TOKENS must not exceed RAG_CHUNK_MAX_TOKENS")
+        if self.rag_chunk_overlap_tokens >= self.rag_chunk_target_tokens:
+            raise ValueError("RAG_CHUNK_OVERLAP_TOKENS must be smaller than RAG_CHUNK_TARGET_TOKENS")
         default_paths = {
             "database_path": Path("data/plasma.db"),
             "pdf_dir": Path("data/pdfs"),
             "tei_dir": Path("data/tei"),
             "translation_dir": Path("data/translations"),
             "export_dir": Path("data/exports"),
-            "vector_db_path": Path("data/vector-index.json"),
+            "vector_db_path": Path("data/chroma"),
         }
         derived_defaults = {
             "database_path": self.data_dir / "plasma.db",
@@ -79,7 +98,7 @@ class Settings(BaseSettings):
             "tei_dir": self.data_dir / "tei",
             "translation_dir": self.data_dir / "translations",
             "export_dir": self.data_dir / "exports",
-            "vector_db_path": self.data_dir / "vector-index.json",
+            "vector_db_path": self.data_dir / "chroma",
         }
         for field_name, derived_path in derived_defaults.items():
             current_path = getattr(self, field_name)

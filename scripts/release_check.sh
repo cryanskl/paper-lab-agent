@@ -10,11 +10,13 @@ elif command -v uv >/dev/null 2>&1; then
 else
   PYTHON_CMD=("python")
 fi
-OFFLINE_PREFLIGHT_ENV=(
+RELEASE_PREFLIGHT_ENV=(
   "OPENALEX_API_KEY="
   "OPENALEX_MAILTO="
   "UNPAYWALL_EMAIL="
   "LLM_API_KEY="
+  "EMBEDDING_MODEL=bge-m3"
+  "VECTOR_DB_BACKEND=chroma"
 )
 TEST_ENV=(
   "-u" "OPENALEX_API_KEY"
@@ -39,7 +41,7 @@ RELEASE_HELP_SCRIPTS=("${RELEASE_SCRIPT_TARGETS[@]}")
 for script in "${RELEASE_HELP_SCRIPTS[@]}"; do
   "${PYTHON_CMD[@]}" "${script}" --help >/dev/null
 done
-DOCTOR_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact)"
+DOCTOR_JSON="$(env "${RELEASE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact)"
 printf '%s\n' "${DOCTOR_JSON}"
 DOCTOR_JSON="${DOCTOR_JSON}" "${PYTHON_CMD[@]}" - <<'PY'
 import json
@@ -208,7 +210,7 @@ print(json.dumps(payload, ensure_ascii=False))
 PY
 )"
 printf '%s\n' "${FIXTURE_JSON}"
-PREPARE_DEMO_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<'PY'
+PREPARE_DEMO_JSON="$(env "${RELEASE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<'PY'
 import json
 import os
 import subprocess
@@ -375,7 +377,7 @@ print(json.dumps(payload, ensure_ascii=False))
 PY
 )"
 printf '%s\n' "${PREPARE_DEMO_JSON}"
-LIVE_HEALTH_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<'PY'
+LIVE_HEALTH_JSON="$(env "${RELEASE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<'PY'
 import json
 import os
 import socket
@@ -494,7 +496,7 @@ print(json.dumps(health_summary, ensure_ascii=False))
 PY
 )"
 printf '%s\n' "${LIVE_HEALTH_JSON}"
-RELEASE_ARTIFACTS_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<'PY'
+RELEASE_ARTIFACTS_JSON="$(env "${RELEASE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<'PY'
 import json
 import os
 import subprocess
@@ -681,7 +683,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package.get("demo_counts", {}).get("reaction_audits") != 1
         or package.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
         or package.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"
-        or package.get("openapi_path_count") != 42
+        or package.get("openapi_path_count") != 44
         or not valid_sha256(package.get("package_sha256"))
         or set((package.get("checksums") or {})) != expected_checksum_names
         or not valid_release_checksums(package.get("checksums") or {})
@@ -721,7 +723,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package_validation.get("demo_counts", {}).get("reaction_audits") != 1
         or package_validation.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
         or package_validation.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"
-        or package_validation.get("openapi_path_count") != 42
+        or package_validation.get("openapi_path_count") != 44
         or not valid_sha256(package_validation.get("package_sha256"))
         or package_validation.get("package_sha256") != package.get("package_sha256")
         or set((package_validation.get("checksums") or {})) != expected_checksum_names
@@ -772,7 +774,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or handoff.get("demo_counts", {}).get("reaction_audits") != 1
         or handoff.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
         or handoff.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"
-        or handoff.get("openapi_path_count") != 42
+        or handoff.get("openapi_path_count") != 44
         or not valid_sha256(handoff.get("package_sha256"))
         or handoff.get("package_sha256") != handoff.get("package_sha256", "").lower()
         or set((handoff.get("checksums") or {})) != expected_checksum_names
@@ -787,7 +789,7 @@ print(json.dumps(handoff, ensure_ascii=False))
 PY
 )"
 printf '%s\n' "${RELEASE_ARTIFACTS_JSON}"
-SMOKE_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" -m scripts.smoke_check)"
+SMOKE_JSON="$(env "${RELEASE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" -m scripts.smoke_check)"
 printf '%s\n' "${SMOKE_JSON}"
 SMOKE_JSON="${SMOKE_JSON}" "${PYTHON_CMD[@]}" - <<'PY'
 import json
@@ -810,8 +812,8 @@ expected = {
     "config_warning_count": 3,
     "config_warning_codes": expected_config_warning_codes,
     "system_translation_adapter": "local-echo",
-    "system_embedding_model": "local-hash",
-    "system_vector_db_backend": "local-json",
+    "system_embedding_model": "bge-m3",
+    "system_vector_db_backend": "chroma",
     "system_grobid_url": "http://127.0.0.1:8070",
     "system_storage_data_dir_writable": True,
     "system_storage_database_parent_writable": True,

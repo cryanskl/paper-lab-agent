@@ -20,6 +20,7 @@ RUNTIME_ENV_KEYS = [
     "PAPER_LAB_EXPORT_DIR",
     "VECTOR_DB_PATH",
     "VECTOR_DB_BACKEND",
+    "EMBEDDING_MODEL",
     "PAPER_LAB_SCHEDULER_ENABLED",
     "OPENALEX_API_KEY",
     "OPENALEX_MAILTO",
@@ -43,8 +44,9 @@ def configure_runtime(base_dir: Path) -> None:
     os.environ["PAPER_LAB_TEI_DIR"] = str(base_dir / "tei")
     os.environ["PAPER_LAB_TRANSLATION_DIR"] = str(base_dir / "translations")
     os.environ["PAPER_LAB_EXPORT_DIR"] = str(base_dir / "exports")
-    os.environ["VECTOR_DB_PATH"] = str(base_dir / "vector-index.json")
-    os.environ["VECTOR_DB_BACKEND"] = "local-json"
+    os.environ["VECTOR_DB_PATH"] = str(base_dir / "chroma")
+    os.environ["VECTOR_DB_BACKEND"] = "chroma"
+    os.environ["EMBEDDING_MODEL"] = "bge-m3"
     os.environ["PAPER_LAB_SCHEDULER_ENABLED"] = "false"
     os.environ["OPENALEX_API_KEY"] = ""
     os.environ["OPENALEX_MAILTO"] = ""
@@ -140,7 +142,7 @@ def run_smoke() -> dict:
                     {
                         "doi": "10.999/smoke-crawl",
                         "title": "Smoke crawl argon plasma chemistry paper",
-                        "abstract": "offline crawl verifies searchable plasma metadata",
+                        "abstract": "deterministic smoke verifies searchable plasma metadata",
                         "authors": [{"name": "Smoke Check", "affiliation": None}],
                         "journal_name": "Plasma Sources Science and Technology",
                         "published_date": "2026-01-15",
@@ -164,7 +166,7 @@ def run_smoke() -> dict:
                     {
                         "doi": None,
                         "title": "No DOI smoke crawl plasma chemistry paper",
-                        "abstract": "offline crawl verifies no DOI plasma dedupe metadata",
+                        "abstract": "deterministic smoke verifies no DOI plasma dedupe metadata",
                         "authors": [{"name": "No DOI", "affiliation": None}],
                         "journal_name": "Plasma Sources Science and Technology",
                         "published_date": "2026-01-17",
@@ -176,7 +178,7 @@ def run_smoke() -> dict:
                     {
                         "doi": None,
                         "title": "No DOI smoke crawl plasma chemistry paper",
-                        "abstract": "offline crawl verifies no DOI plasma dedupe metadata update",
+                        "abstract": "deterministic smoke verifies no DOI plasma dedupe metadata update",
                         "authors": [{"name": "No DOI", "affiliation": None}],
                         "journal_name": "Plasma Sources Science and Technology",
                         "published_date": "2026-01-17",
@@ -706,12 +708,12 @@ def run_smoke() -> dict:
             f"expected local translation adapter, got {external_capabilities}",
         )
         assert_ok(
-            external_capabilities["embedding_model"] == "local-hash",
-            f"expected local embedding model, got {external_capabilities}",
+            external_capabilities["embedding_model"] == "bge-m3",
+            f"expected production embedding model, got {external_capabilities}",
         )
         assert_ok(
-            external_capabilities["vector_db_backend"] == "local-json",
-            f"expected local vector DB backend, got {external_capabilities}",
+            external_capabilities["vector_db_backend"] == "chroma",
+            f"expected production vector DB backend, got {external_capabilities}",
         )
         assert_ok(
             external_capabilities["grobid_url"] == "http://127.0.0.1:8070",
@@ -740,7 +742,10 @@ def run_smoke() -> dict:
         assert_ok(status_counts["document_chemistry"]["extracted"] == 1, "expected extracted chemistry count")
         assert_ok(status_counts["translations"]["done"] == 1, "expected done translation count")
         assert_ok(status_counts["reaction_sets"]["verified"] == 1, "expected verified reaction set count")
-        assert_ok(release_readiness["ready"] is True, "expected smoke release readiness to allow offline config warnings")
+        assert_ok(
+            release_readiness["ready"] is True,
+            "expected smoke release readiness to allow optional external config warnings",
+        )
         assert_ok(release_readiness["demo_data_missing"] == [], "expected smoke demo data to satisfy readiness")
         assert_ok(release_readiness["failed_workflows"] == [], "expected smoke readiness to have no failed workflows")
         assert_ok(release_readiness["storage_errors"] == [], "expected smoke readiness to have writable storage")

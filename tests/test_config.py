@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from app.config import Settings
 
 
@@ -30,7 +33,7 @@ def test_data_dir_drives_default_local_storage_paths(tmp_path, monkeypatch):
     assert settings.tei_dir == data_dir / "tei"
     assert settings.translation_dir == data_dir / "translations"
     assert settings.export_dir == data_dir / "exports"
-    assert settings.vector_db_path == data_dir / "vector-index.json"
+    assert settings.vector_db_path == data_dir / "chroma"
 
 
 def test_explicit_storage_paths_override_data_dir_defaults(tmp_path, monkeypatch):
@@ -87,3 +90,33 @@ def test_ensure_dirs_skips_symlinked_data_dir_before_creating_children(tmp_path,
     assert not (outside_dir / "tei").exists()
     assert not (outside_dir / "translations").exists()
     assert not (outside_dir / "exports").exists()
+
+
+def test_rag_chunk_settings_accept_valid_token_budget():
+    settings = Settings(
+        _env_file=None,
+        RAG_CHUNK_TARGET_TOKENS=320,
+        RAG_CHUNK_MAX_TOKENS=480,
+        RAG_CHUNK_OVERLAP_TOKENS=48,
+    )
+
+    assert settings.rag_chunk_target_tokens == 320
+    assert settings.rag_chunk_max_tokens == 480
+    assert settings.rag_chunk_overlap_tokens == 48
+
+
+@pytest.mark.parametrize(
+    ("target", "maximum", "overlap", "message"),
+    [
+        (700, 600, 60, "must not exceed"),
+        (450, 600, 450, "must be smaller"),
+    ],
+)
+def test_rag_chunk_settings_reject_invalid_token_budget(target, maximum, overlap, message):
+    with pytest.raises(ValidationError, match=message):
+        Settings(
+            _env_file=None,
+            RAG_CHUNK_TARGET_TOKENS=target,
+            RAG_CHUNK_MAX_TOKENS=maximum,
+            RAG_CHUNK_OVERLAP_TOKENS=overlap,
+        )

@@ -6,14 +6,14 @@ For PRD-to-release coverage, use the [Release Acceptance Matrix](release-accepta
 
 ## 1. Local Gate
 
-Run the same offline release gate used by CI:
+Run the same production-index release gate used by CI:
 
 ```bash
 python scripts/doctor.py --strict --compact
 bash scripts/release_check.sh
 ```
 
-The strict preflight doctor checks Python version, required project files, importable Python dependencies, whether local storage paths are creatable and writable, and external capability configuration warnings before service startup. It reads `.env` for local path configuration while preserving exported environment variable overrides. Compact output includes `warning_count`, `warning_codes`, and `warning_details` for optional OpenAlex, Unpaywall, and LLM configuration gaps, plus local RAG adapter warnings such as `unsupported_embedding_model` and `unsupported_vector_db_backend`; those warnings do not fail the default offline preflight, while required check failures still make strict mode exit non-zero. The release gate validates this doctor summary for the default offline checkout before continuing, and it runs default offline preflight with optional external env explicitly overridden to blank values so local `.env` credentials do not hide deterministic offline warnings. The release gate also validates shell syntax, Python compilation, every Python script under the scripts directory with `--help` to catch CLI argument or import path regressions, API/schema/docs/env/requirement hygiene, the unified dev startup path, fixture import, demo data preparation, live API with prepared demo data via `scripts/health_check.py --require-release-ready`, smoke coverage, and the full test suite.
+The strict preflight doctor checks Python version, required project files, importable Python dependencies, whether local storage paths are creatable and writable, and external capability configuration warnings before service startup. It reads `.env` for local path configuration while preserving exported environment variable overrides. Compact output includes `warning_count`, `warning_codes`, and `warning_details` for optional OpenAlex, Unpaywall, and LLM configuration gaps, plus RAG adapter warnings such as `unsupported_embedding_model` and `unsupported_vector_db_backend`. The release gate validates the production `bge-m3 + Chroma` index contract and no longer switches to the legacy hash index. It also validates shell syntax, Python compilation, every Python script under the scripts directory with `--help` to catch CLI argument and import path failures, API/schema/docs/env/requirement hygiene, the unified dev startup path, fixture import, demo data preparation, a live API with prepared demo data, smoke coverage, and the full test suite.
 
 The API contract gate compares `docs/接口设计文档.md` with the generated OpenAPI schema and fails on missing, undocumented, or duplicate documented routes.
 
@@ -58,7 +58,7 @@ python scripts/health_check.py --require-openapi
 
 Use the compact summary first to inspect `release_ready` and `release_blockers`, then run the required gates to fail fast. Also inspect `storage_health` before handoff: `database_parent` confirms SQLite can be created or updated, and `vector_db_parent` confirms first-run vector index creation can write to the configured parent directory even when the vector index file does not exist yet.
 Inspect `config_warnings` when release readiness is blocked by configuration: unsupported RAG adapter warnings include `actual` and `supported`, so the current configured adapter and the supported values can be compared without reading source code.
-`--require-release-ready` checks storage writability, no failed, rejected, or unknown workflow backlog, and demo data readiness for the default offline release path. Use `--require-no-config-warnings` separately when the handoff requires OpenAlex, Unpaywall, LLM, or non-default vector backend configuration. `--require-frontend` verifies the Streamlit health endpoint. `--require-openapi` verifies the live `/openapi.json` schema used by frontend handoff.
+`--require-release-ready` checks storage writability, no failed, rejected, or unknown workflow backlog, and demo data readiness. Use `--require-no-config-warnings` separately when the handoff requires OpenAlex, Unpaywall, or LLM configuration. `--require-frontend` verifies the Streamlit health endpoint. `--require-openapi` verifies the live `/openapi.json` schema used by frontend handoff.
 
 ## 5. Optional External Gate
 
@@ -68,7 +68,7 @@ For real PDF parsing deployments with GROBID running:
 python scripts/health_check.py --require-grobid
 ```
 
-This gate is intentionally separate because local fallback mode and offline CI do not require GROBID.
+This gate is intentionally separate because fixture-based CI does not require a live GROBID service.
 
 ## 6. GitHub Gate
 
