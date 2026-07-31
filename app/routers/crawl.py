@@ -8,7 +8,14 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.db import dict_from_row, get_conn
 from app.errors import AppError, CrawlAsyncJobResponse, page
-from app.services.crawl import create_jobs, normalize_search_terms, resolve_job_specs, run_crawl_job, run_crawl_jobs
+from app.services.crawl import (
+    create_jobs,
+    normalize_search_terms,
+    resolve_job_specs,
+    run_crawl_job,
+    run_crawl_jobs,
+    run_search_crawl_jobs,
+)
 from app.services.search_preview import decide_rollback_action
 from app.utils import json_dumps, json_loads, now_iso
 
@@ -267,7 +274,13 @@ async def run_search_jobs(search_history_id: int, task_args_list: list[tuple[Any
             (search_history_id,),
         )
     try:
-        await run_crawl_jobs(task_args_list, runner=run_crawl_job)
+        with get_conn() as conn:
+            history = conn.execute(
+                "SELECT max_results FROM search_history WHERE id=?",
+                (search_history_id,),
+            ).fetchone()
+        max_results = int((history["max_results"] if history else 0) or 0)
+        await run_search_crawl_jobs(task_args_list, max_results)
         with get_conn() as conn:
             rows = conn.execute(
                 """

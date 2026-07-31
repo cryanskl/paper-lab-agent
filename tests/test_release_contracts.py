@@ -2383,9 +2383,9 @@ def test_doctor_script_reports_unsupported_local_adapter_config_warnings(tmp_pat
         "unsupported_vector_db_backend",
     ]
     assert check["warnings"][0]["actual"] == "experimental-vectors"
-    assert check["warnings"][0]["supported"] == ["local-hash"]
+    assert check["warnings"][0]["supported"] == ["bge-m3", "local-hash"]
     assert check["warnings"][1]["actual"] == "faiss"
-    assert check["warnings"][1]["supported"] == ["local-json"]
+    assert check["warnings"][1]["supported"] == ["chroma", "local-json"]
 
 
 def test_doctor_adapter_registry_matches_rag_service():
@@ -2587,6 +2587,7 @@ def test_doctor_script_rejects_symlinked_vector_db_path(tmp_path):
         env={
             "PAPER_LAB_DATA_DIR": str(tmp_path / "data"),
             "VECTOR_DB_PATH": str(linked_vector),
+            "VECTOR_DB_BACKEND": "local-json",
         },
     )
 
@@ -2892,7 +2893,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package.get("demo_counts", {}).get("reaction_audits") != 1' in release_check
     assert 'package.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"' in release_check
     assert 'package.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"' in release_check
-    assert 'package.get("openapi_path_count") != 34' in release_check
+    assert 'package.get("openapi_path_count") != 42' in release_check
     assert 'not valid_sha256(package.get("package_sha256"))' in release_check
     assert "expected_checksum_names = set(expected_artifact_names)" in release_check
     assert 'set((package.get("checksums") or {})) != expected_checksum_names' in release_check
@@ -2916,7 +2917,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package_validation.get("demo_counts", {}).get("reaction_audits") != 1' in release_check
     assert 'package_validation.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"' in release_check
     assert 'package_validation.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"' in release_check
-    assert 'package_validation.get("openapi_path_count") != 34' in release_check
+    assert 'package_validation.get("openapi_path_count") != 42' in release_check
     assert 'not valid_sha256(package_validation.get("package_sha256"))' in release_check
     assert 'package_validation.get("package_sha256") != package.get("package_sha256")' in release_check
     assert 'set((package_validation.get("checksums") or {})) != expected_checksum_names' in release_check
@@ -3684,7 +3685,7 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     }
     assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
     assert payload["demo_reaction_set_verified_at"]
-    assert payload["openapi_path_count"] == 34
+    assert payload["openapi_path_count"] == 42
 
 
 def test_validate_release_artifacts_rejects_acceptance_matrix_source_drift(tmp_path):
@@ -4959,7 +4960,7 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert payload["demo_counts"]["reaction_audits"] == 1
     assert payload["demo_workflow_statuses"]["parse_status"] == "parsed"
     assert payload["demo_workflow_statuses"]["reaction_set_status"] == "verified"
-    assert payload["openapi_path_count"] == 34
+    assert payload["openapi_path_count"] == 42
     assert set(payload["checksums"]) == expected_checksum_names
     assert all(len(value) == 64 for value in payload["checksums"].values())
     assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
@@ -4999,7 +5000,7 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert validate_payload["demo_counts"]["reaction_audits"] == 1
     assert validate_payload["demo_workflow_statuses"]["parse_status"] == "parsed"
     assert validate_payload["demo_workflow_statuses"]["reaction_set_status"] == "verified"
-    assert validate_payload["openapi_path_count"] == 34
+    assert validate_payload["openapi_path_count"] == 42
     assert set(validate_payload["checksums"]) == expected_checksum_names
     assert all(len(value) == 64 for value in validate_payload["checksums"].values())
     assert validate_payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
@@ -6839,7 +6840,7 @@ def test_api_contract_validator_accepts_binary_success_response_schema():
     validate_api_contract = load_validate_api_contract()
     openapi = {
         "paths": {
-            "/api/v1/papers/{paper_id}/download": {
+            "/api/v1/documents/{document_id}/file": {
                 "get": {
                     "responses": {
                         "200": {

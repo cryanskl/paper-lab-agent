@@ -83,13 +83,19 @@ def assert_safe_document_storage_path(path: Path) -> None:
         raise OSError(f"document storage path is not a regular file: {path}")
 
 
-async def save_upload(file: UploadFile, paper_id: Optional[int]) -> tuple[dict, bool]:
+def save_document_bytes(
+    content: bytes,
+    paper_id: Optional[int],
+    original_name: Optional[str],
+) -> tuple[dict, bool]:
     settings = get_settings()
-    content = await file.read()
     digest = hashlib.sha256(content).hexdigest()
     with get_conn() as conn:
         existing = conn.execute("SELECT * FROM documents WHERE file_hash=?", (digest,)).fetchone()
         if existing:
+            if paper_id is not None and existing["paper_id"] is None:
+                conn.execute("UPDATE documents SET paper_id=? WHERE id=?", (paper_id, existing["id"]))
+                existing = conn.execute("SELECT * FROM documents WHERE id=?", (existing["id"],)).fetchone()
             return dict_from_row(existing), False
         stored = settings.pdf_dir / f"{digest}.pdf"
         assert_safe_document_storage_path(stored)
@@ -99,10 +105,14 @@ async def save_upload(file: UploadFile, paper_id: Optional[int]) -> tuple[dict, 
             INSERT INTO documents (paper_id, file_path, file_hash, original_name, num_pages, parse_status)
             VALUES (?, ?, ?, ?, ?, 'uploaded')
             """,
-            (paper_id, str(stored), digest, safe_original_filename(file.filename), count_pdf_pages(content)),
+            (paper_id, str(stored), digest, safe_original_filename(original_name), count_pdf_pages(content)),
         )
         row = conn.execute("SELECT * FROM documents WHERE id=?", (cursor.lastrowid,)).fetchone()
         return dict_from_row(row), True
+
+
+async def save_upload(file: UploadFile, paper_id: Optional[int]) -> tuple[dict, bool]:
+    return save_document_bytes(await file.read(), paper_id, file.filename)
 
 
 def read_document_text(file_path: str) -> str:

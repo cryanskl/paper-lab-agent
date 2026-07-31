@@ -2,13 +2,20 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, Query, UploadFile
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, field_validator
 
+from app.config import get_settings
 from app.db import dict_from_row, get_conn
 from app.errors import AppError, AsyncJobResponse, PageResponse, page
 from app.services.chemistry import extract_reactions, mark_chemistry_queued
 from app.services.document_pipeline import run_document_pipeline
-from app.services.documents import mark_parse_queued, parse_document, save_upload
+from app.services.documents import (
+    assert_safe_document_storage_path,
+    mark_parse_queued,
+    parse_document,
+    save_upload,
+)
 from app.services.rag import index_document, mark_index_queued
 from app.services.translation import create_translation_job, translate_document, translation_sections
 
@@ -256,6 +263,56 @@ def list_documents(
 @router.get("/{document_id}", response_model=DocumentResponse)
 def get_document(document_id: int) -> dict:
     return get_document_or_404(document_id)
+
+
+@router.get(
+    "/{document_id}/file",
+    response_class=FileResponse,
+    responses={
+        200: {
+            "description": "Locally stored PDF",
+            "content": {
+                "application/pdf": {
+                    "schema": {"type": "string", "format": "binary"},
+                }
+            },
+        }
+    },
+)
+def open_document_file(document_id: int) -> Response:
+    document = get_document_or_404(document_id)
+    configured_root = get_settings().pdf_dir.resolve()
+    raw_path = Path(document["file_path"])
+    try:
+        assert_safe_document_storage_path(raw_path)
+        path = raw_path.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise AppError(409, "document_file_unavailable", str(exc)) from exc
+    if path != configured_root and configured_root not in path.parents:
+        raise AppError(
+            409,
+            "document_file_outside_storage",
+            "Document file is outside the configured PDF directory",
+        )
+    if not path.is_file():
+        raise AppError(409, "document_file_unavailable", "Document PDF file is unavailable")
+    try:
+        with path.open("rb") as file_handle:
+            signature = file_handle.read(5)
+    except OSError as exc:
+        raise AppError(409, "document_file_unavailable", str(exc)) from exc
+    if signature != b"%PDF-":
+        raise AppError(415, "document_file_not_pdf", "Document file is not a PDF")
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=document.get("original_name") or f"document-{document_id}.pdf",
+        content_disposition_type="inline",
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post("/{document_id}/parse", status_code=202, response_model=AsyncJobResponse, response_model_exclude_none=True)

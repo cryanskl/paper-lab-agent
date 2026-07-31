@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import re
 import unicodedata
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Awaitable, Callable, Optional
 
@@ -15,6 +16,30 @@ from app.utils import json_dumps, json_loads, now_iso, today_iso
 
 SUBSCRIPT_DIGIT_TRANSLATION = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")
 SEARCH_TERM_SPLIT_RE = re.compile(r"[\n,，;；]+")
+NON_RESEARCH_WORK_TYPES = {
+    "component",
+    "editorial",
+    "erratum",
+    "journal",
+    "paratext",
+    "peer-review",
+    "reference-entry",
+    "retraction",
+}
+
+
+@dataclass
+class CrawlCandidateBatch:
+    job_id: int
+    journal_id: int
+    journal: dict[str, Any] = field(default_factory=dict)
+    search_history_id: Optional[int] = None
+    search_terms: list[str] = field(default_factory=list)
+    found: int = 0
+    filtered: int = 0
+    candidates: list[dict[str, Any]] = field(default_factory=list)
+    source_warning: Optional[str] = None
+    error: Optional[str] = None
 
 
 def normalize_text(value: Any) -> str:
@@ -95,6 +120,20 @@ def matches_search_terms(work: dict[str, Any], search_terms: Any, search_mode: s
     if str(search_mode).strip().lower() == "and":
         return all(checks)
     return any(checks)
+
+
+def work_type(work: dict[str, Any]) -> str:
+    direct = normalize_text(work.get("work_type"))
+    if direct:
+        return direct
+    raw_metadata = work.get("raw_metadata")
+    if isinstance(raw_metadata, dict):
+        return normalize_text(raw_metadata.get("type"))
+    return ""
+
+
+def is_research_work(work: dict[str, Any]) -> bool:
+    return work_type(work) not in NON_RESEARCH_WORK_TYPES
 
 
 def matches_keywords(work: dict[str, Any], keywords: Any) -> bool:
@@ -206,9 +245,12 @@ def upsert_paper_record(
     dedupe_key = build_dedupe_key(journal, work)
     existing = None
     if doi:
-        existing = conn.execute("SELECT id FROM papers WHERE doi = ?", (doi,)).fetchone()
+        existing = conn.execute("SELECT id, abstract, authors FROM papers WHERE doi = ?", (doi,)).fetchone()
     elif dedupe_key:
-        existing = conn.execute("SELECT id FROM papers WHERE dedupe_key = ?", (dedupe_key,)).fetchone()
+        existing = conn.execute(
+            "SELECT id, abstract, authors FROM papers WHERE dedupe_key = ?",
+            (dedupe_key,),
+        ).fetchone()
     payload = (
         doi,
         optional_text(work.get("title"), "Untitled"),
@@ -227,6 +269,9 @@ def upsert_paper_record(
         now_iso(),
     )
     if existing:
+        abstract_value = payload[2] or optional_text(existing["abstract"], "")
+        authors_value = payload[3] if json_list(work.get("authors")) else optional_text(existing["authors"], "[]")
+        update_payload = (payload[1], abstract_value, authors_value) + payload[4:]
         conn.execute(
             """
             UPDATE papers
@@ -235,7 +280,7 @@ def upsert_paper_record(
                 dedupe_key=?, raw_metadata=?, updated_at=?
             WHERE id=?
             """,
-            payload[1:] + (existing["id"],),
+            update_payload + (existing["id"],),
         )
         return False, existing["id"]
     cursor = conn.execute(
@@ -340,7 +385,7 @@ async def fetch_metadata_works(
     return works, None
 
 
-async def run_crawl_job(
+async def prepare_crawl_job(
     job_id: int,
     journal_id: int,
     date_from: str,
@@ -348,8 +393,13 @@ async def run_crawl_job(
     search_terms: Any = None,
     search_mode: str = "or",
     max_results: int = 50,
-) -> None:
+) -> CrawlCandidateBatch:
     settings = get_settings()
+    batch = CrawlCandidateBatch(
+        job_id=job_id,
+        journal_id=journal_id,
+        search_terms=normalize_search_terms(search_terms),
+    )
     with get_conn() as conn:
         conn.execute(
             "UPDATE crawl_jobs SET status='running', started_at=? WHERE id=?",
@@ -359,7 +409,7 @@ async def run_crawl_job(
             "SELECT search_history_id FROM crawl_jobs WHERE id=?",
             (job_id,),
         ).fetchone()
-        search_history_id = (
+        batch.search_history_id = (
             int(job_row["search_history_id"])
             if job_row and job_row["search_history_id"] is not None
             else None
@@ -370,138 +420,258 @@ async def run_crawl_job(
                 "UPDATE crawl_jobs SET status='failed', error=?, finished_at=? WHERE id=?",
                 ("journal not found", now_iso(), job_id),
             )
-            return
-        journal = dict_from_row(journal_row)
+            batch.error = "journal not found"
+            return batch
+        batch.journal = dict_from_row(journal_row)
 
     try:
-        issn = optional_text(journal.get("issn_electronic")) or optional_text(journal.get("issn_print"))
+        issn = optional_text(batch.journal.get("issn_electronic")) or optional_text(
+            batch.journal.get("issn_print")
+        )
         if not issn:
             raise RuntimeError("journal has no ISSN")
-        normalized_search_terms = normalize_search_terms(search_terms)
-        candidate_limit = min(max(max_results, 1) * 2, 200) if normalized_search_terms else None
-        works, source_warning = await fetch_metadata_works(
+        candidate_limit = min(max(max_results, 1) * 2, 200) if batch.search_terms else None
+        works, batch.source_warning = await fetch_metadata_works(
             settings,
             issn,
             date_from,
             date_to,
-            search_terms=normalized_search_terms,
+            search_terms=batch.search_terms,
             search_mode=search_mode,
             result_limit=candidate_limit,
         )
 
-        found = len(works)
-        filtered = 0
-        new_count = 0
-        classification_errors = []
-        accepted_candidates = []
+        batch.found = len(works)
         for work in works:
-            if not matches_search_terms(work, normalized_search_terms, search_mode):
-                filtered += 1
+            if not is_research_work(work):
+                batch.filtered += 1
                 continue
-            if search_history_id is None and normalized_search_terms and len(accepted_candidates) >= max_results:
-                filtered += 1
+            if not matches_search_terms(work, batch.search_terms, search_mode):
+                batch.filtered += 1
                 continue
-            accepted_candidates.append(work)
-
-        if search_history_id is not None:
-            # Reserve the shared cross-journal budget before OA lookups. This keeps
-            # Unpaywall work bounded by max_results even when many journals run in parallel.
-            with get_conn() as conn:
-                conn.execute("BEGIN IMMEDIATE")
-                row = conn.execute(
-                    "SELECT result_count FROM search_history WHERE id=?",
-                    (search_history_id,),
-                ).fetchone()
-                allocated = int((row["result_count"] if row else 0) or 0)
-                remaining = max(max_results - allocated, 0)
-                reserved_count = min(len(accepted_candidates), remaining)
-                if len(accepted_candidates) > reserved_count:
-                    filtered += len(accepted_candidates) - reserved_count
-                    accepted_candidates = accepted_candidates[:reserved_count]
-                conn.execute(
-                    "UPDATE search_history SET result_count=? WHERE id=?",
-                    (allocated + reserved_count, search_history_id),
-                )
-
-        unpaywall = UnpaywallClient(settings.unpaywall_email, **unpaywall_client_options(settings))
-        accepted_works = []
-        for work in accepted_candidates:
-            oa = {"oa_status": "unknown", "oa_pdf_url": None}
-            normalized_doi = normalize_doi(work.get("doi"))
-            if normalized_doi:
-                try:
-                    oa = await unpaywall.resolve(normalized_doi)
-                except Exception as exc:
-                    oa = {"oa_status": "unknown", "oa_pdf_url": None, "error": str(exc)}
-            accepted_works.append((work, oa))
-
-        # Keep network awaits outside the SQLite transaction. Parallel journal
-        # jobs can fetch concurrently, then each journal writes atomically.
-        with get_conn() as conn:
-            for work, oa in accepted_works:
-                created, paper_id = upsert_paper_record(
-                    conn,
-                    journal,
-                    work,
-                    oa,
-                    library_status="preview" if search_history_id is not None else "saved",
-                )
-                if created:
-                    new_count += 1
-                if search_history_id is not None:
-                    paper_row = conn.execute(
-                        "SELECT title, doi, library_status FROM papers WHERE id=?",
-                        (paper_id,),
-                    ).fetchone()
-                    result_status = "preview" if paper_row["library_status"] == "preview" else "existing"
-                    conn.execute(
-                        """
-                        INSERT INTO search_results (
-                            search_history_id, paper_id, paper_title, paper_doi,
-                            was_new, result_status, updated_at
-                        )
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(search_history_id, paper_id) DO UPDATE SET
-                            paper_title=excluded.paper_title,
-                            paper_doi=excluded.paper_doi,
-                            was_new=MAX(search_results.was_new, excluded.was_new),
-                            result_status=excluded.result_status,
-                            updated_at=excluded.updated_at
-                        """,
-                        (
-                            search_history_id,
-                            paper_id,
-                            paper_row["title"],
-                            paper_row["doi"],
-                            int(created),
-                            result_status,
-                            now_iso(),
-                        ),
-                    )
-                try:
-                    classify_paper(conn, settings, paper_id)
-                except Exception as exc:
-                    classification_errors.append(f"paper {paper_id}: {exc}")
-            job_error = source_warning
-            if classification_errors:
-                message = f"classification failed for {len(classification_errors)} paper(s): " + "; ".join(
-                    classification_errors[:3]
-                )
-                job_error = f"{job_error}; {message}" if job_error else message
-            conn.execute(
-                """
-                UPDATE crawl_jobs
-                SET status='success', papers_found=?, papers_filtered=?, papers_new=?, error=?, finished_at=?
-                WHERE id=?
-                """,
-                (found, filtered, new_count, job_error, now_iso(), job_id),
-            )
+            batch.candidates.append(work)
+        return batch
     except Exception as exc:
+        batch.error = str(exc)
         with get_conn() as conn:
             conn.execute(
                 "UPDATE crawl_jobs SET status='failed', error=?, finished_at=? WHERE id=?",
-                (str(exc), now_iso(), job_id),
+                (batch.error, now_iso(), job_id),
             )
+        return batch
+
+
+def candidate_identity(journal: dict[str, Any], work: dict[str, Any]) -> str:
+    doi = normalize_doi(work.get("doi"))
+    if doi:
+        return f"doi:{doi}"
+    dedupe_key = build_dedupe_key(journal, work)
+    if dedupe_key:
+        return dedupe_key
+    return "|".join(
+        [
+            str(journal.get("id") or ""),
+            normalize_text(work.get("title")),
+            normalize_text(work.get("published_date") or work.get("published_year")),
+        ]
+    )
+
+
+def select_balanced_candidates(
+    batches: list[CrawlCandidateBatch],
+    max_results: int,
+) -> dict[int, list[dict[str, Any]]]:
+    """Round-robin journals while preserving provider relevance within each journal."""
+    limit = max(0, max_results)
+    selected = {batch.job_id: [] for batch in batches}
+    cursors = {batch.job_id: 0 for batch in batches}
+    seen: set[str] = set()
+    eligible = sorted((batch for batch in batches if not batch.error), key=lambda batch: batch.job_id)
+
+    while sum(len(items) for items in selected.values()) < limit:
+        made_progress = False
+        for batch in eligible:
+            candidates = batch.candidates
+            cursor = cursors[batch.job_id]
+            while cursor < len(candidates):
+                work = candidates[cursor]
+                cursor += 1
+                identity = candidate_identity(batch.journal, work)
+                if identity and identity in seen:
+                    continue
+                if identity:
+                    seen.add(identity)
+                selected[batch.job_id].append(work)
+                made_progress = True
+                break
+            cursors[batch.job_id] = cursor
+            if sum(len(items) for items in selected.values()) >= limit:
+                break
+        if not made_progress:
+            break
+
+    for batch in batches:
+        batch.filtered += len(batch.candidates) - len(selected[batch.job_id])
+    return selected
+
+
+async def enrich_missing_abstract(
+    work: dict[str, Any],
+    crossref: CrossrefClient,
+) -> tuple[dict[str, Any], Optional[str]]:
+    enriched = dict(work)
+    if optional_text(enriched.get("abstract")) or enriched.get("source_api") == "crossref":
+        return enriched, None
+    doi = normalize_doi(enriched.get("doi"))
+    if not doi:
+        return enriched, None
+    try:
+        fallback = await crossref.work_by_doi(doi)
+    except Exception as exc:
+        return enriched, str(exc)
+    if not fallback:
+        return enriched, None
+
+    abstract = optional_text(fallback.get("abstract"))
+    if abstract:
+        enriched["abstract"] = abstract
+    if not json_list(enriched.get("authors")) and json_list(fallback.get("authors")):
+        enriched["authors"] = fallback["authors"]
+    if not optional_text(enriched.get("landing_url")) and optional_text(fallback.get("landing_url")):
+        enriched["landing_url"] = fallback["landing_url"]
+    raw_metadata = dict(json_object(enriched.get("raw_metadata")))
+    raw_metadata["crossref_enrichment"] = json_object(fallback.get("raw_metadata"))
+    enriched["raw_metadata"] = raw_metadata
+    return enriched, None
+
+
+async def finalize_crawl_batch(
+    batch: CrawlCandidateBatch,
+    accepted_candidates: list[dict[str, Any]],
+) -> None:
+    if batch.error:
+        return
+    settings = get_settings()
+    unpaywall = UnpaywallClient(settings.unpaywall_email, **unpaywall_client_options(settings))
+    crossref = None
+    accepted_works = []
+    enrichment_errors = []
+    for original_work in accepted_candidates:
+        work = original_work
+        enrichment_error = None
+        needs_crossref = (
+            not optional_text(original_work.get("abstract"))
+            and original_work.get("source_api") != "crossref"
+            and bool(normalize_doi(original_work.get("doi")))
+        )
+        if needs_crossref:
+            if crossref is None:
+                crossref = CrossrefClient(settings.openalex_mailto, **academic_client_options(settings))
+            work, enrichment_error = await enrich_missing_abstract(original_work, crossref)
+        if enrichment_error:
+            enrichment_errors.append(enrichment_error)
+        oa = {"oa_status": "unknown", "oa_pdf_url": None}
+        normalized_doi = normalize_doi(work.get("doi"))
+        if normalized_doi:
+            try:
+                oa = await unpaywall.resolve(normalized_doi)
+            except Exception as exc:
+                oa = {"oa_status": "unknown", "oa_pdf_url": None, "error": str(exc)}
+        accepted_works.append((work, oa))
+
+    # Keep network awaits outside the SQLite transaction. Parallel journal
+    # jobs can enrich concurrently, then each journal writes atomically.
+    new_count = 0
+    classification_errors = []
+    with get_conn() as conn:
+        for work, oa in accepted_works:
+            created, paper_id = upsert_paper_record(
+                conn,
+                batch.journal,
+                work,
+                oa,
+                library_status="preview" if batch.search_history_id is not None else "saved",
+            )
+            if created:
+                new_count += 1
+            if batch.search_history_id is not None:
+                paper_row = conn.execute(
+                    "SELECT title, doi, library_status FROM papers WHERE id=?",
+                    (paper_id,),
+                ).fetchone()
+                result_status = "preview" if paper_row["library_status"] == "preview" else "existing"
+                conn.execute(
+                    """
+                    INSERT INTO search_results (
+                        search_history_id, paper_id, paper_title, paper_doi,
+                        was_new, result_status, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(search_history_id, paper_id) DO UPDATE SET
+                        paper_title=excluded.paper_title,
+                        paper_doi=excluded.paper_doi,
+                        was_new=MAX(search_results.was_new, excluded.was_new),
+                        result_status=excluded.result_status,
+                        updated_at=excluded.updated_at
+                    """,
+                    (
+                        batch.search_history_id,
+                        paper_id,
+                        paper_row["title"],
+                        paper_row["doi"],
+                        int(created),
+                        result_status,
+                        now_iso(),
+                    ),
+                )
+            try:
+                classify_paper(conn, settings, paper_id)
+            except Exception as exc:
+                classification_errors.append(f"paper {paper_id}: {exc}")
+        job_error = batch.source_warning
+        if enrichment_errors:
+            message = f"metadata enrichment failed for {len(enrichment_errors)} paper(s)"
+            job_error = f"{job_error}; {message}" if job_error else message
+        if classification_errors:
+            message = f"classification failed for {len(classification_errors)} paper(s): " + "; ".join(
+                classification_errors[:3]
+            )
+            job_error = f"{job_error}; {message}" if job_error else message
+        conn.execute(
+            """
+            UPDATE crawl_jobs
+            SET status='success', papers_found=?, papers_filtered=?, papers_new=?, error=?, finished_at=?
+            WHERE id=?
+            """,
+            (batch.found, batch.filtered, new_count, job_error, now_iso(), batch.job_id),
+        )
+
+
+async def run_crawl_job(
+    job_id: int,
+    journal_id: int,
+    date_from: str,
+    date_to: str,
+    search_terms: Any = None,
+    search_mode: str = "or",
+    max_results: int = 50,
+) -> None:
+    batch = await prepare_crawl_job(
+        job_id,
+        journal_id,
+        date_from,
+        date_to,
+        search_terms,
+        search_mode,
+        max_results,
+    )
+    if batch.error:
+        return
+    accepted_candidates = batch.candidates
+    if batch.search_history_id is not None or batch.search_terms:
+        accepted_candidates = accepted_candidates[:max_results]
+        batch.filtered += len(batch.candidates) - len(accepted_candidates)
+    await finalize_crawl_batch(batch, accepted_candidates)
 
 
 CrawlJobRunner = Callable[..., Awaitable[None]]
@@ -525,6 +695,32 @@ async def run_crawl_jobs(
             await job_runner(*args)
 
     await asyncio.gather(*(run_one(args) for args in task_args))
+
+
+async def run_search_crawl_jobs(
+    task_args: list[tuple[Any, ...]],
+    max_results: int,
+    *,
+    max_concurrency: Optional[int] = None,
+) -> None:
+    """Fetch every journal first, then select a deterministic balanced global batch."""
+    concurrency = get_settings().crawl_max_concurrency if max_concurrency is None else max_concurrency
+    if concurrency < 1:
+        raise ValueError("max_concurrency must be at least 1")
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def prepare_one(args: tuple[Any, ...]) -> CrawlCandidateBatch:
+        async with semaphore:
+            return await prepare_crawl_job(*args)
+
+    batches = await asyncio.gather(*(prepare_one(args) for args in task_args))
+    selected = select_balanced_candidates(batches, max_results)
+
+    async def finalize_one(batch: CrawlCandidateBatch) -> None:
+        async with semaphore:
+            await finalize_crawl_batch(batch, selected[batch.job_id])
+
+    await asyncio.gather(*(finalize_one(batch) for batch in batches))
 
 
 def resolve_job_specs(

@@ -22,6 +22,7 @@ PAGINATED_GET_PATHS = {
     "/api/v1/papers",
     "/api/v1/categories",
     "/api/v1/documents",
+    "/api/v1/paper-downloads",
     "/api/v1/documents/{}/sections",
     "/api/v1/documents/{}/chunks",
     "/api/v1/documents/{}/reaction-sets",
@@ -33,6 +34,9 @@ ASYNC_POST_PATHS = {
     "/api/v1/documents/{}/translate",
     "/api/v1/documents/{}/index",
     "/api/v1/documents/{}/extract-chemistry",
+    "/api/v1/papers/{}/abstract-translation",
+    "/api/v1/papers/{}/download",
+    "/api/v1/term-translations",
 }
 ASYNC_RESPONSE_FIELDS = ("job_id", "status")
 ASYNC_RESPONSE_FIELDS_BY_PATH = {
@@ -41,6 +45,15 @@ ASYNC_RESPONSE_FIELDS_BY_PATH = {
     "/api/v1/documents/{}/translate": ("job_id", "document_id", "target_lang", "status"),
     "/api/v1/documents/{}/index": ("job_id", "document_id", "index_status", "status"),
     "/api/v1/documents/{}/extract-chemistry": ("job_id", "document_id", "chemistry_status", "status"),
+    "/api/v1/papers/{}/abstract-translation": ("job_id", "paper_id", "target_lang", "status"),
+    "/api/v1/papers/{}/download": ("job_id", "paper_id", "document_id", "status", "error"),
+    "/api/v1/term-translations": (
+        "job_id",
+        "source_text",
+        "source_lang",
+        "target_lang",
+        "status",
+    ),
 }
 ASYNC_JOBS_RESPONSE_PATHS = {"/api/v1/crawl/run"}
 REQUIRED_SEMANTIC_ERROR_RESPONSES = {

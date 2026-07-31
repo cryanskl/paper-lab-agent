@@ -15,6 +15,25 @@ DEFAULT_PROMPT_PRESETS = [
     ("/提问我", "就所选文献向我提问，考察理解", "就当前范围的文献内容，向我提出两个考察理解的问题。"),
 ]
 
+DEFAULT_GLOSSARY_TERMS = [
+    ("capacitively coupled", "容性耦合"),
+    ("electron energy distribution function", "电子能量分布函数"),
+    ("EEDF", "电子能量分布函数"),
+    ("particle-in-cell", "粒子网格法"),
+    ("Monte Carlo collisions", "蒙特卡罗碰撞"),
+    ("secondary electron emission", "二次电子发射"),
+    ("ohmic heating", "欧姆加热"),
+    ("cross section", "截面"),
+    ("dissociation", "解离"),
+    ("ionization", "电离"),
+    ("attachment", "吸附"),
+    ("radical", "自由基"),
+    ("ion flux", "离子通量"),
+    ("sheath", "鞘层"),
+    ("self-bias", "自偏压"),
+    ("rate coefficient", "速率系数"),
+]
+
 
 def dict_from_row(row: sqlite3.Row) -> dict[str, Any]:
     return {key: row[key] for key in row.keys()}
@@ -112,8 +131,21 @@ def ensure_schema_indexes(conn: sqlite3.Connection) -> None:
         ("idx_search_results_search", "search_results", ["search_history_id"]),
         ("idx_search_results_paper", "search_results", ["paper_id"]),
         ("idx_documents_paper", "documents", ["paper_id"]),
+        ("idx_paper_downloads_status", "paper_downloads", ["status"]),
         ("idx_sections_doc", "sections", ["document_id"]),
         ("idx_translations_doc", "translations", ["document_id"]),
+        (
+            "idx_paper_abstract_translations_paper",
+            "paper_abstract_translations",
+            ["paper_id", "target_lang", "id"],
+        ),
+        (
+            "idx_term_translations_lookup",
+            "term_translations",
+            ["source_text", "source_lang", "target_lang", "status", "id"],
+        ),
+        ("idx_glossary_terms_en", "glossary_terms", ["en"]),
+        ("idx_glossary_terms_zh", "glossary_terms", ["zh"]),
         ("idx_chunks_doc", "chunks", ["document_id"]),
         ("idx_rsets_doc", "reaction_sets", ["document_id"]),
         ("idx_reactions_set", "reactions", ["reaction_set_id"]),
@@ -128,6 +160,9 @@ def ensure_migrations(conn: sqlite3.Connection) -> None:
     prompt_presets_existed = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='prompt_presets'"
     ).fetchone() is not None
+    glossary_terms_existed = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='glossary_terms'"
+    ).fetchone() is not None
     ensure_schema_objects(conn)
     if not prompt_presets_existed:
         conn.executemany(
@@ -136,6 +171,12 @@ def ensure_migrations(conn: sqlite3.Connection) -> None:
             VALUES (?, ?, ?)
             """,
             DEFAULT_PROMPT_PRESETS,
+        )
+        conn.commit()
+    if not glossary_terms_existed:
+        conn.executemany(
+            "INSERT INTO glossary_terms (en, zh) VALUES (?, ?)",
+            DEFAULT_GLOSSARY_TERMS,
         )
         conn.commit()
     journal_columns = {row["name"] for row in conn.execute("PRAGMA table_info(journals)").fetchall()}

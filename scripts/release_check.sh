@@ -681,7 +681,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package.get("demo_counts", {}).get("reaction_audits") != 1
         or package.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
         or package.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"
-        or package.get("openapi_path_count") != 34
+        or package.get("openapi_path_count") != 42
         or not valid_sha256(package.get("package_sha256"))
         or set((package.get("checksums") or {})) != expected_checksum_names
         or not valid_release_checksums(package.get("checksums") or {})
@@ -721,7 +721,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or package_validation.get("demo_counts", {}).get("reaction_audits") != 1
         or package_validation.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
         or package_validation.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"
-        or package_validation.get("openapi_path_count") != 34
+        or package_validation.get("openapi_path_count") != 42
         or not valid_sha256(package_validation.get("package_sha256"))
         or package_validation.get("package_sha256") != package.get("package_sha256")
         or set((package_validation.get("checksums") or {})) != expected_checksum_names
@@ -772,7 +772,7 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-release-") as release_dir:
         or handoff.get("demo_counts", {}).get("reaction_audits") != 1
         or handoff.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"
         or handoff.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"
-        or handoff.get("openapi_path_count") != 34
+        or handoff.get("openapi_path_count") != 42
         or not valid_sha256(handoff.get("package_sha256"))
         or handoff.get("package_sha256") != handoff.get("package_sha256", "").lower()
         or set((handoff.get("checksums") or {})) != expected_checksum_names

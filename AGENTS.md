@@ -5,7 +5,7 @@
 
 ## 项目一句话
 
-低温等离子体文献检索与理解系统：确定性检索层（按白名单 ISSN 限定期刊、按用户 OR/AND 搜索词联网检索并本地缓存）+ 大模型理解层（翻译 / RAG / 化学库抽取）。详见 `docs/PRD_等离子体文献系统.md`。
+低温等离子体文献检索与理解系统：确定性检索层（按白名单 ISSN 限定期刊、按用户 OR/AND 搜索词联网检索并本地缓存）+ 大模型理解层（摘要/全文翻译、跨语言 RAG、化学库抽取）+ 合法 OA 全文管理。详见 `docs/PRD_等离子体文献系统.md`。
 
 ## 真理来源（不得擅自改动）
 
@@ -16,22 +16,27 @@
 
 ## 技术栈（锁定）
 
-FastAPI + SQLite + APScheduler + GROBID + Chroma/FAISS；前端 Streamlit。未经讨论不要替换或引入重型框架。
+FastAPI + SQLite + APScheduler + GROBID + Chroma/FAISS；用户工作台是 FastAPI 托管的原生 HTML/CSS/JS，
+Streamlit 保留为运维与发布验收视图。未经讨论不要替换或引入重型框架。
 
 ## 通用约定
 
 - 响应一律 JSON；列表统一 `{items,total,page,page_size}`；错误统一 `{error:{code,message}}` + 语义化 HTTP 状态码。
-- 耗时操作（抓取/解析/翻译/索引/抽取）用 FastAPI BackgroundTasks 异步，立即返回后由资源的 status 字段轮询；不要做成同步阻塞。
+- 耗时操作（抓取/下载/解析/翻译/索引/抽取）用 FastAPI BackgroundTasks 异步，立即返回后由资源的 status 字段轮询；不要做成同步阻塞。
 - 日期统一 ISO8601 文本；多值字段（authors/keywords/reactants 等）统一存 JSON 文本。
 - SQLite 连接开启 `PRAGMA foreign_keys=ON`；检索走已建好的 `papers_fts`（FTS5），不要自己手写 LIKE 全表扫。
+- 多期刊联网检索必须先收集全部期刊候选，再按“期刊内相关性 + 跨期刊轮转”填充全局配额；禁止恢复成 first-finisher wins。
+- OpenAlex 缺少摘要时可用 Crossref 补全，但不得用空值覆盖库中已有的摘要或作者。
+- 本地 echo adapter 只是诊断降级，不是有效翻译；前端和 API 状态不得把回显原文标成已翻译。
+- embedding 模型与向量库是同一索引契约。切换 `local-hash` / `bge-m3` 或向量后端后必须重建索引，禁止混用旧向量。
 
 ## 外部依赖
 
 - OpenAlex：请求带 `OPENALEX_API_KEY`；Crossref 请求带 `OPENALEX_MAILTO` 作为联系信息。两者都要控制频率、加重试，并互为备援。
-- Unpaywall：按 DOI 查 OA，仅补合法开放获取链接。
+- Unpaywall：按 DOI 查 OA，仅补合法开放获取链接；后台下载器只接受已核验 OA URL，不尝试出版商付费入口。
 - GROBID：以 Docker 服务方式调用，地址从环境变量读。
 - LLM / 嵌入模型：key 从环境变量读，不要硬编码。
-- 所有外部依赖写进 `.env.example`，至少包含：`OPENALEX_API_KEY`、`OPENALEX_MAILTO`、`UNPAYWALL_EMAIL`、`GROBID_URL`、`LLM_API_KEY`、`EMBEDDING_MODEL`、`VECTOR_DB_PATH`、`DATABASE_PATH`。
+- 所有外部依赖写进 `.env.example`，至少包含：`OPENALEX_API_KEY`、`OPENALEX_MAILTO`、`UNPAYWALL_EMAIL`、`GROBID_URL`、`LLM_API_KEY`、`EMBEDDING_MODEL`、`VECTOR_DB_BACKEND`、`VECTOR_DB_PATH`、`DATABASE_PATH`。
 
 ## 红线（不可逾越）
 
@@ -42,4 +47,4 @@ FastAPI + SQLite + APScheduler + GROBID + Chroma/FAISS；前端 Streamlit。未�
 
 ## 完成标准
 
-每个任务交付时：(1) 满足 `docs/任务拆分_开发路线.md` 中该任务的全部验收标准；(2) 本地能 `uvicorn` 起服务并验证（给出 curl 或最小测试）；(3) 不破坏已通过的既有任务。
+每个任务交付时：(1) 满足 `docs/任务拆分_开发路线.md` 中该任务的全部验收标准；(2) 本地能 `uvicorn` 起服务并验证（给出 curl 或最小测试）；(3) 不破坏已通过的既有任务；(4) 提交前运行 `bash scripts/release_check.sh`，或说明无法通过的具体外部依赖与已完成的替代验证。

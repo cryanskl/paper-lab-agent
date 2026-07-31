@@ -327,6 +327,21 @@ input, select, button, textarea { outline: none; font-family: inherit; }
 .doi { font-family: var(--mono); font-size: 11.5px; color: var(--mut-5); }
 .mark-btn { white-space: nowrap; }
 .mark-btn.on { background: rgba(111, 199, 214, .12); border-color: var(--accent-bd); color: var(--accent-2); }
+.paper-download { min-width: 82px; white-space: nowrap; }
+.paper-download.available { border-color: var(--accent-bd); color: var(--accent-2); }
+.paper-download.downloading {
+  border-color: rgba(111, 199, 214, .25); color: var(--accent-1);
+  background: rgba(111, 199, 214, .08);
+}
+.paper-download.downloaded {
+  border-color: rgba(116, 190, 140, .36); color: #9DD8AD;
+  background: rgba(116, 190, 140, .11);
+}
+.paper-download.failed {
+  border-color: rgba(218, 104, 104, .38); color: #E89A9A;
+  background: rgba(218, 104, 104, .08);
+}
+.paper-download.unavailable { color: var(--mut-6); background: rgba(154, 163, 178, .04); }
 .pager { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 8px 0 4px; }
 
 /* ── 文献库 ── */
@@ -362,6 +377,51 @@ input, select, button, textarea { outline: none; font-family: inherit; }
 .lib-foot { display: flex; align-items: center; gap: 8px; margin-top: 2px; flex-wrap: wrap; }
 .lib-foot .doi { font-size: 11px; }
 .lib-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.local-pdf-link { border-color: var(--accent-bd); color: var(--accent-2); }
+
+/* ── 下载管理 ── */
+.download-manager-page { padding: 22px; }
+.download-manager-stats {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px;
+}
+.download-stat {
+  display: flex; align-items: flex-end; justify-content: space-between; min-height: 88px;
+  padding: 15px 17px; border: 1px solid var(--line); border-radius: 8px; background: var(--card);
+  color: var(--mut-4); font-size: 11.5px;
+}
+.download-stat strong { color: var(--text-1); font: 600 28px/1 var(--mono); }
+.download-stat.downloading { border-color: rgba(111, 199, 214, .24); }
+.download-stat.downloaded { border-color: rgba(116, 190, 140, .24); }
+.download-stat.failed { border-color: rgba(218, 104, 104, .24); }
+.download-manager-toolbar {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+}
+.download-manager-filters { display: flex; gap: 6px; }
+.download-manager-toolbar .screen-sub { margin-left: auto; }
+.download-manager-list { display: grid; gap: 9px; }
+.download-job {
+  padding: 14px 16px; border: 1px solid var(--line); border-left-width: 3px;
+  border-radius: 7px; background: var(--card);
+}
+.download-job.downloading { border-left-color: var(--accent); }
+.download-job.downloaded { border-left-color: #74BE8C; }
+.download-job.failed { border-left-color: #DA6868; }
+.download-job-head { display: flex; align-items: flex-start; gap: 12px; }
+.download-job-title { flex: 1; color: var(--text-1); font: 600 13px/1.55 var(--serif); }
+.download-status {
+  flex: 0 0 auto; padding: 2px 8px; border-radius: 10px; font-size: 10px;
+  background: rgba(154, 163, 178, .1); color: var(--mut-4);
+}
+.download-status.downloading { background: rgba(111, 199, 214, .12); color: var(--accent-2); }
+.download-status.downloaded { background: rgba(116, 190, 140, .13); color: #9DD8AD; }
+.download-status.failed { background: rgba(218, 104, 104, .12); color: #E89A9A; }
+.download-job-meta { margin-top: 7px; color: var(--mut-5); font-size: 10.5px; line-height: 1.6; }
+.download-job-error {
+  margin-top: 9px; padding: 7px 9px; border: 1px solid rgba(218, 104, 104, .2);
+  border-radius: 5px; background: rgba(218, 104, 104, .06); color: #DFA0A0;
+  font-size: 10.5px; line-height: 1.6;
+}
+.download-job-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
 
 /* ── 标签管理 ── */
 .tag-manager-page { padding: 22px 26px 34px; }
@@ -402,7 +462,7 @@ input, select, button, textarea { outline: none; font-family: inherit; }
   padding: 42px 0; color: var(--mut-6); font-size: 12px; text-align: center;
 }
 
-/* ── 术语表管理 ── */
+/* ── 术语管理 ── */
 .glossary-manager-page { padding: 24px 26px 38px; max-width: 1180px; }
 .glossary-manager-intro {
   display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;
@@ -469,7 +529,38 @@ input, select, button, textarea { outline: none; font-family: inherit; }
   display: inline-block; padding: 2px 6px; border-radius: 3px;
   background: rgba(217, 164, 65, .1); color: var(--warn); font-size: 9.5px; white-space: nowrap;
 }
+.glossary-row-state.translating span {
+  background: rgba(111, 199, 214, .1); color: var(--accent-1);
+}
+.glossary-row-state.failed span {
+  background: rgba(218, 97, 97, .1); color: var(--danger);
+}
 .glossary-row-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.glossary-delete-wrap { position: relative; }
+.glossary-delete-popover {
+  position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 55;
+  display: flex; align-items: center; gap: 2px; padding: 3px;
+  border: 1px solid var(--line-2); border-radius: 6px; background: #171D27;
+  white-space: nowrap;
+}
+.glossary-delete-popover::after {
+  content: ""; position: absolute; right: 14px; bottom: -4px; width: 7px; height: 7px;
+  border-right: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2);
+  background: #171D27; transform: rotate(45deg);
+}
+.glossary-delete-popover button {
+  position: relative; z-index: 1; min-width: 42px; padding: 5px 8px;
+  border: none; border-radius: 4px; background: transparent;
+  color: var(--mut-3); font-size: 10.5px; cursor: pointer;
+}
+.glossary-delete-popover button:hover, .glossary-delete-popover button:focus-visible {
+  background: rgba(255, 255, 255, .05); color: var(--text-1); outline: none;
+}
+.glossary-delete-popover button.confirm { color: #E89A9A; }
+.glossary-delete-popover button.confirm:hover,
+.glossary-delete-popover button.confirm:focus-visible {
+  background: rgba(218, 104, 104, .12); color: #F3B0B0;
+}
 .glossary-manager-empty {
   padding: 48px 12px; color: var(--mut-6); font-size: 12px; text-align: center;
 }
@@ -499,27 +590,18 @@ input, select, button, textarea { outline: none; font-family: inherit; }
 .segmented { display: flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; }
 .segmented button {
   background: transparent; color: var(--mut-2); border: none; padding: 6px 13px;
-  font-size: 11.5px; cursor: pointer;
+  font-size: 11.5px; cursor: pointer; white-space: nowrap;
 }
 .segmented button.on { background: var(--accent-btn); color: #EAF7F9; }
+.segmented button:disabled {
+  background: rgba(154, 163, 178, .04); color: var(--mut-7); cursor: not-allowed;
+}
 .stepper { display: flex; align-items: center; gap: 4px; border: 1px solid var(--line-2); border-radius: 6px; padding: 2px 4px; }
 .stepper button { background: transparent; border: none; color: var(--mut-2); font-size: 12px; cursor: pointer; padding: 3px 7px; }
 .stepper span { font-size: 11px; color: var(--mut-6); min-width: 34px; text-align: center; }
 #gloss-toggle.on { background: rgba(111, 199, 214, .12); border-color: var(--accent-bd); color: var(--accent-2); }
 #reader-retranslate[data-busy="true"] { border-color: var(--accent-bd); color: var(--accent-2); }
 .reader-panes { flex: 1; display: flex; min-height: 0; position: relative; }
-.reader-qa-language {
-  position: absolute; z-index: 4; top: 11px; left: 18px; display: flex; align-items: center; gap: 9px;
-  padding: 4px 5px 4px 10px; border: 1px solid var(--line-2); border-radius: 7px;
-  background: rgba(18, 23, 31, .94); box-shadow: 0 6px 18px rgba(0, 0, 0, .2);
-}
-.reader-qa-language[hidden] { display: none; }
-.reader-qa-language > span {
-  color: var(--mut-6); font-size: 9.5px; letter-spacing: 1px; text-transform: uppercase;
-}
-.reader-qa-language .segmented { border: none; }
-.reader-qa-language .segmented button { padding: 4px 9px; border-radius: 4px; }
-.reader-panes.qa-mode .pane { padding-top: 66px; }
 .pane { flex: 1; overflow-y: auto; padding: 20px 28px 60px; position: relative; }
 #pane-en { border-right: 1px solid var(--line); }
 .pane[hidden] { display: none; }
@@ -873,6 +955,10 @@ input, select, button, textarea { outline: none; font-family: inherit; }
 .mk-status.downloaded { background: rgba(116, 190, 140, .14); color: #9DD8AD; }
 .mk-status.failed { background: rgba(218, 104, 104, .14); color: #E89A9A; }
 .mk-status.off { background: rgba(154, 163, 178, .10); color: var(--mut-5); }
+.mark-btn.downloaded {
+  border-color: rgba(116, 190, 140, .36); background: rgba(116, 190, 140, .12);
+  color: #9DD8AD; opacity: 1;
+}
 .mk .r { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin-top: 6px; }
 .mk .r .spacer { display: none; }
 .mk .d { flex: 1 1 165px; overflow-wrap: anywhere; font-family: var(--mono); font-size: 10.5px; color: var(--accent-1); }
@@ -934,6 +1020,7 @@ input, select, button, textarea { outline: none; font-family: inherit; }
   .journal-roster { max-height: 360px; }
   .glossary-form-panel { grid-template-columns: 1fr 1fr; }
   .glossary-form-heading { grid-column: 1 / -1; }
+  .download-manager-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 720px) {
@@ -957,4 +1044,9 @@ input, select, button, textarea { outline: none; font-family: inherit; }
   .glossary-column-head > :nth-child(n + 3) { display: none; }
   .glossary-row-state { display: none; }
   .glossary-row-actions { grid-column: 1 / -1; }
+  .download-manager-page { padding: 16px; }
+  .download-manager-stats { grid-template-columns: 1fr 1fr; }
+  .download-manager-toolbar { align-items: stretch; flex-direction: column; }
+  .download-manager-toolbar .screen-sub { margin-left: 0; }
+  .download-manager-filters { flex-wrap: wrap; }
 }

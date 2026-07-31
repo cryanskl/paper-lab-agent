@@ -237,13 +237,44 @@ def test_web_ui_does_not_show_translated_author_names():
     assert ".map((a) => untranslatedAuthorName(" in app_js
 
 
+def test_web_ui_translates_metadata_abstract_without_requiring_pdf():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "async function waitForAbstractTranslation(" in app_js
+    assert "api(`/papers/${paperId}/abstract-translation`" in app_js
+    assert "body: { target_lang: targetLang }" in app_js
+    assert "translation.target_text" in app_js
+    assert "该条元数据没有可翻译的摘要" in app_js
+    assert "尚未导入该文献的 PDF 全文" not in app_js
+
+
+def test_web_ui_progressively_prefetches_abstract_translations_without_revealing_them():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "const ABSTRACT_PREFETCH_COUNT = 5;" in app_js
+    assert "const ABSTRACT_TRANSLATION_CONCURRENCY = 2;" in app_js
+    assert "function enqueueAbstractTranslation(paperId)" in app_js
+    assert "function pumpAbstractTranslationQueue()" in app_js
+    assert "function scheduleAbstractTranslations()" in app_js
+    assert "new IntersectionObserver((entries)" in app_js
+    assert "scheduleAbstractTranslations();" in app_js
+    assert "translateAbstract(paperId, { reveal: false })" in app_js
+    assert "await translateAbstract(paperId, { reveal: true });" in app_js
+    assert "hidden: !reveal" in app_js
+    assert "current.hidden = !current.hidden;" in app_js
+    assert "'显示翻译'" in app_js
+    assert "'重试翻译'" in app_js
+
+
 def test_web_ui_separates_local_search_from_online_sync():
     index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
 
+    assert "关键词用中英文逗号分隔（, 或 ，）" in index
+    assert r".split(/[\n,，;；]+/)" in app_js
     assert 'id="search-source"' not in index
     assert "默认检索本地库 · 在线同步" not in app_js
-    assert 'id="do-search">检索本地库</button>' in index
+    assert 'id="do-search">本地检索</button>' in index
     assert 'id="do-online-search">联网搜索</button>' in index
     assert index.index('id="do-online-search"') < index.index('id="do-search"')
     assert 'id="search-mode"' in index
@@ -286,49 +317,59 @@ def test_web_ui_groups_fulltext_filters_and_keeps_oa_download_modes_exclusive():
     assert '<span class="chips-label">全文</span>' in index
     assert 'id="oa-chip" title="只看有开放全文链接的论文">OA</button>' in index
     assert 'id="download-chip" title="只看系统支持直接下载的论文">下载</button>' in index
+    assert 'id="downloaded-chip" title="只看已成功下载到本机的论文">已下载</button>' in index
     assert "downloadOnly: false" in app_js
+    assert "downloadedOnly: false" in app_js
     assert "params.set('downloadable_only', 'true')" in app_js
-    assert "if (state.oaOnly) state.downloadOnly = false;" in app_js
-    assert "if (state.downloadOnly) state.oaOnly = false;" in app_js
+    assert "params.set('downloaded_only', 'true')" in app_js
+    assert "state.downloadedOnly = false;" in app_js
+    assert "$('#downloaded-chip').addEventListener('click'" in app_js
 
 
-def test_web_ui_download_queue_only_launches_supported_oa_fulltext():
+def test_web_ui_uses_backend_download_state_and_never_browser_default_download():
     index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
     styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
 
-    assert 'id="download-summary"' in index
-    assert 'id="download-marked" disabled>一键下载可用全文</button>' in index
-    assert "function downloadAvailability(paper)" in app_js
-    assert "hostname === 'example.test'" in app_js
-    assert "未发现开放全文" in app_js
-    assert "开放权限未知" in app_js
-    assert "测试数据不支持下载" in app_js
-    assert "async function downloadMarkedPapers()" in app_js
-    assert "entries.filter((paper) => downloadAvailability(paper).supported)" in app_js
-    assert "fetch(`${API}/papers/${encodeURIComponent(paper.id)}/download`)" in app_js
-    assert "const blob = await response.blob()" in app_js
-    assert "state.markedDownloadState[paper.id] = 'downloading'" in app_js
-    assert "state.markedDownloadState[paper.id] = 'downloaded'" in app_js
-    assert "state.markedDownloadState[paper.id] = 'failed'" in app_js
-    assert "已下载 ${downloaded} 篇" in app_js
-    assert "link.target = '_blank'" not in app_js
-    assert ".mk-status.downloading" in styles
-    assert ".mk-status.downloaded" in styles
-    assert ".mk-status.failed" in styles
-    assert ".mk-status.off" in styles
-    assert ".drawer-download-all" in styles
+    assert 'id="open-drawer"' not in index
+    assert 'id="download-marked"' not in index
+    assert 'data-act="download">下载</button>' in app_js
+    assert "下载中…" in app_js
+    assert "data-act=\"open-pdf\"" in app_js
+    assert "下载失败" in app_js
+    assert "无法下载" in app_js
+    assert "api(`/papers/${paper.id}/download`, { method: 'POST' })" in app_js
+    assert "await pollPaperDownload(paper.id)" in app_js
+    assert "window.open(`${API}/documents/${encodeURIComponent(documentId)}/file`" in app_js
+    assert "const blob = await response.blob()" not in app_js
+    assert ".paper-download.downloaded" in styles
+    assert ".paper-download.failed" in styles
 
 
-def test_web_ui_download_queue_persists_and_refreshes_oa_metadata():
+def test_web_ui_download_manager_supports_filter_retry_and_local_pdf_open():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert "{ key: 'downloads', label: '下载管理', sub: 'DOWNLOADS', group: 'manage' }" in app_js
+    assert 'data-screen="downloads"' in index
+    assert 'id="download-manager-filters"' in index
+    assert 'data-download-filter="failed"' in index
+    assert "api(`/paper-downloads?${query}`)" in app_js
+    assert "data-download-act=\"retry\"" in app_js
+    assert "data-download-act=\"open\"" in app_js
+    assert "setTimeout(loadDownloadManager, 2000)" in app_js
+    assert ".download-manager-stats" in styles
+    assert ".download-job.failed" in styles
+
+
+def test_web_ui_downloaded_document_can_open_original_pdf_from_library():
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
 
-    assert "oa_status: paper.oa_status || 'unknown'" in app_js
-    assert "oa_pdf_url: downloadInfo.url" in app_js
-    assert "async function refreshMarkedDownloadInfo()" in app_js
-    assert "apiOrNull(`/papers/${marked.id}`)" in app_js
-    assert "refreshMarkedDownloadInfo();" in app_js
-    assert "暂不支持下载" in app_js
+    assert 'data-doc-act="pdf">打开 PDF</button>' in app_js
+    assert "if (action === 'pdf') openLocalPdf(docId)" in app_js
+    assert "state.libLoaded = false" in app_js
+    assert "await loadLibrary()" in app_js
 
 
 def test_web_ui_reader_can_retranslate_current_document():
@@ -345,25 +386,44 @@ def test_web_ui_reader_can_retranslate_current_document():
     assert "$('#reader-retranslate').addEventListener('click', retranslateReader)" in app_js
 
 
+def test_web_ui_does_not_present_local_echo_output_as_translated():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "function hasEffectiveTranslation(translation)" in app_js
+    assert "target !== source" in app_js
+    assert "label: '仅原文 · 请重译'" in app_js
+    assert "zh: effectiveTranslation && match ? match.target : ''" in app_js
+
+
 def test_web_ui_reader_can_open_current_paper_ai_qa_split():
     index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
     styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
 
-    assert "{ k: 'qa', l: 'AI 问答' }" in app_js
-    assert 'id="reader-qa-language"' in index
-    assert 'data-reader-lang="zh"' in index
-    assert 'data-reader-lang="en"' in index
+    assert "{ k: 'qa', l: qaMode ? '取消 AI 对话' : 'AI 问答' }" in app_js
+    assert 'id="reader-qa-language"' not in index
+    assert "const disabled = qaMode && mode.k === 'both'" in app_js
+    assert "mode.k === state.readerQaLang" in app_js
+    assert "state.readerMode = 'both'" in app_js
+    assert "state.readerQaLang = 'zh'" in app_js
+    assert "state.readerQaLang = mode" in app_js
     assert 'id="reader-chat-panel"' in index
     assert 'id="reader-chat-log"' in index
     assert 'id="reader-chat-input"' in index
-    assert "state.readerQaLang = btn.dataset.readerLang" in app_js
-    assert "body: { question, document_ids: [docId], top_k: 6 }" in app_js
+    assert "body: { question, document_ids: [docId], top_k: 6, use_document_context: true }" in app_js
     assert "function renderReaderQa()" in app_js
     assert "function sendReaderQa(text)" in app_js
     assert "data-reader-cite=" in app_js
     assert "jumpToSource(source.document_id, source.section_seq)" in app_js
+    assert "current.parse_status === 'parsed' && state.readerParas.length" in app_js
+    assert "RAG 索引仅用于增强检索，并非提问前置条件" in app_js
+    assert "当前论文 · 正文上下文" in app_js
+    assert "CURRENT PAPER · CONTEXT" in index
+    assert "回答仅基于当前论文" in index
+    assert "正在阅读当前论文并生成回答" in app_js
+    assert "当前论文尚未建立 RAG 索引" not in app_js
     assert ".reader-panes.qa-mode" in styles
+    assert ".segmented button:disabled" in styles
     assert ".reader-chat-panel" in styles
 
 
@@ -377,7 +437,17 @@ def test_web_ui_declares_every_workbench_screen():
         app_js,
     ))
 
-    assert screens == {"search", "journals", "library", "tags", "glossary", "reader", "chat", "chemistry"}
+    assert screens == {
+        "search",
+        "journals",
+        "library",
+        "tags",
+        "glossary",
+        "downloads",
+        "reader",
+        "chat",
+        "chemistry",
+    }
     assert nav_keys == screens, "每个导航项都必须有对应的画面，否则点了会切到空白"
 
 
@@ -522,27 +592,49 @@ def test_web_ui_tag_manager_supports_inline_edit_and_cache_migration():
     assert ".tag-manager-row.is-editing" in styles
 
 
-def test_web_ui_glossary_manager_persists_crud_in_local_workbench_state():
+def test_web_ui_glossary_manager_persists_crud_in_local_sqlite():
     index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
     styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
 
-    assert "{ key: 'glossary', label: '术语表管理', sub: 'GLOSSARY', group: 'manage' }" in app_js
+    assert "{ key: 'glossary', label: '术语管理', sub: 'GLOSSARY', group: 'manage' }" in app_js
     assert 'data-screen="glossary"' in index
     assert 'id="glossary-form"' in index
     assert 'id="glossary-en"' in index
     assert 'id="glossary-zh"' in index
     assert 'id="glossary-manager-list"' in index
-    assert "persisted.glossaryTerms = normalizeGlossaryTerms" in app_js
-    assert "function saveGlossaryTerm()" in app_js
-    assert "function deleteGlossaryTerm(id)" in app_js
-    assert "saveStore();" in app_js
+    assert "术语保存在本地工作台数据库" in index
+    assert "const legacyGlossaryTerms = normalizeGlossaryTerms(persisted.glossaryTerms)" in app_js
+    assert "async function migrateLegacyGlossaryTerms()" in app_js
+    assert "api('/glossary-terms/import'" in app_js
+    assert "delete persisted.glossaryTerms" in app_js
+    assert "async function loadGlossaryTerms()" in app_js
+    assert "api('/glossary-terms?page_size=500')" in app_js
+    assert "async function saveGlossaryTerm()" in app_js
+    assert "api('/glossary-terms'" in app_js
+    assert "method: 'PUT'" in app_js
+    assert "async function deleteGlossaryTerm(id)" in app_js
+    assert "method: 'DELETE'" in app_js
+    assert "function showGlossaryDeletePopover(id)" in app_js
+    assert "function closeGlossaryDeletePopover()" in app_js
+    assert "if (!window.confirm(`确认删除术语" not in app_js
+    assert 'data-glossary-delete-cancel' in app_js
+    assert 'data-glossary-delete-confirm="${esc(term.id)}"' in app_js
+    assert "document.addEventListener('click', (event) => {" in app_js
+    assert "event.target.closest('[data-glossary-delete-wrap]')" in app_js
+    assert "event.key === 'Escape' && state.glossaryDeleteId" in app_js
+    assert "return state.glossaryTerms;" in app_js
+    assert "return persisted.glossaryTerms;" not in app_js
     assert 'class="glossary-column-head"' in index
     assert "<span>EN</span>" in index
     assert "<span>中文</span>" in index
     assert "glossary-language-mark" not in app_js
     assert "glossary-pair-arrow" not in app_js
     assert ".glossary-manager-row" in styles
+    assert ".glossary-delete-popover" in styles
+    assert "box-shadow" not in re.search(
+        r"\.glossary-delete-popover \{(?P<body>.*?)\n\}", styles, re.DOTALL
+    ).group("body")
 
 
 def test_web_ui_reader_selection_offers_glossary_and_chat_actions():
@@ -554,8 +646,23 @@ def test_web_ui_reader_selection_offers_glossary_and_chat_actions():
     assert 'data-selection-action="glossary"' in index
     assert 'data-selection-action="chat"' in index
     assert "function showSelectionPopover(pane)" in app_js
-    assert "function addSelectionToGlossary()" in app_js
-    assert "function sendTextToChat(text, kind)" in app_js
+    assert "async function addSelectionToGlossary()" in app_js
+    assert "async function translateGlossaryTerm(term, selection)" in app_js
+    assert "api('/term-translations'" in app_js
+    assert "context_text: selection.context || null" in app_js
+    assert "AI 正在翻译" in app_js
+    assert "AI 翻译失败" in app_js
+    assert "function buildReaderContextQuestion(text, kind, context = '')" in app_js
+    assert "function sendTextToChat(text, kind, selection = null)" in app_js
+    assert "请结合当前论文解释下面这段" in app_js
+    assert "不要只做字面翻译" in app_js
+    assert "不要脱离原文泛泛解释" in app_js
+    assert "所在段落：" in app_js
+    assert "state.readerMode = 'qa'" in app_js
+    assert "$('#reader-chat-input')" in app_js
+    assert "setPage('chat');" not in app_js[
+        app_js.index("function sendTextToChat"):app_js.index("function bindReader")
+    ]
     assert 'data-glossary-send="${g ? esc(g.id) : \'\'}"' in app_js
     assert ".selection-popover" in styles
     assert ".selection-popover[hidden]" in styles

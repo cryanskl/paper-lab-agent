@@ -288,5 +288,6 @@ class OpenAlexClient:
             or self.first_location_landing_url(item.get("locations"))
             or self.normalize_url(item.get("id")),
             "source_api": "openalex",
+            "work_type": self.normalize_optional_text(item.get("type")),
             "raw_metadata": item,
         }

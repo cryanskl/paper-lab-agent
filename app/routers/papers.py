@@ -1,9 +1,8 @@
 import re
 from typing import Any, Optional
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Query, Request
-from fastapi.responses import Response
+from fastapi import APIRouter, BackgroundTasks, Query, Request
 from pydantic import BaseModel, field_validator
 
 from app.clients.unpaywall import UnpaywallClient, oa_status, web_url
@@ -12,12 +11,31 @@ from app.db import dict_from_row, get_conn
 from app.errors import AppError, page
 from app.services.classification import get_classifier
 from app.services.crawl import normalize_doi, normalize_search_terms, unpaywall_client_options
-from app.services.oa_download import OADownloadError, download_oa_pdf
+from app.services.paper_downloads import (
+    create_paper_download_job,
+    download_paper_to_library,
+    paper_download_state,
+)
+from app.services.translation import (
+    create_paper_abstract_translation_job,
+    translate_paper_abstract,
+)
 from app.utils import json_dumps, json_loads
 
 router = APIRouter(prefix="/papers", tags=["papers"])
 
 FTS_SAFE_QUERY_RE = re.compile(r"^[\w\s]+$")
+
+
+def normalize_target_lang(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("target_lang must not be blank")
+    if any(char in normalized for char in ("/", "\\")):
+        raise ValueError("target_lang must not contain path separators")
+    if any(ord(char) < 32 for char in normalized):
+        raise ValueError("target_lang must not contain control characters")
+    return normalized
 
 
 def is_downloadable_oa_url(value: Any) -> int:
@@ -66,6 +84,13 @@ class CategoryDetailResponse(BaseModel):
     method: str
 
 
+class PaperDownloadStateResponse(BaseModel):
+    status: str
+    error: Optional[str] = None
+    document_id: Optional[int] = None
+    downloaded_at: Optional[str] = None
+
+
 class PaperDetailResponse(BaseModel):
     id: int
     doi: Optional[str] = None
@@ -85,6 +110,7 @@ class PaperDetailResponse(BaseModel):
     dedupe_strategy: str
     categories: list[str]
     category_details: list[CategoryDetailResponse]
+    download: PaperDownloadStateResponse
     raw_metadata: dict[str, Any]
 
 
@@ -107,6 +133,7 @@ class PaperListItemResponse(BaseModel):
     dedupe_strategy: str
     categories: list[str]
     category_details: list[CategoryDetailResponse]
+    download: PaperDownloadStateResponse
 
 
 class PaperListResponse(BaseModel):
@@ -114,6 +141,43 @@ class PaperListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class PaperDownloadJobResponse(BaseModel):
+    job_id: int
+    paper_id: int
+    document_id: Optional[int] = None
+    status: str
+    error: Optional[str] = None
+
+
+class AbstractTranslationIn(BaseModel):
+    target_lang: str = "zh"
+
+    @field_validator("target_lang")
+    @classmethod
+    def target_lang_must_be_safe(cls, value: str) -> str:
+        return normalize_target_lang(value)
+
+
+class AbstractTranslationJobResponse(BaseModel):
+    job_id: int
+    paper_id: int
+    target_lang: str
+    status: str
+
+
+class AbstractTranslationResponse(BaseModel):
+    id: int
+    paper_id: int
+    source_lang: Optional[str] = None
+    target_lang: str
+    source_text: str
+    target_text: Optional[str] = None
+    status: str
+    error: Optional[str] = None
+    created_at: str
+    updated_at: str
 
 
 def category_details_for(conn, paper_id: int) -> list[dict]:
@@ -162,7 +226,7 @@ def dedupe_strategy(row: dict) -> str:
     return "none"
 
 
-def serialize_paper(row: dict, category_details: list[dict]) -> dict:
+def serialize_paper(row: dict, category_details: list[dict], conn) -> dict:
     categories = [category["slug"] for category in category_details]
     return {
         "id": row["id"],
@@ -183,6 +247,11 @@ def serialize_paper(row: dict, category_details: list[dict]) -> dict:
         "dedupe_strategy": dedupe_strategy(row),
         "categories": categories,
         "category_details": category_details,
+        "download": paper_download_state(
+            conn,
+            row["id"],
+            bool(is_downloadable_oa_url(row.get("oa_pdf_url"))),
+        ),
     }
 
 
@@ -195,6 +264,7 @@ def list_papers(
     year_to: Optional[int] = None,
     oa_only: bool = False,
     downloadable_only: bool = False,
+    downloaded_only: bool = False,
     search_id: Optional[int] = Query(None, ge=1),
     sort: str = Query("date_desc", pattern="^(date_desc|relevance)$"),
     q_mode: Optional[str] = Query(None, pattern="^(and|or)$"),
@@ -240,6 +310,8 @@ def list_papers(
         clauses.append("p.oa_pdf_url IS NOT NULL AND p.oa_pdf_url != ''")
     if downloadable_only:
         clauses.append("is_downloadable_oa_url(p.oa_pdf_url) = 1")
+    if downloaded_only:
+        clauses.append("EXISTS (SELECT 1 FROM documents d WHERE d.paper_id = p.id)")
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     join_sql = " ".join(joins)
     order = "ORDER BY p.published_date DESC, p.id DESC"
@@ -269,7 +341,7 @@ def list_papers(
         items = []
         for row in rows:
             paper = dict_from_row(row)
-            items.append(serialize_paper(paper, category_details_for(conn, paper["id"])))
+            items.append(serialize_paper(paper, category_details_for(conn, paper["id"]), conn))
     return page(items, total, page_num, page_size)
 
 
@@ -280,59 +352,101 @@ def get_paper(paper_id: int) -> dict:
         if not row:
             raise AppError(404, "paper_not_found", "Paper not found")
         paper = dict_from_row(row)
-        return serialize_paper(paper, category_details_for(conn, paper_id)) | {
+        return serialize_paper(paper, category_details_for(conn, paper_id), conn) | {
             "raw_metadata": json_loads(paper.get("raw_metadata"), {})
         }
 
 
+@router.post(
+    "/{paper_id}/abstract-translation",
+    status_code=202,
+    response_model=AbstractTranslationJobResponse,
+)
+def start_abstract_translation(
+    paper_id: int,
+    body: AbstractTranslationIn,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    with get_conn() as conn:
+        paper = conn.execute("SELECT id, abstract FROM papers WHERE id=?", (paper_id,)).fetchone()
+    if paper is None:
+        raise AppError(404, "paper_not_found", "Paper not found")
+    if not str(paper["abstract"] or "").strip():
+        raise AppError(409, "paper_abstract_missing", "Paper metadata has no abstract")
+    translation, cached = create_paper_abstract_translation_job(paper_id, body.target_lang)
+    if not cached:
+        background_tasks.add_task(
+            translate_paper_abstract,
+            paper_id,
+            body.target_lang,
+            translation["id"],
+        )
+    return {
+        "job_id": translation["id"],
+        "paper_id": paper_id,
+        "target_lang": body.target_lang,
+        "status": translation["status"],
+    }
+
+
 @router.get(
+    "/{paper_id}/abstract-translation",
+    response_model=AbstractTranslationResponse,
+)
+def get_abstract_translation(
+    paper_id: int,
+    target_lang: str = Query("zh", min_length=1),
+) -> dict:
+    try:
+        normalized_target_lang = normalize_target_lang(target_lang)
+    except ValueError as exc:
+        raise AppError(422, "validation_error", str(exc)) from exc
+    with get_conn() as conn:
+        paper = conn.execute("SELECT id FROM papers WHERE id=?", (paper_id,)).fetchone()
+        if paper is None:
+            raise AppError(404, "paper_not_found", "Paper not found")
+        row = conn.execute(
+            """
+            SELECT *
+            FROM paper_abstract_translations
+            WHERE paper_id=? AND target_lang=?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (paper_id, normalized_target_lang),
+        ).fetchone()
+    if row is None:
+        raise AppError(404, "abstract_translation_not_found", "Abstract translation not found")
+    return dict_from_row(row)
+
+
+@router.post(
     "/{paper_id}/download",
-    response_class=Response,
+    status_code=202,
+    response_model=PaperDownloadJobResponse,
     responses={
-        200: {
-            "description": "Open-access PDF attachment",
-            "content": {
-                "application/pdf": {
-                    "schema": {"type": "string", "format": "binary"},
-                }
-            },
-        }
+        409: {"description": "Open-access PDF unavailable"},
     },
 )
-async def download_paper_pdf(paper_id: int, request: Request) -> Response:
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT id, title, oa_pdf_url FROM papers WHERE id=?",
-            (paper_id,),
-        ).fetchone()
-    if not row:
-        raise AppError(404, "paper_not_found", "Paper not found")
-    oa_pdf_url = str(row["oa_pdf_url"] or "").strip()
-    if not oa_pdf_url:
-        raise AppError(409, "oa_pdf_unavailable", "Paper has no open-access PDF URL")
-    try:
-        downloaded = await download_oa_pdf(
-            oa_pdf_url,
-            user_agent=request.headers.get("user-agent", ""),
+def start_paper_pdf_download(
+    paper_id: int,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    job = create_paper_download_job(paper_id)
+    if job["should_start"]:
+        background_tasks.add_task(
+            download_paper_to_library,
+            paper_id,
+            request.headers.get("user-agent", ""),
         )
-    except OADownloadError as exc:
-        raise AppError(exc.status_code, exc.code, exc.message) from exc
-    filename = paper_pdf_filename(paper_id, row["title"])
-    fallback_filename = f"paper-{paper_id}.pdf"
-    disposition = (
-        f'attachment; filename="{fallback_filename}"; '
-        f"filename*=UTF-8''{quote(filename, safe='')}"
-    )
-    return Response(
-        content=downloaded.content,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": disposition,
-            "Content-Length": str(len(downloaded.content)),
-            "Cache-Control": "private, no-store",
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
+    return {
+        "job_id": job["id"],
+        "paper_id": paper_id,
+        "document_id": job.get("document_id"),
+        "status": "downloaded" if job["already_downloaded"] else "downloading",
+        "error": job.get("error"),
+    }
 
 
 @router.post("/{paper_id}/resolve-oa", response_model=PaperDetailResponse)

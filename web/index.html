@@ -30,12 +30,10 @@
     <div class="topbar">
       <div class="topbar-row">
         <div class="screen-title">文献检索</div>
-        <div class="spacer"></div>
-        <button class="btn-accent-soft" id="open-drawer">待下载清单 · <span data-marked-count>0</span></button>
       </div>
       <div class="topbar-row search-row">
         <input id="search-q" class="input flex"
-          placeholder="关键词用逗号分隔，也可输入 DOI / 作者，例如：SiH4, dissociation, cross section">
+          placeholder="关键词用中英文逗号分隔（, 或 ，），也可输入 DOI / 作者，例如：SiH4, dissociation, cross section">
         <select id="search-mode" class="select search-policy" aria-label="关键词关系">
           <option value="or" selected>任一关键词（OR）</option>
           <option value="and">全部关键词（AND）</option>
@@ -61,7 +59,7 @@
         </select>
         <div class="search-actions">
           <button class="btn-online" id="do-online-search">联网搜索</button>
-          <button class="btn-primary" id="do-search">检索本地库</button>
+          <button class="btn-primary" id="do-search">本地检索</button>
         </div>
       </div>
       <div class="chips-row">
@@ -73,6 +71,7 @@
         <div class="chips">
           <button class="chip" id="oa-chip" title="只看有开放全文链接的论文">OA</button>
           <button class="chip" id="download-chip" title="只看系统支持直接下载的论文">下载</button>
+          <button class="chip" id="downloaded-chip" title="只看已成功下载到本机的论文">已下载</button>
         </div>
       </div>
       <div class="chips-row tight">
@@ -261,11 +260,11 @@
     </div>
   </section>
 
-  <!-- ── 术语表管理 ─────────────────────────────────────── -->
+  <!-- ── 术语管理 ───────────────────────────────────────── -->
   <section class="screen" data-screen="glossary" hidden>
     <div class="topbar compact">
       <div class="topbar-row">
-        <div class="screen-title">术语表管理</div>
+        <div class="screen-title">术语管理</div>
         <div class="screen-sub">维护阅读页的双语术语、高亮与快捷问答入口</div>
       </div>
     </div>
@@ -274,7 +273,7 @@
         <div>
           <div class="glossary-eyebrow">LOCAL READING LEXICON</div>
           <h2>把论文里的关键表达留在手边</h2>
-          <p>术语保存在当前浏览器。阅读时选中词或短语即可加入；补全中英对照后，两侧正文会立即同步高亮。</p>
+          <p>术语保存在本地工作台数据库。阅读时选中词或短语即可加入；补全中英对照后，两侧正文会立即同步高亮。</p>
         </div>
         <div class="glossary-manager-summary" id="glossary-manager-summary"></div>
       </div>
@@ -319,6 +318,33 @@
     </div>
   </section>
 
+  <!-- ── 下载管理 ───────────────────────────────────────── -->
+  <section class="screen" data-screen="downloads" hidden>
+    <div class="topbar compact">
+      <div class="topbar-row">
+        <div>
+          <div class="screen-title">下载管理</div>
+          <div class="screen-sub">查看本地 PDF 下载进度、失败原因，并直接打开已入库文件</div>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn-ghost" id="download-manager-refresh">刷新</button>
+      </div>
+    </div>
+    <div class="scroll download-manager-page">
+      <div class="download-manager-stats" id="download-manager-stats"></div>
+      <div class="download-manager-toolbar">
+        <div class="download-manager-filters" id="download-manager-filters">
+          <button class="chip on" data-download-filter="">全部</button>
+          <button class="chip" data-download-filter="downloading">下载中</button>
+          <button class="chip" data-download-filter="downloaded">已下载</button>
+          <button class="chip" data-download-filter="failed">下载失败</button>
+        </div>
+        <span class="screen-sub" id="download-manager-summary">正在读取下载记录…</span>
+      </div>
+      <div class="download-manager-list" id="download-manager-list"></div>
+    </div>
+  </section>
+
   <!-- ── 双语阅读 ───────────────────────────────────────── -->
   <section class="screen" data-screen="reader" hidden>
     <div class="reader-bar">
@@ -339,13 +365,6 @@
       <button class="btn-ghost sm" id="gloss-toggle">术语表</button>
     </div>
     <div class="reader-panes">
-      <div class="reader-qa-language" id="reader-qa-language" hidden>
-        <span>左侧阅读</span>
-        <div class="segmented" role="group" aria-label="AI 问答左侧阅读语言">
-          <button type="button" data-reader-lang="zh">中文</button>
-          <button type="button" data-reader-lang="en">English</button>
-        </div>
-      </div>
       <div class="pane" id="pane-en">
         <div class="pane-label">ENGLISH · 原文</div>
         <div id="paras-en"></div>
@@ -357,10 +376,10 @@
       <aside class="reader-chat-panel" id="reader-chat-panel" hidden>
         <div class="reader-chat-head">
           <div>
-            <div class="reader-chat-eyebrow">CURRENT PAPER · RAG</div>
+            <div class="reader-chat-eyebrow">CURRENT PAPER · CONTEXT</div>
             <div class="reader-chat-title">AI 问答</div>
           </div>
-          <span class="reader-chat-status" id="reader-chat-status">检查索引…</span>
+          <span class="reader-chat-status" id="reader-chat-status">检查正文…</span>
         </div>
         <div class="reader-chat-context ellipsis" id="reader-chat-context">选择一篇已解析论文后开始提问</div>
         <div class="reader-chat-log" id="reader-chat-log"></div>
@@ -369,7 +388,7 @@
             <input id="reader-chat-input" class="input flex" placeholder="针对当前论文提问…">
             <button class="btn-primary" id="reader-chat-send" type="button">发送</button>
           </div>
-          <div class="reader-chat-hint">回答仅检索当前论文；引用标记可跳回左侧原文段落</div>
+          <div class="reader-chat-hint">回答仅基于当前论文；引用标记可跳回左侧原文段落</div>
         </div>
       </aside>
     </div>
@@ -463,30 +482,6 @@
       <div class="scroll" id="chem-body"></div>
     </div>
   </section>
-
-  <!-- ── 待下载清单抽屉 ─────────────────────────────────── -->
-  <div class="scrim" id="scrim" hidden></div>
-  <aside class="drawer" id="drawer">
-    <div class="drawer-head">
-      <div class="screen-title sm">待下载清单</div>
-      <span class="pill" data-marked-count>0</span>
-      <div class="spacer"></div>
-      <button class="icon-btn" id="close-drawer">×</button>
-    </div>
-    <div class="drawer-summary">
-      <span id="download-summary">尚未加入待下载文章</span>
-      <span class="drawer-summary-hint">仅处理开放全文；浏览器可能询问是否允许多个下载</span>
-    </div>
-    <div class="drawer-body" id="drawer-body"></div>
-    <div class="drawer-foot">
-      <button class="btn-primary drawer-download-all" id="download-marked" disabled>一键下载可用全文</button>
-      <div class="drawer-foot-secondary">
-        <button class="btn-ghost flex" id="export-txt">导出 TXT</button>
-        <button class="btn-ghost flex" id="export-csv">导出 CSV</button>
-        <button class="btn-ghost danger" id="clear-marked">清空</button>
-      </div>
-    </div>
-  </aside>
 
   <div class="selection-popover" id="selection-popover" role="toolbar" aria-label="所选文字操作" hidden>
     <button type="button" data-selection-action="glossary">＋ 加入术语表</button>

@@ -1,6 +1,6 @@
 /* 等离子体文献工作台 — 前端工作台
- * 所有业务数据来自 /api/v1 真实接口；「待下载清单」「项目分组」「阅读偏好」「术语表」是本地工作台状态，
- * 存 localStorage。
+ * 业务数据（包括术语表）来自 /api/v1；浏览器只保存阅读偏好等界面状态。
+ * 下载任务、术语与 PDF 文件由后端统一管理。
  */
 'use strict';
 
@@ -8,25 +8,9 @@ const API = '/api/v1';
 const LS_KEY = 'plasma-workbench';
 
 /* ── 术语表（中英对照，用于阅读页高亮） ── */
-const DEFAULT_GLOSSARY = [
-  { id: 'default-1', en: 'capacitively coupled', zh: '容性耦合' },
-  { id: 'default-2', en: 'electron energy distribution function', zh: '电子能量分布函数' },
-  { id: 'default-3', en: 'EEDF', zh: '电子能量分布函数' },
-  { id: 'default-4', en: 'particle-in-cell', zh: '粒子网格法' },
-  { id: 'default-5', en: 'Monte Carlo collisions', zh: '蒙特卡罗碰撞' },
-  { id: 'default-6', en: 'secondary electron emission', zh: '二次电子发射' },
-  { id: 'default-7', en: 'ohmic heating', zh: '欧姆加热' },
-  { id: 'default-8', en: 'cross section', zh: '截面' },
-  { id: 'default-9', en: 'dissociation', zh: '解离' },
-  { id: 'default-10', en: 'ionization', zh: '电离' },
-  { id: 'default-11', en: 'attachment', zh: '吸附' },
-  { id: 'default-12', en: 'radical', zh: '自由基' },
-  { id: 'default-13', en: 'ion flux', zh: '离子通量' },
-  { id: 'default-14', en: 'sheath', zh: '鞘层' },
-  { id: 'default-15', en: 'self-bias', zh: '自偏压' },
-  { id: 'default-16', en: 'rate coefficient', zh: '速率系数' },
-];
 const MAX_GLOSSARY_TERM_LENGTH = 120;
+const ABSTRACT_PREFETCH_COUNT = 5;
+const ABSTRACT_TRANSLATION_CONCURRENCY = 2;
 
 const NAV = [
   { key: 'search', label: '文献检索', sub: 'SEARCH', group: 'use' },
@@ -36,7 +20,8 @@ const NAV = [
   { key: 'chemistry', label: '化学库复核', sub: 'CHEMISTRY', group: 'use' },
   { key: 'journals', label: '期刊管理', sub: 'JOURNALS', group: 'manage' },
   { key: 'tags', label: '标签管理', sub: 'TAGS', group: 'manage' },
-  { key: 'glossary', label: '术语表管理', sub: 'GLOSSARY', group: 'manage' },
+  { key: 'glossary', label: '术语管理', sub: 'GLOSSARY', group: 'manage' },
+  { key: 'downloads', label: '下载管理', sub: 'DOWNLOADS', group: 'manage' },
 ];
 const NAV_GROUPS = [
   { key: 'use', label: '功能' },
@@ -60,12 +45,14 @@ const YEAR_PRESETS = [
 /* ── 本地视图状态 ── */
 const persisted = Object.assign(
   {
-    marked: [], projects: [], fontSize: 15, glossary: true,
-    glossaryTerms: null, uploadProject: 'none', targetLang: 'zh',
+    projects: [], fontSize: 15, glossary: true,
+    uploadProject: 'none', targetLang: 'zh',
   },
   readStore()
 );
-persisted.glossaryTerms = normalizeGlossaryTerms(persisted.glossaryTerms);
+delete persisted.marked;
+delete persisted.downloaded;
+const legacyGlossaryTerms = normalizeGlossaryTerms(persisted.glossaryTerms);
 const legacyPromptPresets = Array.isArray(persisted.customPresets)
   ? persisted.customPresets.filter((item) => item && typeof item === 'object')
     .map((item) => ({
@@ -93,7 +80,7 @@ function normalizePresetCommand(value) {
   return raw.startsWith('/') ? raw : `/${raw}`;
 }
 function normalizeGlossaryTerms(value) {
-  const source = Array.isArray(value) ? value : DEFAULT_GLOSSARY;
+  const source = Array.isArray(value) ? value : [];
   const seenIds = new Set();
   return source.filter((item) => item && typeof item === 'object').map((item, index) => {
     const fallbackId = `term-${index + 1}`;
@@ -104,11 +91,16 @@ function normalizeGlossaryTerms(value) {
       id,
       en: String(item.en || '').trim().replace(/\s+/g, ' ').slice(0, MAX_GLOSSARY_TERM_LENGTH),
       zh: String(item.zh || '').trim().replace(/\s+/g, ' ').slice(0, MAX_GLOSSARY_TERM_LENGTH),
+      translationJobId: Number(item.translationJobId) || null,
+      translationStatus: ['pending', 'failed'].includes(item.translationStatus)
+        ? item.translationStatus
+        : null,
+      translationError: String(item.translationError || '').slice(0, 240),
     };
   }).filter((item) => item.en || item.zh);
 }
 function glossaryTerms() {
-  return persisted.glossaryTerms;
+  return state.glossaryTerms;
 }
 
 /* ── 运行时状态 ── */
@@ -124,6 +116,7 @@ const state = {
   categoryEditingId: null,
   oaOnly: false,
   downloadOnly: false,
+  downloadedOnly: false,
   query: '',
   queryMode: 'or',
   resultLimit: 50,
@@ -173,11 +166,16 @@ const state = {
   slashOpen: false,
   presetEditor: null,
   selection: null,
+  glossaryTerms: [],
+  glossaryLoaded: false,
   glossaryEditingId: null,
+  glossaryDeleteId: null,
   glossaryQuery: '',
-  drawerOpen: false,
-  batchDownloading: false,
-  markedDownloadState: {},
+  downloads: [],
+  downloadCounts: { pending: 0, downloading: 0, downloaded: 0, failed: 0 },
+  downloadManagerFilter: '',
+  downloadManagerLoaded: false,
+  downloadManagerLoading: false,
   chemDocId: null,
   chemSets: [],
   chemSetId: null,
@@ -185,6 +183,11 @@ const state = {
   chemLoading: false,
   chemAudit: {},
 };
+
+let abstractTranslationObserver = null;
+let abstractTranslationActive = 0;
+const abstractTranslationQueue = [];
+const queuedAbstractTranslations = new Set();
 
 /* ── 工具 ── */
 const $ = (sel, root) => (root || document).querySelector(sel);
@@ -319,13 +322,18 @@ function renderSysbox() {
 function setPage(page) {
   state.page = page;
   state.selection = null;
+  state.glossaryDeleteId = null;
   $('#selection-popover').hidden = true;
   $$('.screen').forEach((node) => { node.hidden = node.dataset.screen !== page; });
   renderNav();
   if (page === 'journals') renderJournalManager();
   if (page === 'library') loadLibrary();
   if (page === 'tags') loadCategories();
-  if (page === 'glossary') renderGlossaryManager();
+  if (page === 'glossary') {
+    if (state.glossaryLoaded) renderGlossaryManager();
+    else loadGlossaryTerms().catch((error) => toast(`术语表加载失败：${error.message}`, true));
+  }
+  if (page === 'downloads') loadDownloadManager();
   if (page === 'reader') { ensureLibrary().then(renderReaderBar); }
   if (page === 'chat') { ensureLibrary().then(renderChatSide); }
   if (page === 'chemistry') { ensureLibrary().then(openChemistry); }
@@ -554,6 +562,67 @@ async function migrateLegacyPromptPresets() {
     }
   }
   delete persisted.customPresets;
+  saveStore();
+}
+
+function glossaryTermFromApi(term) {
+  return {
+    id: String(term.id),
+    en: String(term.en || ''),
+    zh: String(term.zh || ''),
+    translationJobId: Number(term.translation_job_id) || null,
+    translationStatus: ['pending', 'failed'].includes(term.translation_status)
+      ? term.translation_status
+      : null,
+    translationError: String(term.translation_error || ''),
+  };
+}
+
+function glossaryTermPayload(term) {
+  return {
+    en: term.en || null,
+    zh: term.zh || null,
+    translation_job_id: term.translationJobId || null,
+    translation_status: term.translationStatus || null,
+    translation_error: term.translationError || null,
+  };
+}
+
+function replaceGlossaryTerm(term) {
+  const normalized = glossaryTermFromApi(term);
+  const index = state.glossaryTerms.findIndex((item) => item.id === normalized.id);
+  if (index >= 0) state.glossaryTerms[index] = normalized;
+  else state.glossaryTerms.unshift(normalized);
+  return normalized;
+}
+
+async function loadGlossaryTerms() {
+  const data = await api('/glossary-terms?page_size=500');
+  state.glossaryTerms = (data.items || []).map(glossaryTermFromApi);
+  state.glossaryLoaded = true;
+  renderGlossaryManager();
+  renderGlossbar();
+  renderParas();
+}
+
+async function migrateLegacyGlossaryTerms() {
+  if (!legacyGlossaryTerms.length) {
+    delete persisted.glossaryTerms;
+    saveStore();
+    return;
+  }
+  await api('/glossary-terms/import', {
+    method: 'POST',
+    body: {
+      items: legacyGlossaryTerms.map((term) => ({
+        en: term.en || null,
+        zh: term.zh || null,
+        translation_status: term.translationStatus || null,
+        translation_error: term.translationError || null,
+      })),
+    },
+  });
+  delete persisted.glossaryTerms;
   saveStore();
 }
 
@@ -810,7 +879,7 @@ async function refreshTaggedPaper(paperId) {
   renderLibrary();
 }
 
-function searchQuery() {
+function searchQuery(page, pageSize) {
   const params = new URLSearchParams();
   if (state.query.trim()) {
     params.set('q', state.query.trim());
@@ -826,9 +895,10 @@ function searchQuery() {
   params.set('year_to', state.yearTo);
   if (state.oaOnly) params.set('oa_only', 'true');
   if (state.downloadOnly) params.set('downloadable_only', 'true');
+  if (state.downloadedOnly) params.set('downloaded_only', 'true');
   params.set('sort', state.query.trim() ? state.sort : 'date_desc');
-  params.set('page', state.searchPage);
-  params.set('page_size', '20');
+  params.set('page', page == null ? state.searchPage : page);
+  params.set('page_size', pageSize == null ? 20 : pageSize);
   return params.toString();
 }
 
@@ -841,6 +911,8 @@ function parseSearchTerms(value) {
 
 async function runSearch(resetPage, options) {
   options = options || {};
+  abstractTranslationQueue.length = 0;
+  queuedAbstractTranslations.clear();
   if (resetPage !== false) state.searchPage = 1;
   if (!options.keepSyncSummary) {
     state.searchMode = 'local';
@@ -850,7 +922,7 @@ async function runSearch(resetPage, options) {
   }
   $('#search-meta').textContent = '正在检索本地文献库…';
   try {
-    const data = await api(`/papers?${searchQuery()}`);
+    const data = await api(`/papers?${searchQuery(state.searchPage, 20)}`);
     state.results = data.items || [];
     state.searchTotal = data.total || 0;
     state.searched = true;
@@ -873,7 +945,8 @@ function renderResults() {
       : `联网搜索完成：${state.syncSummary.succeeded}/${state.syncSummary.total} 个期刊成功`
         + ` · 新增 ${state.syncSummary.newPapers} 篇 · `;
   }
-  meta.textContent = `${sync}共 ${state.searchTotal} 条结果 · 已标记 ${persisted.marked.length} 条待下载`
+  meta.textContent = `${sync}共 ${state.searchTotal} 条结果`
+    + (state.downloadedOnly ? ' · 已按本地下载完成状态筛选' : '')
     + (state.activeJournal != null ? ' · 已按白名单期刊过滤' : '');
   const batchActions = $('#search-batch-actions');
   batchActions.hidden = !(
@@ -887,6 +960,7 @@ function renderResults() {
     : '撤销本次结果';
   const wrap = $('#search-results');
   if (!state.results.length) {
+    if (abstractTranslationObserver) abstractTranslationObserver.disconnect();
     wrap.innerHTML = `<div class="empty-state">${state.searched
       ? '没有命中文献<br>可切换 OR、放宽年份区间、清除期刊筛选，或点击「联网搜索」更新元数据'
       : '输入关键词后检索本地库，或在白名单期刊中联网搜索'}</div>`;
@@ -899,6 +973,7 @@ function renderResults() {
   $('[data-page-label]').textContent = `第 ${state.searchPage} / ${pages} 页`;
   $('[data-page-prev]').disabled = state.searchPage <= 1;
   $('[data-page-next]').disabled = state.searchPage >= pages;
+  scheduleAbstractTranslations();
 }
 
 function onlineDateRange() {
@@ -1028,8 +1103,6 @@ async function discardOnlineSearchBatch() {
 
 function paperCard(p) {
   const expanded = !!state.expanded[p.id];
-  const marked = persisted.marked.some((m) => m.id === p.id);
-  const downloadInfo = downloadAvailability(p);
   const journal = state.journals.find((j) => j.id === p.journal_id);
   const zone = journal && journal.sci_zone
     ? `<span class="zone ${zoneClass(journal.sci_zone)}">${esc(journal.sci_zone)}</span>` : '';
@@ -1038,12 +1111,34 @@ function paperCard(p) {
     : `<span class="card-fact">${p.oa_status ? `OA ${esc(p.oa_status)}` : '无 OA 链接'}</span>`;
   const cats = tagChips(p);
   const zh = state.absZh[p.id];
-  const zhBlock = zh
+  const zhBlock = zh && !zh.hidden
     ? `<div class="abs-zh ${zh.muted ? 'muted' : ''}"><span class="tag">摘要翻译</span>${esc(zh.text)}</div>`
     : '';
-  const markButton = downloadInfo.supported
-    ? `<button class="btn-ghost sm mark-btn ${marked ? 'on' : ''}" data-act="mark">${marked ? '✓ 已在清单' : '加入待下载'}</button>`
-    : `<button class="btn-ghost sm mark-btn" disabled title="${esc(downloadInfo.reason)}">暂不支持下载</button>`;
+  const zhButtonLabel = zh && zh.loading
+    ? '翻译中…'
+    : zh && zh.failed
+      ? '重试翻译'
+      : zh && zh.hidden
+        ? '显示翻译'
+        : zh
+          ? '隐藏翻译'
+          : '摘要翻译';
+  const downloadState = p.download || {
+    status: downloadAvailability(p).supported ? 'available' : 'unavailable',
+    error: null,
+    document_id: null,
+  };
+  const downloadButton = {
+    available: '<button class="btn-ghost sm paper-download available" data-act="download">下载</button>',
+    downloading: '<button class="btn-ghost sm paper-download downloading" disabled>下载中…</button>',
+    downloaded: downloadState.document_id
+      ? `<button class="btn-ghost sm paper-download downloaded" data-act="open-pdf"
+          data-document-id="${downloadState.document_id}">已下载</button>`
+      : '<button class="btn-ghost sm paper-download downloaded" disabled>已下载</button>',
+    failed: `<button class="btn-ghost sm paper-download failed" data-act="download"
+        title="${esc(downloadState.error || '点击重试')}">下载失败</button>`,
+    unavailable: '<button class="btn-ghost sm paper-download unavailable" disabled>无法下载</button>',
+  }[downloadState.status] || '<button class="btn-ghost sm paper-download unavailable" disabled>无法下载</button>';
   return `<div class="card" data-paper="${p.id}">
     <div class="card-top">
       <div class="flex">
@@ -1057,7 +1152,7 @@ function paperCard(p) {
           ${cats}
         </div>
       </div>
-      ${markButton}
+      ${downloadButton}
     </div>
     <div class="abs ${expanded ? '' : 'clamp'}" data-act="expand">${esc(p.abstract || '（该条元数据没有摘要）')}</div>
     ${zhBlock}
@@ -1065,40 +1160,314 @@ function paperCard(p) {
       <span class="doi">DOI&nbsp;&nbsp;${esc(p.doi || '—')}</span>
       <div class="spacer"></div>
       <button class="btn-ghost sm" data-act="copy" ${p.doi ? '' : 'disabled'}>复制 DOI</button>
-      <button class="btn-ghost sm" data-act="zh">${zh ? '隐藏翻译' : '摘要翻译'}</button>
+      <button class="btn-ghost sm" data-act="zh" ${zh && zh.loading ? 'disabled' : ''}>${zhButtonLabel}</button>
       <button class="btn-ghost sm" data-act="expand">${expanded ? '收起摘要' : '展开摘要'}</button>
     </div>
   </div>`;
 }
 
-/* 摘要翻译：复用已导入全文的译文里的 abstract 段落，没有则如实说明 */
-async function showAbstractTranslation(paperId) {
-  if (state.absZh[paperId]) { delete state.absZh[paperId]; renderResults(); return; }
-  state.absZh[paperId] = { text: '正在查找该文献的译文…', muted: true };
-  renderResults();
-  await ensureLibrary();
-  const doc = state.documents.find((d) => d.paper_id === paperId);
-  if (!doc) {
-    state.absZh[paperId] = { text: '尚未导入该文献的 PDF 全文。请先在「文献库」上传 PDF 并执行解析与翻译。', muted: true };
+async function waitForAbstractTranslation(paperId, translationId, targetLang, timeoutMilliseconds = 120000) {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (Date.now() < deadline) {
+    const translation = await api(
+      `/papers/${paperId}/abstract-translation?target_lang=${encodeURIComponent(targetLang)}`
+    );
+    if (translation.id === translationId && translation.status === 'done') return translation;
+    if (translation.id === translationId && translation.status === 'failed') {
+      throw new Error(translation.error || '摘要翻译任务失败');
+    }
+    await waitForOnlineSearchPoll(900);
+  }
+  throw new Error('摘要翻译等待超时，请稍后重试');
+}
+
+async function translateAbstract(paperId, { reveal = true } = {}) {
+  const paper = state.results.find((item) => item.id === paperId) || state.paperCache[paperId];
+  if (!paper || !String(paper.abstract || '').trim()) {
+    state.absZh[paperId] = {
+      text: '该条元数据没有可翻译的摘要。',
+      muted: true,
+      hidden: !reveal,
+    };
     renderResults();
     return;
   }
-  const translation = await apiOrNull(`/documents/${doc.id}/translation`);
-  const sections = (translation && translation.sections) || [];
-  const abstract = sections.find((s) => (s.section_type || '').toLowerCase() === 'abstract')
-    || sections.find((s) => /abstract|摘要/i.test(s.title || ''));
-  if (!abstract || !abstract.target.trim()) {
+  const targetLang = persisted.targetLang || 'zh';
+  state.absZh[paperId] = {
+    text: '正在翻译摘要…',
+    muted: true,
+    loading: true,
+    hidden: !reveal,
+  };
+  renderResults();
+  try {
+    const job = await api(`/papers/${paperId}/abstract-translation`, {
+      method: 'POST',
+      body: { target_lang: targetLang },
+    });
+    const translation = await waitForAbstractTranslation(paperId, job.job_id, targetLang);
     state.absZh[paperId] = {
-      text: `文档 #${doc.id} 尚无可用的摘要译文（当前翻译状态：${translation ? translation.status : '未翻译'}）。可在「文献库」中触发翻译。`,
-      muted: true,
+      text: translation.target_text,
+      muted: false,
+      hidden: !reveal,
     };
-  } else {
-    state.absZh[paperId] = { text: abstract.target, muted: false };
+  } catch (error) {
+    state.absZh[paperId] = {
+      text: `摘要翻译失败：${error.message}`,
+      muted: true,
+      failed: true,
+      hidden: !reveal,
+    };
   }
   renderResults();
 }
 
-/* ── 待下载清单 ── */
+function enqueueAbstractTranslation(paperId) {
+  if (state.absZh[paperId] || queuedAbstractTranslations.has(paperId)) return;
+  const paper = state.results.find((item) => item.id === paperId);
+  if (!paper || !String(paper.abstract || '').trim()) return;
+  queuedAbstractTranslations.add(paperId);
+  abstractTranslationQueue.push(paperId);
+  pumpAbstractTranslationQueue();
+}
+
+function pumpAbstractTranslationQueue() {
+  while (
+    abstractTranslationActive < ABSTRACT_TRANSLATION_CONCURRENCY
+    && abstractTranslationQueue.length
+  ) {
+    const paperId = abstractTranslationQueue.shift();
+    queuedAbstractTranslations.delete(paperId);
+    abstractTranslationActive += 1;
+    translateAbstract(paperId, { reveal: false }).finally(() => {
+      abstractTranslationActive -= 1;
+      pumpAbstractTranslationQueue();
+    });
+  }
+}
+
+function scheduleAbstractTranslations() {
+  if (abstractTranslationObserver) abstractTranslationObserver.disconnect();
+  state.results
+    .filter((paper) => String(paper.abstract || '').trim())
+    .slice(0, ABSTRACT_PREFETCH_COUNT)
+    .forEach((paper) => enqueueAbstractTranslation(paper.id));
+
+  if (!('IntersectionObserver' in window)) return;
+  abstractTranslationObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      const paperId = Number(entry.target.dataset.paper);
+      enqueueAbstractTranslation(paperId);
+      abstractTranslationObserver.unobserve(entry.target);
+    });
+  }, { rootMargin: '160px 0px' });
+  $$('.card[data-paper]', $('#search-results')).forEach((card) => {
+    abstractTranslationObserver.observe(card);
+  });
+}
+
+/* 摘要翻译直接使用检索元数据中的 abstract，不依赖 PDF 全文 */
+async function showAbstractTranslation(paperId) {
+  const current = state.absZh[paperId];
+  if (current && current.loading) return;
+  if (current && !current.failed) {
+    current.hidden = !current.hidden;
+    renderResults();
+    return;
+  }
+  if (current && current.failed) delete state.absZh[paperId];
+  await translateAbstract(paperId, { reveal: true });
+}
+
+function updatePaperDownloadState(paperId, downloadState) {
+  const result = state.results.find((paper) => paper.id === paperId);
+  if (result) result.download = downloadState;
+  if (state.paperCache[paperId]) state.paperCache[paperId].download = downloadState;
+  renderResults();
+}
+
+async function pollPaperDownload(paperId, timeoutMilliseconds = 120000) {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (Date.now() < deadline) {
+    const paper = await api(`/papers/${paperId}`);
+    updatePaperDownloadState(paperId, paper.download);
+    if (paper.download.status === 'downloaded') {
+      state.libLoaded = false;
+      await loadLibrary();
+      if (state.downloadManagerLoaded) await loadDownloadManager();
+      toast('PDF 已保存到本地文献库');
+      return paper;
+    }
+    if (paper.download.status === 'failed') {
+      if (state.downloadManagerLoaded) await loadDownloadManager();
+      toast(`PDF 下载失败：${paper.download.error || '来源不可用'}`, true);
+      return paper;
+    }
+    await waitForOnlineSearchPoll(1000);
+  }
+  throw new Error('下载仍在后台进行，请到「下载管理」查看');
+}
+
+async function startPaperDownload(paper) {
+  if (!paper || (paper.download && paper.download.status === 'downloading')) return;
+  updatePaperDownloadState(paper.id, {
+    status: 'downloading',
+    error: null,
+    document_id: null,
+    downloaded_at: null,
+  });
+  try {
+    const job = await api(`/papers/${paper.id}/download`, { method: 'POST' });
+    if (job.status === 'downloaded' && job.document_id) {
+      updatePaperDownloadState(paper.id, {
+        status: 'downloaded',
+        error: null,
+        document_id: job.document_id,
+        downloaded_at: null,
+      });
+      state.libLoaded = false;
+      await loadLibrary();
+      toast('PDF 已在本地文献库');
+      return;
+    }
+    await pollPaperDownload(paper.id);
+  } catch (error) {
+    const fresh = await apiOrNull(`/papers/${paper.id}`);
+    const failedState = fresh && fresh.download
+      ? fresh.download
+      : { status: 'failed', error: error.message, document_id: null, downloaded_at: null };
+    updatePaperDownloadState(paper.id, failedState);
+    toast(`PDF 下载失败：${failedState.error || error.message}`, true);
+  }
+}
+
+function openLocalPdf(documentId) {
+  if (!documentId) return;
+  window.open(`${API}/documents/${encodeURIComponent(documentId)}/file`, '_blank', 'noopener');
+}
+
+let downloadManagerTimer = null;
+
+function downloadStatusMeta(status) {
+  return {
+    pending: { label: '下载中', cls: 'downloading' },
+    downloading: { label: '下载中', cls: 'downloading' },
+    downloaded: { label: '已下载', cls: 'downloaded' },
+    failed: { label: '下载失败', cls: 'failed' },
+  }[status] || { label: status || '未知', cls: 'unknown' };
+}
+
+function renderDownloadManager() {
+  const stats = $('#download-manager-stats');
+  const list = $('#download-manager-list');
+  const summary = $('#download-manager-summary');
+  if (!stats || !list || !summary) return;
+  const counts = state.downloadCounts;
+  const activeCount = (counts.pending || 0) + (counts.downloading || 0);
+  stats.innerHTML = [
+    ['全部任务', Object.values(counts).reduce((total, count) => total + count, 0), 'all'],
+    ['下载中', activeCount, 'downloading'],
+    ['已下载', counts.downloaded || 0, 'downloaded'],
+    ['下载失败', counts.failed || 0, 'failed'],
+  ].map(([label, count, cls]) => `<div class="download-stat ${cls}">
+      <span>${esc(label)}</span><strong>${count}</strong>
+    </div>`).join('');
+  $$('#download-manager-filters [data-download-filter]').forEach((button) => {
+    button.classList.toggle('on', button.dataset.downloadFilter === state.downloadManagerFilter);
+  });
+  summary.textContent = state.downloadManagerLoading
+    ? '正在刷新下载状态…'
+    : `当前显示 ${state.downloads.length} 条记录`;
+  if (state.downloadManagerLoading && !state.downloads.length) {
+    list.innerHTML = '<div class="empty-state">正在读取下载任务…</div>';
+    return;
+  }
+  if (!state.downloads.length) {
+    list.innerHTML = '<div class="empty-state">暂无符合条件的下载记录<br>可在文献检索结果中直接点击「下载」</div>';
+    return;
+  }
+  list.innerHTML = state.downloads.map((job) => {
+    const status = downloadStatusMeta(job.status);
+    const paper = job.paper || {};
+    const metadata = [
+      paper.doi ? `DOI ${paper.doi}` : null,
+      paper.journal_name,
+      paper.published_date,
+      job.updated_at ? `更新于 ${job.updated_at.replace('T', ' ').slice(0, 16)}` : null,
+    ].filter(Boolean).join(' · ');
+    const actions = job.status === 'downloaded' && job.document_id
+      ? `<button class="btn-ghost sm" data-download-act="open" data-document-id="${job.document_id}">打开 PDF</button>
+         <button class="btn-ghost sm" data-download-act="library">前往文献库</button>`
+      : job.status === 'failed'
+        ? `<button class="btn-ghost sm danger" data-download-act="retry" data-paper-id="${job.paper_id}">重试</button>`
+        : '<button class="btn-ghost sm" disabled>后台处理中…</button>';
+    return `<article class="download-job ${status.cls}" data-download-job="${job.id}">
+      <div class="download-job-head">
+        <div class="download-job-title">${esc(paper.title || `文献 #${job.paper_id}`)}</div>
+        <span class="download-status ${status.cls}">${esc(status.label)}</span>
+      </div>
+      <div class="download-job-meta">${esc(metadata || '—')}</div>
+      ${job.error ? `<div class="download-job-error">${esc(job.error)}</div>` : ''}
+      <div class="download-job-actions">${actions}</div>
+    </article>`;
+  }).join('');
+}
+
+async function loadDownloadManager() {
+  clearTimeout(downloadManagerTimer);
+  state.downloadManagerLoading = true;
+  renderDownloadManager();
+  try {
+    const query = new URLSearchParams({ page_size: '100' });
+    if (state.downloadManagerFilter) query.set('status', state.downloadManagerFilter);
+    const data = await api(`/paper-downloads?${query}`);
+    state.downloads = data.items || [];
+    state.downloadCounts = data.status_counts || state.downloadCounts;
+    state.downloadManagerLoaded = true;
+  } catch (error) {
+    toast(`下载记录读取失败：${error.message}`, true);
+  } finally {
+    state.downloadManagerLoading = false;
+    renderDownloadManager();
+  }
+  if (state.page === 'downloads'
+    && ((state.downloadCounts.pending || 0) + (state.downloadCounts.downloading || 0) > 0)) {
+    downloadManagerTimer = setTimeout(loadDownloadManager, 2000);
+  }
+}
+
+function bindDownloadManager() {
+  $('#download-manager-refresh').addEventListener('click', loadDownloadManager);
+  $('#download-manager-filters').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-download-filter]');
+    if (!button) return;
+    state.downloadManagerFilter = button.dataset.downloadFilter;
+    loadDownloadManager();
+  });
+  $('#download-manager-list').addEventListener('click', async (event) => {
+    const action = event.target.closest('[data-download-act]');
+    if (!action) return;
+    if (action.dataset.downloadAct === 'open') {
+      openLocalPdf(Number(action.dataset.documentId));
+      return;
+    }
+    if (action.dataset.downloadAct === 'library') {
+      setPage('library');
+      return;
+    }
+    if (action.dataset.downloadAct === 'retry') {
+      const paper = await apiOrNull(`/papers/${Number(action.dataset.paperId)}`);
+      if (!paper) {
+        toast('无法读取对应文献，暂时不能重试', true);
+        return;
+      }
+      await startPaperDownload(paper);
+      await loadDownloadManager();
+    }
+  });
+}
+
 function downloadAvailability(paper) {
   const value = String((paper && paper.oa_pdf_url) || '').trim();
   if (!value) {
@@ -1123,163 +1492,6 @@ function downloadAvailability(paper) {
   } catch (error) {
     return { supported: false, reason: '全文链接无效' };
   }
-}
-
-function currentMarkedPaper(marked) {
-  const current = state.results.find((paper) => paper.id === marked.id)
-    || state.paperCache[marked.id];
-  return current ? Object.assign({}, marked, current) : marked;
-}
-
-function toggleMark(paper) {
-  const downloadInfo = downloadAvailability(paper);
-  if (!downloadInfo.supported) {
-    toast(`暂不支持下载：${downloadInfo.reason}`, true);
-    return;
-  }
-  const index = persisted.marked.findIndex((m) => m.id === paper.id);
-  if (index >= 0) persisted.marked.splice(index, 1);
-  else {
-    persisted.marked.push({
-      id: paper.id, doi: paper.doi || '', title: paper.title,
-      journal: paper.journal_name || '', year: paper.published_year || '',
-      oa_status: paper.oa_status || 'unknown', oa_pdf_url: downloadInfo.url,
-    });
-  }
-  saveStore();
-  renderMarked();
-  renderResults();
-}
-
-function renderMarked() {
-  $$('[data-marked-count]').forEach((node) => { node.textContent = persisted.marked.length; });
-  const body = $('#drawer-body');
-  const summary = $('#download-summary');
-  const batchButton = $('#download-marked');
-  const entries = persisted.marked.map(currentMarkedPaper);
-  const availableCount = entries.filter((paper) => downloadAvailability(paper).supported).length;
-  const unsupportedCount = entries.length - availableCount;
-  summary.textContent = persisted.marked.length
-    ? `可下载 ${availableCount} 篇 · 不支持 ${unsupportedCount} 篇`
-    : '尚未加入待下载文章';
-  batchButton.disabled = availableCount === 0 || state.batchDownloading;
-  batchButton.textContent = state.batchDownloading
-    ? '正在下载开放全文…'
-    : availableCount
-    ? `一键下载可用全文（${availableCount}）`
-    : '一键下载可用全文';
-  if (!persisted.marked.length) {
-    body.innerHTML = '<div class="drawer-empty">清单为空<br>在检索结果中点击「加入待下载」收集 DOI</div>';
-    return;
-  }
-  body.innerHTML = entries.map((m, i) => {
-    const info = downloadAvailability(m);
-    const downloadState = state.markedDownloadState[m.id];
-    const status = {
-      downloading: { label: '下载中', className: 'downloading' },
-      downloaded: { label: '已下载', className: 'downloaded' },
-      failed: { label: '失败', className: 'failed' },
-    }[downloadState];
-    const label = status ? status.label : (info.supported ? '可下载' : '不支持下载');
-    const statusClass = status ? status.className : (info.supported ? 'ok' : 'off');
-    const busy = downloadState === 'downloading';
-    return `<div class="mk">
-    <div class="mk-top">
-      <div class="t">${esc(m.title)}</div>
-      <span class="mk-status ${statusClass}">${label}</span>
-    </div>
-    <div class="r">
-      <span class="d">${esc(m.doi || '无 DOI')}</span>
-      <span class="m">${esc([m.journal, m.year].filter(Boolean).join(' · '))}</span>
-      <div class="spacer"></div>
-      <button class="mk-download" data-download-marked="${i}" ${info.supported && !busy ? '' : 'disabled'}>${busy ? '下载中…' : (info.supported ? '下载' : '不支持')}</button>
-      <button class="rm" data-unmark="${i}">移除</button>
-    </div>
-    ${info.supported ? '' : `<div class="mk-reason">${esc(info.reason)}</div>`}
-  </div>`;
-  }).join('');
-}
-
-async function refreshMarkedDownloadInfo() {
-  if (!persisted.marked.length) return;
-  const papers = await Promise.all(
-    persisted.marked.map((marked) => apiOrNull(`/papers/${marked.id}`))
-  );
-  papers.forEach((paper, index) => {
-    if (!paper) return;
-    persisted.marked[index] = Object.assign({}, persisted.marked[index], {
-      doi: paper.doi || persisted.marked[index].doi || '',
-      title: paper.title || persisted.marked[index].title,
-      journal: paper.journal_name || persisted.marked[index].journal || '',
-      year: paper.published_year || persisted.marked[index].year || '',
-      oa_status: paper.oa_status || 'unknown',
-      oa_pdf_url: paper.oa_pdf_url || '',
-    });
-    state.paperCache[paper.id] = paper;
-  });
-  saveStore();
-  renderMarked();
-}
-
-function attachmentFilename(response, paper) {
-  const disposition = response.headers.get('Content-Disposition') || '';
-  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i);
-  if (encoded) {
-    try { return decodeURIComponent(encoded[1]); } catch (error) { /* 使用回退文件名 */ }
-  }
-  const plain = disposition.match(/filename="?([^";]+)"?/i);
-  return plain ? plain[1] : `paper-${paper.id}.pdf`;
-}
-
-async function launchPaperDownload(paper) {
-  const info = downloadAvailability(paper);
-  if (!info.supported) return false;
-  const response = await fetch(`${API}/papers/${encodeURIComponent(paper.id)}/download`);
-  if (!response.ok) {
-    const text = await response.text();
-    let payload = null;
-    try { payload = text ? JSON.parse(text) : null; } catch (error) { payload = null; }
-    const detail = payload && payload.error;
-    throw new Error(detail ? detail.message : `PDF 下载失败（HTTP ${response.status}）`);
-  }
-  const blob = await response.blob();
-  download(attachmentFilename(response, paper), blob, blob.type || 'application/pdf');
-  return true;
-}
-
-async function downloadMarkedPapers() {
-  if (state.batchDownloading) return;
-  const entries = persisted.marked.map(currentMarkedPaper);
-  const available = entries.filter((paper) => downloadAvailability(paper).supported);
-  const unsupported = entries.length - available.length;
-  if (!available.length) {
-    toast('清单中没有支持下载的开放全文', true);
-    return;
-  }
-  state.batchDownloading = true;
-  renderMarked();
-  let downloaded = 0;
-  let failed = 0;
-  for (const paper of available) {
-    state.markedDownloadState[paper.id] = 'downloading';
-    renderMarked();
-    try {
-      await launchPaperDownload(paper);
-      state.markedDownloadState[paper.id] = 'downloaded';
-      downloaded += 1;
-    } catch (error) {
-      state.markedDownloadState[paper.id] = 'failed';
-      failed += 1;
-    }
-    renderMarked();
-  }
-  state.batchDownloading = false;
-  renderMarked();
-  toast(
-    `已下载 ${downloaded} 篇${failed ? ` · ${failed} 篇失败` : ''}`
-      + `${unsupported ? ` · ${unsupported} 篇不支持` : ''}`,
-    failed > 0
-  );
 }
 
 /* ── 文献库 ── */
@@ -1328,9 +1540,26 @@ function docTitle(doc) {
   return (doc.paper && doc.paper.title) || doc.original_name || `文档 #${doc.id}`;
 }
 
+function normalizedTranslationText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function hasEffectiveTranslation(translation) {
+  if (!translation || translation.status !== 'done') return false;
+  const sections = Array.isArray(translation.sections) ? translation.sections : [];
+  return sections.some((section) => {
+    const source = normalizedTranslationText(section.source);
+    const target = normalizedTranslationText(section.target);
+    return target && target !== source;
+  });
+}
+
 function translationTag(translation) {
   if (!translation) return { cls: 'todo', label: '未翻译' };
-  if (translation.status === 'done') return { cls: 'done', label: '已翻译' };
+  if (translation.status === 'done' && hasEffectiveTranslation(translation)) {
+    return { cls: 'done', label: '已翻译' };
+  }
+  if (translation.status === 'done') return { cls: 'todo', label: '仅原文 · 请重译' };
   if (translation.status === 'pending') return { cls: 'doing', label: '翻译中' };
   if (translation.status === 'failed') return { cls: 'fail', label: '翻译失败' };
   return { cls: 'todo', label: '未翻译' };
@@ -1415,6 +1644,7 @@ function renderLibrary() {
       ${tagRow}
       ${chemRow}
       <div class="lib-actions">
+        <button class="btn-ghost sm local-pdf-link" data-doc-act="pdf">打开 PDF</button>
         <button class="btn-ghost sm" data-doc-act="parse">解析</button>
         <button class="btn-ghost sm" data-doc-act="translate" ${readable ? '' : 'disabled'}>翻译</button>
         <button class="btn-ghost sm" data-doc-act="index" ${readable ? '' : 'disabled'}>建 RAG 索引</button>
@@ -1429,8 +1659,13 @@ function renderLibrary() {
 
 function renderUploadPaperOptions() {
   const select = $('#upload-paper');
+  const candidates = Array.from(new Map(
+    state.results.concat(Object.values(state.paperCache))
+      .filter((paper) => paper && paper.id != null)
+      .map((paper) => [paper.id, paper])
+  ).values());
   const options = ['<option value="">不关联</option>'].concat(
-    persisted.marked.map((m) => `<option value="${m.id}">${esc(m.title.slice(0, 60))}</option>`)
+    candidates.map((paper) => `<option value="${paper.id}">${esc(paper.title.slice(0, 60))}</option>`)
   );
   select.innerHTML = options.join('');
 }
@@ -1497,7 +1732,7 @@ async function docAction(docId, action) {
   setTimeout(loadLibrary, 600);
 }
 
-/* ── 术语表管理 ── */
+/* ── 术语管理 ── */
 function glossaryTermById(id) {
   return glossaryTerms().find((term) => term.id === String(id));
 }
@@ -1528,13 +1763,27 @@ function renderGlossaryManager() {
   }
   list.innerHTML = terms.map((term) => {
     const incomplete = !term.en || !term.zh;
+    const translating = incomplete && term.translationStatus === 'pending';
+    const failed = incomplete && term.translationStatus === 'failed';
+    const missingEn = translating ? 'AI 翻译中…' : (failed ? 'AI 翻译失败' : '待补充英文');
+    const missingZh = translating ? 'AI 翻译中…' : (failed ? 'AI 翻译失败' : '待补充中文');
+    const stateLabel = translating ? 'AI 翻译中' : (failed ? '翻译失败' : (incomplete ? '待完善' : ''));
     return `<div class="glossary-manager-row" data-glossary-row="${esc(term.id)}">
-      <div class="glossary-term-value ${term.en ? '' : 'pending'}">${esc(term.en || '待补充英文')}</div>
-      <div class="glossary-term-value ${term.zh ? '' : 'pending'}">${esc(term.zh || '待补充中文')}</div>
-      <div class="glossary-row-state">${incomplete ? '<span>待完善</span>' : ''}</div>
+      <div class="glossary-term-value ${term.en ? '' : 'pending'}">${esc(term.en || missingEn)}</div>
+      <div class="glossary-term-value ${term.zh ? '' : 'pending'}">${esc(term.zh || missingZh)}</div>
+      <div class="glossary-row-state ${translating ? 'translating' : ''} ${failed ? 'failed' : ''}"
+        title="${esc(failed ? term.translationError : '')}">${stateLabel ? `<span>${esc(stateLabel)}</span>` : ''}</div>
       <div class="glossary-row-actions">
         <button class="btn-ghost sm" type="button" data-glossary-edit="${esc(term.id)}">编辑</button>
-        <button class="btn-ghost sm danger" type="button" data-glossary-delete="${esc(term.id)}">删除</button>
+        <div class="glossary-delete-wrap" data-glossary-delete-wrap="${esc(term.id)}">
+          <button class="btn-ghost sm danger" type="button" data-glossary-delete="${esc(term.id)}"
+            aria-expanded="${state.glossaryDeleteId === term.id}">删除</button>
+          ${state.glossaryDeleteId === term.id ? `<div class="glossary-delete-popover" role="alertdialog"
+            aria-label="确认删除术语">
+            <button type="button" data-glossary-delete-cancel>取消</button>
+            <button class="confirm" type="button" data-glossary-delete-confirm="${esc(term.id)}">确认</button>
+          </div>` : ''}
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -1549,6 +1798,7 @@ function setGlossaryFormMessage(message, bad) {
 
 function resetGlossaryForm() {
   state.glossaryEditingId = null;
+  state.glossaryDeleteId = null;
   $('#glossary-form').reset();
   $('#glossary-form-title').textContent = '新增术语';
   $('#glossary-submit').textContent = '加入术语表';
@@ -1559,6 +1809,7 @@ function resetGlossaryForm() {
 function editGlossaryTerm(id) {
   const term = glossaryTermById(id);
   if (!term) return;
+  state.glossaryDeleteId = null;
   state.glossaryEditingId = term.id;
   $('#glossary-en').value = term.en;
   $('#glossary-zh').value = term.zh;
@@ -1582,7 +1833,7 @@ function glossaryFormValidation(en, zh, excludedId) {
   return duplicate ? `术语表中已存在「${duplicate.en || duplicate.zh}」。` : '';
 }
 
-function saveGlossaryTerm() {
+async function saveGlossaryTerm() {
   const en = $('#glossary-en').value.trim().replace(/\s+/g, ' ');
   const zh = $('#glossary-zh').value.trim().replace(/\s+/g, ' ');
   const editingId = state.glossaryEditingId;
@@ -1591,40 +1842,141 @@ function saveGlossaryTerm() {
     setGlossaryFormMessage(validation, true);
     return;
   }
-  if (editingId) {
-    const term = glossaryTermById(editingId);
-    if (!term) {
-      setGlossaryFormMessage('找不到要编辑的术语，请刷新后重试。', true);
-      return;
-    }
-    term.en = en;
-    term.zh = zh;
-    toast(`已更新术语「${en || zh}」`);
-  } else {
-    glossaryTerms().unshift({ id: `g${Date.now().toString(36)}`, en, zh });
-    toast(`已加入术语「${en || zh}」`);
+  const submit = $('#glossary-submit');
+  submit.disabled = true;
+  try {
+    const saved = editingId
+      ? await api(`/glossary-terms/${editingId}`, {
+        method: 'PUT',
+        body: glossaryTermPayload({
+          en, zh, translationJobId: null, translationStatus: null, translationError: '',
+        }),
+      })
+      : await api('/glossary-terms', {
+        method: 'POST',
+        body: glossaryTermPayload({
+          en, zh, translationJobId: null, translationStatus: null, translationError: '',
+        }),
+      });
+    replaceGlossaryTerm(saved);
+    resetGlossaryForm();
+    renderGlossaryManager();
+    renderGlossbar();
+    renderParas();
+    toast(`${editingId ? '已更新' : '已加入'}术语「${en || zh}」`);
+  } catch (error) {
+    setGlossaryFormMessage(`保存失败：${error.message}`, true);
+  } finally {
+    submit.disabled = false;
   }
-  saveStore();
-  resetGlossaryForm();
-  renderGlossaryManager();
-  renderGlossbar();
-  renderParas();
 }
 
-function deleteGlossaryTerm(id) {
+function closeGlossaryDeletePopover() {
+  if (!state.glossaryDeleteId) return;
+  state.glossaryDeleteId = null;
+  renderGlossaryManager();
+}
+
+function showGlossaryDeletePopover(id) {
   const term = glossaryTermById(id);
   if (!term) return;
-  if (!window.confirm(`确认删除术语「${term.en || term.zh}」？\n\n删除后，正文中的对应高亮也会消失。`)) return;
-  persisted.glossaryTerms = glossaryTerms().filter((item) => item.id !== term.id);
-  if (state.glossaryEditingId === term.id) resetGlossaryForm();
-  saveStore();
+  state.glossaryDeleteId = term.id;
   renderGlossaryManager();
-  renderGlossbar();
-  renderParas();
-  toast(`已删除术语「${term.en || term.zh}」`);
+  const confirm = $('[data-glossary-delete-confirm]');
+  if (confirm) confirm.focus();
 }
 
-function addSelectionToGlossary() {
+async function deleteGlossaryTerm(id) {
+  const term = glossaryTermById(id);
+  if (!term) return;
+  state.glossaryDeleteId = null;
+  try {
+    await api(`/glossary-terms/${term.id}`, { method: 'DELETE' });
+    state.glossaryTerms = glossaryTerms().filter((item) => item.id !== term.id);
+    if (state.glossaryEditingId === term.id) resetGlossaryForm();
+    renderGlossaryManager();
+    renderGlossbar();
+    renderParas();
+    toast(`已删除术语「${term.en || term.zh}」`);
+  } catch (error) {
+    renderGlossaryManager();
+    toast(`删除失败：${error.message}`, true);
+  }
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => { setTimeout(resolve, milliseconds); });
+}
+
+async function translateGlossaryTerm(term, selection) {
+  try {
+    const sourceLang = selection.lang === 'zh' ? 'zh' : 'en';
+    const targetLang = sourceLang === 'zh' ? 'en' : 'zh';
+    const job = await api('/term-translations', {
+      method: 'POST',
+      body: {
+        source_text: selection.text,
+        source_lang: sourceLang,
+        target_lang: targetLang,
+        context_text: selection.context || null,
+      },
+    });
+    const current = glossaryTermById(term.id);
+    if (!current) return;
+    current.translationJobId = job.job_id;
+    replaceGlossaryTerm(await api(`/glossary-terms/${current.id}`, {
+      method: 'PUT',
+      body: glossaryTermPayload(current),
+    }));
+
+    let result = null;
+    for (let attempt = 0; attempt < 75; attempt += 1) {
+      result = await api(`/term-translations/${job.job_id}`);
+      if (result.status !== 'pending') break;
+      await wait(800);
+    }
+    if (!result || result.status === 'pending') {
+      throw new Error('模型翻译超时，请稍后手动补充译名');
+    }
+    if (result.status === 'failed') {
+      throw new Error(result.error || '模型未能生成术语译名');
+    }
+    if (!result.target_text) {
+      throw new Error('模型返回了空译名');
+    }
+    const latest = glossaryTermById(term.id);
+    if (!latest) return;
+    if (targetLang === 'zh') latest.zh = result.target_text;
+    else latest.en = result.target_text;
+    latest.translationStatus = null;
+    latest.translationError = '';
+    replaceGlossaryTerm(await api(`/glossary-terms/${latest.id}`, {
+      method: 'PUT',
+      body: glossaryTermPayload(latest),
+    }));
+    renderGlossaryManager();
+    renderGlossbar();
+    renderParas();
+    toast(`AI 已翻译「${selection.text}」→「${result.target_text}」`);
+  } catch (error) {
+    const latest = glossaryTermById(term.id);
+    if (!latest) return;
+    latest.translationStatus = 'failed';
+    latest.translationError = error.message || '模型翻译失败';
+    try {
+      replaceGlossaryTerm(await api(`/glossary-terms/${latest.id}`, {
+        method: 'PUT',
+        body: glossaryTermPayload(latest),
+      }));
+    } catch (saveError) {
+      latest.translationError = `${latest.translationError}；状态保存失败：${saveError.message}`;
+    }
+    renderGlossaryManager();
+    toast(`术语已保留，AI 翻译失败：${latest.translationError}`, true);
+  }
+}
+
+async function addSelectionToGlossary() {
   const selected = state.selection;
   if (!selected) return;
   const text = selected.text.trim().replace(/\s+/g, ' ');
@@ -1641,16 +1993,27 @@ function addSelectionToGlossary() {
   const isChinese = selected.lang === 'zh' || (
     selected.lang !== 'en' && /[\u3400-\u9fff]/.test(text)
   );
-  glossaryTerms().unshift({
-    id: `g${Date.now().toString(36)}`,
-    en: isChinese ? '' : text,
-    zh: isChinese ? text : '',
-  });
-  saveStore();
-  hideSelectionPopover();
-  renderGlossbar();
-  renderParas();
-  toast(`已加入「${text}」；可在术语表管理补充译名`);
+  try {
+    const created = await api('/glossary-terms', {
+      method: 'POST',
+      body: glossaryTermPayload({
+        en: isChinese ? '' : text,
+        zh: isChinese ? text : '',
+        translationJobId: null,
+        translationStatus: 'pending',
+        translationError: '',
+      }),
+    });
+    const term = replaceGlossaryTerm(created);
+    hideSelectionPopover();
+    renderGlossaryManager();
+    renderGlossbar();
+    renderParas();
+    toast(`已加入「${text}」，AI 正在翻译`);
+    await translateGlossaryTerm(term, { ...selected, text });
+  } catch (error) {
+    toast(`加入术语表失败：${error.message}`, true);
+  }
 }
 
 /* ── 双语阅读 ── */
@@ -1679,10 +2042,19 @@ function renderReaderBar() {
   select.value = state.readerProject;
   $('#reader-category').innerHTML = categoryOptions(state.readerCategory);
 
+  const qaMode = state.readerMode === 'qa';
   $('#reader-modes').innerHTML = [
     { k: 'both', l: '对照' }, { k: 'zh', l: '仅中文' }, { k: 'en', l: '仅英文' },
-    { k: 'qa', l: 'AI 问答' },
-  ].map((m) => `<button data-mode="${m.k}" class="${state.readerMode === m.k ? 'on' : ''}">${m.l}</button>`).join('');
+    { k: 'qa', l: qaMode ? '取消 AI 对话' : 'AI 问答' },
+  ].map((mode) => {
+    const active = mode.k === 'qa'
+      ? qaMode
+      : qaMode
+        ? mode.k === state.readerQaLang
+        : mode.k === state.readerMode;
+    const disabled = qaMode && mode.k === 'both';
+    return `<button data-mode="${mode.k}" class="${active ? 'on' : ''}" ${disabled ? 'disabled' : ''}>${mode.l}</button>`;
+  }).join('');
 
   const current = state.documents.find((d) => d.id === state.readerDocId);
   $('#reader-search').placeholder = current ? docTitle(current).slice(0, 64) : '搜索文献…';
@@ -1695,13 +2067,8 @@ function renderReaderBar() {
   retranslate.title = current
     ? `使用当前翻译引擎重新翻译为 ${state.readerTargetLang}`
     : '请先选择已解析文献';
-  const qaMode = state.readerMode === 'qa';
   const readerPanes = $('.reader-panes');
   readerPanes.classList.toggle('qa-mode', qaMode);
-  $('#reader-qa-language').hidden = !qaMode;
-  $$('#reader-qa-language [data-reader-lang]').forEach((button) => {
-    button.classList.toggle('on', button.dataset.readerLang === state.readerQaLang);
-  });
   $('#pane-en').hidden = qaMode ? state.readerQaLang !== 'en' : state.readerMode === 'zh';
   $('#pane-zh').hidden = qaMode ? state.readerQaLang !== 'zh' : state.readerMode === 'en';
   $('#reader-chat-panel').hidden = !qaMode;
@@ -1755,6 +2122,7 @@ async function openReader(docId) {
   ]);
   const src = (sections && sections.items) || [];
   const tr = (translation && translation.sections) || [];
+  const effectiveTranslation = hasEffectiveTranslation(translation);
   const byId = {};
   tr.forEach((t, i) => { byId[t.section_id != null ? t.section_id : `#${i}`] = t; });
   state.readerParas = src.map((s, i) => {
@@ -1765,7 +2133,7 @@ async function openReader(docId) {
       title: s.title || '',
       type: s.section_type || '',
       en: s.content || '',
-      zh: match ? match.target : '',
+      zh: effectiveTranslation && match ? match.target : '',
       note: match ? match.note : null,
     };
   });
@@ -1872,15 +2240,15 @@ function currentReaderQaThread() {
 
 function readerQaReady() {
   const current = state.documents.find((doc) => doc.id === state.readerDocId);
-  return Boolean(current && current.index_status === 'indexed');
+  return Boolean(current && current.parse_status === 'parsed' && state.readerParas.length);
 }
 
 function readerQaEmptyMarkup(ready) {
   if (!ready) {
     return `<div class="reader-chat-empty unavailable">
       <div class="reader-chat-orbit" aria-hidden="true">AI</div>
-      <div class="title">当前论文尚未进入知识库</div>
-      <div class="desc">请先在「文献库」完成解析并建立 RAG 索引，再回到这里提问。</div>
+      <div class="title">当前论文尚未解析</div>
+      <div class="desc">请先在「文献库」完成正文解析，再回到这里提问；无需预先建立 RAG 索引。</div>
     </div>`;
   }
   const prompts = [
@@ -1891,7 +2259,7 @@ function readerQaEmptyMarkup(ready) {
   return `<div class="reader-chat-empty">
     <div class="reader-chat-orbit" aria-hidden="true">AI</div>
     <div class="title">边读，边问这篇论文</div>
-    <div class="desc">回答只使用当前论文的已索引段落，并保留可回查引用。</div>
+    <div class="desc">AI 会读取当前论文的已解析正文；RAG 索引仅用于增强检索，并非提问前置条件。</div>
     <div class="reader-chat-suggestions">
       ${prompts.map((prompt) => `<button type="button" data-reader-question="${esc(prompt)}">${esc(prompt)}</button>`).join('')}
     </div>
@@ -1908,11 +2276,14 @@ function renderReaderQa() {
   $('#reader-chat-context').textContent = current
     ? docTitle(current)
     : '选择一篇已解析论文后开始提问';
-  $('#reader-chat-status').textContent = ready ? '当前论文 · 已索引' : '需要 RAG 索引';
+  const indexed = Boolean(current && current.index_status === 'indexed');
+  $('#reader-chat-status').textContent = ready
+    ? (indexed ? '当前论文 · 正文上下文 + RAG' : '当前论文 · 正文上下文')
+    : '需要解析正文';
   $('#reader-chat-status').classList.toggle('ready', ready);
   input.disabled = !ready || state.readerQaTyping;
   send.disabled = !ready || state.readerQaTyping;
-  input.placeholder = ready ? '针对当前论文提问…' : '当前论文尚未建立 RAG 索引';
+  input.placeholder = ready ? '针对当前论文提问…' : '当前论文尚未解析正文';
 
   const messages = currentReaderQaThread();
   const log = $('#reader-chat-log');
@@ -1931,14 +2302,14 @@ function renderReaderQa() {
       title="${esc(source.section_title || '')} · 点击跳回左侧原文">[${sourceIndex + 1}·¶${
         source.section_seq != null ? source.section_seq : '?'}]</button>`).join('');
     const hits = sources.length
-      ? `<div class="hits">命中 ${sources.length} 个当前论文切块 · 点击引用回到原文</div>`
+      ? `<div class="hits">引用 ${sources.length} 个当前论文段落 · 点击引用回到原文</div>`
       : '';
     return `<div class="msg-row ai"><div class="bubble">
       <div class="who">助手 · 当前论文</div>${hits}
       <div class="body">${esc(message.text)}${citations ? ` ${citations}` : ''}</div>
     </div></div>`;
   }).join('') + (state.readerQaTyping
-    ? '<div class="typing"><i></i><i></i><i></i><span>正在检索当前论文并生成回答…</span></div>'
+    ? '<div class="typing"><i></i><i></i><i></i><span>正在阅读当前论文并生成回答…</span></div>'
     : '');
   log.scrollTop = log.scrollHeight;
 }
@@ -1948,7 +2319,7 @@ async function sendReaderQa(text) {
   const docId = state.readerDocId;
   if (!question || state.readerQaTyping || !docId) return;
   if (!readerQaReady()) {
-    toast('当前论文尚未建立 RAG 索引，请先在文献库完成索引', true);
+    toast('当前论文尚未解析正文，请先在文献库完成解析', true);
     return;
   }
   const messages = currentReaderQaThread();
@@ -1959,7 +2330,7 @@ async function sendReaderQa(text) {
   try {
     const data = await api('/rag/query', {
       method: 'POST',
-      body: { question, document_ids: [docId], top_k: 6 },
+      body: { question, document_ids: [docId], top_k: 6, use_document_context: true },
     });
     messages.push({
       role: 'ai',
@@ -1967,7 +2338,7 @@ async function sendReaderQa(text) {
       sources: data.sources || [],
     });
   } catch (error) {
-    messages.push({ role: 'ai', text: `检索失败：${error.message}`, sources: [] });
+    messages.push({ role: 'ai', text: `问答失败：${error.message}`, sources: [] });
   } finally {
     state.readerQaTyping = false;
     renderReaderQa();
@@ -2497,16 +2868,35 @@ function bindSearch() {
   $('#search-sort').addEventListener('change', (e) => { state.sort = e.target.value; runSearch(); });
   $('#oa-chip').addEventListener('click', (e) => {
     state.oaOnly = !state.oaOnly;
-    if (state.oaOnly) state.downloadOnly = false;
+    if (state.oaOnly) {
+      state.downloadOnly = false;
+      state.downloadedOnly = false;
+    }
     e.currentTarget.classList.toggle('on', state.oaOnly);
     $('#download-chip').classList.toggle('on', state.downloadOnly);
+    $('#downloaded-chip').classList.toggle('on', state.downloadedOnly);
     runSearch();
   });
   $('#download-chip').addEventListener('click', (e) => {
     state.downloadOnly = !state.downloadOnly;
-    if (state.downloadOnly) state.oaOnly = false;
+    if (state.downloadOnly) {
+      state.oaOnly = false;
+      state.downloadedOnly = false;
+    }
     e.currentTarget.classList.toggle('on', state.downloadOnly);
     $('#oa-chip').classList.toggle('on', state.oaOnly);
+    $('#downloaded-chip').classList.toggle('on', state.downloadedOnly);
+    runSearch();
+  });
+  $('#downloaded-chip').addEventListener('click', (e) => {
+    state.downloadedOnly = !state.downloadedOnly;
+    if (state.downloadedOnly) {
+      state.oaOnly = false;
+      state.downloadOnly = false;
+    }
+    e.currentTarget.classList.toggle('on', state.downloadedOnly);
+    $('#oa-chip').classList.toggle('on', state.oaOnly);
+    $('#download-chip').classList.toggle('on', state.downloadOnly);
     runSearch();
   });
   $('#journal-chips').addEventListener('click', (e) => {
@@ -2565,7 +2955,8 @@ function bindSearch() {
     const act = action.dataset.act;
     if (act === 'expand') { state.expanded[paper.id] = !state.expanded[paper.id]; renderResults(); }
     else if (act === 'copy') copyText(paper.doi);
-    else if (act === 'mark') toggleMark(paper);
+    else if (act === 'download') startPaperDownload(paper);
+    else if (act === 'open-pdf') openLocalPdf(Number(action.dataset.documentId));
     else if (act === 'zh') showAbstractTranslation(paper.id);
   });
   $('[data-page-prev]').addEventListener('click', () => { state.searchPage -= 1; runSearch(false); });
@@ -2598,68 +2989,6 @@ function syncYearInputs() {
   $$('#year-presets button').forEach((btn, i) => {
     const p = YEAR_PRESETS[i];
     btn.classList.toggle('on', state.yearFrom === p.f && state.yearTo === p.t);
-  });
-}
-
-function bindDrawer() {
-  const drawer = $('#drawer');
-  const scrim = $('#scrim');
-  const setOpen = (open) => { drawer.classList.toggle('open', open); scrim.hidden = !open; };
-  $('#open-drawer').addEventListener('click', () => {
-    setOpen(true);
-    refreshMarkedDownloadInfo();
-  });
-  $('#close-drawer').addEventListener('click', () => setOpen(false));
-  scrim.addEventListener('click', () => setOpen(false));
-  $('#drawer-body').addEventListener('click', async (e) => {
-    const downloadButton = e.target.closest('[data-download-marked]');
-    if (downloadButton) {
-      const index = Number(downloadButton.dataset.downloadMarked);
-      const paper = currentMarkedPaper(persisted.marked[index]);
-      const info = downloadAvailability(paper);
-      if (!info.supported) {
-        toast(`暂不支持下载：${info.reason}`, true);
-        return;
-      }
-      if (state.markedDownloadState[paper.id] === 'downloading') return;
-      state.markedDownloadState[paper.id] = 'downloading';
-      renderMarked();
-      try {
-        await launchPaperDownload(paper);
-        state.markedDownloadState[paper.id] = 'downloaded';
-        toast('PDF 已下载');
-      } catch (error) {
-        state.markedDownloadState[paper.id] = 'failed';
-        toast(`PDF 下载失败：${error.message}`, true);
-      }
-      renderMarked();
-      return;
-    }
-    const btn = e.target.closest('[data-unmark]');
-    if (!btn) return;
-    persisted.marked.splice(Number(btn.dataset.unmark), 1);
-    saveStore();
-    renderMarked();
-    renderResults();
-    renderUploadPaperOptions();
-  });
-  $('#download-marked').addEventListener('click', downloadMarkedPapers);
-  $('#export-txt').addEventListener('click', () => {
-    if (!persisted.marked.length) { toast('清单为空', true); return; }
-    download('doi-list.txt', persisted.marked.map((m) => m.doi || m.title).join('\n'), 'text/plain');
-  });
-  $('#export-csv').addEventListener('click', () => {
-    if (!persisted.marked.length) { toast('清单为空', true); return; }
-    const rows = ['DOI,Title,Journal,Year'].concat(persisted.marked.map((m) =>
-      `"${m.doi}","${String(m.title).replace(/"/g, '""')}","${m.journal}",${m.year}`));
-    download('doi-list.csv', rows.join('\n'), 'text/csv');
-  });
-  $('#clear-marked').addEventListener('click', () => {
-    persisted.marked = [];
-    saveStore();
-    renderMarked();
-    renderResults();
-    renderUploadPaperOptions();
   });
 }
 
@@ -2725,7 +3054,8 @@ function bindLibrary() {
     const btn = e.target.closest('[data-doc-act]');
     if (!btn || btn.disabled) return;
     const action = btn.dataset.docAct;
-    if (action === 'open') openReader(docId);
+    if (action === 'pdf') openLocalPdf(docId);
+    else if (action === 'open') openReader(docId);
     else if (action === 'tag') {
       state.tagEditor = state.tagEditor === doc.paper_id ? null : doc.paper_id;
       renderLibrary();
@@ -2784,13 +3114,29 @@ function bindGlossary() {
     renderGlossaryManager();
   });
   $('#glossary-manager-list').addEventListener('click', (event) => {
+    const confirm = event.target.closest('[data-glossary-delete-confirm]');
+    if (confirm) {
+      deleteGlossaryTerm(confirm.dataset.glossaryDeleteConfirm);
+      return;
+    }
+    if (event.target.closest('[data-glossary-delete-cancel]')) {
+      closeGlossaryDeletePopover();
+      return;
+    }
     const edit = event.target.closest('[data-glossary-edit]');
     if (edit) {
       editGlossaryTerm(edit.dataset.glossaryEdit);
       return;
     }
     const remove = event.target.closest('[data-glossary-delete]');
-    if (remove) deleteGlossaryTerm(remove.dataset.glossaryDelete);
+    if (remove) showGlossaryDeletePopover(remove.dataset.glossaryDelete);
+  });
+  document.addEventListener('click', (event) => {
+    if (!state.glossaryDeleteId || event.target.closest('[data-glossary-delete-wrap]')) return;
+    closeGlossaryDeletePopover();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && state.glossaryDeleteId) closeGlossaryDeletePopover();
   });
 }
 
@@ -2846,12 +3192,20 @@ function showSelectionPopover(pane) {
     hideSelectionPopover();
     return;
   }
-  state.selection = { text, lang: pane.id === 'pane-zh' ? 'zh' : 'en' };
+  const range = selection.getRangeAt(0);
+  const ancestor = range.commonAncestorContainer.nodeType === Node.TEXT_NODE
+    ? range.commonAncestorContainer.parentElement
+    : range.commonAncestorContainer;
+  const paragraph = ancestor && ancestor.closest ? ancestor.closest('[data-para]') : null;
+  const context = paragraph
+    ? paragraph.textContent.trim().replace(/\s+/g, ' ').slice(0, 1000)
+    : '';
+  state.selection = { text, lang: pane.id === 'pane-zh' ? 'zh' : 'en', context };
   const addButton = $('[data-selection-action="glossary"]', popover);
   addButton.disabled = text.length > MAX_GLOSSARY_TERM_LENGTH;
   addButton.title = addButton.disabled
     ? `词或短语不能超过 ${MAX_GLOSSARY_TERM_LENGTH} 个字符`
-    : '加入当前浏览器的术语表';
+    : '加入本地工作台术语表';
   popover.hidden = false;
   const gap = 10;
   const width = popover.offsetWidth;
@@ -2867,20 +3221,32 @@ function showSelectionPopover(pane) {
   popover.classList.toggle('below', below);
 }
 
-function sendTextToChat(text, kind) {
+function buildReaderContextQuestion(text, kind, context = '') {
   const normalized = String(text || '').trim().replace(/\s+/g, ' ');
-  if (!normalized) return;
+  if (!normalized) return '';
+  const normalizedContext = String(context || '').trim().replace(/\s+/g, ' ');
+  const isTerm = kind === 'term'
+    || (normalized.length <= 48 && !/[。！？.!?；;]/.test(normalized));
+  const selectedLabel = isTerm ? '词语' : '语句';
+  const request = isTerm
+    ? '请解释它在当前论文中的具体含义：先给出简明中文释义，再说明这里的专业含义、指代对象，以及它与上下文的关系。不要只做字面翻译。'
+    : '请解释它在当前论文和所在段落中的意思：先用中文简明转述，再说明关键概念、逻辑关系，以及这句话在上下文中起什么作用。不要脱离原文泛泛解释。';
+  const selectedText = normalized.slice(0, 600);
+  const contextText = normalizedContext.slice(0, 1000);
+  return `请结合当前论文解释下面这段${selectedLabel}。选中内容：“${selectedText}”。${request}`
+    + (contextText && contextText !== selectedText ? `所在段落：“${contextText}”。` : '');
+}
+
+function sendTextToChat(text, kind, selection = null) {
+  const question = buildReaderContextQuestion(text, kind, selection && selection.context);
+  if (!question) return;
   hideSelectionPopover();
-  state.chatScope = 'single';
-  if (state.readerDocId && !state.chatDocs.includes(state.readerDocId)) state.chatDocs = [state.readerDocId];
-  setPage('chat');
-  const question = kind === 'term'
-    ? `请解释术语“${normalized.slice(0, MAX_GLOSSARY_TERM_LENGTH)}”在本文语境中的含义。`
-    : `请解释这段话：“${normalized.slice(0, 160)}”`;
-  $('#chat-input').value = question;
-  state.chatInput = question;
-  renderChatSide();
-  $('#chat-input').focus();
+  state.readerMode = 'qa';
+  if (selection && ['zh', 'en'].includes(selection.lang)) state.readerQaLang = selection.lang;
+  renderReaderBar();
+  const input = $('#reader-chat-input');
+  input.value = question;
+  input.focus();
 }
 
 function bindReader() {
@@ -2933,14 +3299,20 @@ function bindReader() {
   });
   $('#reader-modes').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-mode]');
-    if (!btn) return;
-    state.readerMode = btn.dataset.mode;
-    renderReaderBar();
-  });
-  $('#reader-qa-language').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-reader-lang]');
-    if (!btn) return;
-    state.readerQaLang = btn.dataset.readerLang;
+    if (!btn || btn.disabled) return;
+    const mode = btn.dataset.mode;
+    if (mode === 'qa') {
+      if (state.readerMode === 'qa') {
+        state.readerMode = 'both';
+      } else {
+        state.readerMode = 'qa';
+        state.readerQaLang = 'zh';
+      }
+    } else if (state.readerMode === 'qa' && ['zh', 'en'].includes(mode)) {
+      state.readerQaLang = mode;
+    } else {
+      state.readerMode = mode;
+    }
     renderReaderBar();
   });
   const readerChatInput = $('#reader-chat-input');
@@ -3035,7 +3407,8 @@ function bindReader() {
       return;
     }
     if (action.dataset.selectionAction === 'chat' && state.selection) {
-      sendTextToChat(state.selection.text, 'selection');
+      const selected = { ...state.selection };
+      sendTextToChat(selected.text, 'selection', selected);
     }
   });
   document.addEventListener('mousedown', (event) => {
@@ -3166,7 +3539,7 @@ async function boot() {
   bindNav();
   bindSearch();
   bindJournals();
-  bindDrawer();
+  bindDownloadManager();
   bindLibrary();
   bindTags();
   bindGlossary();
@@ -3174,7 +3547,6 @@ async function boot() {
   bindChat();
   bindChemistry();
   syncYearInputs();
-  renderMarked();
   renderNav();
   setPage('search');
   state.status = await apiOrNull('/system/status');
@@ -3184,7 +3556,12 @@ async function boot() {
   } catch (error) {
     toast(`旧预设迁移失败：${error.message}`, true);
   }
-  await Promise.all([loadJournals(), loadCategories(), loadPresets()]);
+  try {
+    await migrateLegacyGlossaryTerms();
+  } catch (error) {
+    toast(`旧术语迁移失败：${error.message}`, true);
+  }
+  await Promise.all([loadJournals(), loadCategories(), loadPresets(), loadGlossaryTerms()]);
   await runSearch();
   await ensureLibrary();
 }

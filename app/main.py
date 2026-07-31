@@ -10,7 +10,20 @@ from app import __version__
 from app.config import get_settings
 from app.db import init_db
 from app.errors import install_error_handlers, install_openapi_error_schema
-from app.routers import categories, crawl, documents, journals, papers, prompt_presets, rag, reactions, system
+from app.routers import (
+    categories,
+    crawl,
+    downloads,
+    documents,
+    glossary_terms,
+    journals,
+    papers,
+    prompt_presets,
+    rag,
+    reactions,
+    system,
+    term_translations,
+)
 from app.scheduler import create_scheduler
 
 
@@ -24,8 +37,11 @@ OPENAPI_TAGS = [
     {"name": "journals", "description": "Journal whitelist metadata and curation endpoints."},
     {"name": "categories", "description": "Research taxonomy categories for paper classification."},
     {"name": "crawl", "description": "Metadata crawl jobs and crawl status inspection."},
+    {"name": "downloads", "description": "Background OA PDF downloads into the local document library."},
     {"name": "papers", "description": "Paper search, detail, OA resolution, and categorization."},
     {"name": "documents", "description": "Uploaded full-text documents, parsing, translation, and indexing."},
+    {"name": "translations", "description": "Model-backed translations for selected glossary terms."},
+    {"name": "glossary", "description": "Locally persisted bilingual reading glossary."},
     {"name": "prompt-presets", "description": "Locally persisted RAG question presets."},
     {"name": "rag", "description": "Retrieval-augmented question answering over indexed documents."},
     {"name": "reactions", "description": "Extracted reaction sets, human verification, and exports."},
@@ -67,8 +83,11 @@ def create_app() -> FastAPI:
     app.include_router(journals.router, prefix=settings.api_prefix)
     app.include_router(categories.router, prefix=settings.api_prefix)
     app.include_router(crawl.router, prefix=settings.api_prefix)
+    app.include_router(downloads.router, prefix=settings.api_prefix)
     app.include_router(papers.router, prefix=settings.api_prefix)
     app.include_router(documents.router, prefix=settings.api_prefix)
+    app.include_router(term_translations.router, prefix=settings.api_prefix)
+    app.include_router(glossary_terms.router, prefix=settings.api_prefix)
     app.include_router(prompt_presets.router, prefix=settings.api_prefix)
     app.include_router(rag.router, prefix=settings.api_prefix)
     app.include_router(reactions.router, prefix=settings.api_prefix)

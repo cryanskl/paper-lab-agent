@@ -190,6 +190,20 @@ CREATE TABLE documents (
 );
 CREATE INDEX idx_documents_paper ON documents(paper_id);
 
+-- OA PDF 后台下载任务；成功后 document_id 指向已进入文献库的本地 PDF
+CREATE TABLE paper_downloads (
+    id            INTEGER PRIMARY KEY,
+    paper_id      INTEGER NOT NULL UNIQUE REFERENCES papers(id) ON DELETE CASCADE,
+    document_id   INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+    status        TEXT NOT NULL DEFAULT 'pending', -- pending/downloading/downloaded/failed
+    source_url    TEXT,
+    file_path     TEXT,
+    error         TEXT,
+    created_at    TEXT DEFAULT (datetime('now')),
+    updated_at    TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_paper_downloads_status ON paper_downloads(status);
+
 -- GROBID 解析出的结构化章节
 CREATE TABLE sections (
     id           INTEGER PRIMARY KEY,
@@ -216,6 +230,59 @@ CREATE TABLE translations (
     created_at   TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_translations_doc ON translations(document_id);
+
+-- 检索元数据中的摘要翻译；不依赖 PDF 文档或 GROBID 解析
+CREATE TABLE paper_abstract_translations (
+    id           INTEGER PRIMARY KEY,
+    paper_id     INTEGER NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+    source_lang  TEXT,
+    target_lang  TEXT NOT NULL,
+    source_text  TEXT NOT NULL,                 -- 翻译时的摘要快照，用于缓存失效判断
+    target_text  TEXT,
+    status       TEXT DEFAULT 'pending',        -- pending/done/failed
+    error        TEXT,
+    created_at   TEXT DEFAULT (datetime('now')),
+    updated_at   TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_paper_abstract_translations_paper
+    ON paper_abstract_translations(paper_id, target_lang, id);
+
+-- 阅读页划选的术语翻译任务。
+-- context_text 只保存发起翻译时的段落快照，用于消歧和缓存失效判断。
+CREATE TABLE term_translations (
+    id           INTEGER PRIMARY KEY,
+    source_text  TEXT NOT NULL,
+    source_lang  TEXT NOT NULL,
+    target_lang  TEXT NOT NULL,
+    context_text TEXT,
+    target_text  TEXT,
+    status       TEXT DEFAULT 'pending',        -- pending/done/failed
+    error        TEXT,
+    created_at   TEXT DEFAULT (datetime('now')),
+    updated_at   TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_term_translations_lookup
+    ON term_translations(source_text, source_lang, target_lang, status, id);
+
+-- 阅读页双语术语表；作为本地工作台的持久化真理来源。
+CREATE TABLE glossary_terms (
+    id                 INTEGER PRIMARY KEY,
+    en                 TEXT COLLATE NOCASE,
+    zh                 TEXT COLLATE NOCASE,
+    translation_job_id INTEGER REFERENCES term_translations(id) ON DELETE SET NULL,
+    translation_status TEXT,                    -- pending/failed；成功后清空
+    translation_error  TEXT,
+    created_at         TEXT DEFAULT (datetime('now')),
+    updated_at         TEXT DEFAULT (datetime('now')),
+    CHECK (
+        (en IS NOT NULL AND length(trim(en)) > 0)
+        OR (zh IS NOT NULL AND length(trim(zh)) > 0)
+    )
+);
+CREATE INDEX idx_glossary_terms_en
+    ON glossary_terms(en) WHERE en IS NOT NULL;
+CREATE INDEX idx_glossary_terms_zh
+    ON glossary_terms(zh) WHERE zh IS NOT NULL;
 
 -- -------------------------------------------------------------
 -- 模块 G：RAG 分块（向量本身存外部向量库，这里只存文本+映射）
@@ -329,3 +396,22 @@ INSERT INTO prompt_presets (command, description, prompt) VALUES
 ('/术语', '提取并解释文中的专业术语', '提取当前范围文献中的关键专业术语，并逐条解释其含义。'),
 ('/相关工作', '梳理相关工作与研究脉络', '梳理当前范围文献涉及的相关工作与研究脉络。'),
 ('/提问我', '就所选文献向我提问，考察理解', '就当前范围的文献内容，向我提出两个考察理解的问题。');
+
+-- 种子数据：阅读页默认双语术语。写入数据库后均可编辑/删除，重启不会重新覆盖。
+INSERT INTO glossary_terms (en, zh) VALUES
+('capacitively coupled', '容性耦合'),
+('electron energy distribution function', '电子能量分布函数'),
+('EEDF', '电子能量分布函数'),
+('particle-in-cell', '粒子网格法'),
+('Monte Carlo collisions', '蒙特卡罗碰撞'),
+('secondary electron emission', '二次电子发射'),
+('ohmic heating', '欧姆加热'),
+('cross section', '截面'),
+('dissociation', '解离'),
+('ionization', '电离'),
+('attachment', '吸附'),
+('radical', '自由基'),
+('ion flux', '离子通量'),
+('sheath', '鞘层'),
+('self-bias', '自偏压'),
+('rate coefficient', '速率系数');
