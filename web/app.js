@@ -11,13 +11,14 @@ const LS_KEY = 'plasma-workbench';
 const MAX_GLOSSARY_TERM_LENGTH = 120;
 const ABSTRACT_PREFETCH_COUNT = 5;
 const ABSTRACT_TRANSLATION_CONCURRENCY = 2;
+const CHAT_DOCUMENTS_PER_PAGE = 6;
 
 const NAV = [
   { key: 'search', label: '文献检索', sub: 'SEARCH', group: 'use' },
   { key: 'library', label: '文献库', sub: 'LIBRARY', group: 'use' },
   { key: 'reader', label: '双语阅读', sub: 'READER', group: 'use' },
   { key: 'chat', label: 'AI 问答', sub: 'Q&A', group: 'use' },
-  { key: 'chemistry', label: '化学库复核', sub: 'CHEMISTRY', group: 'use' },
+  { key: 'chemistry', label: '化学库', sub: 'CHEMISTRY', group: 'use' },
   { key: 'journals', label: '期刊管理', sub: 'JOURNALS', group: 'manage' },
   { key: 'tags', label: '标签管理', sub: 'TAGS', group: 'manage' },
   { key: 'glossary', label: '术语管理', sub: 'GLOSSARY', group: 'manage' },
@@ -132,6 +133,9 @@ const state = {
   searchBatchDecision: null,
   onlineSyncing: false,
   syncSummary: null,
+  bulkDownloadRunning: false,
+  bulkDownloadCompleted: 0,
+  bulkDownloadTotal: 0,
   journalSubmitting: false,
   journalEditingId: null,
   expanded: {},
@@ -140,12 +144,18 @@ const state = {
   docMeta: {},
   paperCache: {},
   libLoaded: false,
+  libraryFocusDocumentId: null,
+  librarySelectedDocumentIds: new Set(),
+  librarySelectionMode: false,
+  libraryBulkRunning: false,
+  libraryBulkProgress: null,
   readerDocId: null,
   readerProject: 'all',
   readerCategory: '',
   readerMode: 'both',
   readerQaLang: 'zh',
   readerParas: [],
+  readerFigures: [],
   readerLoading: false,
   readerRetranslating: false,
   readerTargetLang: 'zh',
@@ -160,6 +170,8 @@ const state = {
   chatDocs: [],
   selProject: null,
   docSearch: '',
+  chatDocPage: 1,
+  chatPickerOpen: true,
   messages: [],
   typing: false,
   chatInput: '',
@@ -186,6 +198,9 @@ const state = {
 
 let abstractTranslationObserver = null;
 let abstractTranslationActive = 0;
+let activeFigureTrigger = null;
+let actionConfirmResolve = null;
+let actionConfirmTrigger = null;
 const abstractTranslationQueue = [];
 const queuedAbstractTranslations = new Set();
 
@@ -195,6 +210,92 @@ const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 const esc = (v) => String(v == null ? '' : v)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+function renderMarkdownInline(value) {
+  return esc(value)
+    .replace(/&lt;(\/?)(sub|sup)&gt;/gi, '<$1$2>')
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
+}
+
+function renderSafeMarkdown(value) {
+  const lines = String(value || '').replace(/\r\n?/g, '\n').split('\n');
+  const html = [];
+  let paragraph = [];
+  let listType = '';
+  let listItems = [];
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    html.push(`<p>${paragraph.map(renderMarkdownInline).join('<br>')}</p>`);
+    paragraph = [];
+  };
+  const flushList = () => {
+    if (!listItems.length) return;
+    html.push(`<${listType}>${listItems.map((item) => `<li>${renderMarkdownInline(item)}</li>`).join('')}</${listType}>`);
+    listType = '';
+    listItems = [];
+  };
+
+  lines.forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line) {
+      flushParagraph();
+      flushList();
+      return;
+    }
+    const heading = line.match(/^(#{1,4})\s+(.+)$/);
+    const unordered = line.match(/^[-*]\s+(.+)$/);
+    const ordered = line.match(/^\d+[.)]\s+(.+)$/);
+    const quote = line.match(/^>\s?(.*)$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      const level = Math.min(heading[1].length + 2, 6);
+      html.push(`<h${level}>${renderMarkdownInline(heading[2])}</h${level}>`);
+      return;
+    }
+    if (unordered || ordered) {
+      flushParagraph();
+      const nextType = unordered ? 'ul' : 'ol';
+      if (listType && listType !== nextType) flushList();
+      listType = nextType;
+      listItems.push((unordered || ordered)[1]);
+      return;
+    }
+    if (quote) {
+      flushParagraph();
+      flushList();
+      html.push(`<blockquote>${renderMarkdownInline(quote[1])}</blockquote>`);
+      return;
+    }
+    flushList();
+    paragraph.push(line);
+  });
+  flushParagraph();
+  flushList();
+  return html.join('');
+}
+
+function sourceButtonLabel(source) {
+  const paragraph = source && source.section_seq != null ? `第 ${source.section_seq} 段` : '对应段落';
+  const title = String((source && source.section_title) || '').trim();
+  return title ? `原文${paragraph} · ${title}` : `原文${paragraph}`;
+}
+
+function renderSourceButtons(sources, messageIndex, attributeName) {
+  if (!sources.length) return '';
+  const buttons = sources.map((source, sourceIndex) => {
+    const label = sourceButtonLabel(source);
+    return `<button class="cite source-cite" ${attributeName}="${messageIndex}:${sourceIndex}"
+      title="${esc(label)} · 点击回到原文">${esc(label)}</button>`;
+  }).join('');
+  return `<div class="source-links">
+    <div class="source-links-label">引用原文</div>
+    <div class="source-links-list">${buttons}</div>
+  </div>`;
+}
 
 function el(html) {
   const t = document.createElement('template');
@@ -314,8 +415,10 @@ function renderSysbox() {
   const academicOnline = !!cap.openalex_api_key;
   $('#sysbox').innerHTML = `
     <div class="sysbox-title">系统状态</div>
+    <div class="sysrow"><span>文献总数</span><span class="dim">${counts.papers || 0} 篇</span></div>
+    <div class="sysrow"><span>已下载文献</span><span class="dim">${counts.downloaded_papers || 0} 篇</span></div>
     <div class="sysrow"><span>翻译引擎</span><span class="${engineOnline ? 'ok' : 'off'}">${engineOnline ? '在线' : '本地回显'}</span></div>
-    <div class="sysrow"><span>RAG 索引</span><span class="dim">${counts.documents || 0} 篇 · ${counts.chunks || 0} 段</span></div>
+    <div class="sysrow"><span>RAG 索引</span><span class="${counts.chunks ? 'ok' : 'off'}">${counts.chunks ? '可用' : '待建立'}</span></div>
     <div class="sysrow"><span>学术 API</span><span class="${academicOnline ? 'ok' : 'off'}">${academicOnline ? 'API Key 已配置' : '缺少 API Key'}</span></div>`;
 }
 
@@ -958,6 +1061,7 @@ function renderResults() {
   $('#discard-search-batch').textContent = state.searchBatchDecision === 'saved'
     ? '撤销已保存批次'
     : '撤销本次结果';
+  renderBulkDownloadControls();
   const wrap = $('#search-results');
   if (!state.results.length) {
     if (abstractTranslationObserver) abstractTranslationObserver.disconnect();
@@ -1132,8 +1236,12 @@ function paperCard(p) {
     available: '<button class="btn-ghost sm paper-download available" data-act="download">下载</button>',
     downloading: '<button class="btn-ghost sm paper-download downloading" disabled>下载中…</button>',
     downloaded: downloadState.document_id
-      ? `<button class="btn-ghost sm paper-download downloaded" data-act="open-pdf"
-          data-document-id="${downloadState.document_id}">已下载</button>`
+      ? `<div class="paper-download-actions">
+          <button class="btn-ghost sm paper-download downloaded" data-act="open-pdf"
+            data-document-id="${downloadState.document_id}">已下载</button>
+          <button class="btn-ghost sm paper-library-jump" data-act="go-library"
+            data-document-id="${downloadState.document_id}">前往文献</button>
+        </div>`
       : '<button class="btn-ghost sm paper-download downloaded" disabled>已下载</button>',
     failed: `<button class="btn-ghost sm paper-download failed" data-act="download"
         title="${esc(downloadState.error || '点击重试')}">下载失败</button>`,
@@ -1309,7 +1417,8 @@ async function pollPaperDownload(paperId, timeoutMilliseconds = 120000) {
   throw new Error('下载仍在后台进行，请到「下载管理」查看');
 }
 
-async function startPaperDownload(paper) {
+async function startPaperDownload(paper, options) {
+  options = options || {};
   if (!paper || (paper.download && paper.download.status === 'downloading')) return;
   updatePaperDownloadState(paper.id, {
     status: 'downloading',
@@ -1328,18 +1437,155 @@ async function startPaperDownload(paper) {
       });
       state.libLoaded = false;
       await loadLibrary();
-      toast('PDF 已在本地文献库');
-      return;
+      if (!options.silent) toast('PDF 已在本地文献库');
+      return job;
     }
-    await pollPaperDownload(paper.id);
+    if (options.poll !== false) await pollPaperDownload(paper.id);
+    return job;
   } catch (error) {
     const fresh = await apiOrNull(`/papers/${paper.id}`);
     const failedState = fresh && fresh.download
       ? fresh.download
       : { status: 'failed', error: error.message, document_id: null, downloaded_at: null };
     updatePaperDownloadState(paper.id, failedState);
-    toast(`PDF 下载失败：${failedState.error || error.message}`, true);
+    if (!options.silent) toast(`PDF 下载失败：${failedState.error || error.message}`, true);
+    return null;
   }
+}
+
+function bulkDownloadCandidates(papers) {
+  const seen = new Set();
+  return (papers || []).filter((paper) => {
+    if (!paper || seen.has(paper.id)) return false;
+    seen.add(paper.id);
+    const status = String((paper.download && paper.download.status) || '');
+    return downloadAvailability(paper).supported
+      && status !== 'downloaded'
+      && status !== 'downloading';
+  });
+}
+
+function renderBulkDownloadControls() {
+  const currentButton = $('#download-current-page');
+  const allButton = $('#download-all-results');
+  if (!currentButton || !allButton) return;
+  const running = state.bulkDownloadRunning;
+  const progress = running
+    ? `下载中 ${state.bulkDownloadCompleted}/${state.bulkDownloadTotal}`
+    : null;
+  currentButton.textContent = progress || '当页下载';
+  allButton.textContent = progress || '全部下载';
+  currentButton.disabled = running || bulkDownloadCandidates(state.results).length === 0;
+  allButton.disabled = running || state.searchTotal === 0;
+}
+
+async function loadAllSearchResultsForDownload() {
+  const pageSize = 100;
+  const first = await api(`/papers?${searchQuery(1, pageSize)}`);
+  const papers = (first.items || []).slice();
+  const pages = Math.ceil((first.total || 0) / pageSize);
+  for (let page = 2; page <= pages; page += 1) {
+    const data = await api(`/papers?${searchQuery(page, pageSize)}`);
+    papers.push(...(data.items || []));
+  }
+  return papers;
+}
+
+async function queueDownloadBatch(papers, scopeLabel) {
+  const candidates = bulkDownloadCandidates(papers);
+  if (!candidates.length) {
+    toast(`${scopeLabel}没有尚待下载的合法 OA 文献`);
+    return;
+  }
+  state.bulkDownloadRunning = true;
+  state.bulkDownloadCompleted = 0;
+  state.bulkDownloadTotal = candidates.length;
+  renderBulkDownloadControls();
+  let queued = 0;
+  const queue = candidates.slice();
+  const worker = async () => {
+    while (queue.length) {
+      const paper = queue.shift();
+      const result = await startPaperDownload(paper, { poll: false, silent: true });
+      if (result) queued += 1;
+      state.bulkDownloadCompleted += 1;
+      renderBulkDownloadControls();
+    }
+  };
+  await Promise.all(Array.from(
+    { length: Math.min(3, candidates.length) },
+    () => worker()
+  ));
+  state.bulkDownloadRunning = false;
+  state.downloadManagerLoaded = false;
+  renderBulkDownloadControls();
+  toast(`已提交 ${queued}/${candidates.length} 篇下载任务，可到「下载管理」查看进度`);
+  setTimeout(() => {
+    if (state.page === 'search') runSearch(false, { keepSyncSummary: true });
+  }, 1800);
+}
+
+async function downloadCurrentSearchPage() {
+  await queueDownloadBatch(state.results, '当前页');
+}
+
+function closeActionConfirm(confirmed) {
+  const dialog = $('#action-confirm-dialog');
+  if (!dialog.open) return;
+  dialog.close();
+  const resolve = actionConfirmResolve;
+  actionConfirmResolve = null;
+  if (actionConfirmTrigger && document.contains(actionConfirmTrigger)) actionConfirmTrigger.focus();
+  actionConfirmTrigger = null;
+  if (resolve) resolve(confirmed);
+}
+
+function openActionConfirm({ title, message, detail = '', confirmLabel = '确认' }) {
+  const dialog = $('#action-confirm-dialog');
+  $('#action-confirm-title').textContent = title;
+  $('#action-confirm-message').textContent = message;
+  const detailNode = $('#action-confirm-detail');
+  detailNode.textContent = detail;
+  detailNode.hidden = !detail;
+  $('#action-confirm-submit').textContent = confirmLabel;
+  actionConfirmTrigger = document.activeElement;
+  dialog.showModal();
+  $('#action-confirm-submit').focus();
+  return new Promise((resolve) => {
+    actionConfirmResolve = resolve;
+  });
+}
+
+async function downloadAllSearchResults() {
+  const button = $('#download-all-results');
+  button.disabled = true;
+  button.textContent = '正在统计…';
+  let papers;
+  try {
+    papers = await loadAllSearchResultsForDownload();
+  } catch (error) {
+    toast(`读取全部检索结果失败：${error.message}`, true);
+    renderBulkDownloadControls();
+    return;
+  }
+  const candidates = bulkDownloadCandidates(papers);
+  const skipped = papers.length - candidates.length;
+  if (!candidates.length) {
+    toast('当前筛选结果中没有尚待下载的合法 OA 文献');
+    renderBulkDownloadControls();
+    return;
+  }
+  const confirmed = await openActionConfirm({
+    title: '确认全部下载',
+    message: `当前筛选条件下将提交 ${candidates.length} 篇下载任务。`,
+    detail: skipped ? `另有 ${skipped} 篇会因已下载、下载中或无合法 OA 地址而跳过。` : '',
+    confirmLabel: '开始下载',
+  });
+  if (!confirmed) {
+    renderBulkDownloadControls();
+    return;
+  }
+  await queueDownloadBatch(papers, '全部结果');
 }
 
 function openLocalPdf(documentId) {
@@ -1398,7 +1644,8 @@ function renderDownloadManager() {
     ].filter(Boolean).join(' · ');
     const actions = job.status === 'downloaded' && job.document_id
       ? `<button class="btn-ghost sm" data-download-act="open" data-document-id="${job.document_id}">打开 PDF</button>
-         <button class="btn-ghost sm" data-download-act="library">前往文献库</button>`
+         <button class="btn-ghost sm" data-download-act="library"
+           data-document-id="${job.document_id}">前往文献库</button>`
       : job.status === 'failed'
         ? `<button class="btn-ghost sm danger" data-download-act="retry" data-paper-id="${job.paper_id}">重试</button>`
         : '<button class="btn-ghost sm" disabled>后台处理中…</button>';
@@ -1453,7 +1700,7 @@ function bindDownloadManager() {
       return;
     }
     if (action.dataset.downloadAct === 'library') {
-      setPage('library');
+      goToLibraryDocument(Number(action.dataset.documentId));
       return;
     }
     if (action.dataset.downloadAct === 'retry') {
@@ -1499,20 +1746,39 @@ async function ensureLibrary() {
   if (!state.libLoaded) await loadLibrary();
 }
 
+function focusLibraryDocument() {
+  const documentId = Number(state.libraryFocusDocumentId);
+  if (!documentId) return;
+  const card = $(`[data-doc="${documentId}"]`, $('#lib-grid'));
+  state.libraryFocusDocumentId = null;
+  if (!card) {
+    toast('已进入文献库，但未能在当前列表中定位该文献', true);
+    return;
+  }
+  card.classList.add('library-target');
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => card.classList.remove('library-target'), 2400);
+}
+
+function goToLibraryDocument(documentId) {
+  const normalizedId = Number(documentId);
+  if (!Number.isFinite(normalizedId) || normalizedId <= 0) return;
+  state.libraryFocusDocumentId = normalizedId;
+  setPage('library');
+}
+
 async function loadLibrary() {
   const data = await apiOrNull('/documents?page_size=100');
   state.documents = (data && data.items) || [];
   state.libLoaded = true;
   renderNav();
   await Promise.all(state.documents.map(async (doc) => {
-    const [translation, chunks, reactionSets] = await Promise.all([
+    const [translation, reactionSets] = await Promise.all([
       apiOrNull(`/documents/${doc.id}/translation`),
-      apiOrNull(`/documents/${doc.id}/chunks?page_size=1`),
       apiOrNull(`/documents/${doc.id}/reaction-sets?page_size=50`),
     ]);
     state.docMeta[doc.id] = {
       translation,
-      chunkTotal: chunks ? chunks.total : 0,
       reactionSets: (reactionSets && reactionSets.items) || [],
     };
     // 卡片上的标签需要完整的 category_details，document.paper 摘要里没有
@@ -1522,6 +1788,7 @@ async function loadLibrary() {
     }
   }));
   renderLibrary();
+  focusLibraryDocument();
   renderUploadProjectOptions();
   scheduleLibraryPoll();
 }
@@ -1538,6 +1805,41 @@ function scheduleLibraryPoll() {
 
 function docTitle(doc) {
   return (doc.paper && doc.paper.title) || doc.original_name || `文档 #${doc.id}`;
+}
+
+function projectsForDocument(docId) {
+  const normalizedId = Number(docId);
+  return persisted.projects.filter((project) =>
+    project.docs.some((id) => Number(id) === normalizedId));
+}
+
+function projectMembershipControls(docId) {
+  if (!persisted.projects.length) {
+    return '<span class="lib-project-empty">暂无项目，请先在上方新建</span>';
+  }
+  const currentIds = new Set(projectsForDocument(docId).map((project) => project.id));
+  return persisted.projects.map((project) => {
+    const checked = currentIds.has(project.id);
+    return `<label class="lib-project-option ${checked ? 'on' : ''}">
+      <input type="checkbox" data-doc-project="${docId}" value="${esc(project.id)}"
+        ${checked ? 'checked' : ''}>
+      <span class="box" aria-hidden="true">${checked ? '✓' : ''}</span>
+      <span>${esc(project.name)}</span>
+    </label>`;
+  }).join('');
+}
+
+function setDocumentProjectMembership(docId, projectId, included) {
+  const normalizedId = Number(docId);
+  const target = persisted.projects.find((project) => project.id === projectId);
+  if (!target) return null;
+  const exists = target.docs.some((id) => Number(id) === normalizedId);
+  if (included && !exists) target.docs.push(normalizedId);
+  if (!included && exists) {
+    target.docs = target.docs.filter((id) => Number(id) !== normalizedId);
+  }
+  saveStore();
+  return target;
 }
 
 function normalizedTranslationText(value) {
@@ -1574,34 +1876,104 @@ function parseTag(doc) {
   return map[doc.parse_status] || { cls: 'todo', label: '未解析' };
 }
 
-function ragTag(doc, meta) {
-  if (doc.index_status === 'indexed') return { cls: 'rag', label: `RAG ✓ ${meta.chunkTotal} 段` };
-  if (doc.index_status === 'indexing') return { cls: 'info', label: '切分入库中…' };
-  if (doc.index_status === 'failed') return { cls: 'fail', label: 'RAG 失败' };
-  return { cls: 'todo', label: '未入库 RAG' };
+function ragTag(doc) {
+  if (doc.index_status === 'indexed') return { cls: 'rag', label: '已入库' };
+  if (doc.index_status === 'indexing') return { cls: 'info', label: '入库中…' };
+  if (doc.index_status === 'failed') return { cls: 'fail', label: '入库失败' };
+  return { cls: 'todo', label: '未入库' };
+}
+
+function chemistryTag(doc) {
+  const map = {
+    extracted: { cls: 'done', label: '已抽取' },
+    extracting: { cls: 'doing', label: '抽取中…' },
+    rejected: { cls: 'todo', label: '无可用反应' },
+    failed: { cls: 'fail', label: '抽取失败' },
+  };
+  return map[doc.chemistry_status] || { cls: 'todo', label: '未抽取' };
+}
+
+function libraryDocumentBusy(doc) {
+  const translation = ((state.docMeta[doc.id] || {}).translation || {});
+  return doc.parse_status === 'parsing'
+    || doc.index_status === 'indexing'
+    || doc.chemistry_status === 'extracting'
+    || translation.status === 'pending';
+}
+
+function selectedLibraryDocuments() {
+  return state.documents.filter((doc) => state.librarySelectedDocumentIds.has(Number(doc.id)));
+}
+
+function renderLibraryBulkControls() {
+  const toggle = $('#library-selection-toggle');
+  const selectAllControl = $('#library-select-all-control');
+  const selectAll = $('#library-select-all');
+  const count = $('#library-selection-count');
+  const open = $('#library-process-open');
+  const progress = $('#library-bulk-progress');
+  if (!toggle || !selectAllControl || !selectAll || !count || !open || !progress) return;
+
+  const existingIds = new Set(state.documents.map((doc) => Number(doc.id)));
+  state.librarySelectedDocumentIds.forEach((id) => {
+    if (!existingIds.has(id)) state.librarySelectedDocumentIds.delete(id);
+  });
+  const eligible = state.documents.filter((doc) => !libraryDocumentBusy(doc));
+  const selectedCount = selectedLibraryDocuments().length;
+  const selectedEligibleCount = eligible.filter((doc) =>
+    state.librarySelectedDocumentIds.has(Number(doc.id))).length;
+  const selecting = state.librarySelectionMode || state.libraryBulkRunning;
+  toggle.textContent = selecting ? '退出选择' : '批量处理';
+  toggle.disabled = state.libraryBulkRunning;
+  selectAllControl.hidden = !selecting;
+  count.hidden = !selecting;
+  open.hidden = !selecting;
+  selectAll.checked = Boolean(eligible.length) && selectedEligibleCount === eligible.length;
+  selectAll.indeterminate = selectedEligibleCount > 0 && selectedEligibleCount < eligible.length;
+  selectAll.disabled = state.libraryBulkRunning || !eligible.length;
+  count.textContent = `已选 ${selectedCount} 篇`;
+  open.disabled = state.libraryBulkRunning || !selectedCount;
+  open.innerHTML = state.libraryBulkRunning
+    ? '处理中…'
+    : '处理所选 <span aria-hidden="true">⌄</span>';
+
+  const bulk = state.libraryBulkProgress;
+  progress.hidden = !bulk;
+  if (bulk) {
+    progress.innerHTML = `<span class="library-progress-pulse" aria-hidden="true"></span>
+      <strong>${esc(`${bulk.completed}/${bulk.total}`)}</strong>
+      <span>${esc(bulk.message)}</span>`;
+  }
 }
 
 function renderLibrary() {
   const grid = $('#lib-grid');
   if (!state.documents.length) {
     grid.innerHTML = '<div class="empty-state">文献库为空<br>上传第一份 PDF 开始解析与翻译</div>';
+    renderLibraryBulkControls();
     return;
   }
   grid.innerHTML = state.documents.map((doc) => {
-    const meta = state.docMeta[doc.id] || { chunkTotal: 0 };
+    const meta = state.docMeta[doc.id] || {};
+    const chemSets = meta.reactionSets || [];
     const parse = parseTag(doc);
     const trans = translationTag(meta.translation);
-    const rag = ragTag(doc, meta);
+    const rag = ragTag(doc);
+    const chemistry = chemistryTag(doc);
     const paper = doc.paper;
-    const project = persisted.projects.find((p) => p.docs.includes(doc.id));
-    const metaLine = [
-      paper && paper.journal_name,
-      paper && paper.published_date,
+    const projects = projectsForDocument(doc.id);
+    const journalLine = paper && paper.journal_name
+      ? paper.journal_name
+      : '期刊待补充';
+    const detailItems = [
+      paper && paper.published_date ? `发表 ${paper.published_date}` : null,
       doc.num_pages ? `${doc.num_pages} 页` : null,
-      doc.created_at ? `${doc.created_at.slice(0, 10)} 上传` : null,
-      project ? `项目「${project.name}」` : null,
-    ].filter(Boolean).join(' · ');
-    const error = doc.parse_error || doc.index_error
+      doc.created_at ? `上传 ${doc.created_at.slice(0, 10)}` : null,
+    ].filter(Boolean);
+    const detailLine = detailItems.length
+      ? detailItems.map((item) => `<span>${esc(item)}</span>`).join('')
+      : '<span>出版信息待补充</span>';
+    const error = doc.parse_error || doc.index_error || doc.chemistry_error
       || (meta.translation && meta.translation.status === 'failed' ? meta.translation.error : null);
     const note = error
       ? `<div class="lib-note bad">${esc(error)}</div>`
@@ -1609,52 +1981,134 @@ function renderLibrary() {
         ? '<div class="lib-note ok">✓ 已关联检索到的文献记录</div>'
         : '<div class="lib-note idle">未关联文献记录，可重新上传时选择关联</div>';
     const readable = doc.parse_status === 'parsed';
+    const busy = doc.parse_status === 'parsing'
+      || doc.index_status === 'indexing'
+      || doc.chemistry_status === 'extracting'
+      || (meta.translation && meta.translation.status === 'pending');
+    const confirmedChemistry = chemSets.some((set) => set.status === 'verified' || set.export_ready);
+    const selected = state.librarySelectedDocumentIds.has(Number(doc.id));
+    const busyHint = busy ? 'title="请等待当前处理任务完成"' : '';
+    const destructiveDisabled = busy || confirmedChemistry;
+    const destructiveHint = confirmedChemistry
+      ? 'title="已有已确认反应集；为保护复核结果，不能重新解析或抽取"'
+      : busyHint;
     const cached = doc.paper_id != null ? state.paperCache[doc.paper_id] : null;
     const editing = state.tagEditor === doc.paper_id && doc.paper_id != null;
     const tags = cached && (cached.category_details || []).length ? tagChips(cached) : '';
     const tagRow = doc.paper_id == null
-      ? '<div class="tag-note">该文档未关联文献记录，无法打标——标签存在 paper_categories 上，需先关联 paper。</div>'
-      : `<div class="lib-foot">
-          <span class="chips-label">标签</span>
-          ${tags || '<span class="chips-label">尚未打标</span>'}
-          <div class="spacer"></div>
-          <button class="btn-ghost sm" data-doc-act="tag">${editing ? '收起' : '打标'}</button>
-        </div>${editing && cached ? tagEditorMarkup(cached) : ''}`;
-    const chemSets = meta.reactionSets || [];
+      ? `<div class="lib-organize-section lib-category-section">
+          <div class="lib-organize-heading">
+            <span class="lib-organize-label">标签</span>
+            <span class="lib-organize-value muted">未关联文献，暂不可打标</span>
+          </div>
+        </div>`
+      : `<div class="lib-organize-section lib-category-section">
+          <div class="lib-organize-heading">
+            <span class="lib-organize-label">标签</span>
+            <div class="lib-category-chips">${tags || '<span class="lib-organize-value muted">尚未打标</span>'}</div>
+            <button class="btn-text sm" data-doc-act="tag">${editing ? '收起' : '编辑'}</button>
+          </div>
+          ${editing && cached ? tagEditorMarkup(cached) : ''}
+        </div>`;
     const chemRow = chemSets.length
-      ? `<div class="lib-foot">
-          <span class="tag ${chemSets.every((s) => s.export_ready) ? 'done' : 'todo'}">
-            反应集 ${chemSets.length} · 待复核 ${chemSets.reduce((n, s) => n + s.unverified_count, 0)}</span>
-          <div class="spacer"></div>
-          <button class="btn-ghost sm" data-doc-act="chem">去复核</button>
+      ? `<div class="lib-reaction-results">
+          <div class="lib-reaction-results-head">
+            <span>本文档抽取结果</span>
+            <span>${chemSets.length} 个反应集</span>
+          </div>
+          <div class="lib-reaction-results-list">
+            ${chemSets.map((set) => {
+              const pending = set.pending_count ?? set.unverified_count ?? 0;
+              const accepted = set.accepted_count ?? set.verified_count ?? 0;
+              const rejected = set.rejected_count || 0;
+              const status = pending ? `待复核 ${pending}`
+                : accepted ? `已确认 ${accepted}/${set.reaction_count}`
+                  : rejected ? '未采用' : set.status || '待处理';
+              const statusClass = pending ? 'todo' : accepted ? 'done' : rejected ? 'fail' : '';
+              return `<button class="lib-reaction-set" data-doc-act="chem-set" data-set-id="${set.id}">
+                <span class="name">${esc(set.gas_mixture || set.name || `反应集 #${set.id}`)}</span>
+                <span class="tag ${statusClass}">${esc(status)}</span>
+              </button>`;
+            }).join('')}
+          </div>
         </div>`
       : '';
-    return `<div class="lib-card" data-doc="${doc.id}">
-      <div class="lib-head">
-        <div class="lib-title">${esc(docTitle(doc))}</div>
-        <span class="tag ${rag.cls}">${esc(rag.label)}</span>
-        <span class="tag ${trans.cls}">${esc(trans.label)}</span>
+    const nextAction = readable
+      ? `<button class="btn-primary sm" data-doc-act="open">打开阅读</button>`
+      : `<button class="btn-primary sm" data-doc-act="parse" ${busy ? 'disabled' : ''} ${busyHint}>开始解析</button>`;
+    const selectionControl = state.librarySelectionMode || state.libraryBulkRunning
+      ? `<label class="lib-select" title="${busy ? '请等待当前处理任务完成' : '选择此文献'}">
+          <input type="checkbox" data-doc-select="${doc.id}" ${selected ? 'checked' : ''}
+            ${busy ? 'disabled' : ''} aria-label="选择 ${esc(docTitle(doc))}">
+          <span class="box" aria-hidden="true"></span>
+        </label>`
+      : '';
+    return `<article class="lib-card ${selected ? 'selected' : ''}" data-doc="${doc.id}">
+      <div class="lib-head ${selectionControl ? 'selecting' : ''}">
+        ${selectionControl}
+        <div class="lib-identity">
+          <h3 class="lib-title">${esc(docTitle(doc))}</h3>
+          <div class="lib-meta">
+            <span class="lib-meta-journal">${esc(journalLine)}</span>
+            <span class="lib-meta-details">${detailLine}</span>
+          </div>
+          <div class="lib-source-line">
+            ${note}
+            <span class="doi">${paper && paper.doi ? `DOI ${esc(paper.doi)}` : 'DOI 未关联'}</span>
+          </div>
+        </div>
       </div>
-      <div class="lib-meta">${esc(metaLine || '—')}</div>
-      ${note}
-      <div class="lib-foot">
-        <span class="tag ${parse.cls}">${esc(parse.label)}</span>
-        <span class="doi">${paper && paper.doi ? `DOI ${esc(paper.doi)}` : 'DOI 未关联'}</span>
+
+      <div class="lib-status-strip" aria-label="文献处理进度">
+        <span class="lib-status-title">处理进度</span>
+        <div class="lib-status-list">
+          <div class="lib-status-item ${parse.cls}">
+            <span>解析</span><strong>${esc(parse.label)}</strong>
+          </div>
+          <div class="lib-status-item ${trans.cls}">
+            <span>翻译</span><strong>${esc(trans.label)}</strong>
+          </div>
+          <div class="lib-status-item ${rag.cls}">
+            <span>RAG</span><strong>${esc(rag.label)}</strong>
+          </div>
+          <div class="lib-status-item ${chemistry.cls}">
+            <span>化学库</span><strong>${esc(chemistry.label)}</strong>
+          </div>
+        </div>
       </div>
-      ${tagRow}
+
+      <div class="lib-organize">
+        <div class="lib-organize-section lib-project">
+          <div class="lib-organize-heading">
+            <span class="lib-organize-label">归属项目</span>
+            <span class="lib-organize-value">${projects.length ? `已加入 ${projects.length} 个` : '未归类'}</span>
+          </div>
+          <div class="lib-project-options" aria-label="${esc(docTitle(doc))}的归属项目">
+            ${projectMembershipControls(doc.id)}
+          </div>
+        </div>
+        ${tagRow}
+      </div>
       ${chemRow}
+
       <div class="lib-actions">
-        <button class="btn-ghost sm local-pdf-link" data-doc-act="pdf">打开 PDF</button>
-        <button class="btn-ghost sm" data-doc-act="parse">解析</button>
-        <button class="btn-ghost sm" data-doc-act="translate" ${readable ? '' : 'disabled'}>翻译</button>
-        <button class="btn-ghost sm" data-doc-act="index" ${readable ? '' : 'disabled'}>建 RAG 索引</button>
-        <button class="btn-ghost sm" data-doc-act="chemistry" ${readable ? '' : 'disabled'}>抽取化学库</button>
-        <div class="spacer"></div>
-        <button class="btn-ghost sm ${readable ? 'on' : ''}" data-doc-act="open" ${readable ? '' : 'disabled'}>
-          ${readable ? '打开阅读' : '解析后可读'}</button>
+        <div class="lib-primary-actions equal-action-pair">
+          <button class="btn-ghost sm local-pdf-link" data-doc-act="pdf">打开 PDF</button>
+          ${nextAction}
+        </div>
+        <details class="lib-more-actions">
+          <summary>更多处理</summary>
+          <div class="lib-more-menu">
+            <button class="btn-ghost sm" data-doc-act="parse" ${destructiveDisabled ? 'disabled' : ''} ${destructiveHint}>重新解析</button>
+            <button class="btn-ghost sm" data-doc-act="translate" ${readable && !busy ? '' : 'disabled'} ${busyHint}>翻译全文</button>
+            <button class="btn-ghost sm" data-doc-act="index" ${readable && !busy ? '' : 'disabled'} ${busyHint}>建 RAG 索引</button>
+            <button class="btn-ghost sm" data-doc-act="chemistry" ${readable && !destructiveDisabled ? '' : 'disabled'} ${destructiveHint}>抽取化学库</button>
+          </div>
+        </details>
       </div>
-    </div>`;
+    </article>`;
   }).join('');
+  renderLibraryBulkControls();
 }
 
 function renderUploadPaperOptions() {
@@ -1706,8 +2160,9 @@ async function uploadFiles(files) {
 }
 
 function assignToProject(docId) {
-  const project = persisted.projects.find((p) => p.id === persisted.uploadProject);
-  if (project && !project.docs.includes(docId)) { project.docs.push(docId); saveStore(); }
+  if (persisted.projects.some((project) => project.id === persisted.uploadProject)) {
+    setDocumentProjectMembership(docId, persisted.uploadProject, true);
+  }
 }
 
 async function docAction(docId, action) {
@@ -1723,13 +2178,187 @@ async function docAction(docId, action) {
       toast('已触发 RAG 分块与向量化');
     } else if (action === 'chemistry') {
       await api(`/documents/${docId}/extract-chemistry`, { method: 'POST' });
-      toast('已触发化学库抽取，完成后到「化学库复核」逐条复核');
+      toast('已触发化学库抽取，完成后到「化学库」逐条复核');
     }
   } catch (e) {
-    toast(`操作失败：${e.message}`, true);
+    if (e.code === 'document_busy') {
+      toast('文档正在执行其他处理任务，请完成后重试', true);
+    } else if (e.code === 'confirmed_reaction_set_exists') {
+      toast('该文档已有已确认反应集。为保护复核结果，不能重新解析或重新抽取。', true);
+    } else {
+      toast(`操作失败：${e.message}`, true);
+    }
     return;
   }
   setTimeout(loadLibrary, 600);
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function updateLibraryDocument(document) {
+  const index = state.documents.findIndex((item) => Number(item.id) === Number(document.id));
+  if (index >= 0) state.documents[index] = document;
+  renderLibrary();
+}
+
+async function waitForDocumentWorkflow(
+  documentId,
+  statusField,
+  doneStatus,
+  failedStatus,
+  timeoutMilliseconds = 1800000
+) {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (Date.now() < deadline) {
+    const document = await api(`/documents/${documentId}`);
+    updateLibraryDocument(document);
+    const status = document[statusField];
+    if (status === doneStatus) return document;
+    if (status === failedStatus) {
+      const errorField = statusField.replace('_status', '_error');
+      throw new Error(document[errorField] || `${statusField} 任务失败`);
+    }
+    await delay(1800);
+  }
+  throw new Error('处理等待超过 30 分钟，请稍后刷新查看状态');
+}
+
+async function waitForDocumentTranslation(documentId, timeoutMilliseconds = 1800000) {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (Date.now() < deadline) {
+    const translation = await apiOrNull(`/documents/${documentId}/translation`);
+    if (translation) {
+      state.docMeta[documentId] = Object.assign({}, state.docMeta[documentId], { translation });
+      renderLibrary();
+      if (translation.status === 'done') return translation;
+      if (translation.status === 'failed') {
+        throw new Error(translation.error || '翻译任务失败');
+      }
+    }
+    await delay(1800);
+  }
+  throw new Error('翻译等待超过 30 分钟，请稍后刷新查看状态');
+}
+
+async function ensureDocumentParsed(documentId, counters, { countAlreadyDone = false } = {}) {
+  let document = await api(`/documents/${documentId}`);
+  updateLibraryDocument(document);
+  if (document.parse_status === 'parsed') {
+    if (countAlreadyDone) counters.skipped += 1;
+    return document;
+  }
+  try {
+    await api(`/documents/${documentId}/parse`, { method: 'POST' });
+    counters.started += 1;
+    return await waitForDocumentWorkflow(documentId, 'parse_status', 'parsed', 'failed');
+  } catch (error) {
+    error.libraryParseFailed = true;
+    throw error;
+  }
+}
+
+async function runLibraryProcessStep(documentId, step, counters) {
+  if (step === 'parse') {
+    await ensureDocumentParsed(documentId, counters, { countAlreadyDone: true });
+    return;
+  }
+
+  await ensureDocumentParsed(documentId, counters);
+  if (step === 'translate') {
+    const existing = await apiOrNull(`/documents/${documentId}/translation`);
+    if (existing && existing.status === 'done') {
+      state.docMeta[documentId] = Object.assign({}, state.docMeta[documentId], { translation: existing });
+      counters.skipped += 1;
+      if (!hasEffectiveTranslation(existing)) counters.warnings += 1;
+      return;
+    }
+    await api(`/documents/${documentId}/translate`, {
+      method: 'POST',
+      body: { target_lang: persisted.targetLang },
+    });
+    counters.started += 1;
+    const translation = await waitForDocumentTranslation(documentId);
+    if (!hasEffectiveTranslation(translation)) counters.warnings += 1;
+    return;
+  }
+
+  const document = await api(`/documents/${documentId}`);
+  updateLibraryDocument(document);
+  if (step === 'index') {
+    if (document.index_status === 'indexed') {
+      counters.skipped += 1;
+      return;
+    }
+    await api(`/documents/${documentId}/index`, { method: 'POST' });
+    counters.started += 1;
+    await waitForDocumentWorkflow(documentId, 'index_status', 'indexed', 'failed');
+    return;
+  }
+
+  if (document.chemistry_status === 'extracted') {
+    counters.skipped += 1;
+    return;
+  }
+  await api(`/documents/${documentId}/extract-chemistry`, { method: 'POST' });
+  counters.started += 1;
+  await waitForDocumentWorkflow(documentId, 'chemistry_status', 'extracted', 'failed');
+}
+
+function openLibraryProcessDialog() {
+  const documents = selectedLibraryDocuments();
+  if (!documents.length || state.libraryBulkRunning) return;
+  $('#library-process-message').textContent = `将处理已选 ${documents.length} 篇文献。`;
+  $('#library-process-dialog').showModal();
+  $('#library-process-submit').focus();
+}
+
+function closeLibraryProcessDialog() {
+  const dialog = $('#library-process-dialog');
+  if (dialog.open) dialog.close();
+  $('#library-process-open').focus();
+}
+
+async function runSelectedLibraryProcess(steps) {
+  const documents = selectedLibraryDocuments();
+  if (!documents.length || !steps.length || state.libraryBulkRunning) return;
+  state.libraryBulkRunning = true;
+  const counters = { started: 0, skipped: 0, warnings: 0 };
+  const failures = [];
+  try {
+    for (let documentIndex = 0; documentIndex < documents.length; documentIndex += 1) {
+      const document = documents[documentIndex];
+      state.libraryBulkProgress = {
+        completed: documentIndex,
+        total: documents.length,
+        message: `正在处理「${docTitle(document)}」`,
+      };
+      renderLibraryBulkControls();
+      let parseFailed = false;
+      for (const step of steps) {
+        if (parseFailed && step !== 'parse') continue;
+        try {
+          await runLibraryProcessStep(document.id, step, counters);
+        } catch (error) {
+          failures.push(`${docTitle(document)}：${error.message}`);
+          if (step === 'parse' || error.libraryParseFailed) parseFailed = true;
+        }
+      }
+      state.libraryBulkProgress.completed = documentIndex + 1;
+      renderLibraryBulkControls();
+    }
+  } finally {
+    state.libraryBulkRunning = false;
+    state.libraryBulkProgress = null;
+    state.librarySelectionMode = false;
+    state.librarySelectedDocumentIds.clear();
+    await loadLibrary();
+  }
+  const warningText = counters.warnings ? `；${counters.warnings} 项翻译仅返回原文` : '';
+  const failureText = failures.length ? `；${failures.length} 篇存在失败，可查看卡片后重试` : '';
+  toast(`批量处理完成：执行 ${counters.started} 项，跳过 ${counters.skipped} 项${warningText}${failureText}`,
+    Boolean(failures.length));
 }
 
 /* ── 术语管理 ── */
@@ -2017,6 +2646,13 @@ async function addSelectionToGlossary() {
 }
 
 /* ── 双语阅读 ── */
+function readerTranslationRank(doc) {
+  const translation = (state.docMeta[doc.id] || {}).translation;
+  if (hasEffectiveTranslation(translation)) return 0;
+  if (translation && translation.status === 'pending') return 1;
+  return 2;
+}
+
 function readerCandidates() {
   const project = persisted.projects.find((p) => p.id === state.readerProject);
   let pool = project
@@ -2024,14 +2660,17 @@ function readerCandidates() {
     : state.documents;
   pool = pool.filter((doc) => documentMatchesCategory(doc, state.readerCategory));
   const q = state.readerSearch.trim().toLowerCase();
-  if (!q) return pool;
-  return pool.filter((d) => {
-    const paper = d.paper || {};
-    const categoryText = ((documentPaper(d) || {}).category_details || [])
-      .map((category) => `${category.name} ${category.slug}`).join(' ');
-    return `${docTitle(d)} ${paper.doi || ''} ${paper.journal_name || ''} ${categoryText}`
-      .toLowerCase().includes(q);
-  });
+  if (q) {
+    pool = pool.filter((d) => {
+      const paper = d.paper || {};
+      const categoryText = ((documentPaper(d) || {}).category_details || [])
+        .map((category) => `${category.name} ${category.slug}`).join(' ');
+      return `${docTitle(d)} ${paper.doi || ''} ${paper.journal_name || ''} ${categoryText}`
+        .toLowerCase().includes(q);
+    });
+  }
+  return [...pool].sort((left, right) =>
+    readerTranslationRank(left) - readerTranslationRank(right));
 }
 
 function renderReaderBar() {
@@ -2116,16 +2755,41 @@ async function openReader(docId) {
   state.readerLoading = true;
   setPage('reader');
   renderParas();
-  const [sections, translation] = await Promise.all([
+  const [sections, translation, figuresResponse] = await Promise.all([
     apiOrNull(`/documents/${docId}/sections?page_size=100`),
     apiOrNull(`/documents/${docId}/translation`),
+    apiOrNull(`/documents/${docId}/figures?page_size=100`),
   ]);
   const src = (sections && sections.items) || [];
   const tr = (translation && translation.sections) || [];
+  const figures = (figuresResponse && figuresResponse.items) || [];
   const effectiveTranslation = hasEffectiveTranslation(translation);
   const byId = {};
   tr.forEach((t, i) => { byId[t.section_id != null ? t.section_id : `#${i}`] = t; });
-  state.readerParas = src.map((s, i) => {
+  const figureCards = figures.map((figure) => {
+    const number = String(figure.label || figure.title || '').match(/\d+/)?.[0] || '';
+    const captionSection = src.find((section) => {
+      if (section.section_type !== 'figure_caption') return false;
+      const sectionNumber = String(section.title || section.content || '').match(/\d+/)?.[0] || '';
+      return number && sectionNumber === number;
+    });
+    const anchorSection = src.find((section) => {
+      if (section.section_type !== 'body' || !number) return false;
+      return new RegExp(`\\bfigure\\s+${number}\\b`, 'i').test(section.content || '');
+    }) || src.find((section) => section.section_type === 'body');
+    const translatedCaption = captionSection ? byId[captionSection.id] : null;
+    return {
+      ...figure,
+      anchorSectionId: anchorSection ? anchorSection.id : null,
+      captionEn: (captionSection && captionSection.content) || figure.caption || figure.title || figure.label,
+      captionZh: effectiveTranslation && translatedCaption
+        ? translatedCaption.target
+        : '',
+    };
+  });
+  state.readerFigures = figureCards;
+  const readableSections = src.filter((section) => section.section_type !== 'figure_caption');
+  state.readerParas = readableSections.map((s, i) => {
     const match = byId[s.id] || tr[i] || null;
     return {
       id: s.id,
@@ -2135,6 +2799,7 @@ async function openReader(docId) {
       en: s.content || '',
       zh: effectiveTranslation && match ? match.target : '',
       note: match ? match.note : null,
+      figures: figureCards.filter((figure) => figure.anchorSectionId === s.id),
     };
   });
   state.readerLoading = false;
@@ -2201,6 +2866,101 @@ function highlight(text, lang) {
   }).join('');
 }
 
+function cleanReaderText(text) {
+  return String(text || '')
+    .replace(/\s*[\(（]\s*#[A-Za-z][A-Za-z0-9_.:-]*\s*[\)）]/g, '')
+    .replace(/\s+([,.;:!?，。；：！？])/g, '$1')
+    .trim();
+}
+
+function scientificScriptContent(value) {
+  const raw = String(value || '');
+  return raw.startsWith('{') && raw.endsWith('}')
+    ? raw.slice(1, -1)
+    : raw;
+}
+
+function maskScientificScripts(text, tags) {
+  const subscriptChars = 'A-Za-z0-9Α-Ωα-ω⊥∥+\\-';
+  const superscriptChars = `${subscriptChars}/`;
+  const marker = (tag, value) => {
+    const index = tags.length;
+    tags.push(`<${tag} class="math-script">${esc(scientificScriptContent(value))}</${tag}>`);
+    return `\uE000${index}\uE001`;
+  };
+  return String(text || '')
+    .replace(
+      new RegExp(`([A-Za-z0-9Α-Ωα-ω)])\\^(\\{[^{}\\n]{1,24}\\}|[${superscriptChars}]{1,12})`, 'g'),
+      (_, base, value) => `${base}${marker('sup', value)}`,
+    )
+    .replace(
+      new RegExp(`([A-Za-z0-9Α-Ωα-ω])_(\\{[^{}\\n]{1,24}\\}|[${subscriptChars}]{1,12})`, 'g'),
+      (_, base, value) => `${base}${marker('sub', value)}`,
+    );
+}
+
+function renderScientificText(text, lang) {
+  const tags = [];
+  const safeTagMasked = cleanReaderText(text).replace(/<\/?(?:sup|sub)>/gi, (tag) => {
+    const marker = `\uE000${tags.length}\uE001`;
+    tags.push(tag.toLowerCase());
+    return marker;
+  });
+  const masked = maskScientificScripts(safeTagMasked, tags);
+  let rendered = highlight(masked, lang);
+  tags.forEach((tag, index) => {
+    rendered = rendered.split(`\uE000${index}\uE001`).join(tag);
+  });
+  return rendered;
+}
+
+function renderReaderFigures(figures, lang) {
+  if (!figures || !figures.length) return '';
+  return figures.map((figure) => {
+    const caption = lang === 'zh'
+      ? (figure.captionZh || figure.captionEn)
+      : figure.captionEn;
+    return `<figure class="reader-figure" data-figure-id="${esc(figure.id)}">
+      <button class="reader-figure-open" type="button" data-reader-figure
+        data-image-url="${esc(figure.image_url)}"
+        data-image-caption="${esc(caption || figure.label)}"
+        aria-label="在当前页面查看 ${esc(figure.label)}">
+        <img src="${esc(figure.image_url)}" loading="lazy" decoding="async"
+          alt="${esc(caption || figure.label)}">
+      </button>
+      <figcaption>${renderScientificText(caption || figure.label, lang)}</figcaption>
+    </figure>`;
+  }).join('');
+}
+
+function openFigureLightbox(trigger) {
+  const imageUrl = String(trigger.dataset.imageUrl || '').trim();
+  if (!imageUrl) return;
+  const caption = String(trigger.dataset.imageCaption || '').trim();
+  const lightbox = $('#figure-lightbox');
+  const image = $('#figure-lightbox-image');
+  activeFigureTrigger = trigger;
+  image.src = imageUrl;
+  image.alt = caption;
+  $('#figure-lightbox-caption').textContent = caption;
+  lightbox.hidden = false;
+  $('.app').setAttribute('inert', '');
+  document.body.classList.add('figure-lightbox-open');
+  $('#figure-lightbox-close').focus();
+}
+
+function closeFigureLightbox() {
+  const lightbox = $('#figure-lightbox');
+  if (lightbox.hidden) return;
+  lightbox.hidden = true;
+  $('#figure-lightbox-image').removeAttribute('src');
+  $('#figure-lightbox-caption').textContent = '';
+  $('.app').removeAttribute('inert');
+  document.body.classList.remove('figure-lightbox-open');
+  if (activeFigureTrigger && document.contains(activeFigureTrigger)) activeFigureTrigger.focus();
+  activeFigureTrigger = null;
+}
+
 function renderParas() {
   const paneEn = $('#paras-en');
   const paneZh = $('#paras-zh');
@@ -2222,10 +2982,11 @@ function renderParas() {
     const head = p.title ? `<div class="sec-head">${esc(p.title)}</div>` : '';
     const raw = lang === 'en' ? p.en : p.zh;
     const body = raw
-      ? highlight(raw, lang)
+      ? renderScientificText(raw, lang)
       : '<span class="empty">（该段尚无译文，请在「文献库」中触发翻译）</span>';
     return `${head}<div class="para ${state.activePara === p.seq ? 'on' : ''}" id="p${lang}-${p.seq}"
-      data-para="${p.seq}" style="${style}"><span class="no">¶${p.seq}</span>${body}</div>`;
+      data-para="${p.seq}" style="${style}"><span class="no">¶${p.seq}</span>${body}</div>
+      ${renderReaderFigures(p.figures, lang)}`;
   }).join('');
   paneEn.innerHTML = build('en');
   paneZh.innerHTML = build('zh');
@@ -2294,19 +3055,17 @@ function renderReaderQa() {
   log.innerHTML = messages.map((message, messageIndex) => {
     if (message.role === 'user') {
       return `<div class="msg-row user"><div class="bubble">
-        <div class="who">你</div><div class="body">${esc(message.text)}</div></div></div>`;
+        <div class="who">你</div><div class="body markdown-body">${renderSafeMarkdown(message.text)}</div></div></div>`;
     }
     const sources = message.sources || [];
-    const citations = sources.map((source, sourceIndex) => `<button class="cite"
-      data-reader-cite="${messageIndex}:${sourceIndex}"
-      title="${esc(source.section_title || '')} · 点击跳回左侧原文">[${sourceIndex + 1}·¶${
-        source.section_seq != null ? source.section_seq : '?'}]</button>`).join('');
     const hits = sources.length
-      ? `<div class="hits">引用 ${sources.length} 个当前论文段落 · 点击引用回到原文</div>`
+      ? `<div class="hits">回答依据 ${sources.length} 个当前论文段落</div>`
       : '';
+    const citations = renderSourceButtons(sources, messageIndex, 'data-reader-cite');
     return `<div class="msg-row ai"><div class="bubble">
       <div class="who">助手 · 当前论文</div>${hits}
-      <div class="body">${esc(message.text)}${citations ? ` ${citations}` : ''}</div>
+      <div class="body markdown-body">${renderSafeMarkdown(message.text)}</div>
+      ${citations}
     </div></div>`;
   }).join('') + (state.readerQaTyping
     ? '<div class="typing"><i></i><i></i><i></i><span>正在阅读当前论文并生成回答…</span></div>'
@@ -2334,7 +3093,7 @@ async function sendReaderQa(text) {
     });
     messages.push({
       role: 'ai',
-      text: stripSourceTrailer(data.answer) || '（检索到的切块没有可用内容）',
+      text: stripSourceTrailer(data.answer) || '（当前论文没有可用回答内容）',
       sources: data.sources || [],
     });
   } catch (error) {
@@ -2357,7 +3116,7 @@ function syncScroll(src, dst) {
 }
 
 async function jumpToSource(docId, seq) {
-  if (state.readerDocId !== docId) await openReader(docId);
+  if (state.readerDocId !== docId || !state.readerParas.length) await openReader(docId);
   else setPage('reader');
   state.activePara = seq;
   renderParas();
@@ -2385,21 +3144,30 @@ function indexedDocs() {
     doc.index_status === 'indexed' && documentMatchesCategory(doc, state.chatCategory));
 }
 
-function totalChunks(docs) {
-  return (docs || state.documents).reduce(
-    (sum, d) => sum + ((state.docMeta[d.id] || {}).chunkTotal || 0),
-    0
-  );
+function chatDocumentSearchText(doc) {
+  const paper = documentPaper(doc) || doc.paper || {};
+  const categoryText = (paper.category_details || [])
+    .map((category) => `${category.name} ${category.slug}`).join(' ');
+  return [
+    docTitle(doc),
+    paper.doi || '',
+    authorsText(paper.authors),
+    categoryText,
+  ].join(' ').toLowerCase();
+}
+
+function filteredChatDocuments(available) {
+  const query = state.docSearch.trim().toLowerCase();
+  return available.filter((doc) => !query || chatDocumentSearchText(doc).includes(query));
 }
 
 function renderChatSide() {
   const available = indexedDocs();
-  const chunks = totalChunks(available);
   const activeTag = categoryBySlug(state.chatCategory);
   const scopes = [
     { k: 'single', l: '单篇文献', h: '精读' },
     { k: 'project', l: '项目问答', h: '跨文献' },
-    { k: 'all', l: '全库 RAG', h: `${chunks} 段` },
+    { k: 'all', l: '全库 RAG', h: '跨文献' },
   ];
   $('#scope-opts').innerHTML = scopes.map((s) => `
     <button class="scope-btn ${state.chatScope === s.k ? 'on' : ''}" data-scope="${s.k}">
@@ -2410,12 +3178,9 @@ function renderChatSide() {
   $('#all-note').hidden = state.chatScope !== 'all';
   $('#doc-picker').hidden = state.chatScope !== 'single';
   $('#all-doc-count').textContent = available.length;
-  $('#all-chunk-count').textContent = chunks;
   $('#all-note .allbox').innerHTML = activeTag
-    ? `标签「${esc(activeTag.name)}」匹配 <span id="all-doc-count">${available.length}</span> 篇已索引文献、`
-      + `<span id="all-chunk-count">${chunks}</span> 个切块。`
-    : `全库检索覆盖全部 <span id="all-doc-count">${available.length}</span> 篇文献的 `
-      + `<span id="all-chunk-count">${chunks}</span> 个切块，无需选择文献。`;
+    ? `标签「${esc(activeTag.name)}」匹配 <span id="all-doc-count">${available.length}</span> 篇已索引文献。`
+    : `全库检索覆盖全部 <span id="all-doc-count">${available.length}</span> 篇已索引文献，无需逐篇选择。`;
 
   if (!state.selProject && persisted.projects.length) state.selProject = persisted.projects[0].id;
   $('#proj-rows').innerHTML = persisted.projects.length
@@ -2430,23 +3195,45 @@ function renderChatSide() {
     .filter((doc) => doc && documentMatchesCategory(doc, state.chatCategory))
     .map((d) => `<div class="proj-doc">${esc(docTitle(d))}</div>`).join('');
 
-  const q = state.docSearch.trim().toLowerCase();
-  const docs = available.filter((d) => {
-    const categoryText = ((documentPaper(d) || {}).category_details || [])
-      .map((category) => `${category.name} ${category.slug}`).join(' ');
-    return !q || `${docTitle(d)} ${(d.paper && d.paper.doi) || ''} ${categoryText}`
-      .toLowerCase().includes(q);
-  });
-  $('#doc-opts').innerHTML = docs.length
-    ? docs.map((d) => {
+  const selectedDocument = available.find((doc) => state.chatDocs.includes(doc.id));
+  const docs = filteredChatDocuments(available);
+  const pageCount = Math.max(1, Math.ceil(docs.length / CHAT_DOCUMENTS_PER_PAGE));
+  state.chatDocPage = Math.min(Math.max(1, state.chatDocPage), pageCount);
+  const pageStart = (state.chatDocPage - 1) * CHAT_DOCUMENTS_PER_PAGE;
+  const visibleDocs = docs.slice(pageStart, pageStart + CHAT_DOCUMENTS_PER_PAGE);
+  const pickerExpanded = state.chatPickerOpen || !selectedDocument;
+  $('#doc-picker-toggle').textContent = selectedDocument
+    ? (pickerExpanded ? '收起' : '更换文献')
+    : '选择文献';
+  $('#doc-picker-toggle').setAttribute('aria-expanded', String(pickerExpanded));
+  $('#selected-chat-doc').innerHTML = selectedDocument
+    ? `<div class="selected-doc-main">
+        <span class="selected-doc-mark">✓</span>
+        <span class="selected-doc-copy">
+          <strong title="${esc(docTitle(selectedDocument))}">${esc(docTitle(selectedDocument))}</strong>
+          <small>RAG 已就绪</small>
+        </span>
+      </div>`
+    : `<div class="selected-doc-empty">尚未选择 · 共 ${available.length} 篇已索引文献</div>`;
+  $('#doc-picker-panel').hidden = !pickerExpanded;
+  $('#doc-result-summary').textContent = state.docSearch.trim()
+    ? `找到 ${docs.length} 篇`
+    : `共 ${docs.length} 篇`;
+  $('#doc-opts').innerHTML = visibleDocs.length
+    ? visibleDocs.map((d) => {
       const on = state.chatDocs.includes(d.id);
-      const meta = state.docMeta[d.id] || {};
       return `<button class="doc-btn ${on ? 'on' : ''}" data-chatdoc="${d.id}">
-        <span class="box">${on ? '✓' : ''}</span>
+        <span class="radio-dot">${on ? '<i></i>' : ''}</span>
         <span class="name">${esc(docTitle(d))}</span>
-        <span class="tag rag">${meta.chunkTotal || 0} 段</span></button>`;
+        <span class="tag rag">已索引</span></button>`;
     }).join('')
-    : '<div class="side-note">没有已建索引的文档，请先在「文献库」执行「建 RAG 索引」</div>';
+    : `<div class="side-note">${available.length
+      ? '没有匹配的文献，请换一个关键词'
+      : '没有已建索引的文档，请先在「文献库」执行「建 RAG 索引」'}</div>`;
+  $('#doc-pagination').hidden = docs.length <= CHAT_DOCUMENTS_PER_PAGE;
+  $('#doc-page-status').textContent = `${state.chatDocPage} / ${pageCount}`;
+  $('#doc-page-prev').disabled = state.chatDocPage <= 1;
+  $('#doc-page-next').disabled = state.chatDocPage >= pageCount;
 
   $('#presets').innerHTML = allPresets().map((p) => `
     <div class="preset-item">
@@ -2461,15 +3248,6 @@ function renderChatSide() {
     </div>`).join('');
   renderPresetEditor();
 
-  const ids = chatDocumentIds();
-  const tagSummary = activeTag ? ` · 标签「${activeTag.name}」` : '';
-  $('#scope-summary').textContent = state.chatScope === 'all'
-    ? `范围：全库 RAG${tagSummary} · ${available.length} 篇 · ${chunks} 个切块向量`
-    : state.chatScope === 'project'
-      ? `范围：项目「${project ? project.name : '未选择'}」${tagSummary} · ${ids.length} 篇`
-      : ids.length
-        ? `范围：单篇精读${tagSummary} · ${docTitle(state.documents.find((d) => d.id === ids[0]) || {})}`
-        : `范围：单篇精读${tagSummary} · 未选择文献`;
 }
 
 function renderPresetEditor() {
@@ -2570,15 +3348,14 @@ function renderChatLog() {
   log.innerHTML = state.messages.map((m, mi) => {
     if (m.role === 'user') {
       return `<div class="msg-row user"><div class="bubble">
-        <div class="who">你</div><div class="body">${esc(m.text)}</div></div></div>`;
+        <div class="who">你</div><div class="body markdown-body">${renderSafeMarkdown(m.text)}</div></div></div>`;
     }
     const sources = m.sources || [];
-    const hits = sources.length
-      ? `<div class="hits">向量检索命中 ${sources.length} 个切块 · top 相似度 ${
-        sources[0].score != null ? Number(sources[0].score).toFixed(2) : '—'} · 引用以 [n·¶段] 标注</div>`
+    const currentDocumentAnswer = m.answerMode === 'current-document';
+    const hits = sources.length && !currentDocumentAnswer
+      ? `<div class="hits">引用 ${sources.length} 处原文依据 · 点击下方引用定位</div>`
       : '';
-    const cites = sources.map((s, i) => `<button class="cite" data-cite="${mi}:${i}"
-      title="${esc(s.section_title || '')} · ${esc(s.section_type || '')} · 点击跳转原文">[${i + 1}·¶${s.section_seq != null ? s.section_seq : '?'}]</button>`).join('');
+    const cites = renderSourceButtons(sources, mi, 'data-cite');
     const related = (m.related || []).length ? `<div class="related">
       <div class="related-label">相关文献 · 本地文献库检索</div>
       <div class="related-list">${m.related.map((p) => `<div class="related-item">
@@ -2589,12 +3366,13 @@ function renderChatLog() {
           <button class="btn-ghost" data-rel-copy="${esc(p.doi || '')}" ${p.doi ? '' : 'disabled'}>复制 DOI</button>
         </div></div>`).join('')}</div></div>` : '';
     return `<div class="msg-row ai"><div class="bubble">
-      <div class="who">助手 · 引用 RAG 切块</div>
+      <div class="who">${currentDocumentAnswer ? '助手 · 当前论文' : '助手 · 引用原文'}</div>
       ${hits}
-      <div class="body">${esc(m.text)}${cites ? ` ${cites}` : ''}</div>
+      <div class="body markdown-body">${renderSafeMarkdown(m.text)}</div>
+      ${cites}
       ${related}</div></div>`;
   }).join('') + (state.typing
-    ? `<div class="typing"><i></i><i></i><i></i><span>正在检索 RAG 切块向量并生成回答…</span></div>` : '');
+    ? `<div class="typing"><i></i><i></i><i></i><span>正在检索相关文献并生成回答…</span></div>` : '');
   log.scrollTop = log.scrollHeight;
 }
 
@@ -2614,16 +3392,23 @@ async function sendChat(text) {
   $('#slash-pop').hidden = true;
   renderChatLog();
   try {
+    const useDocumentContext = state.chatScope === 'single';
     const data = await api('/rag/query', {
       method: 'POST',
-      body: { question, document_ids: ids, top_k: 6 },
+      body: {
+        question,
+        document_ids: ids,
+        top_k: 6,
+        use_document_context: useDocumentContext,
+      },
     });
     const related = await relatedPapers(question);
     state.messages.push({
       role: 'ai',
-      text: stripSourceTrailer(data.answer) || '（检索到的切块没有可用内容）',
+      text: stripSourceTrailer(data.answer) || '（检索结果没有可用内容）',
       sources: data.sources || [],
       related,
+      answerMode: useDocumentContext ? 'current-document' : 'rag',
     });
   } catch (e) {
     state.messages.push({ role: 'ai', text: `检索失败：${e.message}`, sources: [], related: [] });
@@ -2651,23 +3436,25 @@ function chemistryDocs() {
     || d.chemistry_status === 'extracted' || d.chemistry_status === 'extracting');
 }
 
-/* 进入本页时自动选中第一个有反应集的文档，否则左侧列了文档而右侧空着 */
-async function openChemistry() {
-  const docs = chemistryDocs();
-  if (!docs.length) { renderChemistry(); return; }
-  const stillThere = docs.some((d) => d.id === state.chemDocId);
-  if (stillThere && state.chemSet) { renderChemistry(); return; }
-  await loadChemDoc((stillThere ? state.chemDocId : docs[0].id));
+function chemistryReactionSets() {
+  return chemistryDocs().flatMap((doc) => ((state.docMeta[doc.id] || {}).reactionSets || [])
+    .map((set) => ({
+      ...set,
+      document_id: doc.id,
+      document_title: docTitle(doc),
+    })));
 }
 
-async function loadChemDoc(docId) {
-  state.chemDocId = docId;
-  state.chemSetId = null;
-  state.chemSet = null;
-  const data = await apiOrNull(`/documents/${docId}/reaction-sets?page_size=50`);
-  state.chemSets = (data && data.items) || [];
-  if (state.chemSets.length) await loadChemSet(state.chemSets[0].id);
-  else renderChemistry();
+/* 化学库以反应集为主，进入本页时自动选中第一条可复核资产 */
+async function openChemistry() {
+  const sets = chemistryReactionSets();
+  if (!sets.length) { renderChemistry(); return; }
+  const selected = sets.find((set) => set.id === state.chemSetId);
+  if (selected && state.chemSet) { renderChemistry(); return; }
+  const first = selected || sets[0];
+  state.chemDocId = first.document_id;
+  state.chemSets = (state.docMeta[first.document_id] || {}).reactionSets || [];
+  await loadChemSet(first.id);
 }
 
 async function loadChemSet(setId) {
@@ -2680,24 +3467,41 @@ async function loadChemSet(setId) {
 }
 
 function renderChemistry() {
-  const docs = chemistryDocs();
-  $('#chem-docs').innerHTML = docs.length
-    ? docs.map((d) => {
-      const sets = (state.docMeta[d.id] || {}).reactionSets || [];
-      const pending = sets.reduce((n, s) => n + s.unverified_count, 0);
-      return `<button class="doc-btn ${state.chemDocId === d.id ? 'on' : ''}" data-chemdoc="${d.id}">
-        <span class="name">${esc(docTitle(d))}</span>
-        <span class="tag ${pending ? 'todo' : 'done'}">${sets.length ? (pending ? `待 ${pending}` : '已复核') : d.chemistry_status || '—'}</span>
-      </button>`;
-    }).join('')
+  const sets = chemistryReactionSets();
+  const renderSetGroup = (label, items, tone) => items.length
+    ? `<section class="chem-queue-group">
+        <div class="chem-queue-label"><span>${label}</span><strong>${items.length}</strong></div>
+        ${items.map((set) => {
+          const pending = set.pending_count ?? set.unverified_count ?? 0;
+          const accepted = set.accepted_count ?? set.verified_count ?? 0;
+          const rejected = set.rejected_count || 0;
+          const stateLabel = pending ? `${pending}/${set.reaction_count} 待复核`
+            : accepted ? `${accepted}/${set.reaction_count} 已确认`
+              : rejected ? '未采用' : set.status || '待处理';
+          return `<button class="set-btn chem-set-card ${state.chemSetId === set.id ? 'on' : ''}"
+              data-chemset="${set.id}" data-chemdoc="${set.document_id}">
+            <span class="chem-set-card-main">
+              <span class="name">${esc(set.gas_mixture || set.name || `反应集 #${set.id}`)}</span>
+              <span class="tag ${tone}">${esc(stateLabel)}</span>
+            </span>
+            <span class="chem-set-source">
+              <span class="chem-source-label">来源文献</span>
+              <span class="chem-source-title">${esc(set.document_title)}</span>
+            </span>
+          </button>`;
+        }).join('')}
+      </section>`
+    : '';
+  const confirmedSets = sets.filter((set) => set.status === 'verified' || set.export_ready);
+  const rejectedSets = sets.filter((set) => set.status === 'rejected' && !confirmedSets.includes(set));
+  const pendingSets = sets.filter((set) => !confirmedSets.includes(set) && !rejectedSets.includes(set));
+  $('#chem-docs').innerHTML = sets.length
+    ? [
+      renderSetGroup('待复核', pendingSets, 'todo'),
+      renderSetGroup('已确认', confirmedSets, 'done'),
+      renderSetGroup('未采用', rejectedSets, 'fail'),
+    ].join('')
     : '<div class="side-note">还没有抽取过化学库。在「文献库」中对已解析文档点「抽取化学库」。</div>';
-
-  $('#chem-sets').innerHTML = state.chemSets.length
-    ? state.chemSets.map((s) => `<button class="set-btn ${state.chemSetId === s.id ? 'on' : ''}" data-chemset="${s.id}">
-        <span class="name">${esc(s.gas_mixture || s.name || `反应集 #${s.id}`)}</span>
-        <span class="tag ${s.export_ready ? 'done' : 'todo'}">${s.verified_count}/${s.reaction_count}</span>
-      </button>`).join('')
-    : '<div class="side-note">该文档下没有反应集</div>';
 
   const set = state.chemSet;
   const body = $('#chem-body');
@@ -2711,7 +3515,7 @@ function renderChemistry() {
     return;
   }
   if (!set) {
-    $('#chem-summary').textContent = docs.length ? '选择左侧文档以载入反应集' : '尚无可复核的反应集';
+    $('#chem-summary').textContent = sets.length ? '选择左侧反应集查看详情与来源' : '尚无可复核的反应集';
     gate.hidden = true;
     body.innerHTML = `<div class="empty-state">${docs.length
       ? '选择左侧的文档与反应集开始复核'
@@ -2723,21 +3527,26 @@ function renderChemistry() {
     set.gas_mixture ? `气体 ${set.gas_mixture}` : null,
     set.lxcat_db ? `LXCat ${set.lxcat_db}` : 'LXCat 未识别',
     `${set.reaction_count} 条反应`,
-    `已复核 ${set.verified_count}`,
+    `确认加入 ${set.accepted_count ?? set.verified_count}`,
+    `不采用 ${set.rejected_count || 0}`,
+    `待决定 ${set.pending_count ?? set.unverified_count}`,
     set.status ? `状态 ${set.status}` : null,
   ].filter(Boolean).join(' · ');
 
   gate.hidden = false;
   gate.className = set.export_ready ? 'gate ok' : 'gate';
   gate.innerHTML = set.export_ready
-    ? '✓ 人工复核闸门已通过：全部反应均已 verified，可以导出仿真输入。'
-    : `⚠ 人工复核闸门未通过：还有 <b>${set.unverified_count}</b> 条反应未复核。闸门不可绕过——此时调用导出接口会返回 409。`;
+    ? `✓ 文档复核完成：${set.accepted_count ?? set.verified_count} 条已加入确认反应集，`
+      + `${set.rejected_count || 0} 条不采用；现在可以导出仿真输入。`
+    : `⚠ 还有 <b>${set.pending_count ?? set.unverified_count}</b> 条候选未决定。`
+      + '请逐条修正方程式后选择「确认加入」或「不采用」。';
 
   body.innerHTML = set.reactions.map((r) => reactionCard(r)).join('')
     || '<div class="empty-state">该反应集没有反应条目</div>';
 }
 
 function reactionCard(r) {
+  const reviewStatus = r.review_status || (r.verified ? 'accepted' : 'pending');
   const source = [
     r.source_label ? `<span class="lbl">出处</span>${esc(r.source_label)}` : null,
     r.source_section_title && !r.source_label ? `<span class="lbl">章节</span>${esc(r.source_section_title)}` : null,
@@ -2755,11 +3564,20 @@ function reactionCard(r) {
     : '';
   const opt = (list, current) => ['<option value="">（空）</option>']
     .concat(list.map((v) => `<option value="${v}" ${current === v ? 'selected' : ''}>${v}</option>`)).join('');
-  return `<div class="rx ${r.verified ? 'done' : ''}" data-rx="${r.id}">
+  const statusTag = reviewStatus === 'accepted'
+    ? '<span class="tag done">✓ 已加入</span>'
+    : reviewStatus === 'rejected'
+      ? '<span class="tag fail">× 不采用</span>'
+      : '<span class="tag todo">待决定</span>';
+  return `<div class="rx ${reviewStatus === 'accepted' ? 'done' : reviewStatus === 'rejected' ? 'rejected' : ''}"
+      data-rx="${r.id}" data-review-status="${reviewStatus}">
     <div class="rx-head">
-      <div class="rx-eq">${esc(r.reaction)}</div>
-      <span class="tag ${r.verified ? 'done' : 'todo'}">${r.verified ? '✓ 已复核' : '待复核'}</span>
-      ${r.confidence != null ? `<span class="rx-conf">置信度 ${esc(r.confidence)}</span>` : ''}
+      <label class="rx-equation-field">
+        <span>化学方程式</span>
+        <input class="input rx-eq-input" data-f="reaction" value="${esc(r.reaction)}"
+          aria-label="化学方程式" placeholder="例如 e + Ar -> e + e + Ar+">
+      </label>
+      ${statusTag}
     </div>
     ${source || excerpt ? `<div class="rx-src">${source}${excerpt}</div>` : ''}
     <div class="rx-grid">
@@ -2778,9 +3596,12 @@ function reactionCard(r) {
     <div class="rx-foot">
       <button class="btn-ghost sm" data-rx-act="audit">${state.chemAudit[r.id] ? '收起审计' : `审计日志 ${(r.audit_log || []).length}`}</button>
       <div class="spacer"></div>
-      ${r.verified ? '<button class="btn-ghost sm" data-rx-act="unverify">撤回复核</button>' : ''}
+      ${reviewStatus !== 'pending' ? '<button class="btn-ghost sm" data-rx-act="unverify">撤回决定</button>' : ''}
       <button class="btn-ghost sm" data-rx-act="save">仅保存修正</button>
-      <button class="btn-primary sm" data-rx-act="verify">${r.verified ? '重新确认' : '通过复核'}</button>
+      <div class="equal-action-pair">
+        <button class="btn-ghost danger sm" data-rx-act="reject">${reviewStatus === 'rejected' ? '保持不采用' : '不采用'}</button>
+        <button class="btn-primary sm" data-rx-act="verify">${reviewStatus === 'accepted' ? '重新确认加入' : '确认加入'}</button>
+      </div>
     </div>
     ${audits}
   </div>`;
@@ -2790,8 +3611,12 @@ function reviewerDisplayName(verifiedBy) {
   return verifiedBy === SELF_REVIEWER ? '本人' : (verifiedBy || '未署名');
 }
 
-function reactionFormPayload(card, verified) {
-  const payload = { verified, verified_by: SELF_REVIEWER };
+function reactionFormPayload(card, decision) {
+  const payload = {
+    verified: decision === 'accepted',
+    decision,
+    verified_by: SELF_REVIEWER,
+  };
   $$('[data-f]', card).forEach((input) => {
     const field = input.dataset.f;
     const raw = input.value.trim();
@@ -2804,15 +3629,22 @@ function reactionFormPayload(card, verified) {
   return payload;
 }
 
-async function submitReaction(reactionId, card, verified) {
-  const payload = reactionFormPayload(card, verified);
+async function submitReaction(reactionId, card, decision) {
+  const payload = reactionFormPayload(card, decision);
+  if (!payload.reaction) {
+    toast('化学方程式不能为空；如不属于反应，请选择「不采用」', true);
+    return;
+  }
   if (payload.threshold_ev != null && Number.isNaN(payload.threshold_ev)) {
     toast('阈值 eV 必须是数字，或留空表示原文未给出', true);
     return;
   }
   try {
     state.chemSet = await api(`/reactions/${reactionId}/verify`, { method: 'PUT', body: payload });
-    toast(verified ? '已通过复核并记入审计' : '已保存修正');
+    const message = decision === 'accepted'
+      ? '已修正并加入确认反应集'
+      : decision === 'rejected' ? '已标记为不采用并保留审计' : '已保存修正';
+    toast(message);
   } catch (e) {
     toast(`复核失败：${e.message}`, true);
     return;
@@ -2957,10 +3789,26 @@ function bindSearch() {
     else if (act === 'copy') copyText(paper.doi);
     else if (act === 'download') startPaperDownload(paper);
     else if (act === 'open-pdf') openLocalPdf(Number(action.dataset.documentId));
+    else if (act === 'go-library') goToLibraryDocument(Number(action.dataset.documentId));
     else if (act === 'zh') showAbstractTranslation(paper.id);
   });
+  $('#download-current-page').addEventListener('click', downloadCurrentSearchPage);
+  $('#download-all-results').addEventListener('click', downloadAllSearchResults);
   $('[data-page-prev]').addEventListener('click', () => { state.searchPage -= 1; runSearch(false); });
   $('[data-page-next]').addEventListener('click', () => { state.searchPage += 1; runSearch(false); });
+}
+
+function bindActionConfirm() {
+  const dialog = $('#action-confirm-dialog');
+  $('#action-confirm-cancel').addEventListener('click', () => closeActionConfirm(false));
+  $('#action-confirm-submit').addEventListener('click', () => closeActionConfirm(true));
+  dialog.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    closeActionConfirm(false);
+  });
+  dialog.addEventListener('click', (event) => {
+    if (event.target === dialog) closeActionConfirm(false);
+  });
 }
 
 function bindJournals() {
@@ -3028,7 +3876,66 @@ function bindLibrary() {
     $('#newproj-closed').hidden = false;
     $('#newproj-open').hidden = true;
     renderUploadProjectOptions();
+    renderLibrary();
     toast(`已创建项目「${name}」`);
+  });
+  $('#library-select-all').addEventListener('change', (event) => {
+    state.documents.forEach((doc) => {
+      if (libraryDocumentBusy(doc)) return;
+      if (event.target.checked) state.librarySelectedDocumentIds.add(Number(doc.id));
+      else state.librarySelectedDocumentIds.delete(Number(doc.id));
+    });
+    renderLibrary();
+  });
+  $('#library-selection-toggle').addEventListener('click', () => {
+    if (state.libraryBulkRunning) return;
+    state.librarySelectionMode = !state.librarySelectionMode;
+    if (!state.librarySelectionMode) {
+      state.librarySelectedDocumentIds.clear();
+      closeLibraryProcessDialog();
+    }
+    renderLibrary();
+  });
+  $('#library-process-open').addEventListener('click', openLibraryProcessDialog);
+  $('#library-process-cancel').addEventListener('click', closeLibraryProcessDialog);
+  $('#library-process-dialog').addEventListener('cancel', (event) => {
+    event.preventDefault();
+    closeLibraryProcessDialog();
+  });
+  $('#library-process-dialog').addEventListener('click', (event) => {
+    if (event.target === $('#library-process-dialog')) closeLibraryProcessDialog();
+  });
+  $('#library-process-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const steps = $$('input[name="library-process-step"]:checked', event.currentTarget)
+      .map((inputNode) => inputNode.value);
+    if (!steps.length) {
+      toast('请至少选择一个处理步骤', true);
+      return;
+    }
+    closeLibraryProcessDialog();
+    runSelectedLibraryProcess(steps);
+  });
+  $('#lib-grid').addEventListener('change', (e) => {
+    const selection = e.target.closest('input[data-doc-select]');
+    if (selection) {
+      const documentId = Number(selection.dataset.docSelect);
+      if (selection.checked) state.librarySelectedDocumentIds.add(documentId);
+      else state.librarySelectedDocumentIds.delete(documentId);
+      renderLibrary();
+      return;
+    }
+    const checkbox = e.target.closest('input[data-doc-project]');
+    if (!checkbox) return;
+    const docId = Number(checkbox.dataset.docProject);
+    const project = setDocumentProjectMembership(docId, checkbox.value, checkbox.checked);
+    renderLibrary();
+    renderChatSide();
+    if (project) {
+      toast(checkbox.checked
+        ? `已加入项目「${project.name}」`
+        : `已从项目「${project.name}」移出`);
+    }
   });
   $('#lib-grid').addEventListener('click', (e) => {
     const card = e.target.closest('[data-doc]');
@@ -3059,7 +3966,13 @@ function bindLibrary() {
     else if (action === 'tag') {
       state.tagEditor = state.tagEditor === doc.paper_id ? null : doc.paper_id;
       renderLibrary();
-    } else if (action === 'chem') { setPage('chemistry'); loadChemDoc(docId); }
+    } else if (action === 'chem-set') {
+      state.chemDocId = docId;
+      state.chemSets = (state.docMeta[docId] || {}).reactionSets || [];
+      state.chemSetId = Number(btn.dataset.setId);
+      state.chemSet = null;
+      setPage('chemistry');
+    }
     else docAction(docId, action);
   });
 }
@@ -3141,13 +4054,17 @@ function bindGlossary() {
 }
 
 function bindChemistry() {
-  $('#chem-docs').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-chemdoc]');
-    if (btn) loadChemDoc(Number(btn.dataset.chemdoc));
-  });
-  $('#chem-sets').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-chemset]');
-    if (btn) loadChemSet(Number(btn.dataset.chemset));
+  $('#chem-docs').addEventListener('click', async (e) => {
+    const setButton = e.target.closest('[data-chemset]');
+    if (setButton) {
+      const docId = Number(setButton.dataset.chemdoc);
+      if (docId && docId !== state.chemDocId) {
+        state.chemDocId = docId;
+        const sets = await apiOrNull(`/documents/${docId}/reaction-sets?page_size=50`);
+        state.chemSets = (sets && sets.items) || [];
+      }
+      loadChemSet(Number(setButton.dataset.chemset));
+    }
   });
   $('#chem-exports').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-export]');
@@ -3162,9 +4079,10 @@ function bindChemistry() {
     if (action === 'audit') {
       state.chemAudit[reactionId] = !state.chemAudit[reactionId];
       renderChemistry();
-    } else if (action === 'verify') submitReaction(reactionId, card, true);
-    else if (action === 'unverify') submitReaction(reactionId, card, false);
-    else if (action === 'save') submitReaction(reactionId, card, !!card.classList.contains('done'));
+    } else if (action === 'verify') submitReaction(reactionId, card, 'accepted');
+    else if (action === 'reject') submitReaction(reactionId, card, 'rejected');
+    else if (action === 'unverify') submitReaction(reactionId, card, 'pending');
+    else if (action === 'save') submitReaction(reactionId, card, card.dataset.reviewStatus || 'pending');
   });
 }
 
@@ -3221,24 +4139,21 @@ function showSelectionPopover(pane) {
   popover.classList.toggle('below', below);
 }
 
-function buildReaderContextQuestion(text, kind, context = '') {
+function buildReaderContextQuestion(text, kind) {
   const normalized = String(text || '').trim().replace(/\s+/g, ' ');
   if (!normalized) return '';
-  const normalizedContext = String(context || '').trim().replace(/\s+/g, ' ');
   const isTerm = kind === 'term'
     || (normalized.length <= 48 && !/[。！？.!?；;]/.test(normalized));
   const selectedLabel = isTerm ? '词语' : '语句';
   const request = isTerm
     ? '请解释它在当前论文中的具体含义：先给出简明中文释义，再说明这里的专业含义、指代对象，以及它与上下文的关系。不要只做字面翻译。'
-    : '请解释它在当前论文和所在段落中的意思：先用中文简明转述，再说明关键概念、逻辑关系，以及这句话在上下文中起什么作用。不要脱离原文泛泛解释。';
+    : '请解释它在当前论文中的意思：先用中文简明转述，再说明关键概念、逻辑关系，以及这句话在上下文中起什么作用。不要脱离原文泛泛解释。';
   const selectedText = normalized.slice(0, 600);
-  const contextText = normalizedContext.slice(0, 1000);
-  return `请结合当前论文解释下面这段${selectedLabel}。选中内容：“${selectedText}”。${request}`
-    + (contextText && contextText !== selectedText ? `所在段落：“${contextText}”。` : '');
+  return `请结合当前论文解释下面这段${selectedLabel}：\n\n> ${selectedText}\n\n${request}`;
 }
 
 function sendTextToChat(text, kind, selection = null) {
-  const question = buildReaderContextQuestion(text, kind, selection && selection.context);
+  const question = buildReaderContextQuestion(text, kind);
   if (!question) return;
   hideSelectionPopover();
   state.readerMode = 'qa';
@@ -3369,6 +4284,11 @@ function bindReader() {
   paneZh.addEventListener('scroll', () => { syncScroll(paneZh, paneEn); hideSelectionPopover(); });
   [paneEn, paneZh].forEach((pane) => {
     pane.addEventListener('click', (e) => {
+      const figureTrigger = e.target.closest('[data-reader-figure]');
+      if (figureTrigger) {
+        openFigureLightbox(figureTrigger);
+        return;
+      }
       const glossaryTerm = e.target.closest('[data-glossary-send]');
       if (glossaryTerm) {
         const term = glossaryTermById(glossaryTerm.dataset.glossarySend);
@@ -3418,6 +4338,10 @@ function bindReader() {
     }
   });
   document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !$('#figure-lightbox').hidden) {
+      closeFigureLightbox();
+      return;
+    }
     if (event.key === 'Escape' && !selectionPopover.hidden) {
       hideSelectionPopover();
       const selection = window.getSelection();
@@ -3426,6 +4350,10 @@ function bindReader() {
   });
   window.addEventListener('resize', () => {
     if (!selectionPopover.hidden) hideSelectionPopover();
+  });
+  $('#figure-lightbox-close').addEventListener('click', closeFigureLightbox);
+  $('#figure-lightbox').addEventListener('click', (event) => {
+    if (event.target === event.currentTarget) closeFigureLightbox();
   });
 }
 
@@ -3446,14 +4374,37 @@ function bindChat() {
     state.chatCategory = e.target.value;
     state.chatDocs = state.chatDocs.filter((id) => indexedDocs().some((doc) => doc.id === id));
     state.docSearch = '';
+    state.chatDocPage = 1;
+    state.chatPickerOpen = !state.chatDocs.length;
     $('#doc-search').value = '';
     renderChatSide();
   });
-  $('#doc-search').addEventListener('input', (e) => { state.docSearch = e.target.value; renderChatSide(); });
+  $('#doc-picker-toggle').addEventListener('click', () => {
+    state.chatPickerOpen = !state.chatPickerOpen;
+    renderChatSide();
+    if (state.chatPickerOpen) $('#doc-search').focus();
+  });
+  $('#doc-search').addEventListener('input', (e) => {
+    state.docSearch = e.target.value;
+    state.chatDocPage = 1;
+    renderChatSide();
+  });
   $('#doc-opts').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-chatdoc]');
     if (!btn) return;
     state.chatDocs = [Number(btn.dataset.chatdoc)];
+    state.chatPickerOpen = false;
+    state.docSearch = '';
+    state.chatDocPage = 1;
+    $('#doc-search').value = '';
+    renderChatSide();
+  });
+  $('#doc-page-prev').addEventListener('click', () => {
+    state.chatDocPage = Math.max(1, state.chatDocPage - 1);
+    renderChatSide();
+  });
+  $('#doc-page-next').addEventListener('click', () => {
+    state.chatDocPage += 1;
     renderChatSide();
   });
   $('#presets').addEventListener('click', (e) => {
@@ -3538,6 +4489,7 @@ function bindChat() {
 async function boot() {
   bindNav();
   bindSearch();
+  bindActionConfirm();
   bindJournals();
   bindDownloadManager();
   bindLibrary();

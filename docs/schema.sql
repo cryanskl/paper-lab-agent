@@ -348,6 +348,7 @@ CREATE TABLE reactions (
     source_excerpt    TEXT,
     confidence        REAL,
     verified          INTEGER DEFAULT 0,
+    review_status     TEXT DEFAULT 'pending',    -- pending/accepted/rejected；verified=1 仅兼容 accepted
     created_at        TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_reactions_set ON reactions(reaction_set_id);

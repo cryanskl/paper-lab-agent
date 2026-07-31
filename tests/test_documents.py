@@ -1,4 +1,9 @@
-from app.services.documents import sections_from_tei
+from app.services.documents import (
+    figures_from_tei,
+    normalize_reader_text,
+    render_figure_png,
+    sections_from_tei,
+)
 
 
 def test_sections_from_tei_preserves_grobid_table_figure_caption_and_cells():
@@ -55,6 +60,84 @@ def test_sections_from_tei_preserves_grobid_table_figure_caption_and_cells():
     assert by_type["figure_caption"][0]["title"] == "Figure 1"
     assert by_type["figure_caption"][0]["content"] == "Electron density profile."
     assert by_type["reference"][0]["content"] == "Reference paper"
+
+
+def test_sections_from_tei_hides_internal_targets_but_keeps_external_urls():
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text><body><div><head>Results</head>
+        <p>See figure <ref type="figure" target="#fig_0">1</ref>
+        and reference <ref type="bibr" target="#b12">[12]</ref>.
+        Data: <ref target="https://example.org/data">public set</ref>.</p>
+      </div></body></text>
+    </TEI>
+    """
+
+    sections = sections_from_tei(tei)
+
+    assert sections[0]["content"] == (
+        "See figure 1 and reference [12]. Data: public set (https://example.org/data)."
+    )
+
+
+def test_normalize_reader_text_removes_legacy_internal_targets():
+    text = "见图2（#fig_1），参考文献 [33] (#b33)，公式 (1) (#formula_0)。"
+
+    assert normalize_reader_text(text) == "见图2，参考文献 [33]，公式 (1)。"
+
+
+def test_figures_from_tei_reads_grobid_crop_metadata():
+    tei = """
+    <TEI xmlns="http://www.tei-c.org/ns/1.0">
+      <text><body>
+        <figure xml:id="fig_0">
+          <head>Figure 1.</head><label>1</label>
+          <figDesc>Figure 1. Experimental setup.</figDesc>
+          <graphic coords="3,10.5,20.5,120.0,60.0" type="bitmap"/>
+        </figure>
+        <figure type="table" xml:id="tab_0">
+          <graphic coords="4,1,2,3,4"/>
+        </figure>
+      </body></text>
+    </TEI>
+    """
+
+    figures = figures_from_tei(tei, document_id=42)
+
+    assert figures == [
+        {
+            "id": "fig_0",
+            "label": "Figure 1",
+            "title": "Figure 1.",
+            "caption": "Figure 1. Experimental setup.",
+            "page": 3,
+            "x": 10.5,
+            "y": 20.5,
+            "width": 120.0,
+            "height": 60.0,
+            "image_url": "/api/v1/documents/42/figures/fig_0/image",
+        }
+    ]
+
+
+def test_render_figure_png_crops_pdf_coordinates(tmp_path):
+    import pymupdf
+
+    pdf_path = tmp_path / "figure.pdf"
+    with pymupdf.open() as pdf:
+        page = pdf.new_page(width=300, height=200)
+        page.draw_rect(pymupdf.Rect(20, 30, 140, 90), color=(1, 0, 0), fill=(1, 1, 1))
+        page.insert_text((28, 58), "Figure content", fontsize=14)
+        pdf.save(pdf_path)
+
+    content = render_figure_png(
+        pdf_path,
+        {"page": 1, "x": 20, "y": 30, "width": 120, "height": 60},
+    )
+
+    image = pymupdf.Pixmap(content)
+    assert image.width == 240
+    assert image.height == 120
 
 
 def test_sections_from_tei_reads_header_profile_abstract():

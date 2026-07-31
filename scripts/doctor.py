@@ -41,6 +41,7 @@ PYTHON_DEPENDENCIES = (
     ("apscheduler", "apscheduler"),
     ("streamlit", "streamlit"),
     ("pytest", "pytest"),
+    ("PyMuPDF", "pymupdf"),
     ("sentence-transformers", "sentence_transformers"),
     ("chromadb", "chromadb"),
 )
@@ -61,6 +62,11 @@ REQUIRED_ENV_EXAMPLE_KEYS = (
     "VECTOR_DB_BACKEND",
     "LLM_BASE_URL",
     "LLM_MODEL",
+    "LLM_REQUEST_TIMEOUT_SECONDS",
+    "TRANSLATION_CHUNK_CHARS",
+    "RAG_CHUNK_TARGET_TOKENS",
+    "RAG_CHUNK_MAX_TOKENS",
+    "RAG_CHUNK_OVERLAP_TOKENS",
     "PAPER_LAB_SCHEDULER_ENABLED",
     "CRAWL_MAX_CONCURRENCY",
     "ACADEMIC_API_MAX_PAGES",
@@ -113,12 +119,17 @@ ENV_EXAMPLE_DEFAULTS = {
     "PAPER_LAB_TEI_DIR": "data/tei",
     "PAPER_LAB_TRANSLATION_DIR": "data/translations",
     "PAPER_LAB_EXPORT_DIR": "data/exports",
-    "VECTOR_DB_PATH": "data/vector-index.json",
-    "VECTOR_DB_BACKEND": "local-json",
+    "VECTOR_DB_PATH": "data/chroma",
+    "VECTOR_DB_BACKEND": "chroma",
     "GROBID_URL": "http://127.0.0.1:8070",
     "LLM_BASE_URL": "https://api.openai.com/v1",
     "LLM_MODEL": "gpt-4o-mini",
-    "EMBEDDING_MODEL": "local-hash",
+    "LLM_REQUEST_TIMEOUT_SECONDS": "180.0",
+    "TRANSLATION_CHUNK_CHARS": "6000",
+    "RAG_CHUNK_TARGET_TOKENS": "450",
+    "RAG_CHUNK_MAX_TOKENS": "600",
+    "RAG_CHUNK_OVERLAP_TOKENS": "60",
+    "EMBEDDING_MODEL": "bge-m3",
     "PAPER_LAB_SCHEDULER_ENABLED": "false",
     "CRAWL_MAX_CONCURRENCY": "3",
     "ACADEMIC_API_MAX_PAGES": "3",
@@ -525,8 +536,8 @@ def storage_path_config(repo: Path, env: dict[str, str] | None = None) -> dict[s
     tei_dir = Path(env.get("PAPER_LAB_TEI_DIR") or data_dir / "tei")
     translation_dir = Path(env.get("PAPER_LAB_TRANSLATION_DIR") or data_dir / "translations")
     export_dir = Path(env.get("PAPER_LAB_EXPORT_DIR") or data_dir / "exports")
-    vector_db_path = Path(env.get("VECTOR_DB_PATH") or data_dir / "vector-index.json")
-    vector_db_backend = (env.get("VECTOR_DB_BACKEND") or "local-json").strip().lower()
+    vector_db_path = Path(env.get("VECTOR_DB_PATH") or data_dir / "chroma")
+    vector_db_backend = (env.get("VECTOR_DB_BACKEND") or "chroma").strip().lower()
     paths = {
         "data_dir": data_dir,
         "database_parent": database_path.parent,
@@ -548,9 +559,9 @@ def storage_file_path_config(repo: Path, env: dict[str, str] | None = None) -> d
     env = env_with_file_values(repo, env)
     data_dir = Path(env.get("PAPER_LAB_DATA_DIR") or "data")
     paths = {"database_path": Path(env.get("DATABASE_PATH") or data_dir / "plasma.db")}
-    vector_db_backend = (env.get("VECTOR_DB_BACKEND") or "local-json").strip().lower()
+    vector_db_backend = (env.get("VECTOR_DB_BACKEND") or "chroma").strip().lower()
     if vector_db_backend != "chroma":
-        paths["vector_db_path"] = Path(env.get("VECTOR_DB_PATH") or data_dir / "vector-index.json")
+        paths["vector_db_path"] = Path(env.get("VECTOR_DB_PATH") or data_dir / "chroma")
     return {
         key: path if path.is_absolute() else repo / path
         for key, path in paths.items()
@@ -637,8 +648,8 @@ def check_local_storage(repo: Path, env: dict[str, str] | None = None) -> dict[s
 
 def check_external_config(repo: Path, env: dict[str, str] | None = None) -> dict[str, Any]:
     env = env_with_file_values(repo, env)
-    embedding_model = normalize_adapter_name(env.get("EMBEDDING_MODEL")) or "local-hash"
-    vector_db_backend = normalize_adapter_name(env.get("VECTOR_DB_BACKEND")) or "local-json"
+    embedding_model = normalize_adapter_name(env.get("EMBEDDING_MODEL")) or "bge-m3"
+    vector_db_backend = normalize_adapter_name(env.get("VECTOR_DB_BACKEND")) or "chroma"
     capabilities = {
         "openalex_api_key": configured_env_value(env.get("OPENALEX_API_KEY")),
         "openalex_mailto": configured_env_value(env.get("OPENALEX_MAILTO")),

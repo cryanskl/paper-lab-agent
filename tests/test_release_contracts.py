@@ -223,7 +223,7 @@ def test_env_example_validator_reports_missing_required_key(tmp_path):
     repo = Path(__file__).resolve().parent.parent
     env_path = tmp_path / ".env.example"
     env_text = (repo / ".env.example").read_text(encoding="utf-8")
-    env_path.write_text(env_text.replace("VECTOR_DB_PATH=./data/vector-index.json\n", ""), encoding="utf-8")
+    env_path.write_text(env_text.replace("VECTOR_DB_PATH=./data/chroma\n", ""), encoding="utf-8")
 
     missing = validate_env_example.missing_required_keys(env_path)
 
@@ -2727,7 +2727,7 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert "读取 `.env`" in readme
     assert "外部能力配置 warning" in readme
     assert "`warning_count`" in readme
-    assert "release gate 会校验" in readme
+    assert "release gate 固定验证正式的 `bge-m3 + Chroma` 索引契约" in readme
     assert "`unsupported_embedding_model`" in readme
     assert "`unsupported_vector_db_backend`" in readme
     assert "python scripts/doctor.py --strict --compact" in checklist
@@ -2735,7 +2735,7 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert "reads `.env`" in checklist
     assert "external capability configuration warnings" in checklist
     assert "`warning_count`" in checklist
-    assert "release gate validates this doctor summary" in checklist
+    assert "release gate validates the production `bge-m3 + Chroma` index contract" in checklist
     assert "`unsupported_embedding_model`" in checklist
     assert "`unsupported_vector_db_backend`" in checklist
     assert "scripts/doctor.py" in release_check
@@ -2752,7 +2752,7 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert 'doctor.get("warning_codes") != expected_doctor_warning_codes' in release_check
     assert 'doctor_warning_details = doctor.get("warning_details")' in release_check
     assert "doctor_warning_detail_codes != expected_doctor_warning_codes" in release_check
-    assert "OFFLINE_PREFLIGHT_ENV=(" in release_check
+    assert "RELEASE_PREFLIGHT_ENV=(" in release_check
     assert '"OPENALEX_API_KEY="' in release_check
     assert '"OPENALEX_MAILTO="' in release_check
     assert '"UNPAYWALL_EMAIL="' in release_check
@@ -2762,13 +2762,15 @@ def test_doctor_preflight_is_documented_and_in_release_gate():
     assert '"-u" "OPENALEX_MAILTO"' in release_check
     assert '"-u" "UNPAYWALL_EMAIL"' in release_check
     assert '"-u" "LLM_API_KEY"' in release_check
-    assert 'DOCTOR_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact)"' in release_check
-    assert 'PREPARE_DEMO_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<\'PY\'' in release_check
-    assert 'RELEASE_ARTIFACTS_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<\'PY\'' in release_check
-    assert 'SMOKE_JSON="$(env "${OFFLINE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" -m scripts.smoke_check)"' in release_check
+    assert '"EMBEDDING_MODEL=bge-m3"' in release_check
+    assert '"VECTOR_DB_BACKEND=chroma"' in release_check
+    assert 'DOCTOR_JSON="$(env "${RELEASE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" scripts/doctor.py --strict --compact)"' in release_check
+    assert 'PREPARE_DEMO_JSON="$(env "${RELEASE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<\'PY\'' in release_check
+    assert 'RELEASE_ARTIFACTS_JSON="$(env "${RELEASE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" - <<\'PY\'' in release_check
+    assert 'SMOKE_JSON="$(env "${RELEASE_PREFLIGHT_ENV[@]}" "${PYTHON_CMD[@]}" -m scripts.smoke_check)"' in release_check
     assert 'env "${TEST_ENV[@]}" "${PYTHON_CMD[@]}" -m pytest -q' in release_check
-    assert "optional external env explicitly overridden to blank values" in readme
-    assert "optional external env explicitly overridden to blank values" in checklist
+    assert "bge-m3 + Chroma" in readme
+    assert "bge-m3 + Chroma" in checklist
     assert "release gate also starts a live API with prepared demo data" in readme
     assert "live API with prepared demo data" in checklist
     assert "release_check failed: doctor preflight summary" in release_check
@@ -2893,7 +2895,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package.get("demo_counts", {}).get("reaction_audits") != 1' in release_check
     assert 'package.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"' in release_check
     assert 'package.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"' in release_check
-    assert 'package.get("openapi_path_count") != 42' in release_check
+    assert 'package.get("openapi_path_count") != 44' in release_check
     assert 'not valid_sha256(package.get("package_sha256"))' in release_check
     assert "expected_checksum_names = set(expected_artifact_names)" in release_check
     assert 'set((package.get("checksums") or {})) != expected_checksum_names' in release_check
@@ -2917,7 +2919,7 @@ def test_release_check_validates_release_artifact_bundle():
     assert 'package_validation.get("demo_counts", {}).get("reaction_audits") != 1' in release_check
     assert 'package_validation.get("demo_workflow_statuses", {}).get("parse_status") != "parsed"' in release_check
     assert 'package_validation.get("demo_workflow_statuses", {}).get("reaction_set_status") != "verified"' in release_check
-    assert 'package_validation.get("openapi_path_count") != 42' in release_check
+    assert 'package_validation.get("openapi_path_count") != 44' in release_check
     assert 'not valid_sha256(package_validation.get("package_sha256"))' in release_check
     assert 'package_validation.get("package_sha256") != package.get("package_sha256")' in release_check
     assert 'set((package_validation.get("checksums") or {})) != expected_checksum_names' in release_check
@@ -3685,7 +3687,7 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
     }
     assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
     assert payload["demo_reaction_set_verified_at"]
-    assert payload["openapi_path_count"] == 42
+    assert payload["openapi_path_count"] == 44
 
 
 def test_validate_release_artifacts_rejects_acceptance_matrix_source_drift(tmp_path):
@@ -4960,7 +4962,7 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert payload["demo_counts"]["reaction_audits"] == 1
     assert payload["demo_workflow_statuses"]["parse_status"] == "parsed"
     assert payload["demo_workflow_statuses"]["reaction_set_status"] == "verified"
-    assert payload["openapi_path_count"] == 42
+    assert payload["openapi_path_count"] == 44
     assert set(payload["checksums"]) == expected_checksum_names
     assert all(len(value) == 64 for value in payload["checksums"].values())
     assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
@@ -5000,7 +5002,7 @@ def test_package_release_artifacts_script_writes_zip_bundle(tmp_path):
     assert validate_payload["demo_counts"]["reaction_audits"] == 1
     assert validate_payload["demo_workflow_statuses"]["parse_status"] == "parsed"
     assert validate_payload["demo_workflow_statuses"]["reaction_set_status"] == "verified"
-    assert validate_payload["openapi_path_count"] == 42
+    assert validate_payload["openapi_path_count"] == 44
     assert set(validate_payload["checksums"]) == expected_checksum_names
     assert all(len(value) == 64 for value in validate_payload["checksums"].values())
     assert validate_payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
@@ -6426,8 +6428,8 @@ def test_release_check_requires_system_capability_smoke_metadata():
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
 
     assert '"system_translation_adapter": "local-echo"' in release_text
-    assert '"system_embedding_model": "local-hash"' in release_text
-    assert '"system_vector_db_backend": "local-json"' in release_text
+    assert '"system_embedding_model": "bge-m3"' in release_text
+    assert '"system_vector_db_backend": "chroma"' in release_text
     assert '"system_grobid_url": "http://127.0.0.1:8070"' in release_text
 
 

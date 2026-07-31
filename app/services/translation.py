@@ -8,6 +8,7 @@ import httpx
 from app.config import Settings
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
+from app.services.documents import normalize_reader_text
 from app.services.llm import chat_completion_content
 
 
@@ -21,6 +22,8 @@ PRESENTATION_TAG_RE = re.compile(
     r"</?(?:sub|sup|p|br|strong|em|b|i)(?:\s[^>]*)?>",
     re.IGNORECASE,
 )
+DEFAULT_TRANSLATION_CHUNK_CHARS = 6000
+TRANSLATION_SOFT_BREAKS = ("\n\n", "\n", ". ", "? ", "! ", "; ")
 
 
 class Translator(Protocol):
@@ -45,11 +48,19 @@ class LocalEchoTranslator:
 
 
 class OpenAICompatibleTranslator:
-    def __init__(self, api_key: str, base_url: str, model: str, transport: Optional[httpx.BaseTransport] = None):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str,
+        model: str,
+        transport: Optional[httpx.BaseTransport] = None,
+        timeout_seconds: float = 180.0,
+    ):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.transport = transport
+        self.timeout_seconds = timeout_seconds
 
     def translate(self, text: str, target_lang: str) -> str:
         payload = {
@@ -66,7 +77,8 @@ class OpenAICompatibleTranslator:
             ],
             "temperature": 0,
         }
-        with httpx.Client(transport=self.transport, timeout=60) as client:
+        timeout = httpx.Timeout(self.timeout_seconds, connect=min(self.timeout_seconds, 30.0))
+        with httpx.Client(transport=self.transport, timeout=timeout) as client:
             response = client.post(
                 f"{self.base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {self.api_key}"},
@@ -78,11 +90,19 @@ class OpenAICompatibleTranslator:
 
 
 class OpenAICompatibleTermTranslator:
-    def __init__(self, api_key: str, base_url: str, model: str, transport: Optional[httpx.BaseTransport] = None):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str,
+        model: str,
+        transport: Optional[httpx.BaseTransport] = None,
+        timeout_seconds: float = 180.0,
+    ):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.transport = transport
+        self.timeout_seconds = timeout_seconds
 
     def translate_term(
         self,
@@ -116,7 +136,8 @@ class OpenAICompatibleTermTranslator:
             ],
             "temperature": 0,
         }
-        with httpx.Client(transport=self.transport, timeout=60) as client:
+        timeout = httpx.Timeout(self.timeout_seconds, connect=min(self.timeout_seconds, 30.0))
+        with httpx.Client(transport=self.transport, timeout=timeout) as client:
             response = client.post(
                 f"{self.base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {self.api_key}"},
@@ -128,7 +149,12 @@ class OpenAICompatibleTermTranslator:
 
 def get_translator(settings: Settings) -> Translator:
     if settings.llm_api_key:
-        return OpenAICompatibleTranslator(settings.llm_api_key, settings.llm_base_url, settings.llm_model)
+        return OpenAICompatibleTranslator(
+            settings.llm_api_key,
+            settings.llm_base_url,
+            settings.llm_model,
+            timeout_seconds=settings.llm_request_timeout_seconds,
+        )
     return LocalEchoTranslator()
 
 
@@ -139,6 +165,7 @@ def get_term_translator(settings: Settings) -> TermTranslator:
         settings.llm_api_key,
         settings.llm_base_url,
         settings.llm_model,
+        timeout_seconds=settings.llm_request_timeout_seconds,
     )
 
 
@@ -169,9 +196,47 @@ def validate_formula_placeholders(translated: str, formulas: dict[str, str]) -> 
             raise ValueError(f"translation response unexpected formula placeholder {key}")
 
 
-def translate_text_preserving_formulas(text: str, translator: Translator, target_lang: str) -> str:
+def split_translation_text(
+    text: str,
+    max_chars: int = DEFAULT_TRANSLATION_CHUNK_CHARS,
+) -> list[str]:
+    """Split model input at natural boundaries while enforcing a hard size cap."""
+    if max_chars <= 0:
+        raise ValueError("translation chunk size must be positive")
+    remaining = text.strip()
+    chunks: list[str] = []
+    while len(remaining) > max_chars:
+        minimum_soft_break = max_chars // 2
+        cut = 0
+        for separator in TRANSLATION_SOFT_BREAKS:
+            position = remaining.rfind(separator, minimum_soft_break, max_chars + 1)
+            if position >= 0:
+                cut = max(cut, position + len(separator))
+        if cut == 0:
+            cut = max_chars
+            placeholder_start = remaining.rfind("<EQ_", 0, cut)
+            if placeholder_start >= 0 and remaining.find(">", placeholder_start) >= cut:
+                cut = placeholder_start or remaining.find(">", placeholder_start) + 1
+        chunk = remaining[:cut].strip()
+        if chunk:
+            chunks.append(chunk)
+        remaining = remaining[cut:].lstrip()
+    if remaining:
+        chunks.append(remaining)
+    return chunks
+
+
+def translate_text_preserving_formulas(
+    text: str,
+    translator: Translator,
+    target_lang: str,
+    max_chunk_chars: int = DEFAULT_TRANSLATION_CHUNK_CHARS,
+) -> str:
     masked, formulas = mask_formulas(text)
-    translated = translator.translate(masked, target_lang)
+    translated = "\n\n".join(
+        translator.translate(chunk, target_lang)
+        for chunk in split_translation_text(masked, max_chunk_chars)
+    )
     validate_formula_placeholders(translated, formulas)
     return unmask_formulas(translated, formulas)
 
@@ -181,11 +246,21 @@ def normalize_plain_text_translation(text: str) -> str:
     return html.unescape(without_presentation_tags).strip()
 
 
-def translate_section_text(section: dict, translator: Translator, target_lang: str) -> str:
+def translate_section_text(
+    section: dict,
+    translator: Translator,
+    target_lang: str,
+    max_chunk_chars: int = DEFAULT_TRANSLATION_CHUNK_CHARS,
+) -> str:
     text = section["content"] or ""
     if (section.get("section_type") or "").strip().lower() in PRESERVE_SECTION_TYPES:
         return text
-    return translate_text_preserving_formulas(text, translator, target_lang)
+    return translate_text_preserving_formulas(
+        text,
+        translator,
+        target_lang,
+        max_chunk_chars=max_chunk_chars,
+    )
 
 
 def preserved_section_note(section: dict) -> Optional[str]:
@@ -290,8 +365,8 @@ def translation_sections(document_id: int, output_path: Optional[str]) -> list[d
                 "seq": section.get("seq", index),
                 "title": section.get("title") or block["title"],
                 "section_type": section.get("section_type"),
-                "source": block["source"],
-                "target": block["target"],
+                "source": normalize_reader_text(block["source"]),
+                "target": normalize_reader_text(block["target"]),
                 "note": block["note"],
             }
         )
@@ -357,11 +432,13 @@ def translate_paper_abstract(paper_id: int, target_lang: str, translation_id: in
         raise ValueError("paper abstract translation job not found")
     translation = dict_from_row(row)
     try:
+        settings = get_settings()
         target_text = normalize_plain_text_translation(
             translate_text_preserving_formulas(
                 translation["source_text"],
-                get_translator(get_settings()),
+                get_translator(settings),
                 target_lang,
+                max_chunk_chars=settings.translation_chunk_chars,
             )
         )
         with get_conn() as conn:
@@ -524,7 +601,12 @@ def translate_document(
         blocks = ["# Bilingual Translation", "", note]
         for row in sections:
             section = dict_from_row(row)
-            target_text = translate_section_text(section, translator, target_lang)
+            target_text = translate_section_text(
+                section,
+                translator,
+                target_lang,
+                max_chunk_chars=settings.translation_chunk_chars,
+            )
             target_blocks = [f"### {target_lang}", ""]
             preserved_note = preserved_section_note(section)
             if preserved_note:

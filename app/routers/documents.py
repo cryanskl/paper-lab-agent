@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 from typing import Optional
 
@@ -8,12 +9,19 @@ from pydantic import BaseModel, field_validator
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
 from app.errors import AppError, AsyncJobResponse, PageResponse, page
-from app.services.chemistry import extract_reactions, mark_chemistry_queued
+from app.services.chemistry import (
+    ConfirmedReactionSetExistsError,
+    extract_reactions,
+    mark_chemistry_queued,
+)
 from app.services.document_pipeline import run_document_pipeline
 from app.services.documents import (
     assert_safe_document_storage_path,
+    figures_from_tei,
     mark_parse_queued,
+    normalize_reader_text,
     parse_document,
+    render_figure_png,
     save_upload,
 )
 from app.services.rag import index_document, mark_index_queued
@@ -114,6 +122,26 @@ class SectionListResponse(BaseModel):
     page_size: int
 
 
+class FigureResponse(BaseModel):
+    id: str
+    label: str
+    title: str
+    caption: str
+    page: int
+    x: float
+    y: float
+    width: float
+    height: float
+    image_url: str
+
+
+class FigureListResponse(BaseModel):
+    items: list[FigureResponse]
+    total: int
+    page: int
+    page_size: int
+
+
 class ChunkResponse(BaseModel):
     id: int
     document_id: int
@@ -151,6 +179,9 @@ class ReactionSetListItemResponse(BaseModel):
     reaction_count: int
     verified_count: int
     unverified_count: int
+    accepted_count: int
+    rejected_count: int
+    pending_count: int
     export_ready: bool
 
 
@@ -196,6 +227,58 @@ def get_document_or_404(document_id: int) -> dict:
         if not row:
             raise AppError(404, "document_not_found", "Document not found")
         return serialize_document(row, conn)
+
+
+def resolve_document_pdf_path(document: dict) -> Path:
+    configured_root = get_settings().pdf_dir.resolve()
+    raw_path = Path(document["file_path"])
+    try:
+        assert_safe_document_storage_path(raw_path)
+        path = raw_path.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise AppError(409, "document_file_unavailable", str(exc)) from exc
+    if path != configured_root and configured_root not in path.parents:
+        raise AppError(
+            409,
+            "document_file_outside_storage",
+            "Document file is outside the configured PDF directory",
+        )
+    if not path.is_file():
+        raise AppError(409, "document_file_unavailable", "Document PDF file is unavailable")
+    try:
+        with path.open("rb") as file_handle:
+            signature = file_handle.read(5)
+    except OSError as exc:
+        raise AppError(409, "document_file_unavailable", str(exc)) from exc
+    if signature != b"%PDF-":
+        raise AppError(415, "document_file_not_pdf", "Document file is not a PDF")
+    return path
+
+
+def document_figures(document: dict) -> list[dict]:
+    raw_tei_path = document.get("tei_path")
+    if not raw_tei_path:
+        raise AppError(409, "document_tei_unavailable", "Document TEI file is unavailable")
+    configured_root = get_settings().tei_dir.resolve()
+    raw_path = Path(raw_tei_path)
+    try:
+        assert_safe_document_storage_path(raw_path)
+        path = raw_path.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise AppError(409, "document_tei_unavailable", str(exc)) from exc
+    if path != configured_root and configured_root not in path.parents:
+        raise AppError(
+            409,
+            "document_tei_outside_storage",
+            "Document TEI file is outside the configured TEI directory",
+        )
+    if not path.is_file():
+        raise AppError(409, "document_tei_unavailable", "Document TEI file is unavailable")
+    try:
+        tei = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise AppError(409, "document_tei_unavailable", str(exc)) from exc
+    return figures_from_tei(tei, document["id"])
 
 
 @router.post(
@@ -281,28 +364,7 @@ def get_document(document_id: int) -> dict:
 )
 def open_document_file(document_id: int) -> Response:
     document = get_document_or_404(document_id)
-    configured_root = get_settings().pdf_dir.resolve()
-    raw_path = Path(document["file_path"])
-    try:
-        assert_safe_document_storage_path(raw_path)
-        path = raw_path.resolve(strict=True)
-    except (OSError, RuntimeError) as exc:
-        raise AppError(409, "document_file_unavailable", str(exc)) from exc
-    if path != configured_root and configured_root not in path.parents:
-        raise AppError(
-            409,
-            "document_file_outside_storage",
-            "Document file is outside the configured PDF directory",
-        )
-    if not path.is_file():
-        raise AppError(409, "document_file_unavailable", "Document PDF file is unavailable")
-    try:
-        with path.open("rb") as file_handle:
-            signature = file_handle.read(5)
-    except OSError as exc:
-        raise AppError(409, "document_file_unavailable", str(exc)) from exc
-    if signature != b"%PDF-":
-        raise AppError(415, "document_file_not_pdf", "Document file is not a PDF")
+    path = resolve_document_pdf_path(document)
     return FileResponse(
         path,
         media_type="application/pdf",
@@ -315,11 +377,63 @@ def open_document_file(document_id: int) -> Response:
     )
 
 
+@router.get("/{document_id}/figures", response_model=FigureListResponse)
+def list_figures(
+    document_id: int,
+    page_num: int = Query(1, alias="page", ge=1),
+    page_size: int = Query(100, ge=1, le=100),
+) -> dict:
+    document = get_document_or_404(document_id)
+    figures = document_figures(document)
+    offset = (page_num - 1) * page_size
+    return page(figures[offset : offset + page_size], len(figures), page_num, page_size)
+
+
+@router.get(
+    "/{document_id}/figures/{figure_id}/image",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "Figure crop rendered from the locally stored PDF",
+            "content": {
+                "image/png": {
+                    "schema": {"type": "string", "format": "binary"},
+                }
+            },
+        }
+    },
+)
+def open_figure_image(document_id: int, figure_id: str) -> Response:
+    document = get_document_or_404(document_id)
+    figure = next(
+        (item for item in document_figures(document) if item["id"] == figure_id),
+        None,
+    )
+    if figure is None:
+        raise AppError(404, "document_figure_not_found", "Document figure not found")
+    path = resolve_document_pdf_path(document)
+    try:
+        content = render_figure_png(path, figure)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise AppError(409, "document_figure_unavailable", str(exc)) from exc
+    return Response(
+        content=content,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "private, max-age=3600",
+            "Content-Disposition": f'inline; filename="{figure_id}.png"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.post("/{document_id}/parse", status_code=202, response_model=AsyncJobResponse, response_model_exclude_none=True)
 def parse(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
     try:
         mark_parse_queued(document_id)
+    except ConfirmedReactionSetExistsError as exc:
+        raise AppError(409, "confirmed_reaction_set_exists", str(exc))
     except Exception as exc:
         raise AppError(500, "parse_queue_failed", str(exc))
     background_tasks.add_task(parse_document, document_id)
@@ -340,7 +454,10 @@ def list_sections(
             "SELECT * FROM sections WHERE document_id=? ORDER BY seq LIMIT ? OFFSET ?",
             (document_id, page_size, offset),
         ).fetchall()
-    return page([dict_from_row(row) for row in rows], total, page_num, page_size)
+    items = [dict_from_row(row) for row in rows]
+    for item in items:
+        item["content"] = normalize_reader_text(item.get("content"))
+    return page(items, total, page_num, page_size)
 
 
 @router.get("/{document_id}/chunks", response_model=ChunkListResponse)
@@ -424,7 +541,20 @@ def index(document_id: int, background_tasks: BackgroundTasks) -> dict:
 )
 def extract_chemistry(document_id: int, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
-    mark_chemistry_queued(document_id)
+    try:
+        mark_chemistry_queued(document_id)
+    except ConfirmedReactionSetExistsError as exc:
+        raise AppError(409, "confirmed_reaction_set_exists", str(exc))
+    except sqlite3.OperationalError as exc:
+        if "locked" in str(exc).lower():
+            raise AppError(
+                409,
+                "document_busy",
+                "Document is busy with another processing task; retry after it finishes",
+            )
+        raise AppError(500, "chemistry_queue_failed", str(exc))
+    except Exception as exc:
+        raise AppError(500, "chemistry_queue_failed", str(exc))
     background_tasks.add_task(extract_reactions, document_id)
     return {"job_id": document_id, "document_id": document_id, "chemistry_status": "extracting", "status": "pending"}
 
@@ -444,8 +574,9 @@ def document_reaction_sets(
             SELECT
                 reaction_sets.*,
                 COUNT(reactions.id) AS reaction_count,
-                COALESCE(SUM(CASE WHEN reactions.verified = 1 THEN 1 ELSE 0 END), 0) AS verified_count,
-                COALESCE(SUM(CASE WHEN reactions.verified = 0 THEN 1 ELSE 0 END), 0) AS unverified_count
+                COALESCE(SUM(CASE WHEN reactions.verified = 1 OR reactions.review_status = 'accepted' THEN 1 ELSE 0 END), 0) AS verified_count,
+                COALESCE(SUM(CASE WHEN reactions.review_status = 'rejected' THEN 1 ELSE 0 END), 0) AS rejected_count,
+                COALESCE(SUM(CASE WHEN reactions.verified = 0 AND reactions.review_status = 'pending' THEN 1 ELSE 0 END), 0) AS unverified_count
             FROM reaction_sets
             LEFT JOIN reactions ON reactions.reaction_set_id = reaction_sets.id
             WHERE reaction_sets.document_id=?
@@ -461,9 +592,13 @@ def document_reaction_sets(
         reaction_count = int(item.get("reaction_count") or 0)
         verified_count = int(item.get("verified_count") or 0)
         unverified_count = int(item.get("unverified_count") or 0)
+        rejected_count = int(item.get("rejected_count") or 0)
         item["reaction_count"] = reaction_count
         item["verified_count"] = verified_count
         item["unverified_count"] = unverified_count
-        item["export_ready"] = reaction_count > 0 and unverified_count == 0
+        item["accepted_count"] = verified_count
+        item["rejected_count"] = rejected_count
+        item["pending_count"] = unverified_count
+        item["export_ready"] = verified_count > 0 and unverified_count == 0
         items.append(item)
     return page(items, total, page_num, page_size)

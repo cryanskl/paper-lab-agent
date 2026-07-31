@@ -208,7 +208,7 @@ def storage_path_health(path: Path, *, expected_type: str = "directory") -> dict
     }
 
 
-def vector_store_health(path: Path, backend: str = "local-json") -> dict:
+def vector_store_health(path: Path, backend: str = "chroma") -> dict:
     normalized_backend = normalize_vector_db_backend(backend)
     exists = path.exists()
     safe_path = True
@@ -273,7 +273,7 @@ def config_warnings(settings) -> list[dict]:
             {
                 "code": "missing_openalex_api_key",
                 "capability": "openalex_crawl",
-                "message": "OPENALEX_API_KEY is not configured; OpenAlex requests may be rejected, while Crossref fallback and local offline mode remain available.",
+                "message": "OPENALEX_API_KEY is not configured; OpenAlex requests may be rejected while Crossref fallback remains available.",
             }
         )
     if not settings.unpaywall_email:
@@ -393,6 +393,16 @@ async def status(check_external: bool = False) -> dict:
     counts = {
         "journals": table_count("journals"),
         "papers": table_count("papers"),
+        "downloaded_papers": (
+            fetch_one(
+                """
+                SELECT COUNT(*) AS n
+                FROM paper_downloads
+                WHERE status='downloaded'
+                """
+            )
+            or {"n": 0}
+        )["n"],
         "categories": table_count("categories"),
         "paper_categories": table_count("paper_categories"),
         "crawl_jobs": table_count("crawl_jobs"),

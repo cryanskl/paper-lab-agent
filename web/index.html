@@ -19,6 +19,8 @@
     <div class="spacer"></div>
     <div class="sysbox" id="sysbox">
       <div class="sysbox-title">系统状态</div>
+      <div class="sysrow"><span>文献总数</span><span class="dim">—</span></div>
+      <div class="sysrow"><span>已下载文献</span><span class="dim">—</span></div>
       <div class="sysrow"><span>翻译引擎</span><span class="dim">—</span></div>
       <div class="sysrow"><span>RAG 索引</span><span class="dim">—</span></div>
       <div class="sysrow"><span>学术 API</span><span class="dim">—</span></div>
@@ -82,9 +84,15 @@
     <div class="scroll" id="search-scroll">
       <div class="search-result-head">
         <div class="result-meta" id="search-meta">输入关键词后检索本地库，或在白名单期刊中联网搜索</div>
-        <div class="search-batch-actions" id="search-batch-actions" hidden>
-          <button class="btn-primary sm" id="save-search-batch">保存到本地库</button>
-          <button class="btn-ghost sm danger" id="discard-search-batch">撤销本次结果</button>
+        <div class="search-result-actions">
+          <div class="search-download-actions">
+            <button class="btn-ghost sm" id="download-current-page" disabled>当页下载</button>
+            <button class="btn-primary sm" id="download-all-results" disabled>全部下载</button>
+          </div>
+          <div class="search-batch-actions" id="search-batch-actions" hidden>
+            <button class="btn-primary sm" id="save-search-batch">保存到本地库</button>
+            <button class="btn-ghost sm danger" id="discard-search-batch">撤销本次结果</button>
+          </div>
         </div>
       </div>
       <div id="search-results"></div>
@@ -230,7 +238,21 @@
           <input id="newproj-name" class="input sm" placeholder="新项目名称" style="width:150px">
           <button class="btn-primary sm" id="confirm-newproj">创建</button>
         </span>
+        <span class="spacer"></span>
+        <div class="library-bulk-controls" aria-label="批量处理文献">
+          <button class="btn-ghost sm" id="library-selection-toggle" type="button">批量处理</button>
+          <label class="library-select-all" id="library-select-all-control" for="library-select-all" hidden>
+            <input id="library-select-all" type="checkbox">
+            <span class="box" aria-hidden="true"></span>
+            <span>全选</span>
+          </label>
+          <span class="library-selection-count" id="library-selection-count" hidden>已选 0 篇</span>
+          <button class="btn-primary sm library-process-open" id="library-process-open"
+            type="button" disabled hidden>处理所选 <span aria-hidden="true">⌄</span></button>
+        </div>
       </div>
+      <div class="library-bulk-progress" id="library-bulk-progress"
+        role="status" aria-live="polite" hidden></div>
       <div class="lib-grid" id="lib-grid"></div>
     </div>
   </section>
@@ -412,13 +434,29 @@
       </div>
 
       <div id="all-note" hidden>
-        <div class="allbox">全库检索覆盖全部 <span id="all-doc-count">0</span> 篇文献的 <span id="all-chunk-count">0</span> 个切块，无需选择文献。</div>
+        <div class="allbox">全库检索覆盖全部 <span id="all-doc-count">0</span> 篇已索引文献，无需逐篇选择。</div>
       </div>
 
       <div id="doc-picker" hidden>
-        <div class="side-label mt">选择文献</div>
-        <input id="doc-search" class="input sm full" placeholder="搜索标题 / 作者 / DOI…">
-        <div class="stack" id="doc-opts"></div>
+        <div class="side-label-row mt">
+          <div class="side-label">选择文献</div>
+          <button class="doc-picker-toggle" id="doc-picker-toggle" type="button"
+            aria-controls="doc-picker-panel" aria-expanded="true">选择文献</button>
+        </div>
+        <div class="selected-chat-doc" id="selected-chat-doc"></div>
+        <div class="doc-picker-panel" id="doc-picker-panel">
+          <input id="doc-search" class="input sm full" placeholder="搜索标题 / 作者 / DOI…">
+          <div class="doc-result-bar">
+            <span id="doc-result-summary">共 0 篇</span>
+            <span>每页 6 篇</span>
+          </div>
+          <div class="stack doc-options" id="doc-opts"></div>
+          <div class="doc-pagination" id="doc-pagination" hidden>
+            <button id="doc-page-prev" type="button" aria-label="上一页">‹</button>
+            <span id="doc-page-status">1 / 1</span>
+            <button id="doc-page-next" type="button" aria-label="下一页">›</button>
+          </div>
+        </div>
       </div>
 
       <div class="side-label-row mt">
@@ -444,7 +482,6 @@
     <div class="chat-main">
       <div class="chat-head">
         <div class="screen-title sm">AI 问答</div>
-        <div class="screen-sub ellipsis" id="scope-summary"></div>
       </div>
       <div class="chat-log" id="chat-log"></div>
       <div class="chat-input-bar">
@@ -453,7 +490,7 @@
           <input id="chat-input" class="input flex" placeholder="输入问题，或键入 / 唤起内置与自定义预设指令">
           <button class="btn-primary" id="chat-send">发送</button>
         </div>
-        <div class="chat-hint">回答基于所选范围内已建索引的 PDF 段落向量检索，引用标记 [n·¶段] 可点击跳转原文</div>
+        <div class="chat-hint">回答仅基于所选文献内容，回答下方的原文引用可点击定位</div>
       </div>
     </div>
   </section>
@@ -461,21 +498,21 @@
   <!-- ── 化学库复核 ─────────────────────────────────────── -->
   <section class="screen row" data-screen="chemistry" hidden>
     <div class="chem-side">
-      <div class="side-label">已抽取的文档</div>
+      <div class="side-label">反应集复核队列</div>
+      <div class="chem-side-intro">以反应集为主；每个反应集下方保留来源文献，便于回到原文核对。</div>
       <div class="stack" id="chem-docs"></div>
-
-      <div class="side-label mt">反应集</div>
-      <div class="stack" id="chem-sets"></div>
     </div>
     <div class="chem-main">
       <div class="chem-head">
-        <div class="screen-title sm">化学库复核</div>
+        <div class="screen-title sm">化学库</div>
         <div class="screen-sub ellipsis" id="chem-summary">选择左侧文档以载入反应集</div>
         <div class="spacer"></div>
         <div class="chem-exports" id="chem-exports" hidden>
           <button class="btn-ghost sm" data-export="json">导出 JSON</button>
-          <button class="btn-ghost sm" data-export="txt">导出 TXT</button>
-          <button class="btn-primary sm" data-export="bolsig">导出 BOLSIG+</button>
+          <div class="equal-action-pair chem-export-format-actions">
+            <button class="btn-ghost sm" data-export="txt">导出 TXT</button>
+            <button class="btn-primary sm" data-export="bolsig">导出 BOLSIG+</button>
+          </div>
         </div>
       </div>
       <div class="gate" id="chem-gate" hidden></div>
@@ -490,6 +527,64 @@
   </div>
   <div class="toast" id="toast" hidden></div>
 </div>
+<div class="figure-lightbox" id="figure-lightbox" role="dialog" aria-modal="true"
+  aria-label="文献图片预览" hidden>
+  <button class="figure-lightbox-close" id="figure-lightbox-close" type="button"
+    aria-label="关闭图片预览">×</button>
+  <div class="figure-lightbox-content">
+    <img id="figure-lightbox-image" alt="">
+    <div class="figure-lightbox-caption" id="figure-lightbox-caption"></div>
+  </div>
+</div>
+<dialog class="action-confirm-dialog" id="action-confirm-dialog"
+  aria-labelledby="action-confirm-title" aria-describedby="action-confirm-message">
+  <div class="action-confirm-panel">
+    <h2 id="action-confirm-title">确认操作</h2>
+    <p id="action-confirm-message"></p>
+    <p class="action-confirm-detail" id="action-confirm-detail" hidden></p>
+    <div class="action-confirm-actions">
+      <button class="btn-ghost" id="action-confirm-cancel" type="button">取消</button>
+      <button class="btn-primary" id="action-confirm-submit" type="button">确认</button>
+    </div>
+  </div>
+</dialog>
+<dialog class="library-process-dialog" id="library-process-dialog"
+  aria-labelledby="library-process-title" aria-describedby="library-process-message">
+  <form class="library-process-panel" id="library-process-form">
+    <div class="library-process-eyebrow">DOCUMENT PIPELINE</div>
+    <h2 id="library-process-title">处理所选文献</h2>
+    <p id="library-process-message">选择要执行的处理步骤。</p>
+    <div class="library-process-steps">
+      <label class="library-process-step">
+        <input type="checkbox" name="library-process-step" value="parse" checked>
+        <span class="step-index">01</span>
+        <span><strong>解析全文</strong><small>通过 GROBID 生成结构化章节</small></span>
+      </label>
+      <label class="library-process-step">
+        <input type="checkbox" name="library-process-step" value="translate" checked>
+        <span class="step-index">02</span>
+        <span><strong>翻译为目标语言</strong><small>使用上方选择的目标语言</small></span>
+      </label>
+      <label class="library-process-step">
+        <input type="checkbox" name="library-process-step" value="index" checked>
+        <span class="step-index">03</span>
+        <span><strong>建立 RAG 索引</strong><small>切分章节并写入当前向量库</small></span>
+      </label>
+      <label class="library-process-step">
+        <input type="checkbox" name="library-process-step" value="chemistry" checked>
+        <span class="step-index">04</span>
+        <span><strong>抽取化学库</strong><small>结果进入待复核，不会自动导出</small></span>
+      </label>
+    </div>
+    <p class="library-process-note">
+      已完成步骤会自动跳过；翻译、索引和化学抽取遇到未解析文档时会先执行解析。
+    </p>
+    <div class="library-process-actions">
+      <button class="btn-ghost" id="library-process-cancel" type="button">取消</button>
+      <button class="btn-primary" id="library-process-submit" type="submit">开始处理</button>
+    </div>
+  </form>
+</dialog>
 <script src="app.js"></script>
 </body>
 </html>

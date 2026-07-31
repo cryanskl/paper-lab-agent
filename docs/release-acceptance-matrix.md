@@ -6,7 +6,7 @@
 
 | 维度 | 来源 | Gate |
 | --- | --- | --- |
-| 产品范围 | `docs/PRD_等离子体文献系统.md` | `bash scripts/release_check.sh` 覆盖离线 smoke、demo 数据和全量测试 |
+| 产品范围 | `docs/PRD_等离子体文献系统.md` | `bash scripts/release_check.sh` 覆盖隔离 smoke、demo 数据和全量测试 |
 | 实施顺序 | `docs/任务拆分_开发路线.md` | release gate 按阶段链路验证基础、检索、文档理解、RAG、化学库交付 |
 | API 契约 | `docs/接口设计文档.md` | `python scripts/validate_api_contract.py` 与导出的 OpenAPI schema 对齐 |
 | 数据模型 | `docs/schema.sql` | `python scripts/validate_schema.py` 校验 schema、种子期刊、FTS 和关键索引 |
@@ -69,4 +69,4 @@ python scripts/build_release_handoff.py --artifact-dir out/release --package out
 - `python scripts/health_check.py --require-release-ready` 在目标运行环境通过。
 - 需要前端演示时，`python scripts/health_check.py --require-frontend` 通过。
 - 需要接口交接时，`python scripts/health_check.py --require-openapi` 或 handoff package 验证通过。
-- 需要真实 GROBID 解析时，额外运行 `python scripts/health_check.py --require-grobid`；默认离线发布不强制 GROBID。
+- 需要真实 GROBID 解析时，额外运行 `python scripts/health_check.py --require-grobid`；fixture 发布门禁不强制连接 GROBID。

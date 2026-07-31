@@ -26,7 +26,7 @@ bash scripts/dev.sh
 ```
 
 服务启动时会自动用 `docs/schema.sql` 初始化 `data/plasma.db`。
-`scripts/doctor.py --compact` 会在启动服务前检查 Python 版本、关键项目文件、Python 依赖是否可导入、本地存储目录可创建和可写，以及外部能力配置 warning；它会读取 `.env` 中的本地路径配置，但已导出的环境变量仍优先，适合新机器快速预检。compact 输出里的 `warning_count`、`warning_codes` 和 `warning_details` 用于提示 OpenAlex、Unpaywall、LLM 等可选外部能力是否未配置，也会提示 `unsupported_embedding_model`、`unsupported_vector_db_backend` 这类本地 RAG adapter 配置风险；这些 warning 不会阻断默认离线模式。发布、演示或交付前请使用 `python scripts/doctor.py --strict --compact`，让必需检查失败时返回非零退出码；release gate 会校验默认离线 preflight 的 `warning_count`、`warning_codes` 和 `warning_details`，防止预检摘要漂移。release gate runs default offline preflight with optional external env explicitly overridden to blank values, so a developer machine with real OpenAlex, Unpaywall, or LLM credentials in `.env` still exercises the deterministic offline handoff path.
+`scripts/doctor.py --compact` 会在启动服务前检查 Python 版本、关键项目文件、Python 依赖是否可导入、本地存储目录可创建和可写，以及外部能力配置 warning；它会读取 `.env` 中的本地路径配置，但已导出的环境变量仍优先，适合新机器快速预检。compact 输出里的 `warning_count`、`warning_codes` 和 `warning_details` 用于提示 OpenAlex、Unpaywall、LLM 等可选外部能力是否未配置，也会提示 `unsupported_embedding_model`、`unsupported_vector_db_backend` 这类 RAG 配置风险。发布、演示或交付前请使用 `python scripts/doctor.py --strict --compact`，让必需检查失败时返回非零退出码；release gate 固定验证正式的 `bge-m3 + Chroma` 索引契约，不再切换到旧哈希索引。
 `scripts/dev.sh` 会等待 FastAPI `/api/v1/health` 和 Streamlit `/_stcore/health` 都可访问后再打印地址。
 如果只设置 `PAPER_LAB_DATA_DIR`，SQLite、PDF、TEI、翻译、导出和本地向量索引默认都会落在该目录下；需要拆分存储位置时再单独设置 `DATABASE_PATH`、`PAPER_LAB_PDF_DIR`、`VECTOR_DB_PATH` 等变量。
 
@@ -57,8 +57,8 @@ curl http://127.0.0.1:8000/openapi.json
 API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
 ```
 
-`/api/v1/system/status` 会返回 `config_warnings`，用于提示 OpenAlex、Unpaywall、LLM 等可选外部能力是否还未配置；缺失不会阻断默认离线模式。对于 unsupported RAG adapter 这类配置风险，warning 会带上 `actual` 和 `supported`，直接展示当前配置值和本版本支持列表。
-同一响应里的 `release_readiness` 会汇总演示数据、失败工作流、配置 warning 和存储可写性；`demo_data_missing`、`failed_workflows` 和 `storage_errors` 会阻断默认离线发布就绪状态，`config_warning_codes` 只提示可选外部能力缺失。`python scripts/health_check.py --summary-only --compact` 与 `--require-release-ready` 都会优先使用这个 API 聚合结果输出或阻断发布就绪状态。compact summary 会额外给出 `workflows_ok`、`config_ready` 和 `release_blockers`，便于快速判断是任务失败、配置未完成还是存储/演示数据阻断。
+`/api/v1/system/status` 会返回 `config_warnings`，用于提示 OpenAlex、Unpaywall、LLM 等可选外部能力是否还未配置；这些可选能力缺失不会阻断基础发布就绪。对于 unsupported RAG adapter 这类配置风险，warning 会带上 `actual` 和 `supported`，直接展示当前配置值和本版本支持列表。
+同一响应里的 `release_readiness` 会汇总演示数据、失败工作流、配置 warning 和存储可写性；`demo_data_missing`、`failed_workflows` 和 `storage_errors` 会阻断发布就绪状态，`config_warning_codes` 只提示可选外部能力缺失。`python scripts/health_check.py --summary-only --compact` 与 `--require-release-ready` 都会优先使用这个 API 聚合结果输出或阻断发布就绪状态。compact summary 会额外给出 `workflows_ok`、`config_ready` 和 `release_blockers`，便于快速判断是任务失败、配置未完成还是存储/演示数据阻断。
 同一响应里的 `translation_adapter` 和 `llm_model` 会说明当前翻译链路使用本地 `local-echo` 还是 `openai-compatible`，`python scripts/health_check.py` 会把这两个字段作为发布健康契约校验。
 
 导出 OpenAPI JSON 给前端、评审或发布流程使用时，不启动服务也可以生成当前接口 schema：
@@ -95,7 +95,7 @@ curl 'http://127.0.0.1:8000/api/v1/documents'
 PAPER_LAB_SCHEDULER_ENABLED=true bash scripts/dev.sh
 ```
 
-默认关闭 scheduler，避免本地离线测试和首次启动时自动访问外部 API。启用后可在 Streamlit 侧边栏或 `/api/v1/system/status` 的 `runtime.scheduler_enabled` 确认状态；`runtime.scheduler_jobs` 会列出 daily / weekly / monthly 抓取计划和 UTC 触发时间。
+默认关闭 scheduler，避免本地隔离测试和首次启动时自动访问外部 API。启用后可在 Streamlit 侧边栏或 `/api/v1/system/status` 的 `runtime.scheduler_enabled` 确认状态；`runtime.scheduler_jobs` 会列出 daily / weekly / monthly 抓取计划和 UTC 触发时间。
 
 ## Backend Only
 
@@ -159,9 +159,9 @@ Windows 相关注意事项：
 
 联网搜索在未选择单本期刊时会覆盖全部 active 白名单期刊，并默认同时处理 3 本；可通过 `.env` 的 `CRAWL_MAX_CONCURRENCY=1..10` 调整。后端会等待所有期刊候选完成，再按“期刊内相关性排序 + 跨期刊轮转”填充全局 20/50/100 篇配额，避免响应最快的期刊垄断结果。OA 补全只对进入配额的结果执行，精确重复查询缓存 TTL 为 24 小时。前端最多等待 30 分钟并持续显示完成数，等待超时只停止页面轮询，不会取消后端已经创建的搜索任务。
 
-离线默认仍使用 `EMBEDDING_MODEL=local-hash` 与 `VECTOR_DB_BACKEND=local-json`。需要中文提问匹配英文论文时，
-可配置 `EMBEDDING_MODEL=bge-m3`、`VECTOR_DB_BACKEND=chroma` 和独立的 `VECTOR_DB_PATH`；切换 embedding
-模型后必须重新索引已有文档，避免新旧向量维度混用。
+默认使用 `EMBEDDING_MODEL=bge-m3`、`VECTOR_DB_BACKEND=chroma` 和目录型 `VECTOR_DB_PATH=data/chroma`，
+用于中文问题跨语言检索英文论文。旧的 `local-hash/local-json` 仅保留为历史索引迁移诊断兼容，不再作为
+产品默认或发布验收路径；从旧配置切换后必须重新索引已有文档，避免新旧向量维度混用。
 
 ## Streamlit
 
@@ -179,7 +179,7 @@ API_BASE_URL=http://127.0.0.1:8000/api/v1 python -m streamlit run streamlit_app.
 
 ## Optional GROBID
 
-GROBID 只在解析真实 PDF 时需要。离线测试和本地文本 fallback 不依赖它。
+GROBID 只在解析真实 PDF 时需要。隔离测试和本地文本 fallback 不依赖它。
 `--check-external` 会主动检查 GROBID；默认健康检查不访问外部服务。
 
 ```bash
@@ -197,7 +197,7 @@ python scripts/doctor.py --strict --compact
 bash scripts/release_check.sh
 ```
 
-这两条命令会执行与 CI 相同的离线发布检查：先用 strict doctor 阻断缺失依赖或关键文件，再校验启动脚本语法、`git diff --check`、`git diff --cached --check`、编译关键脚本、检查 scripts 目录下所有 Python 脚本的 `--help` 入口以提前发现 CLI 参数或 import path 问题。release gate also starts a live API with prepared demo data and runs `scripts/health_check.py --require-release-ready` before running the full test suite.
+这两条命令会执行与 CI 相同的正式索引发布检查：先用 strict doctor 阻断缺失依赖或关键文件，再校验启动脚本语法、`git diff --check`、`git diff --cached --check`、编译关键脚本、检查 scripts 目录下所有 Python 脚本的 `--help` 入口以提前发现 CLI 参数或 import path 问题。release gate also starts a live API with prepared demo data and runs `scripts/health_check.py --require-release-ready` before running the full test suite.
 发布或演示前的完整检查顺序见 [docs/release-checklist.md](docs/release-checklist.md)。
 
 `python scripts/health_check.py --check-frontend` 会额外探测 Streamlit `/_stcore/health`，用于确认 `scripts/dev.sh` 启动后的后端和前端都可访问。
@@ -208,16 +208,16 @@ bash scripts/release_check.sh
 `python scripts/health_check.py --require-no-failed-workflows` 会在抓取、解析、索引、翻译、化学抽取或反应集复核状态统计中存在 `failed`、`rejected` 或 `unknown` 项时返回非零，适合部署前确认没有已知失败、拒绝或未知状态积压。
 `python scripts/health_check.py --require-no-config-warnings` 会在 OpenAlex、Unpaywall、LLM、向量后端等配置告警存在时返回非零，适合正式演示或部署前确认外部能力已按预期配置。
 `python scripts/health_check.py --require-demo-data` 会在 live API 的 `counts` 缺少期刊、论文、文档、章节、chunk、反应集或反应样例时返回非零，适合正式演示前确认 walking skeleton 数据已准备好。
-`python scripts/health_check.py --require-release-ready` 会组合 storage writable、no failed workflows 和 demo data 三个默认离线门禁；外部能力配置用 `--require-no-config-warnings` 按需单独强制，前端和 GROBID 仍用 `--require-frontend`、`--require-grobid` 按需单独强制。
+`python scripts/health_check.py --require-release-ready` 会组合 storage writable、no failed workflows 和 demo data 三个基础门禁；外部能力配置用 `--require-no-config-warnings` 按需单独强制，前端和 GROBID 仍用 `--require-frontend`、`--require-grobid` 按需单独强制。
 `DEV_EXIT_AFTER_READY=true bash scripts/dev.sh` 会在 API 和 Streamlit 都 ready 后退出并清理子进程，适合 CI 或发布前验证统一启动命令本身。
 
-如需只跑离线 walking skeleton smoke：
+如需只跑隔离的 walking skeleton smoke：
 
 ```bash
 python -m scripts.smoke_check
 ```
 
-该 smoke 会在临时目录初始化空库、导入 fixture 论文、验证 `/papers` 检索，并跑通 PDF fallback 的上传、解析、索引、RAG 查询，以及翻译、化学抽取、复核闸门和导出，不访问外部服务。输出 JSON 会包含 `config_warning_count`、`config_warning_codes` 和 `config_warning_details`，用于确认离线 smoke 允许的可选外部能力缺口。
+该 smoke 会在临时目录初始化空库、导入 fixture 论文、验证 `/papers` 检索，并以正式的 `bge-m3 + Chroma` 契约跑通 PDF fallback 的上传、解析、索引、RAG 查询，以及翻译、化学抽取、复核闸门和导出；为保证测试可复现，它不访问外部服务。输出 JSON 会包含 `config_warning_count`、`config_warning_codes` 和 `config_warning_details`，用于确认隔离 smoke 允许的可选外部能力缺口。
 
 如需只跑测试：
 
@@ -227,7 +227,7 @@ python -m pytest -q
 
 默认测试使用临时 SQLite 数据库和本地 fixture，不依赖外部网络、GROBID 或真实模型。
 
-CI 配置在 `.github/workflows/ci.yml`，默认跑同一条离线测试命令；GitHub Actions 也支持 `workflow_dispatch`，可在发布或演示前手动触发 release gate。
+CI 配置在 `.github/workflows/ci.yml`，默认跑同一条隔离测试命令；GitHub Actions 也支持 `workflow_dispatch`，可在发布或演示前手动触发 release gate。
 
 ## Troubleshooting
 

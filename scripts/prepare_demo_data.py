@@ -193,7 +193,7 @@ def prepare_demo_data(target_lang: str = "zh", verified_by: str = "prepare-demo-
     from app.db import dict_from_row, get_conn, init_db
     from app.routers.system import demo_data_status
     from app.fixture_loader import load_fixture_documents, load_fixture_papers
-    from app.services.chemistry import export_reaction_set, extract_reactions
+    from app.services.chemistry import export_reaction_set, extract_reactions, reaction_set_detail
     from app.services.documents import parse_document
     from app.services.rag import index_document
     from app.services.translation import LocalEchoTranslator, translate_document
@@ -207,32 +207,73 @@ def prepare_demo_data(target_lang: str = "zh", verified_by: str = "prepare-demo-
 
     with get_conn() as conn:
         document_id = fixture_document_id(conn)
+        document_row = conn.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
+        confirmed_row = conn.execute(
+            """
+            SELECT *
+            FROM reaction_sets
+            WHERE document_id=? AND status='verified'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (document_id,),
+        ).fetchone()
+        translation_row = conn.execute(
+            """
+            SELECT *
+            FROM translations
+            WHERE document_id=? AND target_lang=? AND status='done'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (document_id, target_lang),
+        ).fetchone()
 
-    document = asyncio.run(parse_document(document_id))
-    if document.get("parse_status") != "parsed":
-        raise RuntimeError(f"demo document parse failed: {document.get('parse_error')}")
+    if confirmed_row:
+        document = dict_from_row(document_row)
+        if document.get("parse_status") != "parsed":
+            raise RuntimeError("confirmed demo reaction set has no parsed source document")
+    else:
+        document = asyncio.run(parse_document(document_id))
+        if document.get("parse_status") != "parsed":
+            raise RuntimeError(f"demo document parse failed: {document.get('parse_error')}")
 
-    index_result = index_document(document_id)
-    if index_result.get("status") != "indexed":
-        raise RuntimeError(f"demo document index failed: {index_result.get('error')}")
+    if document.get("index_status") == "indexed":
+        index_result = {"document_id": document_id, "status": "indexed", "reused": True}
+    else:
+        index_result = index_document(document_id)
+        if index_result.get("status") != "indexed":
+            raise RuntimeError(f"demo document index failed: {index_result.get('error')}")
 
     # Release fixtures must be deterministic and must never spend an external
     # model call merely to assemble a handoff bundle.
-    translation = translate_document(
-        document_id,
-        target_lang,
-        translator_override=LocalEchoTranslator(),
-    )
-    if translation.get("status") != "done":
-        raise RuntimeError(f"demo document translation failed: {translation.get('error')}")
+    if translation_row:
+        translation = dict_from_row(translation_row)
+    else:
+        translation = translate_document(
+            document_id,
+            target_lang,
+            translator_override=LocalEchoTranslator(),
+        )
+        if translation.get("status") != "done":
+            raise RuntimeError(f"demo document translation failed: {translation.get('error')}")
 
-    reaction_set = extract_reactions(document_id)
-    reactions = reaction_set.get("reactions") or []
-    if not reactions:
-        raise RuntimeError("demo chemistry extraction produced no reactions")
-    verified_reaction_set = verify_all_reactions(reaction_set, verified_by)
-    if verified_reaction_set.get("status") != "verified":
-        raise RuntimeError("demo reaction set verification did not reach verified status")
+    if confirmed_row:
+        with get_conn() as conn:
+            verified_reaction_set = reaction_set_detail(dict_from_row(confirmed_row), conn)
+        if verified_reaction_set.get("verified_by") != verified_by:
+            raise RuntimeError(
+                "confirmed demo reaction set reviewer does not match "
+                f"{verified_by}: {verified_reaction_set.get('verified_by')}"
+            )
+    else:
+        reaction_set = extract_reactions(document_id)
+        reactions = reaction_set.get("reactions") or []
+        if not reactions:
+            raise RuntimeError("demo chemistry extraction produced no reactions")
+        verified_reaction_set = verify_all_reactions(reaction_set, verified_by)
+        if verified_reaction_set.get("status") != "verified":
+            raise RuntimeError("demo reaction set verification did not reach verified status")
 
     exports = {
         fmt: export_reaction_set(int(verified_reaction_set["id"]), fmt)

@@ -161,6 +161,27 @@ def test_get_translation_endpoint_returns_reader_sections(tmp_path):
     assert payload["sections"][0]["target"] == "氩等离子体摘要。"
 
 
+def test_translation_sections_hide_internal_targets_and_keep_safe_scientific_tags(tmp_path):
+    make_client(tmp_path)
+    from app import db
+    from app.services.translation import translation_sections
+
+    markdown = BILINGUAL_MARKDOWN.replace(
+        "氩等离子体摘要。",
+        "参见图1（#fig_0），压力为1.01×10<sup>5</sup> Pa。",
+    ).replace(
+        "Argon plasma abstract.",
+        "See figure 1 (#fig_0).",
+    )
+    document_id = seed_translated_document(tmp_path, db, markdown)
+    output_path = str(tmp_path / "translations" / f"document-{document_id}-zh.md")
+
+    sections = translation_sections(document_id, output_path)
+
+    assert sections[0]["source"] == "See figure 1."
+    assert sections[0]["target"] == "参见图1，压力为1.01×10<sup>5</sup> Pa。"
+
+
 def test_get_translation_endpoint_returns_empty_sections_when_output_missing(tmp_path):
     client = make_client(tmp_path)
     from app import db
@@ -269,6 +290,7 @@ def test_web_ui_progressively_prefetches_abstract_translations_without_revealing
 def test_web_ui_separates_local_search_from_online_sync():
     index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
 
     assert "关键词用中英文逗号分隔（, 或 ，）" in index
     assert r".split(/[\n,，;；]+/)" in app_js
@@ -277,6 +299,9 @@ def test_web_ui_separates_local_search_from_online_sync():
     assert 'id="do-search">本地检索</button>' in index
     assert 'id="do-online-search">联网搜索</button>' in index
     assert index.index('id="do-online-search"') < index.index('id="do-search"')
+    assert ".search-actions > button {" in styles
+    assert "width: 112px;" in styles
+    assert "min-height: 34px;" in styles
     assert 'id="search-mode"' in index
     assert 'id="search-limit"' in index
     assert "async function runOnlineSearch()" in app_js
@@ -299,6 +324,20 @@ def test_web_ui_library_omits_redundant_file_hash_summary():
     assert "共 ${state.documents.length} 篇 · 上传 PDF 后按 file_hash 去重" not in app_js
 
 
+def test_web_ui_library_metadata_uses_two_semantic_rows():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert 'class="lib-meta-journal"' in app_js
+    assert 'class="lib-meta-details"' in app_js
+    assert "`发表 ${paper.published_date}`" in app_js
+    assert "`上传 ${doc.created_at.slice(0, 10)}`" in app_js
+    assert ".lib-meta {" in styles
+    assert "display: grid; gap: 2px;" in styles
+    assert ".lib-meta-details > span {" in styles
+    assert "white-space: nowrap;" in styles
+
+
 def test_web_ui_library_upload_starts_automatic_document_processing():
     index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
@@ -308,6 +347,48 @@ def test_web_ui_library_upload_starts_automatic_document_processing():
     assert "form.append('target_lang', persisted.targetLang)" in app_js
     assert "${file.name} 已上传，正在自动处理…" in app_js
     assert "api(`/documents/${doc.id}/parse`, { method: 'POST' }).catch(() => {});" not in app_js
+
+
+def test_web_ui_library_can_select_documents_and_run_an_idempotent_pipeline():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert 'id="library-select-all"' in index
+    assert 'id="library-selection-toggle"' in index
+    assert 'id="library-select-all-control"' in index
+    assert 'id="library-process-open"' in index
+    assert 'id="library-process-dialog"' in index
+    assert 'name="library-process-step" value="parse"' in index
+    assert 'name="library-process-step" value="translate"' in index
+    assert 'name="library-process-step" value="index"' in index
+    assert 'name="library-process-step" value="chemistry"' in index
+    assert 'data-doc-select="${doc.id}"' in app_js
+    assert "librarySelectionMode: false" in app_js
+    assert "state.librarySelectionMode = !state.librarySelectionMode" in app_js
+    assert "const selectionControl = state.librarySelectionMode || state.libraryBulkRunning" in app_js
+    assert "function renderLibraryBulkControls()" in app_js
+    assert "async function runSelectedLibraryProcess(steps)" in app_js
+    assert "await ensureDocumentParsed(documentId, counters)" in app_js
+    assert "document.index_status === 'indexed'" in app_js
+    assert "document.chemistry_status === 'extracted'" in app_js
+    assert "翻译仅返回原文" in app_js
+    assert ".library-bulk-controls {" in styles
+    assert '.library-select-all input:checked + .box::after' in styles
+    assert '.lib-select input:checked + .box::after' in styles
+    assert 'content: "✓"' in styles
+    assert '<span class="box" aria-hidden="true">${selected ? \'✓\' : \'\'}</span>' not in app_js
+    assert '.library-select-all input:indeterminate + .box::after { content: "—"; }' in styles
+    assert ".lib-card.selected {" in styles
+    assert ".lib-head.selecting {" in styles
+    assert ".library-bulk-controls [hidden] { display: none; }" in styles
+    assert "white-space: normal; overflow-wrap: anywhere;" in styles
+    assert ".library-process-dialog {" in styles
+    assert "chunkTotal" not in app_js
+    assert "all-chunk-count" not in index
+    assert "all-chunk-count" not in app_js
+    assert "个切块" not in app_js
+    assert "RAG 切块" not in app_js
 
 
 def test_web_ui_groups_fulltext_filters_and_keeps_oa_download_modes_exclusive():
@@ -324,6 +405,16 @@ def test_web_ui_groups_fulltext_filters_and_keeps_oa_download_modes_exclusive():
     assert "params.set('downloaded_only', 'true')" in app_js
     assert "state.downloadedOnly = false;" in app_js
     assert "$('#downloaded-chip').addEventListener('click'" in app_js
+
+
+def test_web_ui_system_status_shows_paper_and_download_counts():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert '<div class="sysrow"><span>文献总数</span><span class="dim">—</span></div>' in index
+    assert '<div class="sysrow"><span>已下载文献</span><span class="dim">—</span></div>' in index
+    assert '<span>文献总数</span><span class="dim">${counts.papers || 0} 篇</span>' in app_js
+    assert '<span>已下载文献</span><span class="dim">${counts.downloaded_papers || 0} 篇</span>' in app_js
 
 
 def test_web_ui_uses_backend_download_state_and_never_browser_default_download():
@@ -346,11 +437,35 @@ def test_web_ui_uses_backend_download_state_and_never_browser_default_download()
     assert ".paper-download.failed" in styles
 
 
+def test_web_ui_can_download_current_page_or_all_filtered_results():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert 'id="download-current-page" disabled>当页下载</button>' in index
+    assert 'id="download-all-results" disabled>全部下载</button>' in index
+    assert "function bulkDownloadCandidates(papers)" in app_js
+    assert "async function loadAllSearchResultsForDownload()" in app_js
+    assert "searchQuery(page, pageSize)" in app_js
+    assert "length: Math.min(3, candidates.length)" in app_js
+    assert 'id="action-confirm-dialog"' in index
+    assert "const confirmed = await openActionConfirm({" in app_js
+    assert "dialog.showModal()" in app_js
+    assert "已下载、下载中或无合法 OA 地址而跳过" in app_js
+    assert "$('#download-current-page').addEventListener('click', downloadCurrentSearchPage)" in app_js
+    assert "$('#download-all-results').addEventListener('click', downloadAllSearchResults)" in app_js
+    assert ".search-download-actions" in styles
+    assert ".action-confirm-dialog {" in styles
+    assert "width: min(440px, calc(100vw - 32px)); margin: auto;" in styles
+
+
 def test_web_ui_download_manager_supports_filter_retry_and_local_pdf_open():
     index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
     styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
 
+    assert "下载与上传的文献都可归档" not in index
+    assert "下载与上传的文献都可归档" not in app_js
     assert "{ key: 'downloads', label: '下载管理', sub: 'DOWNLOADS', group: 'manage' }" in app_js
     assert 'data-screen="downloads"' in index
     assert 'id="download-manager-filters"' in index
@@ -365,11 +480,47 @@ def test_web_ui_download_manager_supports_filter_retry_and_local_pdf_open():
 
 def test_web_ui_downloaded_document_can_open_original_pdf_from_library():
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
 
     assert 'data-doc-act="pdf">打开 PDF</button>' in app_js
+    assert '<div class="lib-primary-actions equal-action-pair">' in app_js
+    assert ".equal-action-pair {" in styles
+    assert "grid-auto-columns: 1fr;" in styles
+    assert ".equal-action-pair > button {" in styles
+    assert "min-height: 30px;" in styles
     assert "if (action === 'pdf') openLocalPdf(docId)" in app_js
     assert "state.libLoaded = false" in app_js
     assert "await loadLibrary()" in app_js
+
+
+def test_web_ui_library_document_supports_many_to_many_project_membership():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert "function projectsForDocument(docId)" in app_js
+    assert "function setDocumentProjectMembership(docId, projectId, included)" in app_js
+    assert "const currentIds = new Set(projectsForDocument(docId)" in app_js
+    assert 'type="checkbox" data-doc-project="${docId}"' in app_js
+    assert "if (included && !exists) target.docs.push(normalizedId)" in app_js
+    assert "if (!included && exists)" in app_js
+    assert "persisted.projects.forEach" not in app_js
+    assert "$('#lib-grid').addEventListener('change'" in app_js
+    assert "已从项目" in app_js
+    assert ".lib-project {" in styles
+    assert ".lib-project-option.on {" in styles
+
+
+def test_web_ui_downloaded_search_result_can_jump_to_library_document():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert 'data-act="go-library"' in app_js
+    assert ">前往文献</button>" in app_js
+    assert "function goToLibraryDocument(documentId)" in app_js
+    assert "state.libraryFocusDocumentId = normalizedId" in app_js
+    assert "card.scrollIntoView({ behavior: 'smooth', block: 'center' })" in app_js
+    assert "card.classList.add('library-target')" in app_js
+    assert ".lib-card.library-target" in styles
 
 
 def test_web_ui_reader_can_retranslate_current_document():
@@ -384,6 +535,67 @@ def test_web_ui_reader_can_retranslate_current_document():
     assert "body: { target_lang: targetLang }" in app_js
     assert "await openReader(docId)" in app_js
     assert "$('#reader-retranslate').addEventListener('click', retranslateReader)" in app_js
+
+
+def test_web_ui_reader_orders_documents_by_translation_status():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "function readerTranslationRank(doc)" in app_js
+    assert "if (hasEffectiveTranslation(translation)) return 0;" in app_js
+    assert "if (translation && translation.status === 'pending') return 1;" in app_js
+    assert "readerTranslationRank(left) - readerTranslationRank(right)" in app_js
+
+
+def test_web_ui_reader_loads_figures_and_renders_safe_scientific_markup():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert "apiOrNull(`/documents/${docId}/figures?page_size=100`)" in app_js
+    assert "section.section_type !== 'figure_caption'" in app_js
+    assert "function cleanReaderText(text)" in app_js
+    assert "function renderScientificText(text, lang)" in app_js
+    assert "replace(/<\\/?(?:sup|sub)>/gi" in app_js
+    assert "function renderReaderFigures(figures, lang)" in app_js
+    assert 'class="reader-figure"' in app_js
+    assert 'loading="lazy"' in app_js
+    assert 'id="figure-lightbox"' in index
+    assert 'data-reader-figure' in app_js
+    assert '<a href="${esc(figure.image_url)}" target="_blank"' not in app_js
+    assert "function openFigureLightbox(trigger)" in app_js
+    assert "function closeFigureLightbox()" in app_js
+    assert "$('.app').setAttribute('inert', '')" in app_js
+    assert "$('.app').removeAttribute('inert')" in app_js
+    assert "event.key === 'Escape' && !$('#figure-lightbox').hidden" in app_js
+    assert ".reader-figure img" in styles
+    assert ".figure-lightbox[hidden]" in styles
+    assert "body.figure-lightbox-open" in styles
+    assert ".para sup, .para sub" in styles
+
+
+def test_web_ui_reader_renders_tex_style_scientific_scripts():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert "function scientificScriptContent(value)" in app_js
+    assert "function maskScientificScripts(text, tags)" in app_js
+    assert "const superscriptChars = `${subscriptChars}/`;" in app_js
+    assert "maskScientificScripts(safeTagMasked, tags)" in app_js
+    assert "marker('sub', value)" in app_js
+    assert "marker('sup', value)" in app_js
+    assert 'class="math-script"' in app_js
+    assert ".para .math-script" in styles
+
+
+def test_web_ui_reader_wraps_long_content_without_horizontal_scrollbars():
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert (
+        ".reader-panes { flex: 1; display: flex; min-width: 0; min-height: 0; "
+        "overflow-x: hidden;" in styles
+    )
+    assert "flex: 1; min-width: 0; overflow-x: hidden; overflow-y: auto;" in styles
+    assert "overflow-wrap: anywhere; word-break: break-word;" in styles
 
 
 def test_web_ui_does_not_present_local_echo_output_as_translated():
@@ -413,7 +625,13 @@ def test_web_ui_reader_can_open_current_paper_ai_qa_split():
     assert "body: { question, document_ids: [docId], top_k: 6, use_document_context: true }" in app_js
     assert "function renderReaderQa()" in app_js
     assert "function sendReaderQa(text)" in app_js
-    assert "data-reader-cite=" in app_js
+    assert "function renderSafeMarkdown(value)" in app_js
+    assert "function renderSourceButtons(sources, messageIndex, attributeName)" in app_js
+    assert 'class="body markdown-body"' in app_js
+    assert "`第 ${source.section_seq} 段`" in app_js
+    assert "原文${paragraph} · ${title}" in app_js
+    assert "`¶${source.section_seq}`" not in app_js
+    assert "'data-reader-cite'" in app_js
     assert "jumpToSource(source.document_id, source.section_seq)" in app_js
     assert "current.parse_status === 'parsed' && state.readerParas.length" in app_js
     assert "RAG 索引仅用于增强检索，并非提问前置条件" in app_js
@@ -425,6 +643,21 @@ def test_web_ui_reader_can_open_current_paper_ai_qa_split():
     assert ".reader-panes.qa-mode" in styles
     assert ".segmented button:disabled" in styles
     assert ".reader-chat-panel" in styles
+
+
+def test_web_ui_single_document_chat_generates_answer_from_parsed_paper():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="scope-summary"' not in index
+    assert "范围：单篇精读" not in app_js
+    assert "const useDocumentContext = state.chatScope === 'single'" in app_js
+    assert "use_document_context: useDocumentContext" in app_js
+    assert "m.answerMode === 'current-document'" in app_js
+    assert "助手 · 当前论文" in app_js
+    assert "state.readerDocId !== docId || !state.readerParas.length" in app_js
+    assert "回答下方的原文引用可点击定位" in index
+    assert "引用标记 [n·¶段]" not in index
 
 
 def test_web_ui_declares_every_workbench_screen():
@@ -578,6 +811,25 @@ def test_web_ui_reader_and_chat_filter_real_documents_by_category():
     assert "if (state.chatCategory) params.set('category', state.chatCategory)" in app_js
 
 
+def test_web_ui_chat_document_picker_stays_compact_for_large_libraries():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert "const CHAT_DOCUMENTS_PER_PAGE = 6;" in app_js
+    assert "docs.slice(pageStart, pageStart + CHAT_DOCUMENTS_PER_PAGE)" in app_js
+    assert "state.chatDocs = [Number(btn.dataset.chatdoc)]" in app_js
+    assert "state.chatPickerOpen = false" in app_js
+    assert 'id="selected-chat-doc"' in index
+    assert 'id="doc-picker-toggle"' in index
+    assert 'id="doc-pagination"' in index
+    assert 'id="doc-page-prev"' in index
+    assert 'id="doc-page-next"' in index
+    assert ".doc-options { max-height:" in styles
+    assert ".doc-btn .radio-dot" in styles
+    assert ".doc-pagination[hidden] { display: none; }" in styles
+
+
 def test_web_ui_tag_manager_supports_inline_edit_and_cache_migration():
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
     styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
@@ -652,12 +904,14 @@ def test_web_ui_reader_selection_offers_glossary_and_chat_actions():
     assert "context_text: selection.context || null" in app_js
     assert "AI 正在翻译" in app_js
     assert "AI 翻译失败" in app_js
-    assert "function buildReaderContextQuestion(text, kind, context = '')" in app_js
+    assert "function buildReaderContextQuestion(text, kind)" in app_js
     assert "function sendTextToChat(text, kind, selection = null)" in app_js
     assert "请结合当前论文解释下面这段" in app_js
     assert "不要只做字面翻译" in app_js
     assert "不要脱离原文泛泛解释" in app_js
-    assert "所在段落：" in app_js
+    assert "所在段落：" not in app_js
+    assert "selection && selection.context" not in app_js
+    assert "> ${selectedText}" in app_js
     assert "state.readerMode = 'qa'" in app_js
     assert "$('#reader-chat-input')" in app_js
     assert "setPage('chat');" not in app_js[
@@ -715,6 +969,16 @@ def test_web_ui_surfaces_reaction_export_gate_conflict():
     assert "reaction-sets/${state.chemSetId}/export" in app_js
 
 
+def test_web_ui_serializes_document_jobs_and_explains_busy_retry():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "doc.chemistry_error" in app_js
+    assert "doc.chemistry_status === 'extracting'" in app_js
+    assert 'title="请等待当前处理任务完成"' in app_js
+    assert "e.code === 'document_busy'" in app_js
+    assert "文档正在执行其他处理任务，请完成后重试" in app_js
+
+
 def test_web_ui_self_attributes_reviews_without_reviewer_input():
     """单用户工作台无需填写复核人，但审计记录仍有稳定责任标识。"""
     index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
@@ -727,6 +991,60 @@ def test_web_ui_self_attributes_reviews_without_reviewer_input():
     assert "reviewerDisplayName(a.verified_by)" in app_js
     assert "verified_by: persisted.reviewer.trim()" not in app_js
     assert "if (!persisted.reviewer.trim())" not in app_js
+
+
+def test_web_ui_edits_reaction_equations_and_supports_accept_reject_workflow():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert ">反应集复核队列<" in index
+    assert "以反应集为主" in index
+    assert 'data-f="reaction"' in app_js
+    assert "decision === 'accepted'" in app_js
+    assert "data-rx-act=\"reject\"" in app_js
+    assert app_js.count('<div class="equal-action-pair">') >= 1
+    assert '<div class="equal-action-pair chem-export-format-actions">' in index
+    assert ".chem-export-format-actions { grid-template-columns: repeat(2, 102px); }" in styles
+    assert "确认加入" in app_js
+    assert "不采用" in app_js
+    assert "function chemistryReactionSets()" in app_js
+    assert "chem-set-card" in app_js
+    assert "来源文献" in app_js
+    assert "function confirmedReactionSets()" not in app_js
+    assert "card.dataset.reviewStatus || 'pending'" in app_js
+    assert ".rx.rejected" in styles
+    assert ".rx-equation-field .rx-eq-input" in styles
+    assert ".chem-set-source" in styles
+
+
+def test_web_ui_distinguishes_document_and_reaction_set_information_architecture():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    # 文献库：文献是卡片主语，反应集是本文档的抽取结果。
+    assert "本文档抽取结果" in app_js
+    assert 'data-doc-act="chem-set"' in app_js
+    assert ".lib-reaction-results" in styles
+    assert ".lib-reaction-set" in styles
+
+    # 化学库：反应集是一级对象，文献是来源证据，并按复核状态分组。
+    assert "function chemistryReactionSets()" in app_js
+    assert "renderSetGroup('待复核', pendingSets, 'todo')" in app_js
+    assert "renderSetGroup('已确认', confirmedSets, 'done')" in app_js
+    assert "renderSetGroup('未采用', rejectedSets, 'fail')" in app_js
+    assert "chem-source-title" in app_js
+    assert ".chem-queue-group" in styles
+
+
+def test_web_ui_protects_confirmed_reaction_sets_from_destructive_document_actions():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "const confirmedChemistry = chemSets.some(" in app_js
+    assert "set.status === 'verified' || set.export_ready" in app_js
+    assert "已有已确认反应集；为保护复核结果，不能重新解析或抽取" in app_js
+    assert "e.code === 'confirmed_reaction_set_exists'" in app_js
+    assert "不能重新解析或重新抽取" in app_js
 
 
 def test_web_ui_does_not_convert_rate_values():

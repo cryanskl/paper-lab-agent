@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from pathlib import Path
 
 
@@ -11,6 +12,7 @@ def health_check_counts(**overrides):
     counts = {
         "journals": 6,
         "papers": 1,
+        "downloaded_papers": 0,
         "categories": 7,
         "paper_categories": 0,
         "crawl_jobs": 0,
@@ -146,7 +148,13 @@ SEED_KEYWORD_TERMS = [
 ]
 
 
-def make_client(tmp_path, monkeypatch=None):
+def make_client(
+    tmp_path,
+    monkeypatch=None,
+    *,
+    vector_db_backend="local-json",
+    embedding_model="local-hash",
+):
     environment = {
         "DATABASE_PATH": str(tmp_path / "test.db"),
         "PAPER_LAB_DATA_DIR": str(tmp_path),
@@ -155,6 +163,9 @@ def make_client(tmp_path, monkeypatch=None):
         "PAPER_LAB_TRANSLATION_DIR": str(tmp_path / "translations"),
         "PAPER_LAB_EXPORT_DIR": str(tmp_path / "exports"),
         "VECTOR_DB_PATH": str(tmp_path / "vector-index.json"),
+        # Legacy JSON-store tests stay isolated from the production bge-m3 + Chroma defaults.
+        "VECTOR_DB_BACKEND": vector_db_backend,
+        "EMBEDDING_MODEL": embedding_model,
     }
     for key, value in environment.items():
         if monkeypatch is None:
@@ -1833,6 +1844,71 @@ def test_document_related_lists_use_page_query_and_metadata(tmp_path):
     assert reaction_sets["items"][0]["name"] == "Set 1"
 
 
+def test_document_figure_list_and_image_crop_use_tei_coordinates(tmp_path):
+    client = make_client(tmp_path)
+
+    import pymupdf
+
+    from app.db import get_conn
+
+    pdf_path = tmp_path / "pdfs" / "figure-source.pdf"
+    tei_path = tmp_path / "tei" / "figure-source.tei.xml"
+    with pymupdf.open() as pdf:
+        page = pdf.new_page(width=300, height=200)
+        page.draw_rect(pymupdf.Rect(20, 30, 140, 90), color=(0, 0, 0), fill=(1, 1, 1))
+        page.insert_text((28, 58), "Experimental setup", fontsize=14)
+        pdf.save(pdf_path)
+    tei_path.write_text(
+        """
+        <TEI xmlns="http://www.tei-c.org/ns/1.0">
+          <text><body>
+            <figure xml:id="fig_0">
+              <head>Figure 1.</head><label>1</label>
+              <figDesc>Figure 1. Experimental setup.</figDesc>
+              <graphic coords="1,20,30,120,60" type="bitmap"/>
+            </figure>
+          </body></text>
+        </TEI>
+        """,
+        encoding="utf-8",
+    )
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents
+                (file_path, file_hash, original_name, parse_status, tei_path)
+            VALUES (?, 'figure-source', 'figure-source.pdf', 'parsed', ?)
+            """,
+            (str(pdf_path), str(tei_path)),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Setup',
+                    'See figure 1 (#fig_0) and reference [3] (#b3).',
+                    'body')
+            """,
+            (document_id,),
+        )
+
+    figures = client.get(f"/api/v1/documents/{document_id}/figures")
+    image = client.get(f"/api/v1/documents/{document_id}/figures/fig_0/image")
+    sections = client.get(f"/api/v1/documents/{document_id}/sections")
+    missing = client.get(f"/api/v1/documents/{document_id}/figures/fig_missing/image")
+
+    assert figures.status_code == 200
+    assert figures.json()["total"] == 1
+    assert figures.json()["items"][0]["image_url"].endswith(
+        f"/documents/{document_id}/figures/fig_0/image"
+    )
+    assert image.status_code == 200
+    assert image.headers["content-type"] == "image/png"
+    assert image.content.startswith(b"\x89PNG\r\n\x1a\n")
+    assert sections.json()["items"][0]["content"] == "See figure 1 and reference [3]."
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "document_figure_not_found"
+
+
 def test_document_reaction_sets_include_review_progress_counts(tmp_path):
     client = make_client(tmp_path)
 
@@ -2217,7 +2293,7 @@ def test_current_document_qa_uses_parsed_sections_without_rag_index(tmp_path, mo
     def fake_answer(self, question, context):
         captured["question"] = question
         captured["context"] = context
-        return "论文说明了氩等离子体中的电子碰撞电离过程。[S2]"
+        return "**核心结论**\n\n论文说明了氩等离子体中的电子碰撞电离过程。\n\nSOURCES: C2"
 
     monkeypatch.setattr(rag_service.OpenAICompatibleDocumentAnswerer, "answer", fake_answer)
     with get_conn() as conn:
@@ -2251,7 +2327,8 @@ def test_current_document_qa_uses_parsed_sections_without_rag_index(tmp_path, mo
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["answer"].endswith("[S2]")
+    assert payload["answer"] == "**核心结论**\n\n论文说明了氩等离子体中的电子碰撞电离过程。"
+    assert "SOURCES:" not in payload["answer"]
     assert payload["sources"] == [
         {
             "document_id": document_id,
@@ -2268,8 +2345,10 @@ def test_current_document_qa_uses_parsed_sections_without_rag_index(tmp_path, mo
         }
     ]
     assert captured["question"] == "这篇论文讨论了什么电离过程？"
-    assert "[S1]" in captured["context"]
-    assert "[S2]" in captured["context"]
+    assert '<paper_section source_id="C1">' in captured["context"]
+    assert '<paper_section source_id="C2">' in captured["context"]
+    assert "document_id=" not in captured["context"]
+    assert "section_seq=" not in captured["context"]
     assert "Electron impact ionization" in captured["context"]
     assert not (tmp_path / "vector-index.json").exists()
 
@@ -2286,7 +2365,7 @@ def test_current_document_answerer_sends_grounded_citation_prompt():
         captured["payload"] = json.loads(request.content)
         return httpx.Response(
             200,
-            json={"choices": [{"message": {"content": "核心结论来自当前论文。[S1]"}}]},
+            json={"choices": [{"message": {"content": "### 核心结论\n\n氩电离占主导。\n\nSOURCES: C1"}}]},
         )
 
     answerer = OpenAICompatibleDocumentAnswerer(
@@ -2296,9 +2375,12 @@ def test_current_document_answerer_sends_grounded_citation_prompt():
         transport=httpx.MockTransport(handler),
     )
 
-    answer = answerer.answer("核心结论是什么？", "[S1] Conclusion\nArgon ionization dominates.")
+    answer = answerer.answer(
+        "核心结论是什么？",
+        '<paper_section source_id="C1"><content>Argon ionization dominates.</content></paper_section>',
+    )
 
-    assert answer == "核心结论来自当前论文。[S1]"
+    assert answer == "### 核心结论\n\n氩电离占主导。\n\nSOURCES: C1"
     assert captured["request"].url == "http://llm.test/v1/chat/completions"
     assert captured["request"].headers["authorization"] == "Bearer test-key"
     assert captured["payload"]["model"] == "test-model"
@@ -2307,7 +2389,28 @@ def test_current_document_answerer_sends_grounded_citation_prompt():
     assert "only from the supplied paper context" in system_prompt
     assert "untrusted reference text" in system_prompt
     assert "same language as the question" in system_prompt
-    assert "[S1]" in captured["payload"]["messages"][1]["content"]
+    assert 'source_id="C1"' in captured["payload"]["messages"][1]["content"]
+    assert "never output HTML" in system_prompt
+    assert "Do not mention internal source IDs" in system_prompt
+    assert "SOURCES: C1,C2" in system_prompt
+
+
+def test_current_document_answer_strips_machine_sources_and_legacy_inline_markers():
+    from app.services.rag import split_document_answer_sources
+
+    clean, indexes = split_document_answer_sources(
+        "### 结论\n\n电子碰撞电离占主导。\n\nSOURCES: C3,C1,C3.",
+        3,
+    )
+    legacy_clean, legacy_indexes = split_document_answer_sources(
+        "旧模型回答。[S2]",
+        3,
+    )
+
+    assert clean == "### 结论\n\n电子碰撞电离占主导。"
+    assert indexes == [2, 0]
+    assert legacy_clean == "旧模型回答。"
+    assert legacy_indexes == [1]
 
 
 def test_rag_query_backend_failure_returns_json_error(tmp_path):
@@ -3319,6 +3422,19 @@ def test_prepare_demo_data_script_populates_walking_skeleton(tmp_path):
     assert payload["exports"]["json"]["reaction_count"] >= 1
     assert Path(payload["exports"]["json"]["output_path"]).exists()
 
+    repeated = subprocess.run(
+        [sys.executable, "scripts/prepare_demo_data.py"],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    repeated_payload = json.loads(repeated.stdout)
+    assert repeated_payload["reaction_set"] == payload["reaction_set"]
+    assert repeated_payload["counts"] == payload["counts"]
+    assert repeated_payload["index"]["reused"] is True
+
 
 def test_prepare_demo_data_script_can_print_summary_only(tmp_path):
     import json
@@ -3590,7 +3706,7 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
         {
             "code": "missing_openalex_api_key",
             "capability": "openalex_crawl",
-            "message": "OPENALEX_API_KEY is not configured; OpenAlex requests may be rejected, while Crossref fallback and local offline mode remain available.",
+            "message": "OPENALEX_API_KEY is not configured; OpenAlex requests may be rejected while Crossref fallback remains available.",
         },
         {
             "code": "missing_unpaywall_email",
@@ -7284,10 +7400,11 @@ def test_system_status_reports_vector_db_backend(tmp_path):
 
 
 def test_system_status_reports_normalized_effective_vector_config(tmp_path, monkeypatch):
-    monkeypatch.setenv("EMBEDDING_MODEL", " LOCAL-HASH ")
-    monkeypatch.setenv("VECTOR_DB_BACKEND", " LOCAL-JSON ")
-
-    client = make_client(tmp_path)
+    client = make_client(
+        tmp_path,
+        vector_db_backend=" LOCAL-JSON ",
+        embedding_model=" LOCAL-HASH ",
+    )
 
     status = client.get("/api/v1/system/status").json()
     codes = {warning["code"] for warning in status["config_warnings"]}
@@ -7303,10 +7420,11 @@ def test_system_status_reports_supported_adapter_warning_details(tmp_path, monke
     monkeypatch.setenv("OPENALEX_MAILTO", "lab@example.test")
     monkeypatch.setenv("UNPAYWALL_EMAIL", "lab@example.test")
     monkeypatch.setenv("LLM_API_KEY", "test-key")
-    monkeypatch.setenv("EMBEDDING_MODEL", " experimental-vectors ")
-    monkeypatch.setenv("VECTOR_DB_BACKEND", " faiss ")
-
-    client = make_client(tmp_path)
+    client = make_client(
+        tmp_path,
+        vector_db_backend=" faiss ",
+        embedding_model=" experimental-vectors ",
+    )
 
     status = client.get("/api/v1/system/status").json()
     warnings = {warning["code"]: warning for warning in status["config_warnings"]}
@@ -7471,8 +7589,7 @@ def test_parse_document_rejects_symlinked_source_pdf(tmp_path, monkeypatch):
 def test_parse_document_source_validation_reports_unsupported_vector_db_backend(tmp_path, monkeypatch):
     import asyncio
 
-    monkeypatch.setenv("VECTOR_DB_BACKEND", "faiss")
-    make_client(tmp_path)
+    make_client(tmp_path, vector_db_backend="faiss")
     outside_pdf = tmp_path / "outside-source-backend.pdf"
     outside_pdf.write_bytes(pdf_bytes(b"outside backend plasma text"))
     linked_pdf = tmp_path / "pdfs" / "linked-source-backend.pdf"
@@ -7773,8 +7890,7 @@ def test_parse_document_fallback_failure_clears_stale_artifacts(tmp_path, monkey
 def test_parse_document_fallback_failure_reports_unsupported_vector_db_backend(tmp_path, monkeypatch):
     import asyncio
 
-    monkeypatch.setenv("VECTOR_DB_BACKEND", "faiss")
-    client = make_client(tmp_path)
+    client = make_client(tmp_path, vector_db_backend="faiss")
     response = client.post(
         "/api/v1/documents",
         files={"file": ("fallback-backend.pdf", pdf_bytes(b"fallback backend text"), "application/pdf")},
@@ -7824,8 +7940,7 @@ def test_parse_document_fallback_failure_reports_unsupported_vector_db_backend(t
 def test_parse_document_finalization_rejects_unsupported_vector_db_backend(tmp_path, monkeypatch):
     import asyncio
 
-    monkeypatch.setenv("VECTOR_DB_BACKEND", "faiss")
-    client = make_client(tmp_path)
+    client = make_client(tmp_path, vector_db_backend="faiss")
     response = client.post(
         "/api/v1/documents",
         files={"file": ("parse-backend.pdf", pdf_bytes(b"local plasma finalization text"), "application/pdf")},
@@ -8602,6 +8717,58 @@ def test_translation_adapter_preserves_formula_masks():
     assert "<EQ_" not in translated
 
 
+def test_translation_adapter_chunks_long_sections_without_splitting_formulas():
+    from app.services.translation import translate_text_preserving_formulas
+
+    calls = []
+
+    class RecordingTranslator:
+        def translate(self, text, target_lang):
+            calls.append(text)
+            assert target_lang == "zh"
+            assert len(text) <= 80
+            return f"译文: {text}"
+
+    source = (
+        "Electron density rises with pressure. " * 5
+        + "The protected rate is $k_1$.\n\n"
+        + "Ion energy then decreases across the sheath. " * 5
+    )
+    translated = translate_text_preserving_formulas(
+        source,
+        RecordingTranslator(),
+        "zh",
+        max_chunk_chars=80,
+    )
+
+    assert len(calls) > 1
+    assert all(calls)
+    assert "$k_1$" in translated
+    assert "<EQ_" not in translated
+
+
+def test_translation_adapter_keeps_short_sections_in_one_request():
+    from app.services.translation import translate_text_preserving_formulas
+
+    calls = []
+
+    class RecordingTranslator:
+        def translate(self, text, target_lang):
+            calls.append((text, target_lang))
+            return text
+
+    source = "Electron density rises with pressure."
+    translated = translate_text_preserving_formulas(
+        source,
+        RecordingTranslator(),
+        "zh",
+        max_chunk_chars=80,
+    )
+
+    assert translated == source
+    assert calls == [(source, "zh")]
+
+
 def test_translation_adapter_reports_missing_formula_placeholder():
     import pytest
 
@@ -9218,10 +9385,118 @@ def test_rag_index_uses_local_vector_store(tmp_path):
     assert "electron impact reactions" in rag["sources"][0]["source_excerpt"]
 
 
+def test_rag_chunking_prefers_sentence_boundaries_and_overlaps_context():
+    from app.services.rag import LocalHashEmbeddingAdapter, chunk_text
+
+    first = " ".join(f"alpha{i}" for i in range(8)) + "."
+    second = " ".join(f"beta{i}" for i in range(8)) + "."
+    third = " ".join(f"gamma{i}" for i in range(8)) + "."
+
+    chunks = chunk_text(
+        f"{first}\n\n{second} {third}",
+        LocalHashEmbeddingAdapter(),
+        target_tokens=10,
+        max_tokens=18,
+        overlap_tokens=4,
+    )
+
+    assert len(chunks) >= 2
+    assert chunks[0][0].endswith(".")
+    assert all(token_count <= 18 for _, token_count in chunks)
+    assert any(
+        set(left.split()) & set(right.split())
+        for (left, _), (right, _) in zip(chunks, chunks[1:])
+    )
+
+
+def test_rag_chunking_uses_adapter_token_offsets_for_chinese_text():
+    from app.services.rag import chunk_text
+
+    class CharacterTokenAdapter:
+        model_name = "character-test"
+
+        def embed(self, text):
+            return [1.0]
+
+        def token_spans(self, text):
+            return [
+                (index, index + 1)
+                for index, character in enumerate(text)
+                if not character.isspace()
+            ]
+
+    chunks = chunk_text(
+        "电子密度由电离过程控制。氧负离子通过解离附着产生。鞘层电势影响离子能量。",
+        CharacterTokenAdapter(),
+        target_tokens=12,
+        max_tokens=16,
+        overlap_tokens=3,
+    )
+
+    assert len(chunks) >= 2
+    assert all(token_count <= 16 for _, token_count in chunks)
+    assert chunks[0][0].endswith("。")
+    assert all(chunk.strip() for chunk, _ in chunks)
+
+
+def test_rag_index_records_embedding_token_count(tmp_path, monkeypatch):
+    make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import rag as rag_service
+
+    class CharacterTokenEmbedding:
+        model_name = "local-hash"
+
+        def embed(self, text):
+            return rag_service.local_hash_embedding(text)
+
+        def token_spans(self, text):
+            return [
+                (index, index + 1)
+                for index, character in enumerate(text)
+                if not character.isspace()
+            ]
+
+    monkeypatch.setattr(
+        rag_service,
+        "get_embedding_adapter",
+        lambda _model_name: CharacterTokenEmbedding(),
+    )
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            ("/tmp/token-count.txt", "token-count", "token-count.txt"),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, '中文结论', '电子密度由电离过程控制。', 'conclusion')
+            """,
+            (document_id,),
+        )
+
+    assert rag_service.index_document(document_id)["status"] == "indexed"
+
+    with get_conn() as conn:
+        chunk = conn.execute(
+            "SELECT text, token_count FROM chunks WHERE document_id=?",
+            (document_id,),
+        ).fetchone()
+    assert chunk["text"] == "电子密度由电离过程控制。"
+    assert chunk["token_count"] == len(chunk["text"])
+
+
 def test_rag_bge_m3_chroma_cross_language_query_uses_same_adapter(tmp_path, monkeypatch):
-    monkeypatch.setenv("EMBEDDING_MODEL", "bge-m3")
-    monkeypatch.setenv("VECTOR_DB_BACKEND", "chroma")
-    client = make_client(tmp_path, monkeypatch)
+    client = make_client(
+        tmp_path,
+        monkeypatch,
+        vector_db_backend="chroma",
+        embedding_model="bge-m3",
+    )
 
     from app.db import get_conn
     from app.services import rag as rag_service
@@ -9268,8 +9543,7 @@ def test_rag_bge_m3_chroma_cross_language_query_uses_same_adapter(tmp_path, monk
 
 
 def test_rag_index_normalizes_vector_db_backend_metadata(tmp_path, monkeypatch):
-    monkeypatch.setenv("VECTOR_DB_BACKEND", " LOCAL-JSON ")
-    client = make_client(tmp_path)
+    client = make_client(tmp_path, vector_db_backend=" LOCAL-JSON ")
 
     response = client.post(
         "/api/v1/documents",
@@ -9878,7 +10152,7 @@ def test_rag_index_records_cleanup_failure_after_vector_upsert_fails(tmp_path, m
 
         def delete_document(self, document_id):
             self.delete_calls += 1
-            if self.delete_calls == 3:
+            if self.delete_calls == 2:
                 raise RuntimeError("vector cleanup failed")
 
         def upsert_many(self, records):
@@ -9919,8 +10193,7 @@ def test_rag_index_records_cleanup_failure_after_vector_upsert_fails(tmp_path, m
 
 
 def test_rag_index_rejects_unsupported_vector_db_backend(tmp_path, monkeypatch):
-    monkeypatch.setenv("VECTOR_DB_BACKEND", "faiss")
-    make_client(tmp_path)
+    make_client(tmp_path, vector_db_backend="faiss")
 
     from app.db import get_conn
     from app.services.rag import index_document
@@ -9957,8 +10230,7 @@ def test_rag_index_rejects_unsupported_vector_db_backend(tmp_path, monkeypatch):
 
 
 def test_rag_query_rejects_unsupported_vector_db_backend(tmp_path, monkeypatch):
-    monkeypatch.setenv("VECTOR_DB_BACKEND", "faiss")
-    make_client(tmp_path)
+    make_client(tmp_path, vector_db_backend="faiss")
 
     import pytest
 
@@ -11397,6 +11669,88 @@ def test_reaction_unverify_returns_reaction_set_to_pending(tmp_path):
     assert unverified["reactions"][0]["audit_log"][0]["action"] == "unverify"
 
 
+def test_reaction_review_accepts_corrected_equation_and_excludes_rejected_candidate_from_export(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            "INSERT INTO documents (file_path, file_hash, original_name) VALUES (?, ?, ?)",
+            (str(tmp_path / "review-decisions.pdf"), "review-decisions", "review-decisions.pdf"),
+        ).lastrowid
+        reaction_set_id = conn.execute(
+            "INSERT INTO reaction_sets (document_id, name, status) VALUES (?, ?, 'pending')",
+            (document_id, "Extracted candidates"),
+        ).lastrowid
+        accepted_id = conn.execute(
+            "INSERT INTO reactions (reaction_set_id, reaction) VALUES (?, ?)",
+            (reaction_set_id, "voltage -> broad"),
+        ).lastrowid
+        rejected_id = conn.execute(
+            "INSERT INTO reactions (reaction_set_id, reaction) VALUES (?, ?)",
+            (reaction_set_id, "voltage -> nearly"),
+        ).lastrowid
+
+    partially_reviewed = client.put(
+        f"/api/v1/reactions/{accepted_id}/verify",
+        json={
+            "verified": True,
+            "decision": "accepted",
+            "reaction": "e + Ar -> e + e + Ar+",
+            "verified_by": "chemist-a",
+        },
+    )
+    assert partially_reviewed.status_code == 200
+    assert partially_reviewed.json()["status"] == "pending"
+
+    completed = client.put(
+        f"/api/v1/reactions/{rejected_id}/verify",
+        json={
+            "verified": False,
+            "decision": "rejected",
+            "reaction": "voltage -> nearly",
+            "verified_by": "chemist-a",
+        },
+    )
+    assert completed.status_code == 200
+    detail = completed.json()
+    assert detail["status"] == "verified"
+    assert detail["accepted_count"] == detail["verified_count"] == 1
+    assert detail["rejected_count"] == 1
+    assert detail["pending_count"] == detail["unverified_count"] == 0
+    assert detail["export_ready"] is True
+    assert detail["reactions"][0]["reaction"] == "e + Ar -> e + e + Ar+"
+    assert detail["reactions"][0]["review_status"] == "accepted"
+    assert detail["reactions"][1]["review_status"] == "rejected"
+    assert detail["reactions"][1]["audit_log"][0]["action"] == "reject"
+
+    exported = client.post(f"/api/v1/reaction-sets/{reaction_set_id}/export?format=json")
+    assert exported.status_code == 200
+    assert exported.json()["reaction_count"] == 1
+    export_payload = json.loads(Path(exported.json()["output_path"]).read_text(encoding="utf-8"))
+    assert [reaction["reaction"] for reaction in export_payload["reactions"]] == [
+        "e + Ar -> e + e + Ar+"
+    ]
+    assert export_payload["rejected_reactions"][0]["reaction"] == "voltage -> nearly"
+
+
+def test_reaction_review_rejects_inconsistent_verified_and_decision(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.put(
+        "/api/v1/reactions/1/verify",
+        json={
+            "verified": True,
+            "decision": "rejected",
+            "verified_by": "chemist-a",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+
+
 def test_reaction_verify_rejects_blank_verified_by(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
@@ -12098,7 +12452,8 @@ def test_release_runbook_artifacts_exist_and_document_commands():
     assert validate_env_example.exists()
     assert "REQUIRED_ENV_KEYS" in validate_env_example.read_text(encoding="utf-8")
     smoke_text = smoke_check.read_text(encoding="utf-8")
-    assert '"VECTOR_DB_BACKEND"] = "local-json"' in smoke_text
+    assert 'os.environ["VECTOR_DB_BACKEND"] = "chroma"' in smoke_text
+    assert 'os.environ["EMBEDDING_MODEL"] = "bge-m3"' in smoke_text
     assert "load_fixture_papers" in smoke_text
     assert '"/api/v1/papers?q=plasma"' in smoke_text
     assert '"/api/v1/crawl/run"' in smoke_text
@@ -12205,11 +12560,16 @@ def test_release_runbook_artifacts_exist_and_document_commands():
         "UNPAYWALL_API_MAX_RETRIES",
         "UNPAYWALL_API_RETRY_BACKOFF_SECONDS",
         "UNPAYWALL_API_TIMEOUT_SECONDS",
+        "LLM_REQUEST_TIMEOUT_SECONDS",
+        "TRANSLATION_CHUNK_CHARS",
     ]:
         assert required in env_example
-    assert "EMBEDDING_MODEL=local-hash" in env_example
+    assert "EMBEDDING_MODEL=bge-m3" in env_example
+    assert "VECTOR_DB_BACKEND=chroma" in env_example
+    assert "VECTOR_DB_PATH=./data/chroma" in env_example
     assert "PAPER_LAB_TEST_MODE" not in env_example
-    assert 'default="local-hash", alias="EMBEDDING_MODEL"' in config_text
+    assert 'default="bge-m3", alias="EMBEDDING_MODEL"' in config_text
+    assert 'default="chroma", alias="VECTOR_DB_BACKEND"' in config_text
     assert 'alias="ACADEMIC_API_MAX_PAGES"' in config_text
     assert 'alias="ACADEMIC_API_MAX_RETRIES"' in config_text
     assert 'alias="ACADEMIC_API_RETRY_BACKOFF_SECONDS"' in config_text
@@ -12293,10 +12653,10 @@ def test_env_example_validator_cli_rejects_runtime_url_drift(tmp_path):
                 "UNPAYWALL_EMAIL=",
                 "GROBID_URL=http://127.0.0.1:8070",
                 "LLM_API_KEY=",
-                "EMBEDDING_MODEL=local-hash",
+                "EMBEDDING_MODEL=bge-m3",
                 "PAPER_LAB_DATA_DIR=./data",
-                "VECTOR_DB_PATH=./data/vector-index.json",
-                "VECTOR_DB_BACKEND=local-json",
+                "VECTOR_DB_PATH=./data/chroma",
+                "VECTOR_DB_BACKEND=chroma",
                 "DATABASE_PATH=./data/plasma.db",
                 "PAPER_LAB_PDF_DIR=./data/pdfs",
                 "PAPER_LAB_TEI_DIR=./data/tei",
@@ -12305,6 +12665,11 @@ def test_env_example_validator_cli_rejects_runtime_url_drift(tmp_path):
                 "PAPER_LAB_SCHEDULER_ENABLED=false",
                 "LLM_BASE_URL=https://api.openai.com/v1",
                 "LLM_MODEL=gpt-4o-mini",
+                "LLM_REQUEST_TIMEOUT_SECONDS=180",
+                "TRANSLATION_CHUNK_CHARS=6000",
+                "RAG_CHUNK_TARGET_TOKENS=450",
+                "RAG_CHUNK_MAX_TOKENS=600",
+                "RAG_CHUNK_OVERLAP_TOKENS=60",
                 "CRAWL_MAX_CONCURRENCY=3",
                 "ACADEMIC_API_MAX_PAGES=3",
                 "ACADEMIC_API_MAX_RETRIES=3",
@@ -12628,6 +12993,7 @@ def test_system_status_contract_documents_operational_counts():
         "storage_health",
         "config_warnings",
         "status_counts",
+        "downloaded_papers",
         "categories",
         "paper_categories",
         "crawl_jobs",
@@ -12865,6 +13231,40 @@ def test_system_status_counts_paper_categories(tmp_path):
     payload = client.get("/api/v1/system/status").json()
 
     assert payload["counts"]["paper_categories"] == 1
+
+
+def test_system_status_counts_successfully_downloaded_papers(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        paper_id = conn.execute(
+            """
+            INSERT INTO papers (doi, title, abstract, authors, source_api, raw_metadata)
+            VALUES (?, ?, ?, '[]', 'status-test', '{}')
+            """,
+            ("10.999/status-downloaded-paper", "Downloaded status paper", "argon plasma chemistry"),
+        ).lastrowid
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (paper_id, file_path, file_hash, original_name)
+            VALUES (?, ?, ?, ?)
+            """,
+            (paper_id, str(tmp_path / "downloaded.pdf"), "downloaded-status", "downloaded.pdf"),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO paper_downloads (paper_id, document_id, status, file_path)
+            VALUES (?, ?, 'downloaded', ?)
+            """,
+            (paper_id, document_id, str(tmp_path / "downloaded.pdf")),
+        )
+
+    payload = client.get("/api/v1/system/status").json()
+
+    assert payload["counts"]["papers"] == 1
+    assert payload["counts"]["downloaded_papers"] == 1
 
 
 def test_system_status_reports_workflow_status_counts(tmp_path):
@@ -18150,8 +18550,7 @@ def test_document_parse_route_records_queue_failure_when_vector_store_is_corrupt
 
 
 def test_document_parse_route_rejects_unsupported_vector_db_backend(tmp_path, monkeypatch):
-    monkeypatch.setenv("VECTOR_DB_BACKEND", "faiss")
-    client = make_client(tmp_path)
+    client = make_client(tmp_path, vector_db_backend="faiss")
 
     from app.db import get_conn
 
@@ -18259,6 +18658,188 @@ def test_document_extract_route_clears_stale_reaction_sets_before_background_tas
     assert extract_payload["document_id"] == document_id
     assert extract_payload["chemistry_status"] == "extracting"
     assert reaction_sets["total"] == 0
+
+
+def test_confirmed_reaction_set_blocks_reparse_and_reextract_without_data_loss(tmp_path):
+    import asyncio
+
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import chemistry as chemistry_service
+    from app.services import documents as document_service
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, chemistry_status)
+            VALUES (?, ?, ?, 'parsed', 'extracted')
+            """,
+            (str(tmp_path / "confirmed.pdf"), "confirmed-chemistry", "confirmed.pdf"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Reaction table', 'e + Ar -> e + e + Ar+ .', 'table')
+            """,
+            (document_id,),
+        ).lastrowid
+        reaction_set_id = conn.execute(
+            """
+            INSERT INTO reaction_sets (document_id, name, source_note, status, verified_by)
+            VALUES (?, 'Confirmed Ar mechanism', 'table 1', 'verified', 'self')
+            """,
+            (document_id,),
+        ).lastrowid
+        reaction_id = conn.execute(
+            """
+            INSERT INTO reactions (
+                reaction_set_id, reaction, source_section_id, verified, review_status
+            ) VALUES (?, 'e + Ar -> e + e + Ar+', ?, 1, 'accepted')
+            """,
+            (reaction_set_id, section_id),
+        ).lastrowid
+
+    for action in ("parse", "extract-chemistry"):
+        response = client.post(f"/api/v1/documents/{document_id}/{action}")
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "confirmed_reaction_set_exists"
+
+    try:
+        chemistry_service.extract_reactions(document_id)
+    except chemistry_service.ConfirmedReactionSetExistsError:
+        pass
+    else:
+        raise AssertionError("direct extraction must not replace a confirmed reaction set")
+
+    try:
+        asyncio.run(document_service.parse_document(document_id))
+    except chemistry_service.ConfirmedReactionSetExistsError:
+        pass
+    else:
+        raise AssertionError("direct parsing must not replace a confirmed reaction set")
+
+    with get_conn() as conn:
+        reaction_set = conn.execute(
+            "SELECT status, verified_by FROM reaction_sets WHERE id=?",
+            (reaction_set_id,),
+        ).fetchone()
+        reaction = conn.execute(
+            "SELECT verified, review_status FROM reactions WHERE id=?",
+            (reaction_id,),
+        ).fetchone()
+        section_count = conn.execute(
+            "SELECT COUNT(*) AS n FROM sections WHERE document_id=?",
+            (document_id,),
+        ).fetchone()["n"]
+
+    assert dict(reaction_set) == {"status": "verified", "verified_by": "self"}
+    assert dict(reaction) == {"verified": 1, "review_status": "accepted"}
+    assert section_count == 1
+
+
+def test_document_extract_can_queue_while_rag_embedding_is_running(tmp_path, monkeypatch):
+    """Slow model work must not keep an SQLite write transaction open."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    from fastapi import BackgroundTasks
+
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.routers import documents as document_router
+    from app.services import rag as rag_service
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            (str(tmp_path / "concurrent.pdf"), "concurrent", "concurrent.pdf"),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Body', 'e + Ar -> e + e + Ar+ .', 'body')
+            """,
+            (document_id,),
+        )
+
+    embedding_started = Event()
+    release_embedding = Event()
+
+    class SlowEmbedding:
+        model_name = "slow-test"
+
+        def embed(self, _text):
+            embedding_started.set()
+            assert release_embedding.wait(timeout=5), "test did not release the embedding worker"
+            return [1.0, 0.0]
+
+    class InMemoryVectorStore:
+        def delete_document(self, _document_id):
+            return None
+
+        def upsert_many(self, _records):
+            return None
+
+    monkeypatch.setattr(rag_service, "get_embedding_adapter", lambda _model_name: SlowEmbedding())
+    monkeypatch.setattr(rag_service, "get_vector_store", lambda _settings: InMemoryVectorStore())
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(rag_service.index_document, document_id)
+        assert embedding_started.wait(timeout=5), "indexing did not reach the slow embedding step"
+        try:
+            extract_payload = document_router.extract_chemistry(document_id, BackgroundTasks())
+        finally:
+            release_embedding.set()
+        index_result = future.result(timeout=5)
+
+    assert extract_payload["chemistry_status"] == "extracting"
+    assert index_result["status"] == "indexed"
+    document = client.get(f"/api/v1/documents/{document_id}").json()
+    assert document["chemistry_status"] == "extracting"
+
+
+def test_document_extract_reports_database_lock_as_document_busy(tmp_path, monkeypatch):
+    import sqlite3
+
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("busy.pdf", pdf_bytes(b"busy"), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    from app.routers import documents as document_router
+
+    def locked(_document_id):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(document_router, "mark_chemistry_queued", locked)
+
+    response = client.post(f"/api/v1/documents/{document_id}/extract-chemistry")
+
+    assert response.status_code == 409
+    assert response.json()["error"] == {
+        "code": "document_busy",
+        "message": "Document is busy with another processing task; retry after it finishes",
+    }
+
+
+def test_sqlite_connections_use_wal_and_busy_timeout(tmp_path):
+    make_client(tmp_path)
+
+    from app.db import SQLITE_BUSY_TIMEOUT_MS, get_conn
+
+    with get_conn() as conn:
+        journal_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+        busy_timeout = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+
+    assert journal_mode == "wal"
+    assert busy_timeout == SQLITE_BUSY_TIMEOUT_MS
 
 
 def test_document_async_routes_mark_queued_status_before_background_tasks_run(tmp_path):
@@ -18866,21 +19447,42 @@ def test_translate_rejects_blank_target_lang(tmp_path):
     assert rejected.json()["error"]["code"] == "validation_error"
 
 
-def test_translate_normalizes_target_lang_before_creating_job(tmp_path):
-    client = make_client(tmp_path)
-    response = client.post(
-        "/api/v1/documents",
-        files={"file": ("target-normalized.pdf", pdf_bytes(b"Translate this plasma paragraph."), "application/pdf")},
-    )
-    document_id = response.json()["id"]
-    assert client.post(f"/api/v1/documents/{document_id}/parse").status_code == 202
+def test_translate_normalizes_target_lang_before_creating_job(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLM_API_KEY", "")
+    client = make_client(tmp_path, monkeypatch)
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            (
+                str(tmp_path / "target-normalized.pdf"),
+                "target-normalized",
+                "target-normalized.pdf",
+            ),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Body', 'Translate this plasma paragraph.', 'body')
+            """,
+            (document_id,),
+        )
 
     accepted = client.post(f"/api/v1/documents/{document_id}/translate", json={"target_lang": " zh-CN "})
 
     assert accepted.status_code == 202
     assert accepted.json()["target_lang"] == "zh-CN"
     translation = client.get(f"/api/v1/documents/{document_id}/translation").json()
+    deadline = time.monotonic() + 2
+    while translation["status"] == "pending" and time.monotonic() < deadline:
+        time.sleep(0.01)
+        translation = client.get(f"/api/v1/documents/{document_id}/translation").json()
     assert translation["target_lang"] == "zh-CN"
+    assert translation["status"] == "done", translation
     assert Path(translation["output_path"]).name == f"document-{document_id}-zh-CN.md"
 
 

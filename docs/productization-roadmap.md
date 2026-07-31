@@ -6,7 +6,7 @@
 
 目标：让系统不依赖手工造数据也能稳定演示、测试和排障。
 
-- 配置校验：启动时能报告外部能力是否已配置，但不阻断本地离线模式。
+- 配置校验：启动时报告外部能力是否已配置；可选学术 API 缺失不阻断基础工作台启动。
 - 调度器：APScheduler 注册 daily / weekly / monthly crawl 入口，调用同一 crawl 编排逻辑。
 - Fixture 导入：提供离线导入论文和文档样例的 CLI，支撑 walking skeleton。
 - Job 状态一致性：后台任务失败时写入资源状态和错误说明。
@@ -31,7 +31,7 @@
 - GROBID 健康检查和失败原因进入 API。
 - TEI 解析覆盖 abstract、body、table、figure caption、reference。
 - 翻译使用可插拔 LLM adapter，同时保留本地诊断回显和公式掩码测试；回显不得展示为有效译文。
-- RAG 同时保留 `local-hash` / `local-json` 离线基线，并支持 `bge-m3` / Chroma 跨语言检索；切换模型后必须重建索引。
+- RAG 产品与发布基线统一为 `bge-m3` / Chroma 跨语言检索；`local-hash` / `local-json` 只保留历史迁移诊断兼容，切换模型后必须重建索引。
 - Streamlit 文档页支持章节浏览、翻译预览、索引状态和引用定位。
 
 ## P3 · 化学库交付成品化
@@ -51,4 +51,4 @@
 - README 覆盖后端、前端、测试、fixture 导入、GROBID 可选启动方式。
 - 提供 `scripts/dev.sh` 或等价命令，统一启动 API 与 Streamlit。
 - 提供健康检查命令和常见问题排查。
-- CI 可跑默认离线测试。
+- CI 可通过 fixture 隔离外部学术 API，同时验证 `bge-m3 + Chroma` 正式索引契约。

@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Query
@@ -17,6 +17,8 @@ ALLOWED_RATE_TYPES = {"cross_section", "arrhenius", "constant"}
 
 class VerifyIn(BaseModel):
     verified: bool
+    decision: Optional[Literal["pending", "accepted", "rejected"]] = None
+    reaction: Optional[str] = None
     reaction_type: Optional[str] = None
     rate_type: Optional[str] = None
     rate_value: Optional[str] = None
@@ -24,7 +26,7 @@ class VerifyIn(BaseModel):
     cross_section_url: Optional[str] = None
     verified_by: Optional[str] = None
 
-    @field_validator("reaction_type", "rate_type", "rate_value", "cross_section_url")
+    @field_validator("reaction", "reaction_type", "rate_type", "rate_value", "cross_section_url")
     @classmethod
     def optional_text_fields_must_not_be_blank(cls, value: Optional[str]) -> Optional[str]:
         if value is None:
@@ -79,6 +81,8 @@ class VerifyIn(BaseModel):
     def reviewer_required_for_verified_reaction(self) -> "VerifyIn":
         if self.verified_by is None:
             raise ValueError("verified_by is required for reaction review actions")
+        if self.decision is not None and self.verified != (self.decision == "accepted"):
+            raise ValueError("verified must match decision")
         return self
 
 
@@ -122,6 +126,7 @@ class ReactionDetailResponse(BaseModel):
     source_excerpt: Optional[str] = None
     confidence: Optional[float] = None
     verified: bool
+    review_status: Literal["pending", "accepted", "rejected"]
     created_at: str
     audit_log: list[ReactionAuditResponse]
 
@@ -141,6 +146,9 @@ class ReactionSetDetailResponse(BaseModel):
     reaction_count: int
     verified_count: int
     unverified_count: int
+    accepted_count: int
+    rejected_count: int
+    pending_count: int
     export_ready: bool
 
 
@@ -169,6 +177,8 @@ def verify(reaction_id: int, body: VerifyIn) -> dict:
             body.verified,
             body.rate_value,
             body.verified_by,
+            decision=body.decision,
+            reaction=body.reaction,
             reaction_type=body.reaction_type,
             rate_type=body.rate_type,
             threshold_ev=body.threshold_ev,

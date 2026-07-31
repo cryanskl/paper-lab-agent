@@ -12,8 +12,22 @@ from pypdf import PdfReader
 from app.clients.grobid import GrobidClient
 from app.config import get_settings
 from app.db import dict_from_row, get_conn
+from app.services.chemistry import assert_reaction_sets_replaceable
 from app.services.rag import get_vector_store
 from app.utils import now_iso
+
+
+INTERNAL_TEI_TARGET_RE = re.compile(
+    r"\s*[\(（]\s*#[A-Za-z][A-Za-z0-9_.:-]*\s*[\)）]",
+)
+SAFE_FIGURE_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]{0,127}$")
+XML_ID_ATTRIBUTE = "{http://www.w3.org/XML/1998/namespace}id"
+
+
+def normalize_reader_text(text: Optional[str]) -> str:
+    normalized = INTERNAL_TEI_TARGET_RE.sub("", text or "")
+    normalized = re.sub(r"\s+([,.;:!?，。；：！？])", r"\1", normalized)
+    return normalized.strip()
 
 
 def count_pdf_pages(content: bytes) -> Optional[int]:
@@ -30,6 +44,8 @@ def safe_original_filename(filename: Optional[str]) -> str:
 
 def mark_parse_queued(document_id: int) -> None:
     settings = get_settings()
+    with get_conn() as conn:
+        assert_reaction_sets_replaceable(conn, document_id)
     try:
         get_vector_store(settings).delete_document(document_id)
     except Exception as exc:
@@ -164,7 +180,7 @@ def sections_from_tei(tei: str) -> list[dict]:
             child_text = text_content(child, include_targets)
             if include_targets and local_name(child) in {"ptr", "ref"}:
                 target = clean_text(child.get("target") or "")
-                if target:
+                if target and not target.startswith("#"):
                     child_text = f"{child_text} ({target})" if child_text else target
             parts.append(child_text)
             parts.append(child.tail or "")
@@ -231,7 +247,7 @@ def sections_from_tei(tei: str) -> list[dict]:
                 child_text = collect(child)
                 if include_targets and local_name(child) in {"ptr", "ref"}:
                     target = clean_text(child.get("target") or "")
-                    if target:
+                    if target and not target.startswith("#"):
                         child_text = f"{child_text} ({target})" if child_text else target
                 parts.append(child_text)
                 parts.append(child.tail or "")
@@ -446,6 +462,105 @@ def sections_from_tei(tei: str) -> list[dict]:
     return sections
 
 
+def figures_from_tei(tei: str, document_id: Optional[int] = None) -> list[dict]:
+    try:
+        root = ET.fromstring(tei)
+    except ET.ParseError:
+        return []
+    namespace = {"tei": "http://www.tei-c.org/ns/1.0"}
+    has_namespace = root.tag.startswith("{")
+
+    def xpath(path: str) -> str:
+        return path if has_namespace else path.replace("tei:", "")
+
+    def find(node: ET.Element, path: str) -> Optional[ET.Element]:
+        return node.find(xpath(path), namespace if has_namespace else {})
+
+    def text(node: Optional[ET.Element]) -> str:
+        if node is None:
+            return ""
+        return normalize_reader_text(" ".join("".join(node.itertext()).split()))
+
+    figures = []
+    figure_nodes = root.findall(
+        xpath(".//tei:text//tei:figure"),
+        namespace if has_namespace else {},
+    )
+    for index, figure in enumerate(figure_nodes, start=1):
+        if (figure.get("type") or "").strip().lower() == "table":
+            continue
+        graphic = find(figure, "tei:graphic")
+        raw_coords = (graphic.get("coords") if graphic is not None else "") or ""
+        coords = [part.strip() for part in raw_coords.split(",")]
+        if len(coords) != 5:
+            continue
+        try:
+            page_number = int(coords[0])
+            x, y, width, height = (float(value) for value in coords[1:])
+        except (TypeError, ValueError):
+            continue
+        if page_number <= 0 or min(x, y) < 0 or min(width, height) <= 0:
+            continue
+        figure_id = (figure.get(XML_ID_ATTRIBUTE) or f"figure_{index}").strip()
+        if not SAFE_FIGURE_ID_RE.fullmatch(figure_id):
+            continue
+        label_value = text(find(figure, "tei:label")) or str(index)
+        title = text(find(figure, "tei:head")) or f"Figure {label_value}"
+        caption = text(find(figure, "tei:figDesc")) or title
+        figures.append(
+            {
+                "id": figure_id,
+                "label": f"Figure {label_value}",
+                "title": title,
+                "caption": caption,
+                "page": page_number,
+                "x": x,
+                "y": y,
+                "width": width,
+                "height": height,
+                "image_url": (
+                    f"/api/v1/documents/{document_id}/figures/{figure_id}/image"
+                    if document_id is not None
+                    else None
+                ),
+            }
+        )
+    return figures
+
+
+def render_figure_png(pdf_path: Path, figure: dict, scale: float = 2.0) -> bytes:
+    import pymupdf
+
+    page_number = int(figure["page"])
+    x = float(figure["x"])
+    y = float(figure["y"])
+    width = float(figure["width"])
+    height = float(figure["height"])
+    if page_number <= 0 or min(x, y) < 0 or min(width, height) <= 0:
+        raise ValueError("figure coordinates are invalid")
+    if width * height * scale * scale > 40_000_000:
+        raise ValueError("figure crop is too large")
+
+    with pymupdf.Document(str(pdf_path)) as pdf:
+        if page_number > pdf.page_count:
+            raise ValueError("figure page is outside the PDF")
+        page = pdf.load_page(page_number - 1)
+        clip = pymupdf.Rect(x, y, x + width, y + height)
+        if (
+            clip.x0 < page.rect.x0
+            or clip.y0 < page.rect.y0
+            or clip.x1 > page.rect.x1
+            or clip.y1 > page.rect.y1
+        ):
+            raise ValueError("figure crop is outside the PDF page")
+        pixmap = page.get_pixmap(
+            matrix=pymupdf.Matrix(scale, scale),
+            clip=clip,
+            alpha=False,
+        )
+        return pixmap.tobytes("png")
+
+
 async def parse_document(document_id: int) -> dict:
     settings = get_settings()
     with get_conn() as conn:
@@ -453,6 +568,7 @@ async def parse_document(document_id: int) -> dict:
         if not row:
             raise ValueError("document not found")
         doc = dict_from_row(row)
+        assert_reaction_sets_replaceable(conn, document_id)
         conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
         conn.execute("DELETE FROM translations WHERE document_id=?", (document_id,))
         conn.execute("DELETE FROM reaction_sets WHERE document_id=?", (document_id,))
