@@ -36,6 +36,6 @@
   `projectForDocument` 的既有多项目归属改动，不涉及本次翻译链路。
 - 真实长文验证：重新触发 21 页 `document_id=20`，36,718 个待译字符按
   6,000 字符上限形成 23 次模型请求；任务 `id=5` 最终为 `done`、
-  `error=null`，生成 `data/translations/document-20-zh.md` 并返回 73 个
+  `error=null`，在运行时翻译目录生成 document-20-zh.md，并返回 73 个
   双语章节。工作台卡片由“翻译失败”更新为“已翻译”，旧超时信息消失，
   浏览器控制台无 warning/error。
