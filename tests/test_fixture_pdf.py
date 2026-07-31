@@ -37,6 +37,19 @@ def test_fixture_pdf_is_standards_compliant_and_extractable():
     assert "%%EOF" in content[-32:].decode("ascii")
 
 
+def test_local_document_fallback_extracts_fixture_pdf_text(tmp_path):
+    from app.fixture_loader import build_fixture_pdf
+    from app.services.documents import read_document_text
+
+    fixture_path = tmp_path / "fixture-plasma-chemistry.pdf"
+    fixture_path.write_bytes(build_fixture_pdf())
+
+    text = read_document_text(str(fixture_path))
+
+    assert "Global model of an Ar/O2 inductively coupled plasma" in text
+    assert "e + Ar -> e + e + Ar+" in text
+
+
 def test_fixture_loader_refreshes_legacy_pdf_and_invalidates_derivatives(tmp_path, monkeypatch):
     configure_test_storage(tmp_path, monkeypatch)
 

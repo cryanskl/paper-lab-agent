@@ -7,6 +7,7 @@ from urllib.parse import unquote
 from xml.sax.saxutils import escape
 
 from fastapi import UploadFile
+from pypdf import PdfReader
 
 from app.clients.grobid import GrobidClient
 from app.config import get_settings
@@ -106,6 +107,13 @@ async def save_upload(file: UploadFile, paper_id: Optional[int]) -> tuple[dict, 
 
 def read_document_text(file_path: str) -> str:
     data = Path(file_path).read_bytes()
+    try:
+        extracted = "\n".join(page.extract_text() or "" for page in PdfReader(file_path).pages)
+        extracted = re.sub(r"\s+", " ", extracted).strip()
+        if extracted:
+            return extracted
+    except Exception:
+        pass
     text = data.decode("utf-8", errors="ignore")
     text = re.sub(r"^%PDF-[^\r\n]*(?:\r?\n)?", "", text)
     text = re.sub(r"\s+", " ", text).strip()
