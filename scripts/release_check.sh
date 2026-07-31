@@ -247,6 +247,26 @@ def validate_prepare_demo_summary_reviewer(summary, label):
         )
         raise SystemExit(1)
 
+
+def run_prepare_demo(args, env):
+    try:
+        return subprocess.run(
+            [sys.executable, "scripts/prepare_demo_data.py", *args],
+            text=True,
+            capture_output=True,
+            check=True,
+            env=env,
+        )
+    except subprocess.CalledProcessError as exc:
+        print(
+            "release_check failed: prepare_demo_data command="
+            f"{exc.cmd!r}, returncode={exc.returncode}, "
+            f"stdout={exc.stdout!r}, stderr={exc.stderr!r}",
+            file=sys.stderr,
+        )
+        raise
+
+
 with tempfile.TemporaryDirectory(prefix="paper-lab-demo-") as demo_dir:
     env = os.environ.copy()
     env["PAPER_LAB_DATA_DIR"] = demo_dir
@@ -261,37 +281,20 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-demo-") as demo_dir:
     ]:
         env.pop(key, None)
     # Validate the release demo path directly: scripts/prepare_demo_data.py --compact.
-    result = subprocess.run(
-        [sys.executable, "scripts/prepare_demo_data.py", "--compact"],
-        text=True,
-        capture_output=True,
-        check=True,
-        env=env,
-    )
+    result = run_prepare_demo(["--compact"], env)
     payload = json.loads(result.stdout)
     # Validate the compact release summary path directly: scripts/prepare_demo_data.py --summary-only --compact.
-    summary_result = subprocess.run(
-        [sys.executable, "scripts/prepare_demo_data.py", "--summary-only", "--compact"],
-        text=True,
-        capture_output=True,
-        check=True,
-        env=env,
-    )
+    summary_result = run_prepare_demo(["--summary-only", "--compact"], env)
     summary_payload = json.loads(summary_result.stdout)
     summary_output_path = os.path.join(demo_dir, "out", "demo-summary.json")
-    summary_output_result = subprocess.run(
+    summary_output_result = run_prepare_demo(
         [
-            sys.executable,
-            "scripts/prepare_demo_data.py",
             "--summary-only",
             "--compact",
             "--output",
             summary_output_path,
         ],
-        text=True,
-        capture_output=True,
-        check=True,
-        env=env,
+        env,
     )
     if summary_output_result.stdout:
         print("release_check failed: prepare_demo_data --output should not write JSON to stdout", file=sys.stderr)
