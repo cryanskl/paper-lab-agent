@@ -22,6 +22,6 @@
 ## 验证
 
 - `POST /api/v1/documents/1/translate` 返回新任务，轮询结果为 `status=done`。
-- `GET /api/v1/documents/1/translation` 的前四个目标段落为中文，输出路径为 `data/translations/document-1-zh-2.md`。
+- `GET /api/v1/documents/1/translation` 的前四个目标段落为中文，翻译产物写入配置的 `PAPER_LAB_TRANSLATION_DIR`。
 - 运行聚焦前端测试与浏览器页面验证，确认卡片和双语阅读器显示一致。
 - 完整 gate：`EMBEDDING_MODEL=local-hash VECTOR_DB_BACKEND=local-json VECTOR_DB_PATH=data/vector-index.json bash scripts/release_check.sh` → `1375 passed in 188.74s`。
