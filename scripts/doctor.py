@@ -41,6 +41,8 @@ PYTHON_DEPENDENCIES = (
     ("apscheduler", "apscheduler"),
     ("streamlit", "streamlit"),
     ("pytest", "pytest"),
+    ("sentence-transformers", "sentence_transformers"),
+    ("chromadb", "chromadb"),
 )
 REQUIRED_ENV_EXAMPLE_KEYS = (
     "OPENALEX_API_KEY",
@@ -524,6 +526,7 @@ def storage_path_config(repo: Path, env: dict[str, str] | None = None) -> dict[s
     translation_dir = Path(env.get("PAPER_LAB_TRANSLATION_DIR") or data_dir / "translations")
     export_dir = Path(env.get("PAPER_LAB_EXPORT_DIR") or data_dir / "exports")
     vector_db_path = Path(env.get("VECTOR_DB_PATH") or data_dir / "vector-index.json")
+    vector_db_backend = (env.get("VECTOR_DB_BACKEND") or "local-json").strip().lower()
     paths = {
         "data_dir": data_dir,
         "database_parent": database_path.parent,
@@ -533,6 +536,8 @@ def storage_path_config(repo: Path, env: dict[str, str] | None = None) -> dict[s
         "export_dir": export_dir,
         "vector_db_parent": vector_db_path.parent,
     }
+    if vector_db_backend == "chroma":
+        paths["vector_db_path"] = vector_db_path
     return {
         key: path if path.is_absolute() else repo / path
         for key, path in paths.items()
@@ -542,10 +547,10 @@ def storage_path_config(repo: Path, env: dict[str, str] | None = None) -> dict[s
 def storage_file_path_config(repo: Path, env: dict[str, str] | None = None) -> dict[str, Path]:
     env = env_with_file_values(repo, env)
     data_dir = Path(env.get("PAPER_LAB_DATA_DIR") or "data")
-    paths = {
-        "database_path": Path(env.get("DATABASE_PATH") or data_dir / "plasma.db"),
-        "vector_db_path": Path(env.get("VECTOR_DB_PATH") or data_dir / "vector-index.json"),
-    }
+    paths = {"database_path": Path(env.get("DATABASE_PATH") or data_dir / "plasma.db")}
+    vector_db_backend = (env.get("VECTOR_DB_BACKEND") or "local-json").strip().lower()
+    if vector_db_backend != "chroma":
+        paths["vector_db_path"] = Path(env.get("VECTOR_DB_PATH") or data_dir / "vector-index.json")
     return {
         key: path if path.is_absolute() else repo / path
         for key, path in paths.items()

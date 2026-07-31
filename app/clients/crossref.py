@@ -4,7 +4,7 @@ import re
 import unicodedata
 from datetime import date
 from typing import Any, Optional
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 
@@ -88,6 +88,25 @@ class CrossrefClient:
                 await self.wait_between_requests()
                 params["cursor"] = next_cursor
         return results
+
+    async def work_by_doi(self, doi: str) -> Optional[dict[str, Any]]:
+        normalized_doi = self.normalize_doi(doi)
+        if not normalized_doi:
+            return None
+        headers = {}
+        params = {}
+        if self.mailto:
+            headers["User-Agent"] = f"paper-lab-agent (mailto:{self.mailto})"
+            params["mailto"] = self.mailto
+        encoded_doi = quote(normalized_doi, safe="")
+        async with httpx.AsyncClient(timeout=self.timeout, headers=headers, transport=self.transport) as client:
+            payload = await self._get_json(client, f"{self.base_url}/works/{encoded_doi}", params)
+        if not isinstance(payload, dict):
+            return None
+        message = payload.get("message")
+        if not isinstance(message, dict):
+            return None
+        return self.normalize(message)
 
     async def wait_between_requests(self) -> None:
         if self.request_interval_seconds > 0:
@@ -254,5 +273,6 @@ class CrossrefClient:
             "published_year": year,
             "landing_url": self.normalize_url(item.get("URL")) or self.resource_primary_url(item.get("resource")),
             "source_api": "crossref",
+            "work_type": self.first_text(item.get("type")),
             "raw_metadata": item,
         }

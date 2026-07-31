@@ -146,14 +146,21 @@ SEED_KEYWORD_TERMS = [
 ]
 
 
-def make_client(tmp_path):
-    os.environ["DATABASE_PATH"] = str(tmp_path / "test.db")
-    os.environ["PAPER_LAB_DATA_DIR"] = str(tmp_path)
-    os.environ["PAPER_LAB_PDF_DIR"] = str(tmp_path / "pdfs")
-    os.environ["PAPER_LAB_TEI_DIR"] = str(tmp_path / "tei")
-    os.environ["PAPER_LAB_TRANSLATION_DIR"] = str(tmp_path / "translations")
-    os.environ["PAPER_LAB_EXPORT_DIR"] = str(tmp_path / "exports")
-    os.environ["VECTOR_DB_PATH"] = str(tmp_path / "vector-index.json")
+def make_client(tmp_path, monkeypatch=None):
+    environment = {
+        "DATABASE_PATH": str(tmp_path / "test.db"),
+        "PAPER_LAB_DATA_DIR": str(tmp_path),
+        "PAPER_LAB_PDF_DIR": str(tmp_path / "pdfs"),
+        "PAPER_LAB_TEI_DIR": str(tmp_path / "tei"),
+        "PAPER_LAB_TRANSLATION_DIR": str(tmp_path / "translations"),
+        "PAPER_LAB_EXPORT_DIR": str(tmp_path / "exports"),
+        "VECTOR_DB_PATH": str(tmp_path / "vector-index.json"),
+    }
+    for key, value in environment.items():
+        if monkeypatch is None:
+            os.environ[key] = value
+        else:
+            monkeypatch.setenv(key, value)
 
     from app.config import get_settings
     from app.db import init_db
@@ -432,12 +439,13 @@ def test_system_status_reports_symlinked_storage_parent_not_writable(tmp_path, m
 
     monkeypatch.setenv("PAPER_LAB_DATA_DIR", str(linked_data))
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setenv("VECTOR_DB_BACKEND", "local-json")
+    monkeypatch.setenv("VECTOR_DB_PATH", str(linked_data / "vector-index.json"))
     for key in [
         "PAPER_LAB_PDF_DIR",
         "PAPER_LAB_TEI_DIR",
         "PAPER_LAB_TRANSLATION_DIR",
         "PAPER_LAB_EXPORT_DIR",
-        "VECTOR_DB_PATH",
     ]:
         monkeypatch.delenv(key, raising=False)
 
@@ -870,6 +878,10 @@ def test_papers_boolean_search_covers_authors_doi_and_global_result_limit(tmp_pa
         "/api/v1/papers",
         params={"q": "surface reaction, Jane Doe", "q_mode": "and", "sort": "relevance"},
     )
+    combined_and_chinese_comma = client.get(
+        "/api/v1/papers",
+        params={"q": "surface reaction，Jane Doe", "q_mode": "and", "sort": "relevance"},
+    )
     author = client.get("/api/v1/papers", params={"q": "Jane Doe", "q_mode": "or"})
     doi = client.get("/api/v1/papers", params={"q": "10.5555/jane-only", "q_mode": "or"})
     capped = client.get(
@@ -880,6 +892,8 @@ def test_papers_boolean_search_covers_authors_doi_and_global_result_limit(tmp_pa
     assert combined_and.status_code == 200
     assert combined_and.json()["total"] == 1
     assert combined_and.json()["items"][0]["doi"] == "10.5555/both"
+    assert combined_and_chinese_comma.status_code == 200
+    assert combined_and_chinese_comma.json() == combined_and.json()
     assert author.json()["total"] == 2
     assert doi.json()["total"] == 1
     assert doi.json()["items"][0]["doi"] == "10.5555/jane-only"
@@ -1493,6 +1507,108 @@ def test_deleted_default_prompt_preset_is_not_reseeded_on_restart(tmp_path):
     assert all(item["id"] != preset_id for item in remaining["items"])
 
 
+def test_glossary_terms_seed_and_support_sqlite_crud(tmp_path):
+    client = make_client(tmp_path)
+
+    initial = client.get("/api/v1/glossary-terms", params={"page_size": 500})
+    assert initial.status_code == 200
+    assert initial.json()["total"] == 16
+    assert initial.json()["page"] == 1
+    assert initial.json()["page_size"] == 500
+
+    created = client.post(
+        "/api/v1/glossary-terms",
+        json={"en": "plasma potential", "zh": "等离子体电势"},
+    )
+    assert created.status_code == 201
+    term_id = created.json()["id"]
+    assert created.json()["translation_status"] is None
+
+    updated = client.put(
+        f"/api/v1/glossary-terms/{term_id}",
+        json={
+            "en": "plasma potential",
+            "zh": "等离子体电位",
+            "translation_status": "failed",
+            "translation_error": "temporary model error",
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["zh"] == "等离子体电位"
+    assert updated.json()["translation_status"] == "failed"
+
+    duplicate = client.post(
+        "/api/v1/glossary-terms",
+        json={"en": "PLASMA POTENTIAL", "zh": "另一个译名"},
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "glossary_term_conflict"
+
+    deleted = client.delete(f"/api/v1/glossary-terms/{term_id}")
+    assert deleted.status_code == 200
+    assert deleted.json() == {
+        "id": term_id,
+        "en": "plasma potential",
+        "zh": "等离子体电位",
+    }
+    assert client.get("/api/v1/glossary-terms", params={"page_size": 500}).json()["total"] == 16
+
+
+def test_glossary_import_merges_legacy_browser_terms_and_deleted_defaults_stay_deleted(tmp_path):
+    client = make_client(tmp_path)
+    initial = client.get("/api/v1/glossary-terms", params={"page_size": 500}).json()
+    ionization = next(item for item in initial["items"] if item["en"] == "ionization")
+
+    imported = client.post(
+        "/api/v1/glossary-terms/import",
+        json={
+            "items": [
+                {"en": "ionization", "zh": "电离"},
+                {"en": "deterministic fixture", "zh": "确定性夹具"},
+            ]
+        },
+    )
+    assert imported.status_code == 200
+    assert imported.json()["total"] == 17
+    assert sum(item["en"] == "ionization" for item in imported.json()["items"]) == 1
+    imported_term = next(
+        item for item in imported.json()["items"] if item["en"] == "deterministic fixture"
+    )
+
+    assert client.delete(f"/api/v1/glossary-terms/{ionization['id']}").status_code == 200
+
+    from app.db import init_db
+
+    init_db()
+
+    after_restart = client.get("/api/v1/glossary-terms", params={"page_size": 500}).json()
+    ids = {item["id"] for item in after_restart["items"]}
+    assert ionization["id"] not in ids
+    assert imported_term["id"] in ids
+    assert after_restart["total"] == 16
+
+
+def test_glossary_term_validation_and_missing_resources_are_json(tmp_path):
+    client = make_client(tmp_path)
+
+    blank = client.post("/api/v1/glossary-terms", json={"en": " ", "zh": ""})
+    too_long = client.post("/api/v1/glossary-terms", json={"en": "x" * 121})
+    bad_status = client.post(
+        "/api/v1/glossary-terms",
+        json={"en": "valid term", "translation_status": "done"},
+    )
+    missing_update = client.put("/api/v1/glossary-terms/9999", json={"en": "missing"})
+    missing_delete = client.delete("/api/v1/glossary-terms/9999")
+
+    assert blank.status_code == 422
+    assert too_long.status_code == 422
+    assert bad_status.status_code == 422
+    assert missing_update.status_code == 404
+    assert missing_update.json()["error"]["code"] == "glossary_term_not_found"
+    assert missing_delete.status_code == 404
+    assert missing_delete.json()["error"]["code"] == "glossary_term_not_found"
+
+
 def test_categories_list_reports_paper_usage_and_delete_cascades_links(tmp_path):
     client = make_client(tmp_path)
     from app.db import get_conn
@@ -2087,6 +2203,111 @@ def test_rag_query_rejects_unknown_document_id(tmp_path):
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "document_not_found"
     assert "999" in response.json()["error"]["message"]
+
+
+def test_current_document_qa_uses_parsed_sections_without_rag_index(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services import rag as rag_service
+
+    captured = {}
+
+    def fake_answer(self, question, context):
+        captured["question"] = question
+        captured["context"] = context
+        return "论文说明了氩等离子体中的电子碰撞电离过程。[S2]"
+
+    monkeypatch.setattr(rag_service.OpenAICompatibleDocumentAnswerer, "answer", fake_answer)
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'not_indexed')
+            """,
+            ("/tmp/current-paper.pdf", "current-paper", "current-paper.pdf"),
+        ).lastrowid
+        conn.executemany(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, ?, ?, ?, 'body')
+            """,
+            [
+                (document_id, 1, "Introduction", "This paper studies an argon plasma."),
+                (document_id, 2, "Reaction chemistry", "Electron impact ionization produces Ar+ and two electrons."),
+            ],
+        )
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={
+            "question": "这篇论文讨论了什么电离过程？",
+            "document_ids": [document_id],
+            "top_k": 6,
+            "use_document_context": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["answer"].endswith("[S2]")
+    assert payload["sources"] == [
+        {
+            "document_id": document_id,
+            "paper_id": None,
+            "paper_title": None,
+            "section_id": payload["sources"][0]["section_id"],
+            "section_seq": 2,
+            "section_title": "Reaction chemistry",
+            "section_type": "body",
+            "chunk_id": None,
+            "vector_id": None,
+            "score": 1.0,
+            "source_excerpt": "Electron impact ionization produces Ar+ and two electrons.",
+        }
+    ]
+    assert captured["question"] == "这篇论文讨论了什么电离过程？"
+    assert "[S1]" in captured["context"]
+    assert "[S2]" in captured["context"]
+    assert "Electron impact ionization" in captured["context"]
+    assert not (tmp_path / "vector-index.json").exists()
+
+
+def test_current_document_answerer_sends_grounded_citation_prompt():
+    import httpx
+
+    from app.services.rag import OpenAICompatibleDocumentAnswerer
+
+    captured = {}
+
+    def handler(request):
+        captured["request"] = request
+        captured["payload"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "核心结论来自当前论文。[S1]"}}]},
+        )
+
+    answerer = OpenAICompatibleDocumentAnswerer(
+        "test-key",
+        "http://llm.test/v1",
+        "test-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    answer = answerer.answer("核心结论是什么？", "[S1] Conclusion\nArgon ionization dominates.")
+
+    assert answer == "核心结论来自当前论文。[S1]"
+    assert captured["request"].url == "http://llm.test/v1/chat/completions"
+    assert captured["request"].headers["authorization"] == "Bearer test-key"
+    assert captured["payload"]["model"] == "test-model"
+    assert captured["payload"]["temperature"] == 0
+    system_prompt = captured["payload"]["messages"][0]["content"]
+    assert "only from the supplied paper context" in system_prompt
+    assert "untrusted reference text" in system_prompt
+    assert "same language as the question" in system_prompt
+    assert "[S1]" in captured["payload"]["messages"][1]["content"]
 
 
 def test_rag_query_backend_failure_returns_json_error(tmp_path):
@@ -2841,12 +3062,12 @@ def test_fixture_loader_supports_walking_skeleton(tmp_path):
     assert repeat["updated"] == 2
 
 
-def test_paper_oa_pdf_download_returns_attachment(tmp_path, monkeypatch):
+def test_paper_oa_pdf_download_saves_to_local_library_and_opens_inline(tmp_path, monkeypatch):
     client = make_client(tmp_path)
 
     from app.db import get_conn
     from app.fixture_loader import load_fixture_papers
-    from app.routers import papers as papers_router
+    from app.services import paper_downloads
     from app.services.oa_download import OAPdfDownload
 
     load_fixture_papers()
@@ -2868,31 +3089,49 @@ def test_paper_oa_pdf_download_returns_attachment(tmp_path, monkeypatch):
             final_url=url,
         )
 
-    monkeypatch.setattr(papers_router, "download_oa_pdf", fake_download)
+    monkeypatch.setattr(paper_downloads, "download_oa_pdf", fake_download)
 
-    response = client.get(f"/api/v1/papers/{paper['id']}/download")
+    response = client.post(f"/api/v1/papers/{paper['id']}/download")
 
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "application/pdf"
-    assert response.headers["content-disposition"].startswith(
-        f'attachment; filename="paper-{paper["id"]}.pdf";'
-    )
-    assert "filename*=UTF-8''Global%20model%20of%20an%20Ar%20O2" in response.headers["content-disposition"]
-    assert response.content == pdf_bytes(b"open access paper")
+    assert response.status_code == 202
+    assert response.json()["paper_id"] == paper["id"]
+    assert response.json()["status"] == "downloading"
     assert requested_urls == [
         (
             "https://open-repository.example.org/paper.pdf",
             {"user_agent": "testclient"},
         )
     ]
+    detail = client.get(f"/api/v1/papers/{paper['id']}").json()
+    assert detail["download"]["status"] == "downloaded"
+    document_id = detail["download"]["document_id"]
+    assert document_id is not None
+
+    document = client.get(f"/api/v1/documents/{document_id}").json()
+    stored_path = Path(document["file_path"])
+    assert stored_path.parent == tmp_path / "pdfs"
+    assert stored_path.read_bytes() == pdf_bytes(b"open access paper")
+    opened = client.get(f"/api/v1/documents/{document_id}/file")
+    assert opened.status_code == 200
+    assert opened.headers["content-type"] == "application/pdf"
+    assert opened.headers["content-disposition"].startswith("inline;")
+    assert opened.content == pdf_bytes(b"open access paper")
+
+    downloaded = client.get("/api/v1/papers?downloaded_only=true").json()
+    assert [item["id"] for item in downloaded["items"]] == [paper["id"]]
+    repeated = client.post(f"/api/v1/papers/{paper['id']}/download")
+    assert repeated.status_code == 202
+    assert repeated.json()["status"] == "downloaded"
+    assert repeated.json()["document_id"] == document_id
+    assert len(requested_urls) == 1
 
 
-def test_paper_oa_pdf_download_reports_unavailable_and_upstream_errors(tmp_path, monkeypatch):
+def test_paper_oa_pdf_download_keeps_failed_job_for_retry(tmp_path, monkeypatch):
     client = make_client(tmp_path)
 
     from app.db import get_conn
     from app.fixture_loader import load_fixture_papers
-    from app.routers import papers as papers_router
+    from app.services import paper_downloads
     from app.services.oa_download import OADownloadError
 
     load_fixture_papers()
@@ -2903,8 +3142,8 @@ def test_paper_oa_pdf_download_reports_unavailable_and_upstream_errors(tmp_path,
         ).fetchone()
         conn.execute("UPDATE papers SET oa_pdf_url=NULL WHERE id=?", (paper["id"],))
 
-    unavailable = client.get(f"/api/v1/papers/{paper['id']}/download")
-    missing = client.get("/api/v1/papers/999999/download")
+    unavailable = client.post(f"/api/v1/papers/{paper['id']}/download")
+    missing = client.post("/api/v1/papers/999999/download")
 
     assert unavailable.status_code == 409
     assert unavailable.json()["error"]["code"] == "oa_pdf_unavailable"
@@ -2920,11 +3159,18 @@ def test_paper_oa_pdf_download_reports_unavailable_and_upstream_errors(tmp_path,
     async def fail_download(_url, **_kwargs):
         raise OADownloadError(409, "oa_pdf_access_denied", "Open-access PDF source requires authorization")
 
-    monkeypatch.setattr(papers_router, "download_oa_pdf", fail_download)
-    denied = client.get(f"/api/v1/papers/{paper['id']}/download")
+    monkeypatch.setattr(paper_downloads, "download_oa_pdf", fail_download)
+    denied = client.post(f"/api/v1/papers/{paper['id']}/download")
 
-    assert denied.status_code == 409
-    assert denied.json()["error"]["code"] == "oa_pdf_access_denied"
+    assert denied.status_code == 202
+    detail = client.get(f"/api/v1/papers/{paper['id']}").json()
+    assert detail["download"]["status"] == "failed"
+    assert detail["download"]["error"] == "Open-access PDF source requires authorization"
+    jobs = client.get("/api/v1/paper-downloads?status=failed").json()
+    assert jobs["total"] == 1
+    assert jobs["status_counts"]["failed"] == 1
+    assert jobs["items"][0]["paper_id"] == paper["id"]
+    assert jobs["items"][0]["error"] == "Open-access PDF source requires authorization"
 
 
 def test_fixture_loader_imports_idempotent_document_sample(tmp_path):
@@ -6301,11 +6547,12 @@ def test_crawl_run_forwards_normalized_online_search_query(tmp_path, monkeypatch
 
     calls = []
 
-    async def fake_run_crawl_job(job_id, journal_id, date_from, date_to, search_terms, search_mode, max_results):
-        calls.append((job_id, journal_id, date_from, date_to, search_terms, search_mode, max_results))
+    async def fake_run_search_crawl_jobs(task_args_list, max_results):
+        calls.extend(task_args_list)
+        assert max_results == 50
 
     monkeypatch.setattr(crawl_router, "create_jobs", fake_create_jobs)
-    monkeypatch.setattr(crawl_router, "run_crawl_job", fake_run_crawl_job)
+    monkeypatch.setattr(crawl_router, "run_search_crawl_jobs", fake_run_search_crawl_jobs)
 
     response = client.post(
         "/api/v1/crawl/run",
@@ -7065,9 +7312,9 @@ def test_system_status_reports_supported_adapter_warning_details(tmp_path, monke
     warnings = {warning["code"]: warning for warning in status["config_warnings"]}
 
     assert warnings["unsupported_embedding_model"]["actual"] == "experimental-vectors"
-    assert warnings["unsupported_embedding_model"]["supported"] == ["local-hash"]
+    assert warnings["unsupported_embedding_model"]["supported"] == ["bge-m3", "local-hash"]
     assert warnings["unsupported_vector_db_backend"]["actual"] == "faiss"
-    assert warnings["unsupported_vector_db_backend"]["supported"] == ["local-json"]
+    assert warnings["unsupported_vector_db_backend"]["supported"] == ["chroma", "local-json"]
     assert status["release_readiness"]["ready"] is False
     assert status["release_readiness"]["config_warning_codes"] == [
         "unsupported_embedding_model",
@@ -8452,6 +8699,118 @@ def test_openai_translation_adapter_reports_invalid_chat_completion_shape():
         translator.translate("The rate is <EQ_000>.", "zh")
 
 
+def test_openai_term_translation_adapter_uses_context_and_plain_term_prompt():
+    import json
+
+    import httpx
+
+    from app.services.translation import OpenAICompatibleTermTranslator
+
+    def handler(request):
+        payload = json.loads(request.content)
+        assert request.url == "http://llm.test/v1/chat/completions"
+        assert payload["model"] == "term-model"
+        assert payload["temperature"] == 0
+        assert "untrusted reference text" in payload["messages"][0]["content"]
+        assert "Term: deterministic fixture" in payload["messages"][1]["content"]
+        assert "Paper context: We use a deterministic fixture for repeatable tests." in (
+            payload["messages"][1]["content"]
+        )
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "确定性测试夹具"}}]},
+        )
+
+    translator = OpenAICompatibleTermTranslator(
+        "test-key",
+        "http://llm.test/v1",
+        "term-model",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = translator.translate_term(
+        "deterministic fixture",
+        "en",
+        "zh",
+        "We use a deterministic fixture for repeatable tests.",
+    )
+
+    assert result == "确定性测试夹具"
+
+
+def test_term_translation_api_runs_model_job_and_reuses_context_cache(tmp_path, monkeypatch):
+    from app.services import translation as translation_service
+
+    calls = []
+
+    class FakeTermTranslator:
+        def translate_term(self, source_text, source_lang, target_lang, context_text):
+            calls.append((source_text, source_lang, target_lang, context_text))
+            return "“确定性测试夹具”"
+
+    monkeypatch.setattr(
+        translation_service,
+        "get_term_translator",
+        lambda settings: FakeTermTranslator(),
+    )
+    client = make_client(tmp_path)
+    body = {
+        "source_text": " deterministic   fixture ",
+        "source_lang": "en",
+        "target_lang": "zh",
+        "context_text": "Used as a deterministic fixture in regression tests.",
+    }
+
+    response = client.post("/api/v1/term-translations", json=body)
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["status"] == "pending"
+    result = client.get(f"/api/v1/term-translations/{payload['job_id']}")
+    assert result.status_code == 200
+    assert result.json()["status"] == "done"
+    assert result.json()["target_text"] == "确定性测试夹具"
+    assert calls == [
+        (
+            "deterministic fixture",
+            "en",
+            "zh",
+            "Used as a deterministic fixture in regression tests.",
+        )
+    ]
+
+    cached = client.post("/api/v1/term-translations", json=body)
+
+    assert cached.status_code == 202
+    assert cached.json()["status"] == "done"
+    assert cached.json()["job_id"] == payload["job_id"]
+    assert len(calls) == 1
+
+
+def test_term_translation_api_fails_honestly_without_model_key(tmp_path, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setenv("LLM_API_KEY", "")
+    get_settings.cache_clear()
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/v1/term-translations",
+        json={
+            "source_text": "deterministic fixture",
+            "source_lang": "en",
+            "target_lang": "zh",
+        },
+    )
+
+    assert response.status_code == 202
+    result = client.get(f"/api/v1/term-translations/{response.json()['job_id']}")
+    assert result.status_code == 200
+    assert result.json()["status"] == "failed"
+    assert result.json()["target_text"] is None
+    assert result.json()["error"] == "LLM_API_KEY is not configured"
+
+
 def test_openai_classifier_keeps_only_registered_taxonomy_slugs():
     import json
 
@@ -8859,6 +9218,55 @@ def test_rag_index_uses_local_vector_store(tmp_path):
     assert "electron impact reactions" in rag["sources"][0]["source_excerpt"]
 
 
+def test_rag_bge_m3_chroma_cross_language_query_uses_same_adapter(tmp_path, monkeypatch):
+    monkeypatch.setenv("EMBEDDING_MODEL", "bge-m3")
+    monkeypatch.setenv("VECTOR_DB_BACKEND", "chroma")
+    client = make_client(tmp_path, monkeypatch)
+
+    from app.db import get_conn
+    from app.services import rag as rag_service
+
+    calls = []
+
+    class SemanticEmbedding:
+        model_name = "bge-m3"
+
+        def embed(self, text: str) -> list[float]:
+            calls.append(text)
+            if "核心结论" in text or "electron density" in text:
+                return [1.0, 0.0, 0.0]
+            return [0.0, 1.0, 0.0]
+
+    monkeypatch.setattr(rag_service, "get_embedding_adapter", lambda _model_name: SemanticEmbedding())
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            ("/tmp/cross-language.pdf", "cross-language", "cross-language.pdf"),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Conclusion',
+                    'The electron density is controlled primarily by argon ionization.',
+                    'conclusion')
+            """,
+            (document_id,),
+        )
+
+    indexed = rag_service.index_document(document_id)
+    result = rag_service.query("这篇论文的核心结论是什么？", [document_id], 3)
+
+    assert indexed["status"] == "indexed"
+    assert result["sources"]
+    assert result["sources"][0]["document_id"] == document_id
+    assert "electron density" in result["answer"]
+    assert calls[-1] == "这篇论文的核心结论是什么？"
+
+
 def test_rag_index_normalizes_vector_db_backend_metadata(tmp_path, monkeypatch):
     monkeypatch.setenv("VECTOR_DB_BACKEND", " LOCAL-JSON ")
     client = make_client(tmp_path)
@@ -9217,6 +9625,8 @@ def test_rag_failed_reindex_removes_stale_vectors_for_document(tmp_path, monkeyp
     monkeypatch.setenv("EMBEDDING_MODEL", "text-embedding-3-small")
 
     failed = index_document(document_id)
+    get_settings.cache_clear()
+    monkeypatch.setenv("EMBEDDING_MODEL", "local-hash")
     stale = query("metastable", [document_id], 3)
 
     assert failed["status"] == "failed"
@@ -18555,8 +18965,8 @@ def test_translate_document_avoids_overwriting_colliding_target_lang_slugs(tmp_p
     assert first_path.read_text(encoding="utf-8") == "first translation"
 
 
-def test_translate_document_rejects_symlinked_output_file(tmp_path):
-    make_client(tmp_path)
+def test_translate_document_rejects_symlinked_output_file(tmp_path, monkeypatch):
+    make_client(tmp_path, monkeypatch)
     from app.db import get_conn
     from app.services import translation as translation_service
 
@@ -18590,8 +19000,8 @@ def test_translate_document_rejects_symlinked_output_file(tmp_path):
     assert outside_path.read_text(encoding="utf-8") == "outside original"
 
 
-def test_translate_document_rejects_symlinked_output_parent(tmp_path):
-    make_client(tmp_path)
+def test_translate_document_rejects_symlinked_output_parent(tmp_path, monkeypatch):
+    make_client(tmp_path, monkeypatch)
     from app.db import get_conn
     from app.services import translation as translation_service
 

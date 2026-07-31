@@ -12,8 +12,10 @@ from app.db import fetch_one, get_conn
 from app.release_readiness import RELEASE_BLOCKING_CONFIG_WARNING_CODES
 from app.scheduler import scheduled_crawl_jobs
 from app.services.rag import (
+    ChromaVectorStore,
     SUPPORTED_EMBEDDING_MODELS,
     SUPPORTED_VECTOR_DB_BACKENDS,
+    assert_safe_vector_store_directory,
     assert_safe_vector_store_path,
     normalize_embedding_model,
     normalize_vector_db_backend,
@@ -206,12 +208,16 @@ def storage_path_health(path: Path, *, expected_type: str = "directory") -> dict
     }
 
 
-def vector_store_health(path: Path) -> dict:
+def vector_store_health(path: Path, backend: str = "local-json") -> dict:
+    normalized_backend = normalize_vector_db_backend(backend)
     exists = path.exists()
     safe_path = True
     path_error = None
     try:
-        assert_safe_vector_store_path(path)
+        if normalized_backend == "chroma":
+            assert_safe_vector_store_directory(path)
+        else:
+            assert_safe_vector_store_path(path)
     except Exception as exc:
         safe_path = False
         path_error = str(exc)
@@ -235,7 +241,10 @@ def vector_store_health(path: Path) -> dict:
         health["error"] = "vector store is not readable"
         return health
     try:
-        parse_vector_store_json(path.read_text(encoding="utf-8"))
+        if normalized_backend == "chroma":
+            ChromaVectorStore(path).load()
+        else:
+            parse_vector_store_json(path.read_text(encoding="utf-8"))
         health["valid_json"] = True
     except Exception as exc:
         health["valid_json"] = False
@@ -253,7 +262,7 @@ def storage_health(settings) -> dict:
         "database": storage_path_health(settings.database_path, expected_type="file"),
         "database_parent": storage_path_health(settings.database_path.parent),
         "vector_db_parent": storage_path_health(settings.vector_db_path.parent),
-        "vector_db": vector_store_health(settings.vector_db_path),
+        "vector_db": vector_store_health(settings.vector_db_path, settings.vector_db_backend),
     }
 
 

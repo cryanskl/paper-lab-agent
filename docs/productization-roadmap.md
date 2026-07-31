@@ -19,6 +19,7 @@
 - OpenAlex / Crossref 分页、重试、限流和字段归一化增强。
 - 用户搜索词支持 AND / OR 语义，并下推到 OpenAlex / Crossref；期刊配置不再承担关键词准入。
 - 精确重复搜索复用本地缓存，并以可配置的结果数量控制响应时间。
+- 多期刊搜索先收集全部候选，再按期刊内相关性和跨期刊轮转填充全局配额，避免快源垄断结果。
 - crawl job 详情展示每个期刊的 found/new/filtered/error。
 - DOI 为空的文献建立保守去重策略和审计字段。
 - Streamlit 检索页增加手动抓取、job 列表和 job 详情。
@@ -29,8 +30,8 @@
 
 - GROBID 健康检查和失败原因进入 API。
 - TEI 解析覆盖 abstract、body、table、figure caption、reference。
-- 翻译从占位保留升级到可插拔 LLM adapter，同时保留公式掩码测试。
-- RAG 检索从简单词频升级到可插拔 embedding/vector store。
+- 翻译使用可插拔 LLM adapter，同时保留本地诊断回显和公式掩码测试；回显不得展示为有效译文。
+- RAG 同时保留 `local-hash` / `local-json` 离线基线，并支持 `bge-m3` / Chroma 跨语言检索；切换模型后必须重建索引。
 - Streamlit 文档页支持章节浏览、翻译预览、索引状态和引用定位。
 
 ## P3 · 化学库交付成品化

@@ -196,7 +196,7 @@ def prepare_demo_data(target_lang: str = "zh", verified_by: str = "prepare-demo-
     from app.services.chemistry import export_reaction_set, extract_reactions
     from app.services.documents import parse_document
     from app.services.rag import index_document
-    from app.services.translation import translate_document
+    from app.services.translation import LocalEchoTranslator, translate_document
 
     get_settings.cache_clear()
     init_db()
@@ -216,7 +216,13 @@ def prepare_demo_data(target_lang: str = "zh", verified_by: str = "prepare-demo-
     if index_result.get("status") != "indexed":
         raise RuntimeError(f"demo document index failed: {index_result.get('error')}")
 
-    translation = translate_document(document_id, target_lang)
+    # Release fixtures must be deterministic and must never spend an external
+    # model call merely to assemble a handoff bundle.
+    translation = translate_document(
+        document_id,
+        target_lang,
+        translator_override=LocalEchoTranslator(),
+    )
     if translation.get("status") != "done":
         raise RuntimeError(f"demo document translation failed: {translation.get('error')}")
 

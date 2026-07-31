@@ -135,11 +135,12 @@ Windows 相关注意事项：
 
 | 页面 | 主要动作 | 依赖接口 |
 | --- | --- | --- |
-| 文献检索 | 期刊只限定来源；搜索栏支持逗号分隔词/短语、OR/AND 和 20/50/100 篇全局上限。联网模式把搜索表达式下推 OpenAlex，失败时回退 Crossref，先展示可保存/撤销的缓存批次；24 小时内精确重复查询直接复用本地结果。作者与 DOI 也可本地检索 | `GET /papers`、`POST /crawl/run`、`POST /crawl/searches/{id}/save`、`DELETE /crawl/searches/{id}`、`GET /crawl/jobs/{id}` |
-| 文献库 | 拖拽上传 PDF、触发解析 / 翻译 / RAG 索引 / 化学库抽取、给文献打标、查看状态与失败原因 | `POST /documents`、`POST /documents/{id}/parse`、`.../translate`、`.../index`、`.../extract-chemistry`、`PUT /papers/{id}/categories` |
-| 术语表管理 | 维护浏览器本地中英术语；阅读页选词可直接加入，正文高亮即时更新 | 无（浏览器 `localStorage`） |
+| 文献检索 | 期刊只限定来源；搜索栏支持逗号分隔词/短语、OR/AND 和 20/50/100 篇全局上限。联网模式汇总全部期刊候选后按相关性与期刊轮转公平选取，失败时回退 Crossref，并补齐可获得的摘要；24 小时内精确重复查询直接复用本地结果。作者与 DOI 也可本地检索 | `GET /papers`、`POST /crawl/run`、`POST /crawl/searches/{id}/save`、`DELETE /crawl/searches/{id}`、`GET /crawl/jobs/{id}` |
+| 文献库 | 拖拽上传 PDF、合法 OA PDF 后台下载、触发解析 / 翻译 / RAG 索引 / 化学库抽取、给文献打标、查看状态与失败原因 | `POST /documents`、`POST /papers/{id}/download`、`POST /documents/{id}/parse`、`.../translate`、`.../index`、`.../extract-chemistry`、`PUT /papers/{id}/categories` |
+| 下载管理 | 查看 OA 下载任务、进度与失败原因，并从本地安全打开已完成文件 | `GET /paper-downloads`、`GET /documents/{id}/file` |
+| 术语表管理 | 在 SQLite 中维护中英术语；阅读页选词可直接加入，正文高亮即时更新；旧版浏览器术语首次打开时自动迁移 | `GET/POST/PUT/DELETE /glossary-terms`、`POST /term-translations` |
 | 双语阅读 | 左右分栏对照、滚动联动、字号调节、术语高亮、划选发送到问答 | `GET /documents/{id}/sections`、`GET /documents/{id}/translation` |
-| AI 问答 | 单篇 / 项目 / 全库范围检索，回答带 `[n·¶段]` 引用并可点击跳回原文 | `POST /rag/query` |
+| AI 问答 | 单篇 / 项目 / 全库范围检索；单篇问答可直接使用已解析文档上下文，索引检索支持跨语言 embedding，回答带 `[n·¶段]` 引用并可点击跳回原文 | `POST /rag/query` |
 | 化学库复核 | 逐条人工复核（复核人必填、可顺手修正字段）、看原文出处与审计日志、闸门通过后导出仿真输入 | `GET /reaction-sets/{id}`、`PUT /reactions/{id}/verify`、`POST /reaction-sets/{id}/export` |
 
 **打标**复用既有 taxonomy：文献库卡片上勾选标签写入 `paper_categories`（`method=manual`），
@@ -149,14 +150,18 @@ Windows 相关注意事项：
 **化学库复核**是交付物的最后一关。速率系数与阈值一律保留论文原文，界面不做单位换算、不填补缺失值；
 反应集内任一反应未 `verified` 时导出返回 409，工作台会把这条闸门原因直接显示出来——闸门不可绕过。
 
-「待下载清单」「项目分组」「阅读偏好」「术语表」是纯前端工作台状态，存在浏览器 localStorage，
-不写库、不新增接口。清单支持导出 TXT / CSV 供人工下载 PDF 使用——全文获取仍是人工 + OA 自动补全，
-工作台不会自动爬取或绕过付费墙。
+「项目分组」和「阅读偏好」仍是浏览器本地状态。术语表与下载任务已经写入 SQLite，便于跨页面复用和
+追踪状态；旧版 `localStorage` 术语只做一次兼容迁移。全文获取仍坚持人工上传 + 合法 OA 自动补全，
+下载器只使用已核验的开放获取链接，不会爬取或绕过付费墙。
 
-未配置 `LLM_API_KEY` 时翻译走本地 echo adapter，译文栏会如实保留原文（侧边栏「翻译引擎」显示「本地回显」），
-不会伪造译文。
+未配置 `LLM_API_KEY` 时翻译走本地 echo adapter，但回显只作为诊断结果；工作台会标记「仅原文·请重译」，
+不会把原文冒充成译文。
 
-联网搜索在未选择单本期刊时会覆盖全部 active 白名单期刊，并默认同时处理 3 本；可通过 `.env` 的 `CRAWL_MAX_CONCURRENCY=1..10` 调整。默认最多展示 50 篇，可选 20/100；这是跨全部期刊的总上限，OA 补全也只对占用该配额的结果执行。精确重复查询的缓存 TTL 为 24 小时。前端最多等待 30 分钟并持续显示完成数，等待超时只停止页面轮询，不会取消后端已经创建的搜索任务。
+联网搜索在未选择单本期刊时会覆盖全部 active 白名单期刊，并默认同时处理 3 本；可通过 `.env` 的 `CRAWL_MAX_CONCURRENCY=1..10` 调整。后端会等待所有期刊候选完成，再按“期刊内相关性排序 + 跨期刊轮转”填充全局 20/50/100 篇配额，避免响应最快的期刊垄断结果。OA 补全只对进入配额的结果执行，精确重复查询缓存 TTL 为 24 小时。前端最多等待 30 分钟并持续显示完成数，等待超时只停止页面轮询，不会取消后端已经创建的搜索任务。
+
+离线默认仍使用 `EMBEDDING_MODEL=local-hash` 与 `VECTOR_DB_BACKEND=local-json`。需要中文提问匹配英文论文时，
+可配置 `EMBEDDING_MODEL=bge-m3`、`VECTOR_DB_BACKEND=chroma` 和独立的 `VECTOR_DB_PATH`；切换 embedding
+模型后必须重新索引已有文档，避免新旧向量维度混用。
 
 ## Streamlit
 

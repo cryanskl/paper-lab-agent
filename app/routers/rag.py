@@ -14,6 +14,7 @@ class RagQueryIn(BaseModel):
     question: str
     document_ids: list[int] = Field(default_factory=list)
     top_k: int = Field(6, ge=1, le=20)
+    use_document_context: bool = False
 
     @field_validator("question")
     @classmethod
@@ -54,7 +55,12 @@ class RagResponse(BaseModel):
 def rag_query(body: RagQueryIn) -> dict:
     _ensure_documents_exist(body.document_ids)
     try:
-        return query(body.question, body.document_ids, body.top_k)
+        return query(
+            body.question,
+            body.document_ids,
+            body.top_k,
+            use_document_context=body.use_document_context,
+        )
     except Exception as exc:
         raise AppError(500, "rag_query_failed", str(exc))
 
