@@ -338,6 +338,29 @@ def test_web_ui_library_metadata_uses_two_semantic_rows():
     assert "white-space: nowrap;" in styles
 
 
+def test_web_ui_library_polling_is_incremental_deduplicated_and_visible_on_failure():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+    load_library = app_js[
+        app_js.index("async function loadLibraryOnce"):
+        app_js.index("function docTitle")
+    ]
+
+    assert 'id="library-load-status"' in index
+    assert 'data-library-retry' in app_js
+    assert ".library-load-status" in styles
+    assert "let libraryLoadPromise = null" in app_js
+    assert "if (libraryLoadPromise) return libraryLoadPromise" in app_js
+    assert "mapWithConcurrency(documents, LIBRARY_METADATA_CONCURRENCY" in load_library
+    assert "meta.translation && meta.translation.status === 'pending'" in load_library
+    assert "previous && previous.chemistry_status === 'extracting'" in load_library
+    assert "apiOptional(`/documents/${doc.id}/translation`, [404])" in load_library
+    assert "apiOrNull" not in load_library
+    assert "if (state.page !== 'library') return" in app_js
+    assert "if (page !== 'library') stopLibraryPoll()" in app_js
+
+
 def test_web_ui_library_upload_starts_automatic_document_processing():
     index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")

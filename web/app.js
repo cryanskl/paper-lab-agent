@@ -144,6 +144,7 @@ const state = {
   docMeta: {},
   paperCache: {},
   libLoaded: false,
+  libraryLoadError: null,
   libraryFocusDocumentId: null,
   librarySelectedDocumentIds: new Set(),
   librarySelectionMode: false,
@@ -338,6 +339,15 @@ async function apiOrNull(path) {
   try { return await api(path); } catch (e) { return null; }
 }
 
+async function apiOptional(path, expectedStatuses = [404]) {
+  try {
+    return await api(path);
+  } catch (error) {
+    if (expectedStatuses.includes(error.status)) return null;
+    throw error;
+  }
+}
+
 function untranslatedAuthorName(value) {
   const name = String(value || '').trim();
   const hasLatin = /[A-Za-z]/.test(name);
@@ -423,6 +433,7 @@ function renderSysbox() {
 }
 
 function setPage(page) {
+  if (page !== 'library') stopLibraryPoll();
   state.page = page;
   state.selection = null;
   state.glossaryDeleteId = null;
@@ -1767,35 +1778,118 @@ function goToLibraryDocument(documentId) {
   setPage('library');
 }
 
-async function loadLibrary() {
-  const data = await apiOrNull('/documents?page_size=100');
-  state.documents = (data && data.items) || [];
+const LIBRARY_METADATA_CONCURRENCY = 6;
+let libraryLoadPromise = null;
+let pollTimer = null;
+
+async function mapWithConcurrency(items, concurrency, worker) {
+  let nextIndex = 0;
+  async function runWorker() {
+    while (nextIndex < items.length) {
+      const item = items[nextIndex];
+      nextIndex += 1;
+      await worker(item);
+    }
+  }
+  const workerCount = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+}
+
+function renderLibraryLoadStatus() {
+  const node = $('#library-load-status');
+  if (!node) return;
+  if (!state.libraryLoadError) {
+    node.hidden = true;
+    node.innerHTML = '';
+    return;
+  }
+  node.innerHTML = `<span>${esc(state.libraryLoadError)}</span>
+    <button class="btn-ghost sm" type="button" data-library-retry>重试</button>`;
+  node.hidden = false;
+}
+
+async function loadLibraryOnce() {
+  const previousDocuments = new Map(state.documents.map((doc) => [Number(doc.id), doc]));
+  const data = await api('/documents?page_size=100');
+  const documents = (data && data.items) || [];
+  const documentIds = new Set(documents.map((doc) => String(doc.id)));
+  Object.keys(state.docMeta).forEach((documentId) => {
+    if (!documentIds.has(String(documentId))) delete state.docMeta[documentId];
+  });
+  state.documents = documents;
   state.libLoaded = true;
   renderNav();
-  await Promise.all(state.documents.map(async (doc) => {
-    const [translation, reactionSets] = await Promise.all([
-      apiOrNull(`/documents/${doc.id}/translation`),
-      apiOrNull(`/documents/${doc.id}/reaction-sets?page_size=50`),
-    ]);
-    state.docMeta[doc.id] = {
-      translation,
-      reactionSets: (reactionSets && reactionSets.items) || [],
-    };
-    // 卡片上的标签需要完整的 category_details，document.paper 摘要里没有
-    if (doc.paper_id != null && !state.paperCache[doc.paper_id]) {
-      const paper = await apiOrNull(`/papers/${doc.paper_id}`);
-      if (paper) state.paperCache[doc.paper_id] = paper;
+
+  const metadataErrors = [];
+  await mapWithConcurrency(documents, LIBRARY_METADATA_CONCURRENCY, async (doc) => {
+    const previous = previousDocuments.get(Number(doc.id));
+    const meta = state.docMeta[doc.id] || {};
+    const nextMeta = Object.assign({}, meta);
+    const refreshTranslation = !Object.prototype.hasOwnProperty.call(meta, 'translation')
+      || (meta.translation && meta.translation.status === 'pending');
+    const refreshReactionSets = !Object.prototype.hasOwnProperty.call(meta, 'reactionSets')
+      || (previous && previous.chemistry_status === 'extracting'
+        && doc.chemistry_status !== 'extracting');
+
+    if (refreshTranslation) {
+      try {
+        nextMeta.translation = await apiOptional(`/documents/${doc.id}/translation`, [404]);
+      } catch (error) {
+        metadataErrors.push(`文档 #${doc.id} 翻译状态：${error.message}`);
+      }
     }
-  }));
+    if (refreshReactionSets) {
+      try {
+        const reactionSets = await api(`/documents/${doc.id}/reaction-sets?page_size=50`);
+        nextMeta.reactionSets = (reactionSets && reactionSets.items) || [];
+      } catch (error) {
+        metadataErrors.push(`文档 #${doc.id} 反应集：${error.message}`);
+      }
+    }
+    state.docMeta[doc.id] = nextMeta;
+
+    // 卡片上的标签需要完整的 category_details，document.paper 摘要里没有。
+    if (doc.paper_id != null && !state.paperCache[doc.paper_id]) {
+      try {
+        state.paperCache[doc.paper_id] = await api(`/papers/${doc.paper_id}`);
+      } catch (error) {
+        metadataErrors.push(`文档 #${doc.id} 标签：${error.message}`);
+      }
+    }
+  });
+
+  state.libraryLoadError = metadataErrors.length
+    ? `文献列表已更新，但有 ${metadataErrors.length} 项详情加载失败。${metadataErrors[0]}`
+    : null;
+  renderLibraryLoadStatus();
   renderLibrary();
   focusLibraryDocument();
   renderUploadProjectOptions();
   scheduleLibraryPoll();
+  return true;
 }
 
-let pollTimer = null;
-function scheduleLibraryPoll() {
+async function loadLibrary() {
+  if (libraryLoadPromise) return libraryLoadPromise;
+  libraryLoadPromise = loadLibraryOnce()
+    .catch((error) => {
+      state.libraryLoadError = `文献库加载失败：${error.message}`;
+      renderLibraryLoadStatus();
+      stopLibraryPoll();
+      return false;
+    })
+    .finally(() => { libraryLoadPromise = null; });
+  return libraryLoadPromise;
+}
+
+function stopLibraryPoll() {
   clearTimeout(pollTimer);
+  pollTimer = null;
+}
+
+function scheduleLibraryPoll() {
+  stopLibraryPoll();
+  if (state.page !== 'library') return;
   const busy = state.documents.some((d) =>
     d.parse_status === 'parsing' || d.index_status === 'indexing' || d.chemistry_status === 'extracting'
     || ((state.docMeta[d.id] || {}).translation || {}).status === 'pending');
@@ -2171,7 +2265,11 @@ async function docAction(docId, action) {
       await api(`/documents/${docId}/parse`, { method: 'POST' });
       toast('已触发 GROBID 解析');
     } else if (action === 'translate') {
-      await api(`/documents/${docId}/translate`, { method: 'POST', body: { target_lang: persisted.targetLang } });
+      const accepted = await api(`/documents/${docId}/translate`, {
+        method: 'POST',
+        body: { target_lang: persisted.targetLang },
+      });
+      state.docMeta[docId] = Object.assign({}, state.docMeta[docId], { translation: accepted });
       toast(`已触发翻译（${persisted.targetLang}）`);
     } else if (action === 'index') {
       await api(`/documents/${docId}/index`, { method: 'POST' });
@@ -3843,6 +3941,9 @@ function syncYearInputs() {
 function bindLibrary() {
   const zone = $('#dropzone');
   const input = $('#file-input');
+  $('#library-load-status').addEventListener('click', (event) => {
+    if (event.target.closest('[data-library-retry]')) loadLibrary();
+  });
   zone.addEventListener('click', () => input.click());
   input.addEventListener('change', (e) => { uploadFiles(e.target.files); e.target.value = ''; });
   zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });
