@@ -2920,6 +2920,61 @@ def test_rag_query_treats_normalizable_embedding_model_as_local_hash(tmp_path):
     assert "证据不足" in payload["answer"]
 
 
+def test_rag_query_rejects_mismatched_index_contract_instead_of_lexical_fallback(tmp_path):
+    client = make_client(tmp_path)
+
+    from app.db import get_conn
+    from app.services.rag import local_hash_embedding
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status, index_status)
+            VALUES (?, ?, ?, 'parsed', 'indexed')
+            """,
+            ("/tmp/rag-contract-mismatch.txt", "rag-contract-mismatch", "rag-contract-mismatch.txt"),
+        ).lastrowid
+        section_id = conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Contract mismatch', 'argon plasma contract evidence', 'body')
+            """,
+            (document_id,),
+        ).lastrowid
+        chunk_id = conn.execute(
+            """
+            INSERT INTO chunks (document_id, section_id, seq, text, token_count, vector_id, embedded)
+            VALUES (?, ?, 1, 'argon plasma contract evidence', 4, 'mismatched-contract-vector', 1)
+            """,
+            (document_id, section_id),
+        ).lastrowid
+
+    vector_record = {
+        "mismatched-contract-vector": {
+            "chunk_id": chunk_id,
+            "section_id": section_id,
+            "document_id": document_id,
+            "embedding": local_hash_embedding("argon plasma contract evidence"),
+            "dimensions": 64,
+            "embedding_model": "bge-m3",
+            "vector_db_backend": "local-json",
+            "text": "argon plasma contract evidence",
+        }
+    }
+    (tmp_path / "vector-index.json").write_text(json.dumps(vector_record), encoding="utf-8")
+
+    response = client.post(
+        "/api/v1/rag/query",
+        json={"question": "argon plasma", "document_ids": [document_id], "top_k": 3},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "rag_index_contract_mismatch"
+    assert "configured embedding_model=local-hash, vector_db_backend=local-json" in response.json()["error"]["message"]
+    assert "found embedding_model=bge-m3, vector_db_backend=local-json" in response.json()["error"]["message"]
+    assert "rebuild the index" in response.json()["error"]["message"].lower()
+
+
 def test_rag_query_empty_vector_id_returns_clear_error(tmp_path):
     client = make_client(tmp_path)
 

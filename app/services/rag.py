@@ -1,12 +1,15 @@
 import json
 import math
+import os
 import re
+import tempfile
 from collections import Counter
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable, Optional, Protocol
 
 import httpx
+from filelock import FileLock
 
 from app.rag_registry import SUPPORTED_EMBEDDING_MODELS, SUPPORTED_VECTOR_DB_BACKENDS
 from app.config import Settings, get_settings
@@ -111,6 +114,11 @@ SOURCE_TRAILER_RE = re.compile(
     re.IGNORECASE,
 )
 CONTEXT_SOURCE_RE = re.compile(r"C(\d+)", re.IGNORECASE)
+VECTOR_STORE_LOCK_TIMEOUT_SECONDS = 10
+
+
+class VectorIndexContractError(RuntimeError):
+    """Raised when stored vectors were built with a different index contract."""
 
 
 def normalize_vector_db_backend(backend: Optional[str]) -> str:
@@ -433,29 +441,68 @@ class JsonVectorStore:
     def __init__(self, path: Path):
         self.path = path
 
-    def load(self) -> dict:
+    @property
+    def lock_path(self) -> Path:
+        return self.path.with_name(f"{self.path.name}.lock")
+
+    def _load_unlocked(self) -> dict:
         if not self.path.exists():
             return {}
         assert_safe_vector_store_path(self.path)
         return parse_vector_store_json(self.path.read_text(encoding="utf-8"))
 
-    def upsert_many(self, records: dict[str, dict]) -> None:
-        existing = self.load()
-        existing.update(records)
+    def _write_unlocked(self, records: dict[str, dict]) -> None:
+        assert_safe_vector_store_path(self.path)
+        file_descriptor, temporary_name = tempfile.mkstemp(
+            dir=self.path.parent,
+            prefix=f".{self.path.name}.",
+            suffix=".tmp",
+        )
+        temporary_path = Path(temporary_name)
+        try:
+            with os.fdopen(file_descriptor, "w", encoding="utf-8") as output:
+                json.dump(records, output, ensure_ascii=False, indent=2)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary_path, self.path)
+        finally:
+            temporary_path.unlink(missing_ok=True)
+
+    def _lock(self) -> FileLock:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         assert_safe_vector_store_path(self.path)
-        self.path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+        assert_safe_vector_store_path(self.lock_path)
+        return FileLock(str(self.lock_path), timeout=VECTOR_STORE_LOCK_TIMEOUT_SECONDS)
+
+    def load(self) -> dict:
+        return self._load_unlocked()
+
+    def upsert_many(self, records: dict[str, dict]) -> None:
+        with self._lock():
+            existing = self._load_unlocked()
+            existing.update(records)
+            self._write_unlocked(existing)
 
     def delete_document(self, document_id: int) -> None:
-        existing = self.load()
-        filtered = {
-            vector_id: record
-            for vector_id, record in existing.items()
-            if record.get("document_id") != document_id
+        with self._lock():
+            existing = self._load_unlocked()
+            filtered = {
+                vector_id: record
+                for vector_id, record in existing.items()
+                if record.get("document_id") != document_id
+            }
+            self._write_unlocked(filtered)
+
+    def index_contracts(self, document_ids: list[int]) -> set[tuple[str, str]]:
+        allowed = set(document_ids)
+        return {
+            (
+                normalize_embedding_model(record.get("embedding_model")),
+                normalize_vector_db_backend(record.get("vector_db_backend")),
+            )
+            for record in self.load().values()
+            if not allowed or record.get("document_id") in allowed
         }
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        assert_safe_vector_store_path(self.path)
-        self.path.write_text(json.dumps(filtered, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def search(self, query_embedding: list[float], document_ids: list[int], top_k: int) -> list[dict]:
         records = self.load()
@@ -552,6 +599,25 @@ class ChromaVectorStore:
     def delete_document(self, document_id: int) -> None:
         self._collection().delete(where={"document_id": document_id})
 
+    def index_contracts(self, document_ids: list[int]) -> set[tuple[str, str]]:
+        where: Optional[dict[str, Any]] = None
+        if len(document_ids) == 1:
+            where = {"document_id": document_ids[0]}
+        elif document_ids:
+            where = {"document_id": {"$in": document_ids}}
+        kwargs: dict[str, Any] = {"include": ["metadatas"]}
+        if where is not None:
+            kwargs["where"] = where
+        metadatas = self._collection().get(**kwargs).get("metadatas") or []
+        return {
+            (
+                normalize_embedding_model(metadata.get("embedding_model")),
+                normalize_vector_db_backend(metadata.get("vector_db_backend")),
+            )
+            for metadata in metadatas
+            if isinstance(metadata, dict)
+        }
+
     def search(self, query_embedding: list[float], document_ids: list[int], top_k: int) -> list[dict]:
         collection = self._collection()
         count = collection.count()
@@ -594,6 +660,31 @@ def get_vector_store(settings):
     if normalized == "chroma":
         return ChromaVectorStore(settings.vector_db_path)
     raise ValueError(f"unsupported vector db backend: {settings.vector_db_backend}")
+
+
+def validate_vector_index_contract(
+    vector_store,
+    document_ids: list[int],
+    embedding_model: str,
+    vector_db_backend: str,
+) -> None:
+    configured = (embedding_model, vector_db_backend)
+    mismatched = sorted(
+        contract
+        for contract in vector_store.index_contracts(document_ids)
+        if contract != configured
+    )
+    if not mismatched:
+        return
+    found = ", ".join(
+        f"embedding_model={model}, vector_db_backend={backend}"
+        for model, backend in mismatched
+    )
+    raise VectorIndexContractError(
+        "vector index contract mismatch: configured "
+        f"embedding_model={embedding_model}, vector_db_backend={vector_db_backend}; "
+        f"found {found}. Rebuild the index before querying."
+    )
 
 
 FALLBACK_TOKEN_RE = re.compile(r"[A-Za-z0-9_+\-/]+|[\u3400-\u9fff]|[^\s]")
@@ -863,6 +954,12 @@ def query(
     embedding_adapter = get_embedding_adapter(settings.embedding_model)
     embedding_model = normalize_embedding_model(embedding_adapter.model_name)
     vector_db_backend = normalize_vector_db_backend(settings.vector_db_backend)
+    validate_vector_index_contract(
+        vector_store,
+        document_ids,
+        embedding_model,
+        vector_db_backend,
+    )
     question_terms = Counter(tokenize(question))
     vector_hits = vector_store.search(embedding_adapter.embed(question), document_ids, top_k)
     vector_hits = [

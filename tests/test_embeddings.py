@@ -3,7 +3,7 @@ import pytest
 from app.config import Settings
 from app.routers.system import config_warnings
 from app.services import rag as rag_service
-from app.services.rag import ChromaVectorStore, get_embedding_adapter
+from app.services.rag import ChromaVectorStore, JsonVectorStore, get_embedding_adapter
 
 
 def test_local_hash_embedding_adapter_is_deterministic_and_named():
@@ -80,6 +80,59 @@ def test_chroma_vector_store_persists_queries_and_deletes(tmp_path):
 
     reloaded.delete_document(7)
     assert reloaded.load() == {}
+
+
+def test_json_vector_store_serializes_concurrent_read_modify_write(tmp_path, monkeypatch):
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    path = tmp_path / "vector-index.json"
+    active_writers = 0
+    peak_writers = 0
+    counter_lock = threading.Lock()
+    original_write = JsonVectorStore._write_unlocked
+
+    def slow_write(self, records):
+        nonlocal active_writers, peak_writers
+        with counter_lock:
+            active_writers += 1
+            peak_writers = max(peak_writers, active_writers)
+        try:
+            time.sleep(0.05)
+            return original_write(self, records)
+        finally:
+            with counter_lock:
+                active_writers -= 1
+
+    monkeypatch.setattr(JsonVectorStore, "_write_unlocked", slow_write)
+
+    def record(document_id, text):
+        return {
+            f"vector-{document_id}": {
+                "chunk_id": document_id,
+                "document_id": document_id,
+                "section_id": document_id,
+                "text": text,
+                "embedding": [1.0, 0.0],
+                "embedding_model": "local-hash",
+                "vector_db_backend": "local-json",
+                "dimensions": 2,
+            }
+        }
+
+    stores = [JsonVectorStore(path), JsonVectorStore(path)]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(stores[0].upsert_many, record(1, "argon evidence")),
+            executor.submit(stores[1].upsert_many, record(2, "oxygen evidence")),
+        ]
+        for future in futures:
+            future.result()
+
+    assert peak_writers == 1
+    assert set(JsonVectorStore(path).load()) == {"vector-1", "vector-2"}
+    assert list(tmp_path.glob(".vector-index.json.*.tmp")) == []
 
 
 def test_config_warnings_report_unsupported_embedding_model():
