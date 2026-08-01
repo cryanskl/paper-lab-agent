@@ -35,6 +35,7 @@ def seed_paper(abstract):
 
 
 def test_paper_abstract_translation_uses_metadata_without_document(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
     client = make_client(tmp_path)
     from app.services import translation as translation_service
 
@@ -64,6 +65,7 @@ def test_paper_abstract_translation_uses_metadata_without_document(tmp_path, mon
 
 
 def test_paper_abstract_translation_reuses_matching_cached_source(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
     client = make_client(tmp_path)
     from app.services import translation as translation_service
 

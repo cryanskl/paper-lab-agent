@@ -183,6 +183,18 @@ def make_client(
     return TestClient(app)
 
 
+def enable_test_translation(monkeypatch):
+    """Provide explicit model capability for tests that exercise successful translation."""
+    from app.services import translation as translation_service
+
+    class DeterministicTranslator:
+        def translate(self, text, target_lang):
+            return f"translated::{target_lang}::{text}"
+
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setattr(translation_service, "get_translator", lambda settings: DeterministicTranslator())
+
+
 def test_crawl_service_strips_space_after_doi_prefix_for_dedupe():
     from app.services.crawl import build_dedupe_key, normalize_doi
 
@@ -7136,8 +7148,9 @@ def test_upsert_paper_normalizes_malformed_scalar_fields(tmp_path):
     assert row["oa_pdf_url"] is None
 
 
-def test_document_rag_chemistry_export_gate(tmp_path):
-    client = make_client(tmp_path)
+def test_document_rag_chemistry_export_gate(tmp_path, monkeypatch):
+    enable_test_translation(monkeypatch)
+    client = make_client(tmp_path, monkeypatch)
     content = pdf_bytes(b"This section describes plasma chemistry. e + Ar -> e + e + Ar+ . The rate is $k_1$ .")
     response = client.post(
         "/api/v1/documents",
@@ -9153,6 +9166,7 @@ def test_openai_term_translation_adapter_uses_context_and_plain_term_prompt():
 def test_term_translation_api_runs_model_job_and_reuses_context_cache(tmp_path, monkeypatch):
     from app.services import translation as translation_service
 
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
     calls = []
 
     class FakeTermTranslator:
@@ -10491,8 +10505,9 @@ def test_rag_query_rejects_unsupported_vector_db_backend(tmp_path, monkeypatch):
         query("argon plasma", [], 3)
 
 
-def test_reparse_document_clears_stale_downstream_artifacts(tmp_path):
-    client = make_client(tmp_path)
+def test_reparse_document_clears_stale_downstream_artifacts(tmp_path, monkeypatch):
+    enable_test_translation(monkeypatch)
+    client = make_client(tmp_path, monkeypatch)
 
     response = client.post(
         "/api/v1/documents",
@@ -19094,10 +19109,11 @@ def test_sqlite_connections_use_wal_and_busy_timeout(tmp_path):
     assert busy_timeout == SQLITE_BUSY_TIMEOUT_MS
 
 
-def test_document_async_routes_mark_queued_status_before_background_tasks_run(tmp_path):
+def test_document_async_routes_mark_queued_status_before_background_tasks_run(tmp_path, monkeypatch):
     from fastapi import BackgroundTasks
 
-    client = make_client(tmp_path)
+    enable_test_translation(monkeypatch)
+    client = make_client(tmp_path, monkeypatch)
     response = client.post(
         "/api/v1/documents",
         files={"file": ("queued.pdf", pdf_bytes(b"e + Ar -> e + e + Ar+ ."), "application/pdf")},
@@ -19670,8 +19686,9 @@ def test_extract_reactions_detects_fullwidth_gas_mixture(tmp_path):
     assert detail["reactions"][0]["reaction"] == "e + O2 -> O- + O"
 
 
-def test_translate_unparsed_document_records_failed_status(tmp_path):
-    client = make_client(tmp_path)
+def test_translate_unparsed_document_records_failed_status(tmp_path, monkeypatch):
+    enable_test_translation(monkeypatch)
+    client = make_client(tmp_path, monkeypatch)
     response = client.post(
         "/api/v1/documents",
         files={"file": ("unparsed.pdf", pdf_bytes(b"Needs parsing before translation."), "application/pdf")},
@@ -19810,8 +19827,9 @@ def test_translate_rejects_path_like_target_lang(tmp_path):
     assert rejected.json()["error"]["code"] == "validation_error"
 
 
-def test_translate_document_uses_filesystem_safe_target_lang_slug(tmp_path):
-    make_client(tmp_path)
+def test_translate_document_uses_filesystem_safe_target_lang_slug(tmp_path, monkeypatch):
+    enable_test_translation(monkeypatch)
+    make_client(tmp_path, monkeypatch)
     from app.db import get_conn
     from app.services import translation as translation_service
 
@@ -19841,8 +19859,9 @@ def test_translate_document_uses_filesystem_safe_target_lang_slug(tmp_path):
     assert output_path.exists()
 
 
-def test_translate_document_avoids_overwriting_colliding_target_lang_slugs(tmp_path):
-    make_client(tmp_path)
+def test_translate_document_avoids_overwriting_colliding_target_lang_slugs(tmp_path, monkeypatch):
+    enable_test_translation(monkeypatch)
+    make_client(tmp_path, monkeypatch)
     from app.db import get_conn
     from app.services import translation as translation_service
 
