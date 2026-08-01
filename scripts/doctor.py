@@ -109,7 +109,7 @@ OPTIONAL_EXTERNAL_CONFIG = (
         "LLM_API_KEY",
         "llm_api_key",
         "missing_llm_api_key",
-        "LLM_API_KEY is not configured; translation uses the local deterministic adapter.",
+        "LLM_API_KEY is not configured; machine translation is unavailable.",
     ),
 )
 ENV_EXAMPLE_DEFAULTS = {

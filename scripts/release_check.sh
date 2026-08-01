@@ -342,7 +342,6 @@ expected_counts = {
     "documents": 1,
     "sections": 1,
     "chunks": 1,
-    "translations": 1,
     "reaction_sets": 1,
     "reactions": 1,
     "reaction_audits": 1,
@@ -352,6 +351,13 @@ for key, minimum in expected_counts.items():
     if not isinstance(actual, int) or isinstance(actual, bool) or actual < minimum:
         print(f"release_check failed: prepare_demo_data counts.{key}={actual!r}, expected >= {minimum}", file=sys.stderr)
         raise SystemExit(1)
+translation_count = payload.get("counts", {}).get("translations")
+if translation_count != 0:
+    print(
+        f"release_check failed: prepare_demo_data counts.translations={translation_count!r}, expected 0",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 expected_export_formats = ["json", "txt", "bolsig"]
 if sorted(payload.get("exports", {})) != sorted(expected_export_formats):
     print(
@@ -802,7 +808,7 @@ payload = json.loads(os.environ["SMOKE_JSON"])
 expected_config_warning_codes = ["missing_openalex_api_key", "missing_unpaywall_email", "missing_llm_api_key"]
 expected = {
     "crawl_job_status": "success",
-    "translation_status": "done",
+    "translation_status": "unavailable",
     "blocked_export_status": 409,
     "unsupported_export_status": 400,
     "verified_export_format": "json",
@@ -811,7 +817,7 @@ expected = {
     "scheduler_job_ids": ["crawl-daily", "crawl-weekly", "crawl-monthly"],
     "config_warning_count": 3,
     "config_warning_codes": expected_config_warning_codes,
-    "system_translation_adapter": "local-echo",
+    "system_translation_adapter": "unavailable",
     "system_embedding_model": "bge-m3",
     "system_vector_db_backend": "chroma",
     "system_grobid_url": "http://127.0.0.1:8070",
@@ -826,7 +832,7 @@ expected = {
     "duplicate_document_matches_original": True,
     "duplicate_upload_status": 409,
     "unsupported_document_status": 415,
-    "error_response_count": 4,
+    "error_response_count": 5,
     "auto_classify_category_count": 1,
     "auto_classify_method": "auto",
     "journal_filter_search_hits": 1,
@@ -931,6 +937,7 @@ if actual_config_warning_detail_codes != expected_config_warning_codes:
 expected_error_codes = {
     "document_duplicate",
     "reaction_set_unverified",
+    "translation_unavailable",
     "unsupported_document_type",
     "unsupported_export_format",
 }
@@ -995,7 +1002,6 @@ expected_status_counts = {
     ("document_parse", "parsed"): 1,
     ("document_index", "indexed"): 1,
     ("document_chemistry", "extracted"): 1,
-    ("translations", "done"): 1,
     ("reaction_sets", "verified"): 1,
 }
 for (section, state), value in expected_status_counts.items():

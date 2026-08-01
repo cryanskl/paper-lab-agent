@@ -21,7 +21,9 @@ EXTERNAL_STATUS_PATH = "/api/v1/system/status?check_external=true"
 OPENAPI_PATH = "/openapi.json"
 EXPECTED_API_PREFIX = "/api/v1"
 EXPECTED_SERVICE = "paper-lab-agent"
-SUPPORTED_TRANSLATION_ADAPTERS = {"local-echo", "openai-compatible"}
+# Accept the legacy value when checking an older deployed API, while this
+# version reports missing model capability as ``unavailable``.
+SUPPORTED_TRANSLATION_ADAPTERS = {"local-echo", "unavailable", "openai-compatible"}
 OPENAPI_REQUIRED_TAGS = {"system"}
 OPENAPI_REQUIRED_PATHS = {"/api/v1/health"}
 OPENAPI_REQUIRED_SCHEMAS = {"ErrorResponse"}

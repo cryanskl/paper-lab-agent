@@ -70,7 +70,7 @@ API_BASE_URL=http://127.0.0.1:8001/api/v1 python scripts/health_check.py
 
 `/api/v1/system/status` 会返回 `config_warnings`，用于提示 OpenAlex、Unpaywall、LLM 等可选外部能力是否还未配置；这些可选能力缺失不会阻断基础发布就绪。对于 unsupported RAG adapter 这类配置风险，warning 会带上 `actual` 和 `supported`，直接展示当前配置值和本版本支持列表。
 同一响应里的 `release_readiness` 会汇总演示数据、失败工作流、配置 warning 和存储可写性；`demo_data_missing`、`failed_workflows` 和 `storage_errors` 会阻断发布就绪状态，`config_warning_codes` 只提示可选外部能力缺失。`python scripts/health_check.py --summary-only --compact` 与 `--require-release-ready` 都会优先使用这个 API 聚合结果输出或阻断发布就绪状态。compact summary 会额外给出 `workflows_ok`、`config_ready` 和 `release_blockers`，便于快速判断是任务失败、配置未完成还是存储/演示数据阻断。
-同一响应里的 `translation_adapter` 和 `llm_model` 会说明当前翻译链路使用本地 `local-echo` 还是 `openai-compatible`，`python scripts/health_check.py` 会把这两个字段作为发布健康契约校验。
+同一响应里的 `translation_adapter` 和 `llm_model` 会说明当前翻译链路是 `unavailable` 还是 `openai-compatible`；未配置 `LLM_API_KEY` 时翻译 API 返回 `409 translation_unavailable`，不会把原文回显写成成功译文。`python scripts/health_check.py` 会把这两个字段作为发布健康契约校验。
 
 导出 OpenAPI JSON 给前端、评审或发布流程使用时，不启动服务也可以生成当前接口 schema：
 

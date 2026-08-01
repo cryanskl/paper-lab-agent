@@ -25,7 +25,13 @@ from app.services.documents import (
     save_upload,
 )
 from app.services.rag import index_document, mark_index_queued
-from app.services.translation import create_translation_job, translate_document, translation_sections
+from app.services.translation import (
+    TranslationUnavailableError,
+    create_translation_job,
+    require_translation_capability,
+    translate_document,
+    translation_sections,
+)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -494,9 +500,19 @@ def list_chunks(
     }
 
 
-@router.post("/{document_id}/translate", status_code=202, response_model=AsyncJobResponse, response_model_exclude_none=True)
+@router.post(
+    "/{document_id}/translate",
+    status_code=202,
+    response_model=AsyncJobResponse,
+    response_model_exclude_none=True,
+    responses={409: {"description": "Machine translation unavailable"}},
+)
 def translate(document_id: int, body: TranslateIn, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
+    try:
+        require_translation_capability()
+    except TranslationUnavailableError as exc:
+        raise AppError(409, "translation_unavailable", str(exc)) from exc
     translation = create_translation_job(document_id, body.target_lang)
     background_tasks.add_task(translate_document, document_id, body.target_lang, translation["id"])
     return {

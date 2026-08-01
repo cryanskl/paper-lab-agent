@@ -103,3 +103,22 @@ def test_paper_abstract_translation_rejects_missing_abstract(tmp_path):
             "message": "Paper metadata has no abstract",
         }
     }
+
+
+def test_paper_abstract_translation_rejects_missing_model_without_creating_job(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLM_API_KEY", "")
+    client = make_client(tmp_path)
+    paper_id = seed_paper("Metadata abstract that requires machine translation.")
+
+    response = client.post(
+        f"/api/v1/papers/{paper_id}/abstract-translation",
+        json={"target_lang": "zh"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "translation_unavailable"
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        count = conn.execute("SELECT COUNT(*) AS n FROM paper_abstract_translations").fetchone()["n"]
+    assert count == 0

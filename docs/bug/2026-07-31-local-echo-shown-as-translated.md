@@ -9,19 +9,20 @@
 ## 原因
 
 - 该文档的历史翻译生成时未配置 `LLM_API_KEY`，`LocalEchoTranslator` 按设计原样保留英文并将任务写成 `done`。
-- 前端只根据任务 `status === 'done'` 显示“已翻译”，没有检查目标段落是否真的与原文不同。
+- 前端最初只根据任务 `status === 'done'` 显示“已翻译”，没有检查目标段落是否真的与原文不同。
 - 后来配置真实翻译引擎不会自动重写既有翻译文件，因此旧回显仍会被阅读器读取。
+- 2026-08-02 的代码审查进一步确认：演示数据和 release smoke 也会强制使用 echo adapter，并把这条假成功记录计入发布就绪状态；问题不只在展示层。
 
 ## 修复
 
-- 修改 `web/app.js`：新增有效译文判定，只有至少一个非空目标段落与原文不同，文献卡片才显示“已翻译”。
-- 对整篇仅原文回显的记录显示“仅原文 · 请重译”，阅读器中文栏不再重复渲染英文。
-- 使用当前已配置的 `qwen-plus` 翻译链路重新翻译本机 fixture，生成新的翻译记录和中文正文；参考文献仍按既有规则保留原文。
-- 修改 `tests/test_web_ui.py`：补充原文回显不能被呈现为有效译文的回归约束。
+- 展示层保留有效译文判定：只有至少一个非空目标段落与原文不同，文献卡片才显示“已翻译”；历史 echo 记录显示“仅原文 · 请重译”。
+- 服务层不再把 `LocalEchoTranslator` 当成生产翻译能力；文档、摘要和术语翻译在缺少 `LLM_API_KEY` 时返回 `409 translation_unavailable`，并且不创建翻译任务。
+- 自动文档流水线把翻译记为可选的 `unavailable` 阶段，同时继续索引和化学抽取。
+- 演示数据、系统状态、health check、release smoke 和发布产物统一使用 `translation_status=unavailable`、`translation_adapter=unavailable`，并断言离线演示的翻译记录数为 0。
+- 补充服务、API、流水线与发布契约回归测试，覆盖 echo 不得写成 `done`、无 key 不得创建任务以及其它文档阶段继续执行。
 
 ## 验证
 
-- `POST /api/v1/documents/1/translate` 返回新任务，轮询结果为 `status=done`。
-- `GET /api/v1/documents/1/translation` 的前四个目标段落为中文，翻译产物写入配置的 `PAPER_LAB_TRANSLATION_DIR`。
-- 运行聚焦前端测试与浏览器页面验证，确认卡片和双语阅读器显示一致。
-- 完整 gate：`EMBEDDING_MODEL=local-hash VECTOR_DB_BACKEND=local-json VECTOR_DB_PATH=data/vector-index.json bash scripts/release_check.sh` → `1375 passed in 188.74s`。
+- 聚焦 API 回归：`.venv/bin/python -m pytest tests/test_abstract_translation.py tests/test_api.py -q --tb=short` → `660 passed`。
+- 发布契约回归：`.venv/bin/python -m pytest tests/test_release_contracts.py -q --tb=short` → `388 passed`。
+- 完整 gate：`bash scripts/release_check.sh` → preflight、demo、health、package、smoke 全部通过；smoke 返回 `translation_unavailable`、`translations={}`、`release_ready=true`；全量测试 `1418 passed, 5 warnings in 263.74s`。

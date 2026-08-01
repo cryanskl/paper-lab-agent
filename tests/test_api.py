@@ -2090,6 +2090,7 @@ def test_document_pipeline_runs_derived_stages_after_parse_and_continues_after_s
         return {"status": "extracted"}
 
     monkeypatch.setattr(document_pipeline, "parse_document", fake_parse)
+    monkeypatch.setattr(document_pipeline, "require_translation_capability", lambda: None)
     monkeypatch.setattr(document_pipeline, "create_translation_job", fake_translation_queue)
     monkeypatch.setattr(document_pipeline, "mark_index_queued", fake_index_queue)
     monkeypatch.setattr(document_pipeline, "mark_chemistry_queued", fake_chemistry_queue)
@@ -2111,6 +2112,58 @@ def test_document_pipeline_runs_derived_stages_after_parse_and_continues_after_s
     assert result["status"] == "done"
     assert result["index"] == {"status": "failed", "error": "vector backend unavailable"}
     assert result["chemistry"]["status"] == "extracted"
+
+
+def test_document_pipeline_skips_translation_without_model_but_runs_other_stages(monkeypatch):
+    import asyncio
+
+    from app.services import document_pipeline
+    from app.services.translation import TranslationUnavailableError
+
+    events = []
+
+    async def fake_parse(document_id):
+        return {"document_id": document_id, "parse_status": "parsed"}
+
+    def unavailable():
+        raise TranslationUnavailableError("model unavailable")
+
+    def unexpected_translation_queue(*args):
+        raise AssertionError(f"translation job should not be created: {args}")
+
+    def fake_index_queue(document_id):
+        events.append(("queue_index", document_id))
+
+    def fake_chemistry_queue(document_id):
+        events.append(("queue_chemistry", document_id))
+
+    def fake_index(document_id):
+        events.append(("index", document_id))
+        return {"status": "indexed"}
+
+    def fake_chemistry(document_id):
+        events.append(("chemistry", document_id))
+        return {"status": "extracted"}
+
+    monkeypatch.setattr(document_pipeline, "parse_document", fake_parse)
+    monkeypatch.setattr(document_pipeline, "require_translation_capability", unavailable)
+    monkeypatch.setattr(document_pipeline, "create_translation_job", unexpected_translation_queue)
+    monkeypatch.setattr(document_pipeline, "mark_index_queued", fake_index_queue)
+    monkeypatch.setattr(document_pipeline, "mark_chemistry_queued", fake_chemistry_queue)
+    monkeypatch.setattr(document_pipeline, "index_document", fake_index)
+    monkeypatch.setattr(document_pipeline, "extract_reactions", fake_chemistry)
+
+    result = asyncio.run(document_pipeline.run_document_pipeline(42, "zh"))
+
+    assert result["translation"] == {"status": "unavailable", "error": "model unavailable"}
+    assert result["index"]["status"] == "indexed"
+    assert result["chemistry"]["status"] == "extracted"
+    assert events == [
+        ("queue_index", 42),
+        ("queue_chemistry", 42),
+        ("index", 42),
+        ("chemistry", 42),
+    ]
 
 
 def test_document_pipeline_stops_when_parse_fails(monkeypatch):
@@ -3390,14 +3443,15 @@ def test_prepare_demo_data_script_populates_walking_skeleton(tmp_path):
     assert counts["documents"] >= 1
     assert counts["sections"] >= 1
     assert counts["chunks"] >= 1
-    assert counts["translations"] >= 1
+    assert counts["translations"] == 0
     assert counts["reaction_sets"] >= 1
     assert counts["reactions"] >= 1
     assert counts["reaction_audits"] >= 1
     assert payload["document"]["parse_status"] == "parsed"
     assert payload["document"]["index_status"] == "indexed"
     assert payload["document"]["chemistry_status"] == "extracted"
-    assert payload["translation"]["status"] == "done"
+    assert payload["translation"]["status"] == "unavailable"
+    assert payload["translation"]["output_path"] is None
     assert payload["reaction_set"]["status"] == "verified"
     assert payload["demo_data"]["ready"] is True
     assert payload["demo_data"]["missing"] == []
@@ -3407,7 +3461,7 @@ def test_prepare_demo_data_script_populates_walking_skeleton(tmp_path):
     assert payload["summary"]["parse_status"] == "parsed"
     assert payload["summary"]["index_status"] == "indexed"
     assert payload["summary"]["chemistry_status"] == "extracted"
-    assert payload["summary"]["translation_status"] == "done"
+    assert payload["summary"]["translation_status"] == "unavailable"
     assert payload["summary"]["reaction_set_id"] == payload["reaction_set"]["id"]
     assert payload["summary"]["reaction_set_status"] == "verified"
     assert payload["summary"]["reaction_count"] == payload["reaction_set"]["reaction_count"]
@@ -3469,7 +3523,7 @@ def test_prepare_demo_data_script_can_print_summary_only(tmp_path):
     assert summary["parse_status"] == "parsed"
     assert summary["index_status"] == "indexed"
     assert summary["chemistry_status"] == "extracted"
-    assert summary["translation_status"] == "done"
+    assert summary["translation_status"] == "unavailable"
     assert summary["reaction_set_status"] == "verified"
     assert summary["export_formats"] == ["json", "txt", "bolsig"]
     assert summary["export_audit_entry_counts"] == {"json": 1, "txt": 1, "bolsig": 1}
@@ -3668,7 +3722,7 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["paper_categories"] == 2
     assert result["duplicate_upload_status"] == 409
     assert result["duplicate_document_id"] == result["document_id"]
-    assert result["translation_status"] == "done"
+    assert result["translation_status"] == "unavailable"
     assert result["sections"] == 1
     assert result["chunks"] == 1
     assert result["rag_sources"] == 1
@@ -3692,7 +3746,7 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
     assert result["verified_export_bolsig_has_verification_metadata"] is True
     assert result["verified_export_txt_has_audit_summary"] is True
     assert result["verified_export_bolsig_has_audit_summary"] is True
-    assert result["translation_output_path"].endswith("document-1-zh.md")
+    assert result["translation_output_path"] is None
     assert result["verified_export_path"].endswith("reaction-set-1.json")
     assert result["runtime_version"] == "0.1.0"
     assert result["scheduler_job_ids"] == ["crawl-daily", "crawl-weekly", "crawl-monthly"]
@@ -3716,7 +3770,7 @@ def test_smoke_check_covers_translation_and_chemistry_chain():
         {
             "code": "missing_llm_api_key",
             "capability": "llm_translation",
-            "message": "LLM_API_KEY is not configured; translation uses the local deterministic adapter.",
+            "message": "LLM_API_KEY is not configured; machine translation is unavailable.",
         },
     ]
     assert result["release_readiness"]["ready"] is True
@@ -3783,7 +3837,7 @@ def test_smoke_check_script_outputs_json():
     assert payload["papers"] == 2
     assert payload["paper_categories"] == 2
     assert payload["duplicate_upload_status"] == 409
-    assert payload["translation_status"] == "done"
+    assert payload["translation_status"] == "unavailable"
     assert payload["sections"] == 1
     assert payload["chunks"] == 1
     assert payload["rag_sources"] == 1
@@ -7000,7 +7054,7 @@ def test_system_status_treats_blank_optional_config_as_missing(tmp_path, monkeyp
     assert status["external_capabilities"]["openalex_mailto"] is False
     assert status["external_capabilities"]["unpaywall_email"] is False
     assert status["external_capabilities"]["llm_api_key"] is False
-    assert status["external_capabilities"]["translation_adapter"] == "local-echo"
+    assert status["external_capabilities"]["translation_adapter"] == "unavailable"
 
 
 def test_system_status_reports_corrupt_vector_store_health(tmp_path):
@@ -7447,7 +7501,7 @@ def test_system_status_reports_translation_adapter(tmp_path, monkeypatch):
     client = make_client(tmp_path)
 
     local_status = client.get("/api/v1/system/status").json()
-    assert local_status["external_capabilities"]["translation_adapter"] == "local-echo"
+    assert local_status["external_capabilities"]["translation_adapter"] == "unavailable"
     assert local_status["external_capabilities"]["llm_model"] == "gpt-diagnostic"
 
     monkeypatch.setenv("LLM_API_KEY", "test-key")
@@ -8970,12 +9024,18 @@ def test_term_translation_api_fails_honestly_without_model_key(tmp_path, monkeyp
         },
     )
 
-    assert response.status_code == 202
-    result = client.get(f"/api/v1/term-translations/{response.json()['job_id']}")
-    assert result.status_code == 200
-    assert result.json()["status"] == "failed"
-    assert result.json()["target_text"] is None
-    assert result.json()["error"] == "LLM_API_KEY is not configured"
+    assert response.status_code == 409
+    assert response.json() == {
+        "error": {
+            "code": "translation_unavailable",
+            "message": "LLM_API_KEY is not configured; machine translation is unavailable",
+        }
+    }
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        count = conn.execute("SELECT COUNT(*) AS n FROM term_translations").fetchone()["n"]
+    assert count == 0
 
 
 def test_openai_classifier_keeps_only_registered_taxonomy_slugs():
@@ -19433,6 +19493,57 @@ def test_translate_unparsed_document_records_failed_status(tmp_path):
     assert "no parsed sections" in translation["error"]
 
 
+def test_translate_without_model_returns_conflict_without_creating_job(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLM_API_KEY", "")
+    client = make_client(tmp_path, monkeypatch)
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("no-model.pdf", pdf_bytes(b"A model is required."), "application/pdf")},
+    )
+    document_id = response.json()["id"]
+
+    rejected = client.post(f"/api/v1/documents/{document_id}/translate", json={"target_lang": "zh"})
+
+    assert rejected.status_code == 409
+    assert rejected.json()["error"] == {
+        "code": "translation_unavailable",
+        "message": "LLM_API_KEY is not configured; machine translation is unavailable",
+    }
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        count = conn.execute("SELECT COUNT(*) AS n FROM translations").fetchone()["n"]
+    assert count == 0
+
+
+def test_local_echo_translator_cannot_mark_document_translation_done(tmp_path):
+    make_client(tmp_path)
+    from app.db import get_conn
+    from app.services.translation import LocalEchoTranslator, translate_document
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            (str(tmp_path / "echo.pdf"), "echo-translation", "echo.pdf"),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO sections (document_id, seq, title, content, section_type)
+            VALUES (?, 1, 'Body', 'Source text must not masquerade as target text.', 'body')
+            """,
+            (document_id,),
+        )
+
+    result = translate_document(document_id, "zh", translator_override=LocalEchoTranslator())
+
+    assert result["status"] == "failed"
+    assert result["output_path"] is None
+    assert result["error"] == "LLM_API_KEY is not configured; machine translation is unavailable"
+
+
 def test_translate_rejects_blank_target_lang(tmp_path):
     client = make_client(tmp_path)
     response = client.post(
@@ -19448,9 +19559,16 @@ def test_translate_rejects_blank_target_lang(tmp_path):
 
 
 def test_translate_normalizes_target_lang_before_creating_job(tmp_path, monkeypatch):
-    monkeypatch.setenv("LLM_API_KEY", "")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
     client = make_client(tmp_path, monkeypatch)
     from app.db import get_conn
+    from app.services import translation as translation_service
+
+    class RecordingTranslator:
+        def translate(self, text, target_lang):
+            return f"translated::{text}"
+
+    monkeypatch.setattr(translation_service, "get_translator", lambda settings: RecordingTranslator())
 
     with get_conn() as conn:
         document_id = conn.execute(

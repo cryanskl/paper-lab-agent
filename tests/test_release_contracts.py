@@ -3682,7 +3682,7 @@ def test_validate_release_artifacts_script_accepts_handoff_bundle(tmp_path):
         "parse_status": "parsed",
         "index_status": "indexed",
         "chemistry_status": "extracted",
-        "translation_status": "done",
+        "translation_status": "unavailable",
         "reaction_set_status": "verified",
     }
     assert payload["demo_reaction_set_verified_by"] == "prepare-demo-data"
@@ -6412,7 +6412,7 @@ def test_release_check_requires_smoke_error_response_coverage():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
 
-    assert '"error_response_count": 4' in release_text
+    assert '"error_response_count": 5' in release_text
     assert '"duplicate_upload_status": 409' in release_text
     assert '"unsupported_document_status": 415' in release_text
     assert '"blocked_export_status": 409' in release_text
@@ -6420,6 +6420,7 @@ def test_release_check_requires_smoke_error_response_coverage():
     assert '"unsupported_document_type"' in release_text
     assert '"document_duplicate"' in release_text
     assert '"reaction_set_unverified"' in release_text
+    assert '"translation_unavailable"' in release_text
     assert '"unsupported_export_format"' in release_text
 
 
@@ -6427,10 +6428,18 @@ def test_release_check_requires_system_capability_smoke_metadata():
     repo = Path(__file__).resolve().parent.parent
     release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
 
-    assert '"system_translation_adapter": "local-echo"' in release_text
+    assert '"system_translation_adapter": "unavailable"' in release_text
     assert '"system_embedding_model": "bge-m3"' in release_text
     assert '"system_vector_db_backend": "chroma"' in release_text
     assert '"system_grobid_url": "http://127.0.0.1:8070"' in release_text
+
+
+def test_release_check_rejects_synthetic_offline_translation_rows():
+    repo = Path(__file__).resolve().parent.parent
+    release_text = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
+
+    assert 'prepare_demo_data counts.translations={translation_count!r}, expected 0' in release_text
+    assert 'translation_count != 0' in release_text
 
 
 def test_release_check_requires_system_storage_health_smoke_metadata():

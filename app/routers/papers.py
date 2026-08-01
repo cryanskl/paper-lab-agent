@@ -17,7 +17,9 @@ from app.services.paper_downloads import (
     paper_download_state,
 )
 from app.services.translation import (
+    TranslationUnavailableError,
     create_paper_abstract_translation_job,
+    require_translation_capability,
     translate_paper_abstract,
 )
 from app.utils import json_dumps, json_loads
@@ -361,6 +363,7 @@ def get_paper(paper_id: int) -> dict:
     "/{paper_id}/abstract-translation",
     status_code=202,
     response_model=AbstractTranslationJobResponse,
+    responses={409: {"description": "Abstract missing or machine translation unavailable"}},
 )
 def start_abstract_translation(
     paper_id: int,
@@ -373,6 +376,10 @@ def start_abstract_translation(
         raise AppError(404, "paper_not_found", "Paper not found")
     if not str(paper["abstract"] or "").strip():
         raise AppError(409, "paper_abstract_missing", "Paper metadata has no abstract")
+    try:
+        require_translation_capability()
+    except TranslationUnavailableError as exc:
+        raise AppError(409, "translation_unavailable", str(exc)) from exc
     translation, cached = create_paper_abstract_translation_job(paper_id, body.target_lang)
     if not cached:
         background_tasks.add_task(

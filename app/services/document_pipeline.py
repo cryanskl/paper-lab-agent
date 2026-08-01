@@ -5,7 +5,12 @@ from starlette.concurrency import run_in_threadpool
 from app.services.chemistry import extract_reactions, mark_chemistry_queued
 from app.services.documents import parse_document
 from app.services.rag import index_document, mark_index_queued
-from app.services.translation import create_translation_job, translate_document
+from app.services.translation import (
+    TranslationUnavailableError,
+    create_translation_job,
+    require_translation_capability,
+    translate_document,
+)
 
 
 async def run_document_pipeline(document_id: int, target_lang: str) -> dict[str, Any]:
@@ -23,8 +28,11 @@ async def run_document_pipeline(document_id: int, target_lang: str) -> dict[str,
 
     stages: list[tuple[str, Callable[..., dict], tuple[Any, ...]]] = []
     try:
+        require_translation_capability()
         translation = create_translation_job(document_id, target_lang)
         stages.append(("translation", translate_document, (document_id, target_lang, translation["id"])))
+    except TranslationUnavailableError as exc:
+        result["translation"] = {"status": "unavailable", "error": str(exc)}
     except Exception as exc:
         result["translation"] = {"status": "failed", "error": str(exc)}
     try:
