@@ -438,6 +438,16 @@ def test_web_ui_system_status_shows_paper_and_download_counts():
     assert '<div class="sysrow"><span>已下载文献</span><span class="dim">—</span></div>' in index
     assert '<span>文献总数</span><span class="dim">${counts.papers || 0} 篇</span>' in app_js
     assert '<span>已下载文献</span><span class="dim">${counts.downloaded_papers || 0} 篇</span>' in app_js
+    assert "${engineOnline ? '在线' : '不可用'}" in app_js
+    assert "本地回显" not in app_js
+
+
+def test_web_ui_removes_unused_element_factory_and_reuses_delay_helper():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "function el(" not in app_js
+    assert "function wait(" not in app_js
+    assert "await delay(800)" in app_js
 
 
 def test_web_ui_uses_backend_download_state_and_never_browser_default_download():

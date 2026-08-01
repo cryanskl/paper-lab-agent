@@ -298,12 +298,6 @@ function renderSourceButtons(sources, messageIndex, attributeName) {
   </div>`;
 }
 
-function el(html) {
-  const t = document.createElement('template');
-  t.innerHTML = html.trim();
-  return t.content.firstElementChild;
-}
-
 let toastTimer = null;
 function toast(message, bad) {
   const node = $('#toast');
@@ -427,7 +421,7 @@ function renderSysbox() {
     <div class="sysbox-title">系统状态</div>
     <div class="sysrow"><span>文献总数</span><span class="dim">${counts.papers || 0} 篇</span></div>
     <div class="sysrow"><span>已下载文献</span><span class="dim">${counts.downloaded_papers || 0} 篇</span></div>
-    <div class="sysrow"><span>翻译引擎</span><span class="${engineOnline ? 'ok' : 'off'}">${engineOnline ? '在线' : '本地回显'}</span></div>
+    <div class="sysrow"><span>翻译引擎</span><span class="${engineOnline ? 'ok' : 'off'}">${engineOnline ? '在线' : '不可用'}</span></div>
     <div class="sysrow"><span>RAG 索引</span><span class="${counts.chunks ? 'ok' : 'off'}">${counts.chunks ? '可用' : '待建立'}</span></div>
     <div class="sysrow"><span>学术 API</span><span class="${academicOnline ? 'ok' : 'off'}">${academicOnline ? 'API Key 已配置' : '缺少 API Key'}</span></div>`;
 }
@@ -2631,10 +2625,6 @@ async function deleteGlossaryTerm(id) {
   }
 }
 
-function wait(milliseconds) {
-  return new Promise((resolve) => { setTimeout(resolve, milliseconds); });
-}
-
 async function translateGlossaryTerm(term, selection) {
   try {
     const sourceLang = selection.lang === 'zh' ? 'zh' : 'en';
@@ -2660,7 +2650,7 @@ async function translateGlossaryTerm(term, selection) {
     for (let attempt = 0; attempt < 75; attempt += 1) {
       result = await api(`/term-translations/${job.job_id}`);
       if (result.status !== 'pending') break;
-      await wait(800);
+      await delay(800);
     }
     if (!result || result.status === 'pending') {
       throw new Error('模型翻译超时，请稍后手动补充译名');
