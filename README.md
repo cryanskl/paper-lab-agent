@@ -1,6 +1,6 @@
 # paper-lab-agent
 
-低温等离子体文献检索与理解系统。V1 采用 local-first 架构：FastAPI + SQLite + APScheduler + GROBID + Chroma/FAISS 兼容的本地索引约定，前端使用 Streamlit。
+低温等离子体文献检索与理解系统。V1 采用 local-first 架构：FastAPI + SQLite + APScheduler + GROBID + Chroma/FAISS 兼容的本地索引约定，并由 FastAPI 托管唯一的原生 Web 工作台。
 
 当前版本：`0.1.0`
 
@@ -19,9 +19,9 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
 ```
 
 `start.sh` 和 `start.ps1` 都会自动创建 `.env`（如果不存在）、创建或复用 `.venv`、安装
-`requirements.txt` 里的后端和 Streamlit 前端依赖、检查并释放 FastAPI/Streamlit 端口、启动前后端、
+`requirements.txt` 里的 Python 依赖、检查并释放 FastAPI 端口、启动 API 与内置工作台、
 等待健康检查通过后打开工作台。macOS/Linux 每次运行会写入独立日志目录：
-`logs/run-YYYYMMDD-HHMMSS/startup.log`、`backend.log`、`frontend.log`；Windows 会写入同类运行目录，
+`logs/run-YYYYMMDD-HHMMSS/startup.log`、`backend.log`；Windows 会写入同类运行目录，
 并将标准输出和错误分别保存。需要只验证启动而不打开浏览器时，macOS/Linux 可运行
 `START_OPEN_BROWSER=false DEV_EXIT_AFTER_READY=true ./start.sh`，Windows 可先在 PowerShell 设置同名环境变量。
 
@@ -38,7 +38,7 @@ bash scripts/dev.sh
 
 服务启动时会自动用 `docs/schema.sql` 初始化 `data/plasma.db`。
 `scripts/doctor.py --compact` 会在启动服务前检查 Python 版本、关键项目文件、Python 依赖是否可导入、本地存储目录可创建和可写，以及外部能力配置 warning；它会读取 `.env` 中的本地路径配置，但已导出的环境变量仍优先，适合新机器快速预检。compact 输出里的 `warning_count`、`warning_codes` 和 `warning_details` 用于提示 OpenAlex、Unpaywall、LLM 等可选外部能力是否未配置，也会提示 `unsupported_embedding_model`、`unsupported_vector_db_backend` 这类 RAG 配置风险。发布、演示或交付前请使用 `python scripts/doctor.py --strict --compact`，让必需检查失败时返回非零退出码；release gate 固定验证正式的 `bge-m3 + Chroma` 索引契约，不再切换到旧哈希索引。
-`scripts/dev.sh` 会等待 FastAPI `/api/v1/health` 和 Streamlit `/_stcore/health` 都可访问后再打印地址。
+`scripts/dev.sh` 会等待 FastAPI `/api/v1/health` 与原生工作台 `/ui/` 都可访问后再打印地址。
 如果只设置 `PAPER_LAB_DATA_DIR`，SQLite、PDF、TEI、翻译、导出和本地向量索引默认都会落在该目录下；需要拆分存储位置时再单独设置 `DATABASE_PATH`、`PAPER_LAB_PDF_DIR`、`VECTOR_DB_PATH` 等变量。手工上传 PDF 的默认单文件上限为 100 MiB，可用 `MAX_PDF_UPLOAD_BYTES` 调整。
 
 OpenAlex 正式调用需要免费 API Key。在 <https://openalex.org/settings/api> 注册并复制 Key 后，将其写入本地 `.env` 的 `OPENALEX_API_KEY`；`OPENALEX_MAILTO` 保留为 Crossref/OpenAlex 的联系邮箱。Unpaywall 无需单独注册账号，只需设置 `UNPAYWALL_EMAIL`。系统状态只暴露这些配置是否存在，不返回凭据内容。
@@ -61,7 +61,7 @@ python scripts/health_check.py --require-demo-data
 python scripts/health_check.py --require-release-ready
 python scripts/health_check.py --check-frontend
 python scripts/health_check.py --require-frontend
-python scripts/health_check.py --check-frontend --frontend-url http://127.0.0.1:8501
+python scripts/health_check.py --check-frontend --frontend-url http://127.0.0.1:8000/ui/
 python scripts/health_check.py --check-openapi
 python scripts/health_check.py --require-openapi
 curl http://127.0.0.1:8000/openapi.json
@@ -106,7 +106,7 @@ curl 'http://127.0.0.1:8000/api/v1/documents'
 PAPER_LAB_SCHEDULER_ENABLED=true bash scripts/dev.sh
 ```
 
-默认关闭 scheduler，避免本地隔离测试和首次启动时自动访问外部 API。启用后可在 Streamlit 侧边栏或 `/api/v1/system/status` 的 `runtime.scheduler_enabled` 确认状态；`runtime.scheduler_jobs` 会列出 daily / weekly / monthly 抓取计划和 UTC 触发时间。
+默认关闭 scheduler，避免本地隔离测试和首次启动时自动访问外部 API。启用后可在工作台系统状态或 `/api/v1/system/status` 的 `runtime.scheduler_enabled` 确认状态；`runtime.scheduler_jobs` 会列出 daily / weekly / monthly 抓取计划和 UTC 触发时间。
 
 ## Backend Only
 
@@ -123,9 +123,9 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 | 一键启动 | `bash start.sh` | `powershell -ExecutionPolicy Bypass -File .\start.ps1` |
 | 虚拟环境解释器 | `.venv/bin/python` | `.venv\Scripts\python.exe` |
 
-两个脚本读同一批环境变量（`API_HOST`、`API_PORT`、`STREAMLIT_PORT`、`START_OPEN_BROWSER`、
+两个脚本读同一批环境变量（`API_HOST`、`API_PORT`、`START_OPEN_BROWSER`、
 `DEV_READY_TIMEOUT`、`PAPER_LAB_SCHEDULER_ENABLED`、`LOG_DIR` 等），行为与输出对齐，
-都会打印 FastAPI / 工作台 / Streamlit 三个地址并默认打开工作台。
+都会打印 FastAPI 与工作台地址并默认打开工作台。
 
 Windows 相关注意事项：
 
@@ -177,20 +177,6 @@ Windows 相关注意事项：
 用于中文问题跨语言检索英文论文。旧的 `local-hash/local-json` 仅保留为历史索引迁移诊断兼容，不再作为
 产品默认或发布验收路径；从旧配置切换后必须重新索引已有文档。查询发现索引的 embedding 模型或向量后端与当前配置不一致时会返回 `409 rag_index_contract_mismatch`，不会退回词法检索掩盖旧索引。
 
-## Streamlit
-
-Streamlit 页面继续保留，作为面向发布验收的运维视图（抓取任务诊断、化学库复核、release readiness）。
-
-```bash
-python -m streamlit run streamlit_app.py
-```
-
-默认前端连接 `http://127.0.0.1:8000/api/v1`。如需修改：
-
-```bash
-API_BASE_URL=http://127.0.0.1:8000/api/v1 python -m streamlit run streamlit_app.py
-```
-
 ## Optional GROBID
 
 GROBID 只在解析真实 PDF 时需要。隔离测试和本地文本 fallback 不依赖它。
@@ -214,16 +200,16 @@ bash scripts/release_check.sh
 这两条命令会执行与 CI 相同的正式索引发布检查：先用 strict doctor 阻断缺失依赖或关键文件，再校验启动脚本语法、`git diff --check`、`git diff --cached --check`、编译关键脚本、检查 scripts 目录下所有 Python 脚本的 `--help` 入口以提前发现 CLI 参数或 import path 问题。release gate also starts a live API with prepared demo data and runs `scripts/health_check.py --require-release-ready` before running the full test suite.
 发布或演示前的完整检查顺序见 [docs/release-checklist.md](docs/release-checklist.md)。
 
-`python scripts/health_check.py --check-frontend` 会额外探测 Streamlit `/_stcore/health`，用于确认 `scripts/dev.sh` 启动后的后端和前端都可访问。
+`python scripts/health_check.py --check-frontend` 会额外探测原生工作台 `/ui/`，用于确认 API 进程同时正确提供页面与静态资源入口。
 `python scripts/health_check.py --summary-only --compact` 会输出短摘要，包含 `release_ready`、`release_blockers`、`api_status`、`demo_data_ready`、`failed_workflows`、`workflows_ok`、`config_warning_count`、`config_ready`、`config_warning_codes`、`config_warning_details`、`scheduler_enabled`、`scheduler_job_count`、`scheduler_job_ids`、`storage_writable`、`storage_errors` 和 `storage_health`，适合发布或演示前快速确认 live 环境；搭配 `--check-frontend` 时还会返回 `frontend_ok`、`frontend_status_code` 和 `frontend_url`，搭配 `--check-openapi` 时还会返回 `openapi_ok`、`openapi_path_count` 和 `openapi_tag_names`，搭配 `--check-external` 时还会返回 `grobid_available`、`grobid_status_code`、`grobid_url` 和 `grobid_error`。如果这些显式探测失败，`release_blockers` 也会追加 `frontend:*`、`openapi:*` 或 `grobid:*` 阻断项。
-`python scripts/health_check.py --require-frontend` 会主动探测 Streamlit，并在前端健康探针不是 200 时返回非零，适合 `scripts/dev.sh` 启动后做发布或演示前门禁。
+`python scripts/health_check.py --require-frontend` 会主动探测原生工作台，并在页面入口不是 200 时返回非零，适合 `scripts/dev.sh` 启动后做发布或演示前门禁。
 `python scripts/health_check.py --require-openapi` 会主动探测 live `/openapi.json`，并在 OpenAPI schema 不可访问或基础契约不完整时返回非零，适合接口交付或前端联调前门禁。
 `python scripts/health_check.py --require-storage-writable` 会在数据目录、PDF/TEI/翻译/导出目录、数据库父目录或向量索引父目录不可写，或已存在的本地向量索引 JSON 损坏时返回非零，适合发布前预检本机运行环境。
 `python scripts/health_check.py --require-no-failed-workflows` 会在抓取、解析、索引、翻译、化学抽取或反应集复核状态统计中存在 `failed`、`rejected` 或 `unknown` 项时返回非零，适合部署前确认没有已知失败、拒绝或未知状态积压。
 `python scripts/health_check.py --require-no-config-warnings` 会在 OpenAlex、Unpaywall、LLM、向量后端等配置告警存在时返回非零，适合正式演示或部署前确认外部能力已按预期配置。
 `python scripts/health_check.py --require-demo-data` 会在 live API 的 `counts` 缺少期刊、论文、文档、章节、chunk、反应集或反应样例时返回非零，适合正式演示前确认 walking skeleton 数据已准备好。
 `python scripts/health_check.py --require-release-ready` 会组合 storage writable、no failed workflows 和 demo data 三个基础门禁；外部能力配置用 `--require-no-config-warnings` 按需单独强制，前端和 GROBID 仍用 `--require-frontend`、`--require-grobid` 按需单独强制。
-`DEV_EXIT_AFTER_READY=true bash scripts/dev.sh` 会在 API 和 Streamlit 都 ready 后退出并清理子进程，适合 CI 或发布前验证统一启动命令本身。
+`DEV_EXIT_AFTER_READY=true bash scripts/dev.sh` 会在 API 与原生工作台都 ready 后退出并清理进程，适合 CI 或发布前验证统一启动命令本身。
 
 如需只跑隔离的 walking skeleton smoke：
 
@@ -246,7 +232,6 @@ CI 配置在 `.github/workflows/ci.yml`，默认跑同一条隔离测试命令�
 ## Troubleshooting
 
 - API 端口冲突：`API_PORT=8001 bash scripts/dev.sh`
-- Streamlit 端口冲突：`STREAMLIT_PORT=8502 bash scripts/dev.sh`
 - 慢机器启动超时：`DEV_READY_TIMEOUT=60 bash scripts/dev.sh`
 - 指定解释器：`PYTHON=.venv/bin/python bash scripts/dev.sh`
 - GROBID 未启动：解析会降级为本地文本 fallback，`documents.parse_error` 会记录原因。

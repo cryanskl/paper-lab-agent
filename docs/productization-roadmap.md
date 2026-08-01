@@ -22,7 +22,7 @@
 - 多期刊搜索先收集全部候选，再按期刊内相关性和跨期刊轮转填充全局配额，避免快源垄断结果。
 - crawl job 详情展示每个期刊的 found/new/filtered/error。
 - DOI 为空的文献建立保守去重策略和审计字段。
-- Streamlit 检索页增加手动抓取、job 列表和 job 详情。
+- 原生工作台检索页增加手动抓取、job 列表和 job 详情。
 
 ## P2 · 文档理解层成品化
 
@@ -32,7 +32,7 @@
 - TEI 解析覆盖 abstract、body、table、figure caption、reference。
 - 翻译使用可插拔 LLM adapter，同时保留本地诊断回显和公式掩码测试；回显不得展示为有效译文。
 - RAG 产品与发布基线统一为 `bge-m3` / Chroma 跨语言检索；`local-hash` / `local-json` 只保留历史迁移诊断兼容，切换模型后必须重建索引。
-- Streamlit 文档页支持章节浏览、翻译预览、索引状态和引用定位。
+- 原生工作台文档页支持章节浏览、翻译预览、索引状态和引用定位。
 
 ## P3 · 化学库交付成品化
 
@@ -42,13 +42,13 @@
 - 支持人工编辑 reaction_type、rate_type、rate_value、threshold_ev、cross_section_url。
 - 导出 JSON 与 BOLSIG+/LXCat 兼容文本。
 - 复核记录进入审计日志，至少记录 verified_by、verified_at 和修正后值。
-- Streamlit 复核页支持逐条编辑、批量查看未复核项和导出。
+- 原生工作台复核页支持逐条编辑、批量查看未复核项和导出。
 
 ## P4 · 打包与运行体验
 
 目标：新机器可按文档完整启动。
 
 - README 覆盖后端、前端、测试、fixture 导入、GROBID 可选启动方式。
-- 提供 `scripts/dev.sh` 或等价命令，统一启动 API 与 Streamlit。
+- 提供 `scripts/dev.sh` 或等价命令，统一启动 API 与内置原生工作台。
 - 提供健康检查命令和常见问题排查。
 - CI 可通过 fixture 隔离外部学术 API，同时验证 `bge-m3 + Chroma` 正式索引契约。

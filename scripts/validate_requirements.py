@@ -19,15 +19,13 @@ REQUIRED_PACKAGES = [
     "pydantic-settings",
     "python-multipart",
     "httpx",
-    "requests",
     "filelock",
     "apscheduler",
-    "streamlit",
     "pytest",
     "pytest-asyncio",
 ]
-SOURCE_PATHS = [REPO_ROOT / "app", REPO_ROOT / "scripts", REPO_ROOT / "streamlit_app.py"]
-LOCAL_MODULES = {"app", "scripts", "streamlit_app", "tests"}
+SOURCE_PATHS = [REPO_ROOT / "app", REPO_ROOT / "scripts"]
+LOCAL_MODULES = {"app", "scripts", "tests"}
 FALLBACK_STDLIB_MODULES = {
     "__future__",
     "argparse",
@@ -74,8 +72,6 @@ IMPORT_PACKAGE_ALIASES = {
     "pydantic": "pydantic",
     "pydantic_settings": "pydantic-settings",
     "pytest": "pytest",
-    "requests": "requests",
-    "streamlit": "streamlit",
 }
 
 

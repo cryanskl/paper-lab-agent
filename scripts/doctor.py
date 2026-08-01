@@ -27,7 +27,6 @@ REQUIRED_FILES = (
     "docs/PRD_等离子体文献系统.md",
     "scripts/dev.sh",
     "scripts/release_check.sh",
-    "streamlit_app.py",
     "app/main.py",
 )
 PYTHON_DEPENDENCIES = (
@@ -37,9 +36,7 @@ PYTHON_DEPENDENCIES = (
     ("pydantic-settings", "pydantic_settings"),
     ("python-multipart", "multipart"),
     ("httpx", "httpx"),
-    ("requests", "requests"),
     ("apscheduler", "apscheduler"),
-    ("streamlit", "streamlit"),
     ("pytest", "pytest"),
     ("PyMuPDF", "pymupdf"),
     ("sentence-transformers", "sentence_transformers"),
@@ -82,9 +79,6 @@ REQUIRED_ENV_EXAMPLE_KEYS = (
     "API_HOST",
     "API_PORT",
     "API_BASE_URL",
-    "STREAMLIT_HOST",
-    "STREAMLIT_PORT",
-    "FRONTEND_URL",
     "DEV_READY_TIMEOUT",
 )
 SECRET_LIKE_ENV_EXAMPLE_KEYS = (
@@ -250,9 +244,6 @@ def check_env_example(repo: Path) -> dict[str, Any]:
         api_base_url_issue = api_base_url_runtime_issue(values)
         if api_base_url_issue is not None:
             issues.append(api_base_url_issue)
-        frontend_url_issue = frontend_url_runtime_issue(values)
-        if frontend_url_issue is not None:
-            issues.append(frontend_url_issue)
         dev_ready_timeout_issue = dev_ready_timeout_runtime_issue(values, repo / "scripts/dev.sh")
         if dev_ready_timeout_issue is not None:
             issues.append(dev_ready_timeout_issue)
@@ -350,24 +341,6 @@ def api_base_url_runtime_issue(values: dict[str, str]) -> dict[str, str] | None:
         "expected": expected,
         "actual": api_base_url,
         "message": f".env.example API_BASE_URL must match runtime default {expected}",
-    }
-
-
-def frontend_url_runtime_issue(values: dict[str, str]) -> dict[str, str] | None:
-    streamlit_host = values.get("STREAMLIT_HOST")
-    streamlit_port = values.get("STREAMLIT_PORT")
-    frontend_url = values.get("FRONTEND_URL")
-    if not streamlit_host or not streamlit_port or not frontend_url:
-        return None
-    expected = f"http://{url_host(connect_host(streamlit_host))}:{streamlit_port}"
-    if frontend_url == expected:
-        return None
-    return {
-        "code": "env_example_runtime_default_drift",
-        "key": "FRONTEND_URL",
-        "expected": expected,
-        "actual": frontend_url,
-        "message": f".env.example FRONTEND_URL must match runtime default {expected}",
     }
 
 

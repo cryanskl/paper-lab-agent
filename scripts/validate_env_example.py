@@ -29,9 +29,6 @@ SCRIPT_RUNTIME_ENV_KEYS = [
     "API_HOST",
     "API_PORT",
     "API_BASE_URL",
-    "STREAMLIT_HOST",
-    "STREAMLIT_PORT",
-    "FRONTEND_URL",
     "DEV_READY_TIMEOUT",
 ]
 SECRET_LIKE_ENV_KEYS = [
@@ -194,13 +191,6 @@ def script_runtime_default_mismatches(path: Path, dev_script_path: Path = DEV_SC
         if api_base_url != expected_api_base_url:
             mismatches.append(f"API_BASE_URL expected {expected_api_base_url}, got {api_base_url}")
 
-    streamlit_host = values.get("STREAMLIT_HOST")
-    streamlit_port = values.get("STREAMLIT_PORT")
-    frontend_url = values.get("FRONTEND_URL")
-    if streamlit_host and streamlit_port and frontend_url:
-        expected_frontend_url = f"http://{url_host(connect_host(streamlit_host))}:{streamlit_port}"
-        if frontend_url != expected_frontend_url:
-            mismatches.append(f"FRONTEND_URL expected {expected_frontend_url}, got {frontend_url}")
     expected_timeout = dev_ready_timeout_default(dev_script_path)
     actual_timeout = values.get("DEV_READY_TIMEOUT")
     if actual_timeout and not expected_timeout:

@@ -1130,7 +1130,7 @@ def test_windows_launcher_honours_same_env_contract_as_start_sh():
     shell = (root / "start.sh").read_text(encoding="utf-8")
 
     shared = [
-        "API_HOST", "API_PORT", "STREAMLIT_HOST", "STREAMLIT_PORT", "API_BASE_URL",
+        "API_HOST", "API_PORT", "API_BASE_URL",
         "DEV_READY_TIMEOUT", "DEV_EXIT_AFTER_READY", "START_OPEN_BROWSER",
         "PAPER_LAB_SCHEDULER_ENABLED", "LOG_DIR",
     ]

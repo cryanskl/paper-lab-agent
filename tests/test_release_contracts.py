@@ -247,11 +247,11 @@ def test_env_example_validator_reports_missing_script_runtime_key(tmp_path):
     repo = Path(__file__).resolve().parent.parent
     env_path = tmp_path / ".env.example"
     env_text = (repo / ".env.example").read_text(encoding="utf-8")
-    env_path.write_text(env_text.replace("FRONTEND_URL=http://127.0.0.1:8501\n", ""), encoding="utf-8")
+    env_path.write_text(env_text.replace("DEV_READY_TIMEOUT=30\n", ""), encoding="utf-8")
 
     missing = validate_env_example.missing_required_keys(env_path)
 
-    assert missing == ["FRONTEND_URL"]
+    assert missing == ["DEV_READY_TIMEOUT"]
 
 
 def test_env_example_keeps_secret_like_values_blank():
@@ -1941,7 +1941,7 @@ def test_doctor_script_reports_missing_required_project_files(tmp_path):
     }
     assert "docs/schema.sql" in missing
     assert "scripts/dev.sh" in missing
-    assert "streamlit_app.py" in missing
+    assert "app/main.py" in missing
 
 
 def test_doctor_script_rejects_symlinked_required_project_file(tmp_path):
@@ -2080,25 +2080,6 @@ def test_doctor_env_example_check_rejects_api_base_url_runtime_drift(tmp_path):
         "expected": "http://127.0.0.1:9000/api/v1",
         "actual": "http://127.0.0.1:8000/api/v1",
         "message": ".env.example API_BASE_URL must match runtime default http://127.0.0.1:9000/api/v1",
-    } in check["issues"]
-
-
-def test_doctor_env_example_check_rejects_frontend_url_runtime_drift(tmp_path):
-    doctor = load_doctor()
-    repo = Path(__file__).resolve().parent.parent
-    env_text = (repo / ".env.example").read_text(encoding="utf-8")
-    env_text = env_text.replace("STREAMLIT_PORT=8501\n", "STREAMLIT_PORT=9501\n")
-    (tmp_path / ".env.example").write_text(env_text, encoding="utf-8")
-    write_minimal_dev_script(tmp_path)
-
-    check = doctor.check_env_example(tmp_path)
-
-    assert {
-        "code": "env_example_runtime_default_drift",
-        "key": "FRONTEND_URL",
-        "expected": "http://127.0.0.1:9501",
-        "actual": "http://127.0.0.1:8501",
-        "message": ".env.example FRONTEND_URL must match runtime default http://127.0.0.1:9501",
     } in check["issues"]
 
 
@@ -2792,7 +2773,7 @@ def test_release_check_py_compile_targets_cover_every_python_script():
 
     assert "PY_COMPILE_TARGETS=(" in release_check
     assert "find scripts -maxdepth 1 -type f -name '*.py' | sort" in release_check
-    assert 'PY_COMPILE_TARGETS=("${RELEASE_SCRIPT_TARGETS[@]}" streamlit_app.py)' in release_check
+    assert 'PY_COMPILE_TARGETS=("${RELEASE_SCRIPT_TARGETS[@]}")' in release_check
     assert '"${PY_COMPILE_TARGETS[@]}"' in release_check
 
 
@@ -2801,7 +2782,7 @@ def test_release_check_reuses_single_python_script_target_list():
     release_check = (repo / "scripts" / "release_check.sh").read_text(encoding="utf-8")
 
     assert "RELEASE_SCRIPT_TARGETS=(" in release_check
-    assert 'PY_COMPILE_TARGETS=("${RELEASE_SCRIPT_TARGETS[@]}" streamlit_app.py)' in release_check
+    assert 'PY_COMPILE_TARGETS=("${RELEASE_SCRIPT_TARGETS[@]}")' in release_check
     assert 'RELEASE_HELP_SCRIPTS=("${RELEASE_SCRIPT_TARGETS[@]}")' in release_check
 
 
@@ -6461,7 +6442,6 @@ def test_dev_script_documents_help_mode_without_starting_services():
         "--help",
         "Usage: bash scripts/dev.sh",
         "API_PORT",
-        "STREAMLIT_PORT",
         "DEV_READY_TIMEOUT",
         "PAPER_LAB_SCHEDULER_ENABLED",
         "python scripts/health_check.py --require-frontend",
@@ -6483,14 +6463,12 @@ def test_start_script_documents_one_click_startup_contract():
     for required in [
         "logs/run-",
         "backend.log",
-        "frontend.log",
         "startup.log",
         "lsof -tiTCP",
         "pip install -r requirements.txt",
         "-m uvicorn app.main:app",
-        "-m streamlit run streamlit_app.py",
         "/api/v1/health",
-        "/_stcore/health",
+        "/ui/",
         "DEV_EXIT_AFTER_READY",
         "START_OPEN_BROWSER",
     ]:
@@ -9396,13 +9374,6 @@ def test_api_contract_validator_reports_missing_accepted_response_on_async_route
     assert issues == ["POST /api/v1/documents/{id}/parse missing 202 response"]
 
 
-def test_streamlit_requests_full_category_page_for_manual_selection():
-    repo = Path(__file__).resolve().parent.parent
-    streamlit_source = (repo / "streamlit_app.py").read_text(encoding="utf-8")
-
-    assert 'api_get("/categories", page=1, page_size=100)' in streamlit_source
-
-
 def test_schema_validator_accepts_schema_truth_source():
     validate_schema = load_validate_schema()
     repo = Path(__file__).resolve().parent.parent
@@ -9587,33 +9558,33 @@ def test_requirements_validator_reports_missing_direct_dependency(tmp_path):
     requirements_path = tmp_path / "requirements.txt"
     requirements_text = (repo / "requirements.txt").read_text(encoding="utf-8")
     requirements_path.write_text(
-        requirements_text.replace("requests==2.32.3\n", ""),
+        requirements_text.replace("httpx==0.28.1\n", ""),
         encoding="utf-8",
     )
 
     missing = validate_requirements.missing_required_packages(requirements_path)
 
-    assert missing == ["requests"]
+    assert missing == ["httpx"]
 
 
 def test_requirements_validator_rejects_unpinned_packages(tmp_path):
     validate_requirements = load_validate_requirements()
     requirements_path = tmp_path / "requirements.txt"
-    requirements_path.write_text("fastapi==0.115.6\nrequests>=2.32\nstreamlit\n", encoding="utf-8")
+    requirements_path.write_text("fastapi==0.115.6\nhttpx>=0.28\npytest\n", encoding="utf-8")
 
     unpinned = validate_requirements.unpinned_packages(requirements_path)
 
-    assert unpinned == ["requests", "streamlit"]
+    assert unpinned == ["httpx", "pytest"]
 
 
 def test_requirements_validator_rejects_duplicate_packages(tmp_path):
     validate_requirements = load_validate_requirements()
     requirements_path = tmp_path / "requirements.txt"
-    requirements_path.write_text("requests==2.32.3\nRequests==2.32.3\nhttpx==0.28.1\n", encoding="utf-8")
+    requirements_path.write_text("httpx==0.28.1\nHTTPX==0.28.1\nfastapi==0.115.6\n", encoding="utf-8")
 
     duplicates = validate_requirements.duplicate_packages(requirements_path)
 
-    assert duplicates == ["requests"]
+    assert duplicates == ["httpx"]
 
 
 def test_requirements_validator_rejects_symlinked_requirements_file(tmp_path):
@@ -10116,6 +10087,21 @@ def test_docs_links_validator_reports_missing_backtick_reference(tmp_path):
     issues = validate_docs_links.broken_doc_links(tmp_path)
 
     assert issues == ["docs/guide.md: missing reference target missing.sql"]
+
+
+def test_docs_links_validator_allows_only_retired_streamlit_targets_in_bug_history(tmp_path):
+    validate_docs_links = load_validate_docs_links()
+    bug_dir = tmp_path / "docs" / "bug"
+    bug_dir.mkdir(parents=True)
+    (bug_dir / "retired.md").write_text(
+        "Historical files: `streamlit_app.py`, `app/frontend_api.py`, `tests/test_frontend_api.py`.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "README.md").write_text("Current file: `streamlit_app.py`.\n", encoding="utf-8")
+
+    issues = validate_docs_links.broken_doc_links(tmp_path)
+
+    assert issues == ["README.md: missing reference target streamlit_app.py"]
 
 
 def test_docs_links_validator_rejects_symlinked_backtick_reference_target(tmp_path):

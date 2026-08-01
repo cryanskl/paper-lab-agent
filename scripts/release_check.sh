@@ -30,12 +30,12 @@ bash -n scripts/dev.sh
 bash -n start.sh
 git diff --check
 git diff --cached --check
-"${PYTHON_CMD[@]}" -m compileall -q app scripts tests streamlit_app.py
+"${PYTHON_CMD[@]}" -m compileall -q app scripts tests
 RELEASE_SCRIPT_TARGETS=()
 while IFS= read -r script_path; do
   RELEASE_SCRIPT_TARGETS+=("${script_path}")
 done < <(find scripts -maxdepth 1 -type f -name '*.py' | sort)
-PY_COMPILE_TARGETS=("${RELEASE_SCRIPT_TARGETS[@]}" streamlit_app.py)
+PY_COMPILE_TARGETS=("${RELEASE_SCRIPT_TARGETS[@]}")
 "${PYTHON_CMD[@]}" -m py_compile "${PY_COMPILE_TARGETS[@]}"
 RELEASE_HELP_SCRIPTS=("${RELEASE_SCRIPT_TARGETS[@]}")
 for script in "${RELEASE_HELP_SCRIPTS[@]}"; do
@@ -121,14 +121,12 @@ def free_port() -> int:
 
 with tempfile.TemporaryDirectory(prefix="paper-lab-dev-") as data_dir:
     api_port = free_port()
-    streamlit_port = free_port()
     env = os.environ.copy()
     env.update(
         {
             "PYTHON": sys.executable,
             "PAPER_LAB_DATA_DIR": data_dir,
             "API_PORT": str(api_port),
-            "STREAMLIT_PORT": str(streamlit_port),
             "DEV_READY_TIMEOUT": "30",
             "DEV_EXIT_AFTER_READY": "true",
             "PAPER_LAB_SCHEDULER_ENABLED": "false",
@@ -153,8 +151,8 @@ with tempfile.TemporaryDirectory(prefix="paper-lab-dev-") as data_dir:
         env=env,
     )
 expected = {
-    "fastapi": f"FastAPI:   http://127.0.0.1:{api_port}",
-    "streamlit": f"Streamlit: http://127.0.0.1:{streamlit_port}",
+    "fastapi": f"FastAPI:  http://127.0.0.1:{api_port}",
+    "workbench": f"工作台:    http://127.0.0.1:{api_port}/ui/",
     "api_base_url": f"API_BASE_URL=http://127.0.0.1:{api_port}/api/v1",
     "exit_after_ready": "DEV_EXIT_AFTER_READY=true",
 }
@@ -165,7 +163,7 @@ if missing:
         file=sys.stderr,
     )
     raise SystemExit(1)
-print(json.dumps({"dev_script_ready": True, "api_port": api_port, "streamlit_port": streamlit_port}))
+print(json.dumps({"dev_script_ready": True, "api_port": api_port, "workbench_url": f"http://127.0.0.1:{api_port}/ui/"}))
 PY
 )"
 printf '%s\n' "${DEV_CHECK_JSON}"
