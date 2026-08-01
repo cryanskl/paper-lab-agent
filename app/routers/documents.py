@@ -16,6 +16,7 @@ from app.services.chemistry import (
 )
 from app.services.document_pipeline import run_document_pipeline
 from app.services.documents import (
+    DocumentUploadTooLargeError,
     assert_safe_document_storage_path,
     figures_from_tei,
     mark_parse_queued,
@@ -292,6 +293,7 @@ def document_figures(document: dict) -> list[dict]:
     status_code=201,
     response_model=DocumentResponse,
     responses={
+        413: {"description": "PDF exceeds configured upload limit"},
         409: {"description": "Duplicate document"},
         415: {"description": "Unsupported document type"},
         500: {"description": "Document upload failed"},
@@ -316,6 +318,8 @@ async def upload_document(
             raise AppError(404, "paper_not_found", "Paper not found")
     try:
         doc, created = await save_upload(file, paper_id)
+    except DocumentUploadTooLargeError as exc:
+        raise AppError(413, "document_too_large", str(exc)) from exc
     except OSError as exc:
         raise AppError(500, "document_upload_failed", str(exc))
     document = get_document_or_404(doc["id"])

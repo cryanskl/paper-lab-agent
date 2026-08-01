@@ -399,6 +399,18 @@ def create_translation_job(document_id: int, target_lang: str) -> dict:
         return dict_from_row(row)
 
 
+def mark_translation_failed(translation_id: int, error: str) -> dict:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE translations SET status='failed', output_path=NULL, error=? WHERE id=?",
+            (error, translation_id),
+        )
+        row = conn.execute("SELECT * FROM translations WHERE id=?", (translation_id,)).fetchone()
+        if row is None:
+            raise ValueError("translation job not found")
+        return dict_from_row(row)
+
+
 def create_paper_abstract_translation_job(paper_id: int, target_lang: str) -> tuple[dict, bool]:
     with get_conn() as conn:
         paper = conn.execute("SELECT abstract FROM papers WHERE id=?", (paper_id,)).fetchone()
@@ -647,10 +659,4 @@ def translate_document(
             row = conn.execute("SELECT * FROM translations WHERE id=?", (translation_id,)).fetchone()
             return dict_from_row(row)
     except Exception as exc:
-        with get_conn() as conn:
-            conn.execute(
-                "UPDATE translations SET status='failed', output_path=NULL, error=? WHERE id=?",
-                (str(exc), translation_id),
-            )
-            row = conn.execute("SELECT * FROM translations WHERE id=?", (translation_id,)).fetchone()
-            return dict_from_row(row)
+        return mark_translation_failed(translation_id, str(exc))

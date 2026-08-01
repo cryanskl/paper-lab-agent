@@ -8,6 +8,7 @@ from app.services.rag import index_document, mark_index_queued
 from app.services.translation import (
     TranslationUnavailableError,
     create_translation_job,
+    mark_translation_failed,
     require_translation_capability,
     translate_document,
 )
@@ -50,7 +51,16 @@ async def run_document_pipeline(document_id: int, target_lang: str) -> dict[str,
         try:
             result[name] = await run_in_threadpool(operation, *args)
         except Exception as exc:
-            result[name] = {"status": "failed", "error": str(exc)}
+            if name == "translation":
+                try:
+                    result[name] = mark_translation_failed(args[2], str(exc))
+                except Exception as finalization_exc:
+                    result[name] = {
+                        "status": "failed",
+                        "error": f"{exc}; translation failure finalization failed: {finalization_exc}",
+                    }
+            else:
+                result[name] = {"status": "failed", "error": str(exc)}
 
     result["status"] = "done"
     return result

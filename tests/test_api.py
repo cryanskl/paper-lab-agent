@@ -2055,6 +2055,26 @@ def test_document_upload_can_queue_automatic_processing_without_changing_default
     assert manual.json()["parse_status"] == "uploaded"
 
 
+def test_document_upload_rejects_oversized_pdf_before_storage(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAX_PDF_UPLOAD_BYTES", "16")
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("oversized.pdf", pdf_bytes(b"x" * 32), "application/pdf")},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "document_too_large"
+    assert "16 bytes" in response.json()["error"]["message"]
+
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        assert conn.execute("SELECT COUNT(*) AS n FROM documents").fetchone()["n"] == 0
+    assert list((tmp_path / "pdfs").iterdir()) == []
+
+
 def test_document_pipeline_runs_derived_stages_after_parse_and_continues_after_stage_failure(monkeypatch):
     import asyncio
 
@@ -2111,6 +2131,52 @@ def test_document_pipeline_runs_derived_stages_after_parse_and_continues_after_s
     ]
     assert result["status"] == "done"
     assert result["index"] == {"status": "failed", "error": "vector backend unavailable"}
+    assert result["chemistry"]["status"] == "extracted"
+
+
+def test_document_pipeline_marks_translation_failed_when_worker_raises(tmp_path, monkeypatch):
+    import asyncio
+
+    make_client(tmp_path, monkeypatch)
+
+    from app.db import get_conn
+    from app.services import document_pipeline
+
+    with get_conn() as conn:
+        document_id = conn.execute(
+            """
+            INSERT INTO documents (file_path, file_hash, original_name, parse_status)
+            VALUES (?, ?, ?, 'parsed')
+            """,
+            (str(tmp_path / "worker-error.pdf"), "worker-error", "worker-error.pdf"),
+        ).lastrowid
+
+    async def fake_parse(current_document_id):
+        return {"document_id": current_document_id, "parse_status": "parsed"}
+
+    def fail_translate(*_args):
+        raise RuntimeError("translation worker crashed")
+
+    monkeypatch.setattr(document_pipeline, "parse_document", fake_parse)
+    monkeypatch.setattr(document_pipeline, "require_translation_capability", lambda: None)
+    monkeypatch.setattr(document_pipeline, "mark_index_queued", lambda _document_id: None)
+    monkeypatch.setattr(document_pipeline, "mark_chemistry_queued", lambda _document_id: None)
+    monkeypatch.setattr(document_pipeline, "translate_document", fail_translate)
+    monkeypatch.setattr(document_pipeline, "index_document", lambda _document_id: {"status": "indexed"})
+    monkeypatch.setattr(document_pipeline, "extract_reactions", lambda _document_id: {"status": "extracted"})
+
+    result = asyncio.run(document_pipeline.run_document_pipeline(document_id, "zh"))
+
+    with get_conn() as conn:
+        translation = conn.execute(
+            "SELECT status, output_path, error FROM translations WHERE document_id=?",
+            (document_id,),
+        ).fetchone()
+    assert result["translation"]["status"] == "failed"
+    assert translation["status"] == "failed"
+    assert translation["output_path"] is None
+    assert translation["error"] == "translation worker crashed"
+    assert result["index"]["status"] == "indexed"
     assert result["chemistry"]["status"] == "extracted"
 
 
@@ -12847,6 +12913,7 @@ def test_env_example_validator_cli_rejects_runtime_url_drift(tmp_path):
                 "PAPER_LAB_TEI_DIR=./data/tei",
                 "PAPER_LAB_TRANSLATION_DIR=./data/translations",
                 "PAPER_LAB_EXPORT_DIR=./data/exports",
+                "MAX_PDF_UPLOAD_BYTES=104857600",
                 "PAPER_LAB_SCHEDULER_ENABLED=false",
                 "LLM_BASE_URL=https://api.openai.com/v1",
                 "LLM_MODEL=gpt-4o-mini",
