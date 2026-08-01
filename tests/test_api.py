@@ -6501,6 +6501,76 @@ def test_crawl_job_auto_classifies_accepted_papers(tmp_path, monkeypatch):
     assert [(row["slug"], row["method"]) for row in rows] == [("chemistry", "auto")]
 
 
+def test_crawl_classifier_runs_without_held_sqlite_write_transaction(tmp_path, monkeypatch):
+    import asyncio
+    import sqlite3
+
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    make_client(tmp_path, monkeypatch)
+
+    from app.db import get_conn
+    from app.services import crawl as crawl_service
+
+    class FakeOpenAlexClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def works_by_issn(self, *args, **kwargs):
+            return [
+                {
+                    "doi": "10.3/classifier-lock-probe",
+                    "title": "Plasma chemistry lock probe",
+                    "abstract": "argon oxygen plasma chemistry",
+                    "authors": [],
+                    "published_date": "2026-01-01",
+                    "published_year": 2026,
+                    "landing_url": "https://example.test/classifier-lock-probe",
+                    "source_api": "openalex",
+                    "raw_metadata": {},
+                }
+            ]
+
+    class FakeUnpaywallClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def resolve(self, doi):
+            return {"oa_status": "gold", "oa_pdf_url": f"https://example.test/{doi}.pdf"}
+
+    class LockProbeClassifier:
+        def classify(self, text, categories):
+            # A second writer succeeds only when finalize_crawl_batch has
+            # committed the paper upsert before invoking the classifier.
+            with sqlite3.connect(tmp_path / "test.db", timeout=0.05) as probe:
+                probe.execute("PRAGMA busy_timeout = 50")
+                probe.execute("UPDATE crawl_jobs SET error=error WHERE id=?", (job_id,))
+            chemistry = next(category for category in categories if category["slug"] == "chemistry")
+            return [{"category_id": chemistry["id"], "confidence": 0.97}]
+
+    monkeypatch.setattr(crawl_service, "OpenAlexClient", FakeOpenAlexClient)
+    monkeypatch.setattr(crawl_service, "UnpaywallClient", FakeUnpaywallClient)
+    monkeypatch.setattr(crawl_service, "get_classifier", lambda settings: LockProbeClassifier())
+
+    job_id = crawl_service.create_jobs([2], "manual", "2026-01-01", "2026-01-31")[0]["job_id"]
+    asyncio.run(crawl_service.run_crawl_job(job_id, 2, "2026-01-01", "2026-01-31"))
+
+    with get_conn() as conn:
+        job = conn.execute("SELECT status, error FROM crawl_jobs WHERE id=?", (job_id,)).fetchone()
+        category = conn.execute(
+            """
+            SELECT c.slug, pc.confidence
+            FROM papers p
+            JOIN paper_categories pc ON pc.paper_id=p.id
+            JOIN categories c ON c.id=pc.category_id
+            WHERE p.doi=?
+            """,
+            ("10.3/classifier-lock-probe",),
+        ).fetchone()
+
+    assert dict(job) == {"status": "success", "error": None}
+    assert dict(category) == {"slug": "chemistry", "confidence": 0.97}
+
+
 def test_crawl_job_resolves_oa_with_normalized_doi(tmp_path, monkeypatch):
     make_client(tmp_path)
 

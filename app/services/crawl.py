@@ -301,22 +301,27 @@ def upsert_paper(conn, journal: dict[str, Any], work: dict[str, Any], oa: dict[s
     return created
 
 
-def classify_paper(conn, settings, paper_id: int) -> None:
-    row = conn.execute("SELECT title, abstract FROM papers WHERE id=?", (paper_id,)).fetchone()
+def classify_paper(settings, paper_id: int) -> None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT title, abstract FROM papers WHERE id=?", (paper_id,)).fetchone()
+        categories = [
+            dict_from_row(category_row)
+            for category_row in conn.execute("SELECT * FROM categories").fetchall()
+        ]
     if not row:
         return
-    categories = [dict_from_row(category_row) for category_row in conn.execute("SELECT * FROM categories").fetchall()]
     text = f"{row['title']} {row['abstract'] or ''}"
     classified = get_classifier(settings).classify(text, categories)
-    conn.execute("DELETE FROM paper_categories WHERE paper_id=? AND method='auto'", (paper_id,))
-    for item in classified:
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO paper_categories (paper_id, category_id, confidence, method)
-            VALUES (?, ?, ?, 'auto')
-            """,
-            (paper_id, item["category_id"], item["confidence"]),
-        )
+    with get_conn() as conn:
+        conn.execute("DELETE FROM paper_categories WHERE paper_id=? AND method='auto'", (paper_id,))
+        for item in classified:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO paper_categories (paper_id, category_id, confidence, method)
+                VALUES (?, ?, ?, 'auto')
+                """,
+                (paper_id, item["category_id"], item["confidence"]),
+            )
 
 
 def academic_client_options(settings) -> dict[str, Any]:
@@ -579,10 +584,11 @@ async def finalize_crawl_batch(
                 oa = {"oa_status": "unknown", "oa_pdf_url": None, "error": str(exc)}
         accepted_works.append((work, oa))
 
-    # Keep network awaits outside the SQLite transaction. Parallel journal
-    # jobs can enrich concurrently, then each journal writes atomically.
+    # Keep network awaits and synchronous classifier calls outside SQLite write
+    # transactions. Parallel journal jobs can enrich and classify concurrently,
+    # while each database mutation remains short.
     new_count = 0
-    classification_errors = []
+    paper_ids = []
     with get_conn() as conn:
         for work, oa in accepted_works:
             created, paper_id = upsert_paper_record(
@@ -594,6 +600,7 @@ async def finalize_crawl_batch(
             )
             if created:
                 new_count += 1
+            paper_ids.append(paper_id)
             if batch.search_history_id is not None:
                 paper_row = conn.execute(
                     "SELECT title, doi, library_status FROM papers WHERE id=?",
@@ -624,19 +631,24 @@ async def finalize_crawl_batch(
                         now_iso(),
                     ),
                 )
-            try:
-                classify_paper(conn, settings, paper_id)
-            except Exception as exc:
-                classification_errors.append(f"paper {paper_id}: {exc}")
-        job_error = batch.source_warning
-        if enrichment_errors:
-            message = f"metadata enrichment failed for {len(enrichment_errors)} paper(s)"
-            job_error = f"{job_error}; {message}" if job_error else message
-        if classification_errors:
-            message = f"classification failed for {len(classification_errors)} paper(s): " + "; ".join(
-                classification_errors[:3]
-            )
-            job_error = f"{job_error}; {message}" if job_error else message
+
+    classification_errors = []
+    for paper_id in dict.fromkeys(paper_ids):
+        try:
+            await asyncio.to_thread(classify_paper, settings, paper_id)
+        except Exception as exc:
+            classification_errors.append(f"paper {paper_id}: {exc}")
+
+    job_error = batch.source_warning
+    if enrichment_errors:
+        message = f"metadata enrichment failed for {len(enrichment_errors)} paper(s)"
+        job_error = f"{job_error}; {message}" if job_error else message
+    if classification_errors:
+        message = f"classification failed for {len(classification_errors)} paper(s): " + "; ".join(
+            classification_errors[:3]
+        )
+        job_error = f"{job_error}; {message}" if job_error else message
+    with get_conn() as conn:
         conn.execute(
             """
             UPDATE crawl_jobs
