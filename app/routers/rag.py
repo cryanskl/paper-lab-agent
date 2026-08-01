@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.db import get_conn
 from app.errors import AppError
-from app.services.rag import query
+from app.services.rag import VectorIndexContractError, query
 
 router = APIRouter(prefix="/rag", tags=["rag"])
 
@@ -51,7 +51,11 @@ class RagResponse(BaseModel):
     sources: list[RagSourceResponse]
 
 
-@router.post("/query", response_model=RagResponse)
+@router.post(
+    "/query",
+    response_model=RagResponse,
+    responses={409: {"description": "Vector index contract mismatch"}},
+)
 def rag_query(body: RagQueryIn) -> dict:
     _ensure_documents_exist(body.document_ids)
     try:
@@ -61,6 +65,8 @@ def rag_query(body: RagQueryIn) -> dict:
             body.top_k,
             use_document_context=body.use_document_context,
         )
+    except VectorIndexContractError as exc:
+        raise AppError(409, "rag_index_contract_mismatch", str(exc)) from exc
     except Exception as exc:
         raise AppError(500, "rag_query_failed", str(exc))
 

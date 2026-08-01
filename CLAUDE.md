@@ -16,7 +16,8 @@
 
 ## 技术栈（锁定）
 
-FastAPI + SQLite + APScheduler + GROBID + Chroma/FAISS；前端 Streamlit。未经讨论不要替换或引入重型框架。
+FastAPI + SQLite + APScheduler + GROBID + Chroma/FAISS；唯一前端是 FastAPI 托管的原生 HTML/CSS/JS 工作台。
+不得恢复 Streamlit 或引入第二套前端；未经讨论不要替换或引入重型框架。
 
 ## 通用约定
 

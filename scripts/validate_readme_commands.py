@@ -184,8 +184,6 @@ def command_targets(readme_path: Path) -> list[str]:
             script_target = token.removeprefix("./")
             if script_target.startswith("scripts/") and script_target.endswith((".py", ".sh")):
                 targets.append(script_target)
-            elif token == "streamlit_app.py":
-                targets.append(token)
             elif token == "-m" and index + 1 < len(tokens):
                 module = tokens[index + 1]
                 if module.startswith("scripts."):

@@ -19,28 +19,22 @@ load_env_file_if_unset ".env"
 
 API_HOST="${API_HOST:-127.0.0.1}"
 API_PORT="${API_PORT:-8000}"
-STREAMLIT_HOST="${STREAMLIT_HOST:-127.0.0.1}"
-STREAMLIT_PORT="${STREAMLIT_PORT:-8501}"
 DEV_READY_TIMEOUT="${DEV_READY_TIMEOUT:-45}"
 DEV_EXIT_AFTER_READY="${DEV_EXIT_AFTER_READY:-false}"
 START_OPEN_BROWSER="${START_OPEN_BROWSER:-true}"
 PAPER_LAB_SCHEDULER_ENABLED="${PAPER_LAB_SCHEDULER_ENABLED:-false}"
 
 API_CONNECT_HOST="$(resolve_connect_host "${API_HOST}")"
-STREAMLIT_CONNECT_HOST="$(resolve_connect_host "${STREAMLIT_HOST}")"
 API_URL_HOST="$(format_url_host "${API_CONNECT_HOST}")"
-STREAMLIT_URL_HOST="$(format_url_host "${STREAMLIT_CONNECT_HOST}")"
 API_BASE_URL="$(resolve_api_base_url "${API_BASE_URL:-}" "${API_HOST+x}" "${API_PORT+x}")"
 BACKEND_HEALTH_URL="http://${API_URL_HOST}:${API_PORT}/api/v1/health"
-FRONTEND_HEALTH_URL="http://${STREAMLIT_URL_HOST}:${STREAMLIT_PORT}/_stcore/health"
-FRONTEND_URL="http://${STREAMLIT_URL_HOST}:${STREAMLIT_PORT}"
+WORKBENCH_URL="http://${API_URL_HOST}:${API_PORT}/ui/"
 
 RUN_ID="$(date '+%Y%m%d-%H%M%S')"
 LOG_DIR="${LOG_DIR:-logs/run-${RUN_ID}}"
 mkdir -p "${LOG_DIR}"
 STARTUP_LOG="${LOG_DIR}/startup.log"
 BACKEND_LOG="${LOG_DIR}/backend.log"
-FRONTEND_LOG="${LOG_DIR}/frontend.log"
 PID_FILE="${LOG_DIR}/pids.env"
 
 exec > >(tee -a "${STARTUP_LOG}") 2>&1
@@ -113,9 +107,6 @@ cleanup() {
   if [[ -n "${API_PID:-}" ]]; then
     kill "${API_PID}" 2>/dev/null || true
   fi
-  if [[ -n "${STREAMLIT_PID:-}" ]]; then
-    kill "${STREAMLIT_PID}" 2>/dev/null || true
-  fi
 }
 trap cleanup EXIT INT TERM
 
@@ -179,11 +170,10 @@ echo "Project: ${ROOT_DIR}"
 echo "Logs: ${LOG_DIR}"
 echo "Python: ${PYTHON}"
 
-echo "Installing backend/frontend Python dependencies from requirements.txt..."
+echo "Installing Python dependencies from requirements.txt..."
 "${PYTHON}" -m pip install -r requirements.txt
 
 reset_port "FastAPI" "${API_PORT}"
-reset_port "Streamlit" "${STREAMLIT_PORT}"
 
 echo "Starting FastAPI backend..."
 PAPER_LAB_SCHEDULER_ENABLED="${PAPER_LAB_SCHEDULER_ENABLED}" \
@@ -192,35 +182,19 @@ PAPER_LAB_SCHEDULER_ENABLED="${PAPER_LAB_SCHEDULER_ENABLED}" \
 API_PID=$!
 
 wait_for_service "FastAPI" "${BACKEND_HEALTH_URL}" "${DEV_READY_TIMEOUT}" "${API_PID}" "${BACKEND_LOG}"
-
-echo "Starting Streamlit frontend..."
-API_BASE_URL="${API_BASE_URL}" \
-  "${PYTHON}" -m streamlit run streamlit_app.py \
-  --server.address "${STREAMLIT_HOST}" \
-  --server.port "${STREAMLIT_PORT}" \
-  --server.headless true \
-  >"${FRONTEND_LOG}" 2>&1 &
-STREAMLIT_PID=$!
-
-wait_for_service "Streamlit" "${FRONTEND_HEALTH_URL}" "${DEV_READY_TIMEOUT}" "${STREAMLIT_PID}" "${FRONTEND_LOG}"
-
-WORKBENCH_URL="http://${API_URL_HOST}:${API_PORT}/ui/"
+wait_for_service "Workbench" "${WORKBENCH_URL}" "${DEV_READY_TIMEOUT}" "${API_PID}" "${BACKEND_LOG}"
 
 {
   echo "API_PID=${API_PID}"
-  echo "STREAMLIT_PID=${STREAMLIT_PID}"
   echo "API_URL=http://${API_URL_HOST}:${API_PORT}"
   echo "WORKBENCH_URL=${WORKBENCH_URL}"
-  echo "STREAMLIT_URL=${FRONTEND_URL}"
   echo "API_BASE_URL=${API_BASE_URL}"
 } > "${PID_FILE}"
 
-echo "FastAPI:    http://${API_URL_HOST}:${API_PORT}"
-echo "工作台:      ${WORKBENCH_URL}"
-echo "Streamlit:  ${FRONTEND_URL}"
+echo "FastAPI:  http://${API_URL_HOST}:${API_PORT}"
+echo "工作台:    ${WORKBENCH_URL}"
 echo "API_BASE_URL=${API_BASE_URL}"
 echo "Backend log: ${BACKEND_LOG}"
-echo "Frontend log: ${FRONTEND_LOG}"
 echo "Startup log: ${STARTUP_LOG}"
 
 open_url "${WORKBENCH_URL}"
@@ -230,5 +204,5 @@ if [[ "${DEV_EXIT_AFTER_READY}" == "true" ]]; then
   exit 0
 fi
 
-echo "Services are running. Press Ctrl+C in this terminal to stop them."
+echo "Workbench is running. Press Ctrl+C in this terminal to stop it."
 wait

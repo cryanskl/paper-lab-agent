@@ -338,6 +338,29 @@ def test_web_ui_library_metadata_uses_two_semantic_rows():
     assert "white-space: nowrap;" in styles
 
 
+def test_web_ui_library_polling_is_incremental_deduplicated_and_visible_on_failure():
+    index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+    load_library = app_js[
+        app_js.index("async function loadLibraryOnce"):
+        app_js.index("function docTitle")
+    ]
+
+    assert 'id="library-load-status"' in index
+    assert 'data-library-retry' in app_js
+    assert ".library-load-status" in styles
+    assert "let libraryLoadPromise = null" in app_js
+    assert "if (libraryLoadPromise) return libraryLoadPromise" in app_js
+    assert "mapWithConcurrency(documents, LIBRARY_METADATA_CONCURRENCY" in load_library
+    assert "meta.translation && meta.translation.status === 'pending'" in load_library
+    assert "previous && previous.chemistry_status === 'extracting'" in load_library
+    assert "apiOptional(`/documents/${doc.id}/translation`, [404])" in load_library
+    assert "apiOrNull" not in load_library
+    assert "if (state.page !== 'library') return" in app_js
+    assert "if (page !== 'library') stopLibraryPoll()" in app_js
+
+
 def test_web_ui_library_upload_starts_automatic_document_processing():
     index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
@@ -415,6 +438,16 @@ def test_web_ui_system_status_shows_paper_and_download_counts():
     assert '<div class="sysrow"><span>已下载文献</span><span class="dim">—</span></div>' in index
     assert '<span>文献总数</span><span class="dim">${counts.papers || 0} 篇</span>' in app_js
     assert '<span>已下载文献</span><span class="dim">${counts.downloaded_papers || 0} 篇</span>' in app_js
+    assert "${engineOnline ? '在线' : '不可用'}" in app_js
+    assert "本地回显" not in app_js
+
+
+def test_web_ui_removes_unused_element_factory_and_reuses_delay_helper():
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "function el(" not in app_js
+    assert "function wait(" not in app_js
+    assert "await delay(800)" in app_js
 
 
 def test_web_ui_uses_backend_download_state_and_never_browser_default_download():
@@ -1097,7 +1130,7 @@ def test_windows_launcher_honours_same_env_contract_as_start_sh():
     shell = (root / "start.sh").read_text(encoding="utf-8")
 
     shared = [
-        "API_HOST", "API_PORT", "STREAMLIT_HOST", "STREAMLIT_PORT", "API_BASE_URL",
+        "API_HOST", "API_PORT", "API_BASE_URL",
         "DEV_READY_TIMEOUT", "DEV_EXIT_AFTER_READY", "START_OPEN_BROWSER",
         "PAPER_LAB_SCHEDULER_ENABLED", "LOG_DIR",
     ]

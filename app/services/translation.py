@@ -24,6 +24,13 @@ PRESENTATION_TAG_RE = re.compile(
 )
 DEFAULT_TRANSLATION_CHUNK_CHARS = 6000
 TRANSLATION_SOFT_BREAKS = ("\n\n", "\n", ". ", "? ", "! ", "; ")
+TRANSLATION_UNAVAILABLE_MESSAGE = (
+    "LLM_API_KEY is not configured; machine translation is unavailable"
+)
+
+
+class TranslationUnavailableError(RuntimeError):
+    """Raised when a production translation task has no configured model."""
 
 
 class Translator(Protocol):
@@ -148,19 +155,24 @@ class OpenAICompatibleTermTranslator:
 
 
 def get_translator(settings: Settings) -> Translator:
-    if settings.llm_api_key:
-        return OpenAICompatibleTranslator(
-            settings.llm_api_key,
-            settings.llm_base_url,
-            settings.llm_model,
-            timeout_seconds=settings.llm_request_timeout_seconds,
-        )
-    return LocalEchoTranslator()
+    require_translation_capability(settings)
+    return OpenAICompatibleTranslator(
+        settings.llm_api_key,
+        settings.llm_base_url,
+        settings.llm_model,
+        timeout_seconds=settings.llm_request_timeout_seconds,
+    )
+
+
+def require_translation_capability(settings: Optional[Settings] = None) -> Settings:
+    configured = settings or get_settings()
+    if not configured.llm_api_key:
+        raise TranslationUnavailableError(TRANSLATION_UNAVAILABLE_MESSAGE)
+    return configured
 
 
 def get_term_translator(settings: Settings) -> TermTranslator:
-    if not settings.llm_api_key:
-        raise ValueError("LLM_API_KEY is not configured")
+    require_translation_capability(settings)
     return OpenAICompatibleTermTranslator(
         settings.llm_api_key,
         settings.llm_base_url,
@@ -387,6 +399,18 @@ def create_translation_job(document_id: int, target_lang: str) -> dict:
         return dict_from_row(row)
 
 
+def mark_translation_failed(translation_id: int, error: str) -> dict:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE translations SET status='failed', output_path=NULL, error=? WHERE id=?",
+            (error, translation_id),
+        )
+        row = conn.execute("SELECT * FROM translations WHERE id=?", (translation_id,)).fetchone()
+        if row is None:
+            raise ValueError("translation job not found")
+        return dict_from_row(row)
+
+
 def create_paper_abstract_translation_job(paper_id: int, target_lang: str) -> tuple[dict, bool]:
     with get_conn() as conn:
         paper = conn.execute("SELECT abstract FROM papers WHERE id=?", (paper_id,)).fetchone()
@@ -593,9 +617,11 @@ def translate_document(
         out_path = translation_output_path(settings, document_id, target_lang, translation_id)
         assert_safe_translation_output_path(out_path)
         translator = translator_override or get_translator(settings)
+        if isinstance(translator, LocalEchoTranslator):
+            raise TranslationUnavailableError(TRANSLATION_UNAVAILABLE_MESSAGE)
         note = (
-            "> LLM_API_KEY is not configured; target text preserves source text honestly."
-            if translator_override is not None or not settings.llm_api_key
+            "> Translated with an explicitly supplied adapter."
+            if translator_override is not None
             else f"> Translated with configured model `{settings.llm_model}`."
         )
         blocks = ["# Bilingual Translation", "", note]
@@ -633,10 +659,4 @@ def translate_document(
             row = conn.execute("SELECT * FROM translations WHERE id=?", (translation_id,)).fetchone()
             return dict_from_row(row)
     except Exception as exc:
-        with get_conn() as conn:
-            conn.execute(
-                "UPDATE translations SET status='failed', output_path=NULL, error=? WHERE id=?",
-                (str(exc), translation_id),
-            )
-            row = conn.execute("SELECT * FROM translations WHERE id=?", (translation_id,)).fetchone()
-            return dict_from_row(row)
+        return mark_translation_failed(translation_id, str(exc))

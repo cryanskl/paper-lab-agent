@@ -1,14 +1,14 @@
 <#
   paper-lab-agent 一键启动（Windows / PowerShell）
 
-  与 start.sh 等价：建 venv → 装依赖 → 腾出端口 → 起 FastAPI + Streamlit
-  → 等健康检查 → 打印 URL 并打开工作台。
+  与 start.sh 等价：建 venv → 装依赖 → 腾出端口 → 启动 FastAPI
+  → 等 API 与原生工作台就绪 → 打印 URL 并打开工作台。
 
   用法：
     powershell -ExecutionPolicy Bypass -File .\start.ps1
 
   环境变量与 start.sh 同名，可在 .env 或当前会话中覆盖：
-    API_HOST / API_PORT / STREAMLIT_HOST / STREAMLIT_PORT / API_BASE_URL
+    API_HOST / API_PORT / API_BASE_URL
     DEV_READY_TIMEOUT / DEV_EXIT_AFTER_READY / START_OPEN_BROWSER
     PAPER_LAB_SCHEDULER_ENABLED / PYTHON / LOG_DIR
 #>
@@ -148,28 +148,21 @@ Import-EnvFile (Join-Path $RootDir '.env')
 
 $ApiHost = Get-EnvOrDefault 'API_HOST' '127.0.0.1'
 $ApiPort = [int](Get-EnvOrDefault 'API_PORT' '8000')
-$StreamlitHost = Get-EnvOrDefault 'STREAMLIT_HOST' '127.0.0.1'
-$StreamlitPort = [int](Get-EnvOrDefault 'STREAMLIT_PORT' '8501')
 $ReadyTimeout = [double](Get-EnvOrDefault 'DEV_READY_TIMEOUT' '45')
 $ExitAfterReady = (Get-EnvOrDefault 'DEV_EXIT_AFTER_READY' 'false')
 $OpenBrowser = (Get-EnvOrDefault 'START_OPEN_BROWSER' 'true')
 $SchedulerEnabled = Get-EnvOrDefault 'PAPER_LAB_SCHEDULER_ENABLED' 'false'
 
 $ApiUrlHost = Format-UrlHost $ApiHost
-$StreamlitUrlHost = Format-UrlHost $StreamlitHost
 $ApiBaseUrl = Get-EnvOrDefault 'API_BASE_URL' "http://${ApiUrlHost}:${ApiPort}/api/v1"
 $BackendHealthUrl = "http://${ApiUrlHost}:${ApiPort}/api/v1/health"
-$FrontendHealthUrl = "http://${StreamlitUrlHost}:${StreamlitPort}/_stcore/health"
-$FrontendUrl = "http://${StreamlitUrlHost}:${StreamlitPort}"
 $WorkbenchUrl = "http://${ApiUrlHost}:${ApiPort}/ui/"
 
 $RunId = Get-Date -Format 'yyyyMMdd-HHmmss'
 $LogDir = Get-EnvOrDefault 'LOG_DIR' (Join-Path 'logs' "run-$RunId")
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 $BackendLog = Join-Path $LogDir 'backend.log'
-$FrontendLog = Join-Path $LogDir 'frontend.log'
 $BackendErrLog = Join-Path $LogDir 'backend.err.log'
-$FrontendErrLog = Join-Path $LogDir 'frontend.err.log'
 $PidFile = Join-Path $LogDir 'pids.env'
 
 $Python = Resolve-Python
@@ -186,12 +179,11 @@ Write-Host "Project: $RootDir"
 Write-Host "Logs: $LogDir"
 Write-Host "Python: $Python"
 
-Write-Host 'Installing backend/frontend Python dependencies from requirements.txt...'
+Write-Host 'Installing Python dependencies from requirements.txt...'
 & $Python -m pip install -r requirements.txt
 if ($LASTEXITCODE -ne 0) { throw "pip install failed with exit code $LASTEXITCODE" }
 
 Reset-Port 'FastAPI' $ApiPort
-Reset-Port 'Streamlit' $StreamlitPort
 
 $env:PAPER_LAB_SCHEDULER_ENABLED = $SchedulerEnabled
 $env:API_BASE_URL = $ApiBaseUrl
@@ -201,32 +193,21 @@ $apiProcess = Start-Process -FilePath $Python -PassThru -NoNewWindow `
     -ArgumentList @('-m', 'uvicorn', 'app.main:app', '--host', $ApiHost, '--port', "$ApiPort") `
     -RedirectStandardOutput $BackendLog -RedirectStandardError $BackendErrLog
 
-Write-Host 'Starting Streamlit frontend...'
-$streamlitProcess = Start-Process -FilePath $Python -PassThru -NoNewWindow `
-    -ArgumentList @('-m', 'streamlit', 'run', 'streamlit_app.py',
-        '--server.address', $StreamlitHost, '--server.port', "$StreamlitPort",
-        '--server.headless', 'true') `
-    -RedirectStandardOutput $FrontendLog -RedirectStandardError $FrontendErrLog
-
 try {
     Wait-ForService 'FastAPI' $BackendHealthUrl $ReadyTimeout $apiProcess $BackendLog
-    Wait-ForService 'Streamlit' $FrontendHealthUrl $ReadyTimeout $streamlitProcess $FrontendLog
+    Wait-ForService 'Workbench' $WorkbenchUrl $ReadyTimeout $apiProcess $BackendLog
 
     @(
         "API_PID=$($apiProcess.Id)"
-        "STREAMLIT_PID=$($streamlitProcess.Id)"
         "API_URL=http://${ApiUrlHost}:${ApiPort}"
         "WORKBENCH_URL=$WorkbenchUrl"
-        "STREAMLIT_URL=$FrontendUrl"
         "API_BASE_URL=$ApiBaseUrl"
     ) | Set-Content -LiteralPath $PidFile -Encoding UTF8
 
-    Write-Host "FastAPI:    http://${ApiUrlHost}:${ApiPort}"
-    Write-Host "工作台:      $WorkbenchUrl"
-    Write-Host "Streamlit:  $FrontendUrl"
+    Write-Host "FastAPI:  http://${ApiUrlHost}:${ApiPort}"
+    Write-Host "工作台:    $WorkbenchUrl"
     Write-Host "API_BASE_URL=$ApiBaseUrl"
     Write-Host "Backend log: $BackendLog"
-    Write-Host "Frontend log: $FrontendLog"
 
     if ($OpenBrowser -eq 'true') {
         Start-Process $WorkbenchUrl | Out-Null
@@ -239,12 +220,12 @@ try {
         exit 0
     }
 
-    Write-Host 'Press Ctrl+C to stop both services.'
-    while (-not $apiProcess.HasExited -and -not $streamlitProcess.HasExited) {
+    Write-Host 'Press Ctrl+C to stop the workbench.'
+    while (-not $apiProcess.HasExited) {
         Start-Sleep -Seconds 1
     }
 } finally {
-    foreach ($process in @($apiProcess, $streamlitProcess)) {
+    foreach ($process in @($apiProcess)) {
         if ($process -and -not $process.HasExited) {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
         }

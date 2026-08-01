@@ -14,6 +14,11 @@ BACKTICK_FILE_RE = re.compile(
 )
 EXTERNAL_PREFIXES = ("http://", "https://", "mailto:")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$", re.MULTILINE)
+RETIRED_BUG_REFERENCE_TARGETS = {
+    "streamlit_app.py",
+    "app/frontend_api.py",
+    "tests/test_frontend_api.py",
+}
 
 
 def doc_files(repo: Path) -> list[Path]:
@@ -78,6 +83,17 @@ def target_candidate_paths(repo: Path, source: Path, target: str) -> list[Path]:
 
 def target_exists(repo: Path, source: Path, target: str) -> bool:
     return resolve_target_path(repo, source, target) is not None
+
+
+def is_retired_bug_reference(repo: Path, source: Path, target: str) -> bool:
+    try:
+        relative_source = source.resolve().relative_to(repo.resolve())
+    except ValueError:
+        return False
+    return (
+        relative_source.parts[:2] == ("docs", "bug")
+        and target.removeprefix("./") in RETIRED_BUG_REFERENCE_TARGETS
+    )
 
 
 def is_within_repo(repo: Path, path: Path) -> bool:
@@ -184,6 +200,8 @@ def broken_doc_links(repo: Path) -> list[str]:
                 continue
             target_path = path if not target and fragment else resolve_target_path(repo, path, target)
             if target_path is None:
+                if is_retired_bug_reference(repo, path, target):
+                    continue
                 if first_irregular_target_parent(repo, path, target) is not None:
                     issues.append(f"{label}: link target parent is not a regular directory {target}")
                     continue
@@ -212,6 +230,8 @@ def broken_doc_links(repo: Path) -> list[str]:
                 continue
             target_path = resolve_target_path(repo, path, target)
             if target_path is None:
+                if is_retired_bug_reference(repo, path, target):
+                    continue
                 if first_irregular_target_parent(repo, path, target) is not None:
                     issues.append(f"{label}: reference target parent is not a regular directory {target}")
                     continue

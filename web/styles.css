@@ -424,6 +424,13 @@ input, select, button, textarea { outline: none; font-family: inherit; }
   width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
   box-shadow: 0 0 0 4px rgba(111, 199, 214, .1); animation: pulse 1.2s infinite;
 }
+.library-load-status {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 12px; padding: 10px 12px; border: 1px solid rgba(218, 104, 104, .34);
+  border-radius: 7px; background: rgba(218, 104, 104, .08); color: #E89A9A;
+  font-size: 11.5px;
+}
+.library-load-status[hidden] { display: none; }
 .lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; margin-top: 16px; }
 .lib-card {
   position: relative; border: 1px solid var(--line-2); background: var(--card); border-radius: 10px;

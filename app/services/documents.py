@@ -24,6 +24,12 @@ SAFE_FIGURE_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]{0,127}$")
 XML_ID_ATTRIBUTE = "{http://www.w3.org/XML/1998/namespace}id"
 
 
+class DocumentUploadTooLargeError(ValueError):
+    def __init__(self, max_bytes: int):
+        self.max_bytes = max_bytes
+        super().__init__(f"PDF exceeds the configured upload limit of {max_bytes} bytes")
+
+
 def normalize_reader_text(text: Optional[str]) -> str:
     normalized = INTERNAL_TEI_TARGET_RE.sub("", text or "")
     normalized = re.sub(r"\s+([,.;:!?，。；：！？])", r"\1", normalized)
@@ -128,7 +134,11 @@ def save_document_bytes(
 
 
 async def save_upload(file: UploadFile, paper_id: Optional[int]) -> tuple[dict, bool]:
-    return save_document_bytes(await file.read(), paper_id, file.filename)
+    settings = get_settings()
+    content = await file.read(settings.max_pdf_upload_bytes + 1)
+    if len(content) > settings.max_pdf_upload_bytes:
+        raise DocumentUploadTooLargeError(settings.max_pdf_upload_bytes)
+    return save_document_bytes(content, paper_id, file.filename)
 
 
 def read_document_text(file_path: str) -> str:

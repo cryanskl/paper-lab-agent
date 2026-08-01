@@ -5,7 +5,12 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.db import dict_from_row, get_conn
 from app.errors import AppError
-from app.services.translation import create_term_translation_job, translate_term
+from app.services.translation import (
+    TranslationUnavailableError,
+    create_term_translation_job,
+    require_translation_capability,
+    translate_term,
+)
 
 
 router = APIRouter(prefix="/term-translations", tags=["translations"])
@@ -71,10 +76,19 @@ class TermTranslationResponse(BaseModel):
     updated_at: str
 
 
-@router.post("", status_code=202, response_model=TermTranslationJobResponse)
+@router.post(
+    "",
+    status_code=202,
+    response_model=TermTranslationJobResponse,
+    responses={409: {"description": "Machine translation unavailable"}},
+)
 def start_term_translation(body: TermTranslationIn, background_tasks: BackgroundTasks) -> dict:
     if body.source_lang.casefold() == body.target_lang.casefold():
         raise AppError(422, "validation_error", "source_lang and target_lang must differ")
+    try:
+        require_translation_capability()
+    except TranslationUnavailableError as exc:
+        raise AppError(409, "translation_unavailable", str(exc)) from exc
     translation, cached = create_term_translation_job(
         body.source_text,
         body.source_lang,

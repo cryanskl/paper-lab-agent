@@ -21,7 +21,9 @@ EXTERNAL_STATUS_PATH = "/api/v1/system/status?check_external=true"
 OPENAPI_PATH = "/openapi.json"
 EXPECTED_API_PREFIX = "/api/v1"
 EXPECTED_SERVICE = "paper-lab-agent"
-SUPPORTED_TRANSLATION_ADAPTERS = {"local-echo", "openai-compatible"}
+# Accept the legacy value when checking an older deployed API, while this
+# version reports missing model capability as ``unavailable``.
+SUPPORTED_TRANSLATION_ADAPTERS = {"local-echo", "unavailable", "openai-compatible"}
 OPENAPI_REQUIRED_TAGS = {"system"}
 OPENAPI_REQUIRED_PATHS = {"/api/v1/health"}
 OPENAPI_REQUIRED_SCHEMAS = {"ErrorResponse"}
@@ -230,18 +232,7 @@ def default_base_url() -> str:
 
 
 def default_frontend_url() -> str:
-    if os.getenv("FRONTEND_URL"):
-        return os.environ["FRONTEND_URL"].rstrip("/")
-    host = url_host(connect_host(os.getenv("STREAMLIT_HOST", "127.0.0.1")))
-    port = os.getenv("STREAMLIT_PORT", "8501")
-    return f"http://{host}:{port}"
-
-
-def streamlit_health_url(frontend_url: str) -> str:
-    value = frontend_url.rstrip("/")
-    if value.endswith("/_stcore/health"):
-        return value
-    return f"{value}/_stcore/health"
+    return f"{default_base_url().rstrip('/')}/ui/"
 
 
 def fetch_json(url: str, timeout: float) -> dict:
@@ -258,7 +249,7 @@ def fetch_status(url: str, timeout: float) -> int:
 
 
 def probe_frontend(frontend_url: str, timeout: float) -> dict:
-    url = streamlit_health_url(frontend_url)
+    url = frontend_url.rstrip("/") + "/"
     try:
         return {"url": url, "status_code": fetch_status(url, timeout)}
     except (OSError, URLError) as exc:
@@ -930,9 +921,9 @@ def main() -> int:
         return 1
     parser = argparse.ArgumentParser(description="Check paper-lab-agent API health.")
     parser.add_argument("--base-url", default=default_base_url(), help="FastAPI base URL; may include /api/v1")
-    parser.add_argument("--check-frontend", action="store_true", help="Also check Streamlit frontend health")
-    parser.add_argument("--frontend-url", default=default_frontend_url(), help="Streamlit base URL")
-    parser.add_argument("--require-frontend", action="store_true", help="Fail when Streamlit frontend is unavailable")
+    parser.add_argument("--check-frontend", action="store_true", help="Also check the native workbench page")
+    parser.add_argument("--frontend-url", default=default_frontend_url(), help="Native workbench URL")
+    parser.add_argument("--require-frontend", action="store_true", help="Fail when the native workbench is unavailable")
     parser.add_argument("--check-openapi", action="store_true", help="Also check live OpenAPI JSON schema")
     parser.add_argument("--require-openapi", action="store_true", help="Fail when OpenAPI JSON schema is unavailable or invalid")
     parser.add_argument("--check-external", action="store_true", help="Also check configured external services")
@@ -1045,7 +1036,7 @@ def main() -> int:
     if args.check_frontend and frontend["status_code"] != 200:
         detail = frontend.get("error") or f"status_code={frontend['status_code']}"
         print(
-            f"health_check failed: Streamlit frontend is unavailable ({detail})",
+            f"health_check failed: native workbench is unavailable ({detail})",
             file=sys.stderr,
         )
         return 1

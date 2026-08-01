@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     tei_dir: Path = Field(default=Path("data/tei"), alias="PAPER_LAB_TEI_DIR")
     translation_dir: Path = Field(default=Path("data/translations"), alias="PAPER_LAB_TRANSLATION_DIR")
     export_dir: Path = Field(default=Path("data/exports"), alias="PAPER_LAB_EXPORT_DIR")
+    max_pdf_upload_bytes: int = Field(
+        default=104857600,
+        ge=1,
+        le=1073741824,
+        alias="MAX_PDF_UPLOAD_BYTES",
+    )
     vector_db_path: Path = Field(default=Path("data/chroma"), alias="VECTOR_DB_PATH")
     vector_db_backend: str = Field(default="chroma", alias="VECTOR_DB_BACKEND")
 

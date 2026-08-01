@@ -1,10 +1,10 @@
 # Windows 部署指南
 
 本文说明如何在 Windows 10/11 上部署并运行 `paper-lab-agent`。仓库当前支持的是单机或受信任局域网
-部署：FastAPI、SQLite、APScheduler、原生 Web 工作台和 Streamlit 都运行在 Windows 主机上；
+部署：FastAPI、SQLite、APScheduler 和原生 Web 工作台都运行在 Windows 主机上；
 GROBID 作为可选 Docker 服务单独运行。
 
-> 安全边界：当前应用没有内置公网身份认证、租户隔离或 TLS 终止。不要把 8000、8501 或 8070 端口
+> 安全边界：当前应用没有内置公网身份认证、租户隔离或 TLS 终止。不要把 8000 或 8070 端口
 > 直接映射到公网。需要跨公网访问时，应先在受控反向代理、VPN 和身份认证之后部署。
 
 ## 1. 部署后会得到什么
@@ -13,14 +13,13 @@ GROBID 作为可选 Docker 服务单独运行。
 | --- | --- | --- |
 | 文献工作台 | `http://127.0.0.1:8000/ui/` | 日常检索、下载、阅读、问答和化学库复核 |
 | FastAPI | `http://127.0.0.1:8000/` | API、OpenAPI 和工作台静态资源 |
-| Streamlit | `http://127.0.0.1:8501/` | 运维和发布验收视图 |
 | SQLite | `data/plasma.db` | 论文、任务和业务数据 |
 | 本地文件 | `data/` | PDF、TEI、翻译、导出和向量索引 |
 | GROBID | `http://127.0.0.1:8070/` | 可选；真实 PDF 结构化解析 |
 
 `start.ps1` 是 Windows 的统一启动入口。它会按 UTF-8 读取 `.env`，创建或复用 `.venv`，安装
-`requirements.txt`，释放被旧进程占用的 8000/8501 端口，启动 FastAPI 和 Streamlit，等待两者健康后
-打开工作台。按 `Ctrl+C` 会进入清理流程并停止本次启动的两个子进程。
+`requirements.txt`，释放被旧进程占用的 8000 端口，启动 FastAPI，等待 API 与内置工作台健康后
+打开工作台。按 `Ctrl+C` 会进入清理流程并停止本次启动的进程。
 
 ## 2. 系统要求
 
@@ -119,7 +118,7 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
 ```
 
 第一次启动需要创建虚拟环境并安装依赖，时间取决于网络和机器性能。成功后终端会打印 FastAPI、工作台、
-Streamlit、日志目录和 PID 文件位置，并默认打开工作台。
+日志目录和 PID 文件位置，并默认打开工作台。
 
 如果不希望自动打开浏览器：
 
@@ -128,7 +127,7 @@ $env:START_OPEN_BROWSER = 'false'
 powershell -ExecutionPolicy Bypass -File .\start.ps1
 ```
 
-只验证两个服务能否启动，ready 后立即退出并清理进程：
+只验证 API 与内置工作台能否启动，ready 后立即退出并清理进程：
 
 ```powershell
 $env:START_OPEN_BROWSER = 'false'
@@ -144,7 +143,7 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
 
 ```powershell
 Invoke-WebRequest http://127.0.0.1:8000/api/v1/health -UseBasicParsing
-Invoke-WebRequest http://127.0.0.1:8501/_stcore/health -UseBasicParsing
+Invoke-WebRequest http://127.0.0.1:8000/ui/ -UseBasicParsing
 .\.venv\Scripts\python.exe scripts\health_check.py --summary-only --compact
 .\.venv\Scripts\python.exe scripts\health_check.py --require-frontend
 .\.venv\Scripts\python.exe scripts\health_check.py --require-openapi
@@ -190,7 +189,6 @@ GROBID 不可用时，隔离测试和 fixture 演示仍可运行，但真实 PDF
 
 ```dotenv
 API_HOST=0.0.0.0
-STREAMLIT_HOST=0.0.0.0
 API_BASE_URL=http://127.0.0.1:8000/api/v1
 ```
 
@@ -204,10 +202,9 @@ Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127
 
 ```powershell
 New-NetFirewallRule -DisplayName 'Paper Lab API' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8000 -Profile Private
-New-NetFirewallRule -DisplayName 'Paper Lab Streamlit' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8501 -Profile Private
 ```
 
-其他设备随后访问 `http://<Windows主机IP>:8000/ui/`。8501 是运维验收视图，不需要共享时不要放行。
+其他设备随后访问 `http://<Windows主机IP>:8000/ui/`。
 不要放行 8070 给局域网客户端；应用在 Windows 主机内部访问 GROBID 即可。
 
 ## 9. 日志、停止与重启
@@ -215,16 +212,15 @@ New-NetFirewallRule -DisplayName 'Paper Lab Streamlit' -Direction Inbound -Actio
 每次启动都会创建 `logs/run-YYYYMMDD-HHMMSS/`。Windows 目录通常包含：
 
 - `backend.log` 与 `backend.err.log`；
-- `frontend.log` 与 `frontend.err.log`；
 - `pids.env`。
 
-正常停止请在运行 `start.ps1` 的窗口按 `Ctrl+C`。重新执行脚本时，它会检查并清理 8000/8501 上的旧监听
+正常停止请在运行 `start.ps1` 的窗口按 `Ctrl+C`。重新执行脚本时，它会检查并清理 8000 上的旧监听
 进程；如果不希望影响这些端口上的其他应用，请先在 `.env` 中改用独立端口。
 
 查看端口占用：
 
 ```powershell
-Get-NetTCPConnection -LocalPort 8000,8501 -State Listen
+Get-NetTCPConnection -LocalPort 8000 -State Listen
 ```
 
 ## 10. 更新与备份
@@ -296,17 +292,15 @@ $env:DEV_READY_TIMEOUT = '120'
 powershell -ExecutionPolicy Bypass -File .\start.ps1
 ```
 
-仍失败时检查最新 `logs/run-*/backend.err.log` 和 `frontend.err.log`。
+仍失败时检查最新 `logs/run-*/backend.err.log`。
 
 ### 端口被其他应用占用
 
-`start.ps1` 默认会停止占用 8000/8501 的监听进程。若这些端口属于其他应用，请在 `.env` 中改为：
+`start.ps1` 默认会停止占用 8000 的监听进程。若该端口属于其他应用，请在 `.env` 中改为：
 
 ```dotenv
 API_PORT=8001
-STREAMLIT_PORT=8502
 API_BASE_URL=http://127.0.0.1:8001/api/v1
-FRONTEND_URL=http://127.0.0.1:8502
 ```
 
 ### 中文日志乱码

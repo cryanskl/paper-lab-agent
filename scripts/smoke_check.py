@@ -431,18 +431,22 @@ def run_smoke() -> dict:
         assert_ok(bool(first_chunk.get("vector_id")), f"expected chunk vector_id, got {first_chunk}")
         assert_ok(bool(first_chunk.get("section_title")), f"expected chunk section_title, got {first_chunk}")
 
-        assert_status(
+        unavailable_translation = assert_error_response(
             client.post(f"/api/v1/documents/{document_id}/translate", json={"target_lang": "zh"}),
-            202,
-            "document translate",
+            409,
+            "document translation without model",
         )
-        translation = assert_status(
+        error_responses.append(unavailable_translation["error"]["code"])
+        assert_ok(
+            unavailable_translation["error"]["code"] == "translation_unavailable",
+            f"expected translation_unavailable, got {unavailable_translation}",
+        )
+        assert_error_response(
             client.get(f"/api/v1/documents/{document_id}/translation"),
-            200,
-            "document translation",
+            404,
+            "missing document translation",
         )
-        assert_ok(translation["status"] == "done", f"expected translation done, got {translation['status']}")
-        assert_ok(Path(translation["output_path"]).exists(), "expected translation output file")
+        translation = {"status": "unavailable", "output_path": None}
 
         rag = assert_status(
             client.post(
@@ -704,8 +708,8 @@ def run_smoke() -> dict:
         )
         assert_ok(isinstance(config_warnings, list), "expected config_warnings list")
         assert_ok(
-            external_capabilities["translation_adapter"] == "local-echo",
-            f"expected local translation adapter, got {external_capabilities}",
+            external_capabilities["translation_adapter"] == "unavailable",
+            f"expected unavailable translation adapter, got {external_capabilities}",
         )
         assert_ok(
             external_capabilities["embedding_model"] == "bge-m3",
@@ -740,7 +744,7 @@ def run_smoke() -> dict:
         assert_ok(status_counts["document_parse"]["parsed"] == 1, "expected parsed document count")
         assert_ok(status_counts["document_index"]["indexed"] == 1, "expected indexed document count")
         assert_ok(status_counts["document_chemistry"]["extracted"] == 1, "expected extracted chemistry count")
-        assert_ok(status_counts["translations"]["done"] == 1, "expected done translation count")
+        assert_ok(status_counts["translations"] == {}, "expected no persisted translation jobs")
         assert_ok(status_counts["reaction_sets"]["verified"] == 1, "expected verified reaction set count")
         assert_ok(
             release_readiness["ready"] is True,
@@ -758,7 +762,7 @@ def run_smoke() -> dict:
         assert_ok(counts["documents"] == 1, "expected one smoke document")
         assert_ok(counts["sections"] >= 1, "expected parsed section count")
         assert_ok(counts["chunks"] >= 1, "expected indexed chunk count")
-        assert_ok(counts["translations"] == 1, "expected one translation")
+        assert_ok(counts["translations"] == 0, "expected no synthetic translation rows")
         assert_ok(counts["reaction_sets"] == 1, "expected one reaction set")
         assert_ok(counts["reactions"] == 1, "expected one reaction")
         assert_ok(counts["reaction_audits"] >= 1, "expected reaction audit count")

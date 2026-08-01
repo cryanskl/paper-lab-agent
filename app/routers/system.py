@@ -289,7 +289,7 @@ def config_warnings(settings) -> list[dict]:
             {
                 "code": "missing_llm_api_key",
                 "capability": "llm_translation",
-                "message": "LLM_API_KEY is not configured; translation uses the local deterministic adapter.",
+                "message": "LLM_API_KEY is not configured; machine translation is unavailable.",
             }
         )
     embedding_model = normalize_embedding_model(settings.embedding_model)
@@ -454,7 +454,7 @@ async def status(check_external: bool = False) -> dict:
             "grobid_url": settings.grobid_url,
             "grobid": grobid,
             "llm_api_key": bool(settings.llm_api_key),
-            "translation_adapter": "openai-compatible" if settings.llm_api_key else "local-echo",
+            "translation_adapter": "openai-compatible" if settings.llm_api_key else "unavailable",
             "llm_model": settings.llm_model,
             "embedding_model": normalize_embedding_model(settings.embedding_model),
             "vector_db_backend": normalize_vector_db_backend(settings.vector_db_backend),

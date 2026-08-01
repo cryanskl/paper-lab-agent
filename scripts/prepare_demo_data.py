@@ -196,7 +196,7 @@ def prepare_demo_data(target_lang: str = "zh", verified_by: str = "prepare-demo-
     from app.services.chemistry import export_reaction_set, extract_reactions, reaction_set_detail
     from app.services.documents import parse_document
     from app.services.rag import index_document
-    from app.services.translation import LocalEchoTranslator, translate_document
+    from app.services.translation import TRANSLATION_UNAVAILABLE_MESSAGE
 
     get_settings.cache_clear()
     init_db()
@@ -218,16 +218,6 @@ def prepare_demo_data(target_lang: str = "zh", verified_by: str = "prepare-demo-
             """,
             (document_id,),
         ).fetchone()
-        translation_row = conn.execute(
-            """
-            SELECT *
-            FROM translations
-            WHERE document_id=? AND target_lang=? AND status='done'
-            ORDER BY id DESC
-            LIMIT 1
-            """,
-            (document_id, target_lang),
-        ).fetchone()
 
     if confirmed_row:
         document = dict_from_row(document_row)
@@ -246,17 +236,16 @@ def prepare_demo_data(target_lang: str = "zh", verified_by: str = "prepare-demo-
             raise RuntimeError(f"demo document index failed: {index_result.get('error')}")
 
     # Release fixtures must be deterministic and must never spend an external
-    # model call merely to assemble a handoff bundle.
-    if translation_row:
-        translation = dict_from_row(translation_row)
-    else:
-        translation = translate_document(
-            document_id,
-            target_lang,
-            translator_override=LocalEchoTranslator(),
-        )
-        if translation.get("status") != "done":
-            raise RuntimeError(f"demo document translation failed: {translation.get('error')}")
+    # model call merely to assemble a handoff bundle. An unavailable optional
+    # capability is reported explicitly instead of persisting source echo as a
+    # successful translation.
+    translation = {
+        "document_id": document_id,
+        "target_lang": target_lang,
+        "status": "unavailable",
+        "output_path": None,
+        "error": TRANSLATION_UNAVAILABLE_MESSAGE,
+    }
 
     if confirmed_row:
         with get_conn() as conn:

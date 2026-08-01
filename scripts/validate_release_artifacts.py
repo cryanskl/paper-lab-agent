@@ -36,7 +36,7 @@ EXPECTED_DEMO_WORKFLOW_STATUSES = {
     "parse_status": "parsed",
     "index_status": "indexed",
     "chemistry_status": "extracted",
-    "translation_status": "done",
+    "translation_status": "unavailable",
     "reaction_set_status": "verified",
 }
 GIT_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")

@@ -16,6 +16,7 @@ from app.services.chemistry import (
 )
 from app.services.document_pipeline import run_document_pipeline
 from app.services.documents import (
+    DocumentUploadTooLargeError,
     assert_safe_document_storage_path,
     figures_from_tei,
     mark_parse_queued,
@@ -25,7 +26,13 @@ from app.services.documents import (
     save_upload,
 )
 from app.services.rag import index_document, mark_index_queued
-from app.services.translation import create_translation_job, translate_document, translation_sections
+from app.services.translation import (
+    TranslationUnavailableError,
+    create_translation_job,
+    require_translation_capability,
+    translate_document,
+    translation_sections,
+)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -286,6 +293,7 @@ def document_figures(document: dict) -> list[dict]:
     status_code=201,
     response_model=DocumentResponse,
     responses={
+        413: {"description": "PDF exceeds configured upload limit"},
         409: {"description": "Duplicate document"},
         415: {"description": "Unsupported document type"},
         500: {"description": "Document upload failed"},
@@ -310,6 +318,8 @@ async def upload_document(
             raise AppError(404, "paper_not_found", "Paper not found")
     try:
         doc, created = await save_upload(file, paper_id)
+    except DocumentUploadTooLargeError as exc:
+        raise AppError(413, "document_too_large", str(exc)) from exc
     except OSError as exc:
         raise AppError(500, "document_upload_failed", str(exc))
     document = get_document_or_404(doc["id"])
@@ -494,9 +504,19 @@ def list_chunks(
     }
 
 
-@router.post("/{document_id}/translate", status_code=202, response_model=AsyncJobResponse, response_model_exclude_none=True)
+@router.post(
+    "/{document_id}/translate",
+    status_code=202,
+    response_model=AsyncJobResponse,
+    response_model_exclude_none=True,
+    responses={409: {"description": "Machine translation unavailable"}},
+)
 def translate(document_id: int, body: TranslateIn, background_tasks: BackgroundTasks) -> dict:
     get_document_or_404(document_id)
+    try:
+        require_translation_capability()
+    except TranslationUnavailableError as exc:
+        raise AppError(409, "translation_unavailable", str(exc)) from exc
     translation = create_translation_job(document_id, body.target_lang)
     background_tasks.add_task(translate_document, document_id, body.target_lang, translation["id"])
     return {
